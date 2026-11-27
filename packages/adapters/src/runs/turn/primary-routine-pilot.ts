@@ -116,13 +116,16 @@ export async function pilotRoutineRequest(
 ): Promise<AgentRunRequest> {
   const unavailable = () =>
     new Error("The selected primary runtime routine is no longer authorized.");
+  const scheduledFor = run.routineId
+    ? routineTimerScheduledFor(run.routineId, run.clientNonce)
+    : undefined;
   if (
     run.trigger !== "routine" ||
     !run.routineId ||
     run.sourceMessageId ||
     run.retryOfRunId ||
     !run.modelPinned ||
-    !routineTimerScheduledFor(run.routineId, run.clientNonce)
+    !scheduledFor
   )
     throw unavailable();
   const routine = await prisma.routine.findFirst({
@@ -135,7 +138,12 @@ export async function pilotRoutineRequest(
     },
     include: { bot: { include: { thread: true } } },
   });
-  if (!routine || taskPrompt !== routine.prompt || (await accountDeactivated(prisma, run.userId)))
+  if (
+    !routine ||
+    (routine.endsAt && scheduledFor > routine.endsAt) ||
+    taskPrompt !== routine.prompt ||
+    (await accountDeactivated(prisma, run.userId))
+  )
     throw unavailable();
   const pin = pilotRoutineModel(routine, run.threadId, routinePilotEnrollment(routine.id));
   if (

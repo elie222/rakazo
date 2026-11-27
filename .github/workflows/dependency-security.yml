@@ -1,13 +1,13 @@
 name: Dependency security
 
 on:
-  # The audit reads only the lockfile and its config, so a pull request that leaves them alone
-  # cannot change the result; main and the nightly run catch newly published advisories.
+  # Main and the nightly run catch newly published advisories.
   pull_request:
     paths:
       - ".github/workflows/dependency-security.yml"
       - "scripts/checks/dependency-audit.mjs"
       - "pnpm-lock.yaml"
+      - "infra/sandboxes/protected-browser/package*.json"
       # Its auditConfig lists the advisories the audit ignores.
       - "pnpm-workspace.yaml"
       # Its packageManager field picks the pnpm that runs the audit.
@@ -50,6 +50,20 @@ jobs:
           name: dependency-audit
           path: dependency-audit.json
           if-no-files-found: error
+
+  protected-browser-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+      - name: Audit the browser image's npm lockfile
+        working-directory: infra/sandboxes/protected-browser
+        run: npm audit --audit-level high
 
   image-tags:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

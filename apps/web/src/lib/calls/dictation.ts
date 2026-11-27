@@ -228,7 +228,10 @@ export class Dictation {
   private vadTimer: ReturnType<typeof setInterval> | undefined;
   private speechSamples = 0;
   private sampleInput: (() => boolean) | undefined;
+  /** Energy in this recording. A Web Speech prefix is not energy and must not start this true. */
   private heardSpeech = false;
+  /** Silence may end an endpoint turn: prior text, or energy in this recording. */
+  private endpointArmed = false;
   private onFinal: ((text: string) => void) | null = null;
   /** Mode of the running session: an endpoint turn reports back even without words. */
   private mode: DictationMode | null = null;
@@ -247,6 +250,11 @@ export class Dictation {
 
   get recording(): boolean {
     return this.media?.state === "recording";
+  }
+
+  /** A recorder still acquiring its track or capturing, not flushing its last audio. */
+  get recordingOrStarting(): boolean {
+    return this.recording || (!this.media && this.snapshot.status === "listening");
   }
 
   private set(next: DictationSnapshot) {
@@ -288,6 +296,7 @@ export class Dictation {
     this.chunks = [];
     this.speechSamples = 0;
     this.heardSpeech = false;
+    this.endpointArmed = false;
     this.onFinal = null;
     this.mode = null;
     if (this.snapshot.status !== "idle" || this.snapshot.error) this.set(IDLE);
@@ -297,6 +306,7 @@ export class Dictation {
     mode: DictationMode;
     callId?: string;
     transcribe?: boolean;
+    autoLanguage?: boolean;
     endpointMs?: number;
     onFinal: (text: string) => void;
   }): Promise<void> {
@@ -304,6 +314,13 @@ export class Dictation {
     this.requestCallId = opts.callId;
     const mine = this.token;
     const spaceId = selectedSpaceId();
+    if (opts.autoLanguage && opts.transcribe === false) {
+      this.set({
+        ...IDLE,
+        error: t`Connect a voice provider that transcribes, or turn off automatic language detection in Voice settings.`,
+      });
+      return;
+    }
     this.onFinal = opts.onFinal;
     this.mode = opts.mode;
     this.set({ status: "listening", transcript: "" });
@@ -311,8 +328,14 @@ export class Dictation {
     // Desktop system speech is a fallback for an unconfigured transcription provider.
     // An unknown capability is not a refusal: a device whose browser cannot hold the
     // microphone open goes to the server even before the voice status has loaded.
-    if (usesServerDictation(opts.transcribe)) {
-      await this.listenRecorder(mine, opts.mode, opts.endpointMs ?? ENDPOINT_SILENCE_MS, spaceId);
+    if (opts.autoLanguage || usesServerDictation(opts.transcribe)) {
+      await this.listenRecorder(
+        mine,
+        opts.mode,
+        opts.endpointMs ?? ENDPOINT_SILENCE_MS,
+        spaceId,
+        opts.autoLanguage,
+      );
       return;
     }
     if (webSpeechAvailable()) {
@@ -492,6 +515,7 @@ export class Dictation {
     mode: DictationMode,
     endpointMs: number,
     spaceId: string | null,
+    autoLanguage = false,
   ) {
     let stream: MediaStream;
     try {
@@ -506,9 +530,12 @@ export class Dictation {
       for (const track of stream.getTracks()) track.stop();
       return;
     }
+    // Prior text may end the turn on a quiet gap. It is not energy in this recording:
+    // a silent fallback must not be uploaded on top of the Web Speech prefix.
     const keptSpeech = this.snapshot.transcript.trim().length > 0;
     this.speechSamples = 0;
-    this.heardSpeech = keptSpeech;
+    this.heardSpeech = false;
+    this.endpointArmed = keptSpeech;
     const endpoint = mode === "endpoint";
     const monitoring = this.monitorInput(stream, mine, endpoint ? endpointMs : undefined);
     if (endpoint && !monitoring) {
@@ -533,7 +560,7 @@ export class Dictation {
         for (const track of stream.getTracks()) track.stop();
         if (this.token !== mine) return;
         this.stopVad();
-        void this.transcribeChunks(mine, spaceId);
+        void this.transcribeChunks(mine, spaceId, autoLanguage);
       };
       media.start(mode === "endpoint" ? 250 : undefined);
       this.set({ ...this.snapshot });
@@ -578,7 +605,10 @@ export class Dictation {
         }
         this.speechSamples += 1;
         const speech = Math.sqrt(sum / data.length) > SILENCE_RMS;
-        if (speech) this.heardSpeech = true;
+        if (speech) {
+          this.heardSpeech = true;
+          this.endpointArmed = true;
+        }
         return speech;
       };
       let silentFor = 0;
@@ -589,7 +619,7 @@ export class Dictation {
         const speaking = this.sampleInput?.();
         const full =
           endpointMs !== undefined && Date.now() - startedAt >= MAX_ENDPOINT_RECORDING_MS;
-        if (full && !this.heardSpeech) {
+        if (full && !this.endpointArmed) {
           this.finish(this.snapshot.transcript, mine);
           return;
         }
@@ -598,7 +628,7 @@ export class Dictation {
             silentFor = 0;
             return;
           }
-          if (endpointMs === undefined || !this.heardSpeech) return;
+          if (endpointMs === undefined || !this.endpointArmed) return;
           silentFor += ENDPOINT_TICK_MS;
           if (silentFor < endpointMs) return;
         }
@@ -625,7 +655,7 @@ export class Dictation {
     if (ctx) void ctx.close().catch(() => undefined);
   }
 
-  private async transcribeChunks(mine: number, spaceId: string | null) {
+  private async transcribeChunks(mine: number, spaceId: string | null, autoLanguage: boolean) {
     const requestCallId = this.requestCallId;
     if (this.token !== mine) return;
     // Whisper-style models invent text for silence, so a recording that never rose above
@@ -634,6 +664,8 @@ export class Dictation {
     if (this.speechSamples >= 2 && !this.heardSpeech) {
       this.chunks = [];
       this.media = null;
+      // `heardSpeech` is energy in this recording only. Deliver a Web Speech prefix
+      // without asking a model to invent text for the silent fallback.
       const prefix = normalizedTranscript(this.snapshot.transcript);
       if (prefix) {
         this.finish(prefix, mine);
@@ -668,7 +700,7 @@ export class Dictation {
           body: JSON.stringify({
             audioBase64,
             mimeType: blob.type,
-            language: transcriptionLanguage(),
+            language: autoLanguage ? undefined : transcriptionLanguage(),
             callId: requestCallId,
           }),
           signal: abort.signal,

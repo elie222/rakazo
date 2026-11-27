@@ -1,7 +1,9 @@
 // A stand-in for the `claude` CLI that speaks its stream-json protocol, for offline tests.
 // Usage: node fake-cli.test-support.mjs <scenario> <record file> ...cli args
 import { spawn } from "node:child_process";
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 
 const [scenario, recordPath, ...args] = process.argv.slice(2);
@@ -52,6 +54,18 @@ async function inventory() {
 /** Answers one stream-json request the way the CLI would, by scenario. */
 async function chat() {
   writeFileSync(`${recordPath}.spawned`, "");
+  // Like the CLI, keeps each session in its config dir, when the test gives it a temporary one.
+  const sessionId = args[args.indexOf("--session-id") + 1];
+  const folder = join(process.env.CLAUDE_CONFIG_DIR ?? "", "projects", "-rakazo");
+  if (process.env.CLAUDE_CONFIG_DIR?.startsWith(tmpdir())) {
+    mkdirSync(folder, { recursive: true });
+    // Each reply below is saved after an entry of the CLI's own, where a resume continues.
+    const entries = [1, 2].map((n) => ({ uuid: `reply-${n}`, parentUuid: `before-reply-${n}` }));
+    writeFileSync(
+      join(folder, `${sessionId}.jsonl`),
+      entries.map((entry) => JSON.stringify(entry)).join("\n"),
+    );
+  }
   if (scenario === "slow-reply") await new Promise((resolve) => setTimeout(resolve, 300));
   const tools = await inventory();
   out({
@@ -66,6 +80,17 @@ async function chat() {
         ? [{ name: "rakazo", status: "connected" }]
         : [],
   });
+  if (scenario === "lost-session" && args.includes("--resume")) {
+    writeFileSync(`${recordPath}.resumed`, "");
+    out({
+      type: "result",
+      subtype: "error_during_execution",
+      is_error: true,
+      num_turns: 0,
+      errors: ["No conversation found with that session ID"],
+    });
+    return;
+  }
   if (scenario === "deaf") {
     // Stays up without reading its input, so a large write never completes.
     setInterval(() => {}, 60_000);
@@ -126,6 +151,7 @@ async function chat() {
   switch (scenario) {
     case "slow-reply":
     case "late-error":
+    case "lost-session":
     case "reply": {
       stream({
         type: "message_start",
@@ -161,6 +187,7 @@ async function chat() {
         usage: { output_tokens: 7 },
       });
       stream({ type: "message_stop" });
+      out({ type: "assistant", uuid: "reply-1", message: { role: "assistant", content: [] } });
       out({
         type: "result",
         subtype: "success",
@@ -209,6 +236,9 @@ async function chat() {
         usage: { output_tokens: 9 },
       });
       stream({ type: "message_stop" });
+      out({ type: "assistant", uuid: "reply-2", message: { role: "assistant", content: [] } });
+      // The CLI refuses to run the tool and stops at its turn limit.
+      out({ type: "result", subtype: "error_max_turns", is_error: true, num_turns: 1 });
       // A CLI that kept going would run the tool or ask the model again.
       lingerAfter(800);
       break;

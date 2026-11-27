@@ -9,6 +9,8 @@ export const ConnectionSchema = z.object({
   status: z.enum(["pending", "connected", "revoked", "error"]),
   capabilities: z.array(z.string()),
   createdAt: z.string(),
+  organization: z.boolean().optional(),
+  manageable: z.boolean().optional(),
 });
 export type Connection = z.infer<typeof ConnectionSchema>;
 

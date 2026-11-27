@@ -35,6 +35,8 @@ export type Step =
       /** Skip the wake when the bot has already cancelled the routine it authored. */
       ifScheduled?: true;
     }
+  /** A JSON payload posted to the bot's webhook, which wakes its webhook routine. */
+  | { webhook: Record<string, unknown> }
   /** A request from the case's peer bot, delivered through message_bot's product path. */
   | { fromPeer: string }
   /** A member posts a handoff through the real group delivery path. */
@@ -88,6 +90,8 @@ export type Evidence = {
   /** Routines the bot created during the trial, including ones it later cancelled. */
   routinesCreated?: number;
   memory: string;
+  /** The Space's shared memory documents, which every bot in it reads. */
+  sharedMemory?: string;
   approvalPending: boolean;
   clarificationPending?: boolean;
   pendingApproval: { kind: string; request: unknown } | null;
@@ -137,6 +141,8 @@ export type EvalCase = {
   botMemory?: string;
   /** The bot's other private memory documents by path, as an agent import leaves them. */
   botMemoryDocuments?: Record<string, string>;
+  /** The Space's shared MEMORY.md, written through the memory API before the first step. */
+  sharedMemory?: string;
   taughtSkill?: true;
   history?: ReturnType<typeof historyFixture>;
   configure?: (services: EvalServices) => void;
@@ -146,7 +152,8 @@ export type EvalCase = {
    * trial's clock and served over streamable HTTP on loopback.
    */
   apps?: (now: Date) => AppEmulator[];
-  routine?: { prompt: string; name?: string };
+  /** With `webhook`, the routine runs on webhook deliveries instead of a schedule. */
+  routine?: { prompt: string; name?: string; webhook?: true };
   teammates?: Array<{ name: string; description: string }>; // Other bots in the space; never run.
   wallet?: true; // The owner connected the offline wallet emulator, so purchase tools appear.
   /**
@@ -200,7 +207,8 @@ export const EVAL_INBOUND_EMAIL = {
 export const EVAL_BOT_EMAIL_NAME = "assistant";
 /** A case that wakes a routine, seeded or authored, needs its pushes and completion observed. */
 export const wakesRoutines = (scenario: EvalCase) =>
-  Boolean(scenario.routine) || scenario.steps.some((step) => "wakeRoutine" in step);
+  Boolean(scenario.routine) ||
+  scenario.steps.some((step) => "wakeRoutine" in step || "webhook" in step);
 
 const check = (id: string, pass: boolean): Criterion => ({ id, pass });
 const read = (e: Evidence, name: string) =>

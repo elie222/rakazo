@@ -95,6 +95,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Almost ready…": "即將完成…",
   "Rakazo is ready.": "Rakazo 已就緒。",
   "{size} downloaded": "已下載 {size}",
+  "{done} of {total}": "{done} / {total}",
   "Connecting…": "正在連線…",
   "Checking…": "正在檢查…",
   "Rakazo answered at {url}.": "Rakazo 已在 {url} 回應。",

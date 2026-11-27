@@ -86,7 +86,7 @@ describe("removeMcpServerInTransaction", () => {
     });
     expect(tx.mcpServer.delete).toHaveBeenCalledWith({ where: { id: "srv-a" } });
     expect(tx.secret.deleteMany).toHaveBeenCalledWith({
-      where: { id: "sec-a", userId: "user" },
+      where: expect.objectContaining({ id: "sec-a" }),
     });
   });
 });

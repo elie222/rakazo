@@ -18,7 +18,10 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("../../lib/query/query", () => ({
   useSave: () => ({ pending: false, error: null }),
   useSpaceQueries: () => ({
-    pageReviews: { grants: { key: () => ["grants"] } },
+    pageReviews: {
+      grants: { key: () => ["grants"] },
+      state: { queryOptions: () => ({ queryKey: ["state"], queryFn: async () => ({}) }) },
+    },
     pages: {
       list: { key: () => ["pages"] },
       get: {

@@ -352,7 +352,7 @@ describe("connectionModelSettings", () => {
     const secret = parseModelSecret(
       JSON.stringify({
         kind: "openai_compatible",
-        baseUrl: "https://models.example.test/v1",
+        baseUrl: "http://127.0.0.1:8000/v1",
         reasoning: true,
         visionModelIds: ["vision"],
         maxImagesPerPrompt: 3,
@@ -374,7 +374,7 @@ describe("connectionModelSettings", () => {
         parseModelSecret(
           JSON.stringify({
             kind: "openai_compatible",
-            baseUrl: "https://models.example.test/v1",
+            baseUrl: "http://127.0.0.1:8000/v1",
             enabledModelIds: ["vision", "text"],
           }),
         ),
@@ -389,6 +389,78 @@ describe("connectionModelSettings", () => {
     expect(dto.modelSettings).toEqual({ vision: { images: true, reasoning: true } });
     expect(dto.visionModelIds).toEqual(["vision"]);
     expect(dto.thinkingLevels?.length).toBeGreaterThan(1);
+  });
+});
+
+describe("compatible model defaults", () => {
+  const secret = (baseUrl: string) =>
+    parseModelSecret(
+      JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl,
+        enabledModelIds: ["plain", "text-only", "own"],
+        listedModels: { "text-only": { images: false, contextWindow: 64_000 } },
+        models: { own: { images: false, reasoning: false } },
+      }),
+    );
+  const row = { id: "c", provider: "openai-compatible", label: "Server", defaultModel: "plain" };
+
+  it("read images and think unless the server's list or the model's own settings say not", () => {
+    const hosted = secret("https://models.example.test/v1");
+    const settings = (id: string) => connectionModelSettings(hosted, row.provider, id);
+    expect(settings("plain")).toEqual({ images: true, reasoning: true });
+    expect(settings("text-only")).toEqual({
+      images: false,
+      reasoning: true,
+      contextWindow: 64_000,
+    });
+    expect(settings("own")).toEqual({ images: false, reasoning: false });
+    const dto = modelCredentialDto(row, serializeModelSecret(hosted));
+    for (const id of ["plain", "text-only", "own"]) {
+      const { images, reasoning } = settings(id);
+      expect(credentialModelSettings(dto, id)).toMatchObject({ images, reasoning });
+    }
+    // A listed limit is shown, not filled in, so saving the form keeps it the server's.
+    expect(credentialModelSettings(dto, "text-only").contextWindow).toBeUndefined();
+  });
+
+  it("keep thinking off where the whole connection turned it off", () => {
+    const hosted = parseModelSecret(
+      JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl: "https://models.example.test/v1",
+        reasoning: false,
+      }),
+    );
+    const dto = modelCredentialDto(row, serializeModelSecret(hosted));
+    expect(connectionModelSettings(hosted, row.provider, "plain").reasoning).toBe(false);
+    expect(credentialModelSettings(dto, "plain").reasoning).toBe(false);
+  });
+
+  it("ask for the usual share of a listed output ceiling", () => {
+    const hosted = parseModelSecret(
+      JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl: "https://models.example.test/v1",
+        listedModels: { big: { maxTokens: 128_000 }, small: { maxTokens: 16_000 } },
+      }),
+    );
+    expect(connectionModelSettings(hosted, row.provider, "big").maxTokens).toBe(32_768);
+    expect(connectionModelSettings(hosted, row.provider, "small").maxTokens).toBe(16_000);
+    const listedText = parseModelSecret(
+      JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl: "https://models.example.test/v1",
+        listedModels: { big: { maxTokens: 128_000, reasoning: false } },
+        models: { big: { reasoning: true } },
+      }),
+    );
+    expect(connectionModelSettings(listedText, row.provider, "big").maxTokens).toBe(32_768);
+  });
+
+  it("assume neither on a local server", () => {
+    const local = secret("http://127.0.0.1:8000/v1");
+    expect(connectionModelSettings(local, row.provider, "plain")).toEqual({});
   });
 });
 
@@ -453,7 +525,7 @@ it("keeps legacy image settings aligned between runtime and the credential DTO",
   const secret = {
     kind: "openai_compatible" as const,
     apiKey: "fake-key",
-    baseUrl: "https://example.com/v1",
+    baseUrl: "http://127.0.0.1:8000/v1",
   };
   const dto = modelCredentialDto(row, serializeModelSecret(secret));
   for (const modelId of ["served", "other"]) {

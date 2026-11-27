@@ -168,7 +168,6 @@ test("saves a contact, a card billed to it, and a login from Settings, showing n
   await captureScreenshot(page, testInfo, "vault-item-chosen-bots");
   await editor.getByRole("button", { name: "Save", exact: true }).click();
   await expect(editor).toHaveCount(0);
-  // A new item's save returns to the list, as every new item's does.
   await vault.getByText("scoped.example.test", { exact: true }).click();
   const chosen = detail.getByTestId("vault-item-access-detail");
   await expect(chosen).toHaveText(/^Bots./);

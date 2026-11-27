@@ -122,20 +122,21 @@ export function createInboxStyles() {
     pinnedTiles: {
       flexDirection: "row",
       flexWrap: "wrap",
+      // A short last row sits centred under the full one.
+      justifyContent: "center",
       paddingHorizontal: 8,
-      paddingTop: 4,
+      paddingTop: 12,
       paddingBottom: 12,
     },
     pinnedTile: {
-      width: "33.33%",
       alignItems: "center",
-      paddingVertical: 8,
+      paddingVertical: 3,
       paddingHorizontal: 4,
       borderRadius: 16,
       gap: 4,
     },
     pinnedName: {
-      color: native.secondaryLabel,
+      color: native.label,
       fontSize: 13,
       fontWeight: "500",
       textAlign: "center",
@@ -179,7 +180,8 @@ export function createInboxStyles() {
       flexShrink: 0,
       maxWidth: "100%",
       color: native.label,
-      ...typeScale.cardTitle,
+      fontSize: 16,
+      lineHeight: 21,
       writingDirection: "auto",
     },
     time: {
@@ -216,9 +218,10 @@ export function createInboxStyles() {
     },
     spaceTitleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
     spaceTitle: {
-      color: native.label,
-      fontSize: 14,
-      fontWeight: "600",
+      // A long name truncates so the caret after it stays in view.
+      flexShrink: 1,
+      color: native.secondaryLabel,
+      ...typeScale.secondary,
       writingDirection: "auto",
     },
     spaceActions: {

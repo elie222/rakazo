@@ -38,6 +38,7 @@ import { openWriteReview, writeReviewUrl } from "../../lib/platform/store-review
 import { openStoreListing, useStoreUpdateAvailable } from "../../lib/platform/store-update";
 import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
 import { useApprovalSettings } from "../../lib/settings/approval-settings";
+import { openFromSettings, useRestoreSpaces } from "../../lib/settings/back-to-settings";
 import { createSettingsPageStyles } from "../../lib/settings/settings-page-styles";
 import { isSettingsLink, openFromSettingsSheet } from "../../lib/settings/settings-sheet";
 import { activeOrganization, useOrganizations } from "../../lib/spaces/organizations";
@@ -48,6 +49,7 @@ type SettingsLink = { title: string; href: Href; icon: Icon };
 
 /** The settings hub: the account, then shortcuts, settings and admin, each one row deep. */
 export default function Account() {
+  useRestoreSpaces();
   const sideInsets = useSideInsets();
   const { t } = useLingui();
   const locale = useUiLocale();
@@ -87,12 +89,15 @@ export default function Account() {
       chevron="right"
       disabled={signingOut}
       leading={icon(glyph)}
-      // Artifacts and Board live on the root stack, so they close the sheet first.
-      onPress={() =>
-        typeof href === "string" && isSettingsLink(href)
-          ? router.push(href)
-          : openFromSettingsSheet(router, href)
-      }
+      onPress={() => {
+        if (href === "/artifacts" || href === "/board") {
+          openFromSettings(router, { pathname: href }, "/account");
+        } else if (typeof href === "string" && isSettingsLink(href)) {
+          router.push(href);
+        } else {
+          openFromSettingsSheet(router, href);
+        }
+      }}
       title={title}
     />
   );

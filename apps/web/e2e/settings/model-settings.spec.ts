@@ -354,18 +354,16 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await page.getByRole("button", { name: "Close model settings" }).click();
     await openBotSettings(page);
     const settings = page.getByTestId("bot-settings");
-    // The model row names the model in use and opens the list; each change saves at once.
-    await settings.getByRole("button", { name: /^Model/ }).click();
+    // The bot follows the Space default, so its model row names and checks the endpoint's model.
+    const modelRow = settings.getByRole("button", { name: /^Model/ });
+    await expect(modelRow).toContainText(LOCAL_MODEL_ID);
+    await modelRow.click();
     const localModel = page.getByRole("option", { name: LOCAL_MODEL_ID });
-    await expect(localModel).toBeVisible();
+    await expect(localModel).toHaveAttribute("data-checked", "true");
     await expect(page.getByRole("option", { name: SECOND_MODEL_ID })).toBeVisible();
     await captureScreenshot(page, testInfo, "openai-compatible-model-picker");
-    const modelSaved = page.waitForResponse(
-      (response) => response.url().includes("/rpc/bots/update") && response.ok(),
-    );
-    await localModel.click();
-    await modelSaved;
-    await expect(settings.getByRole("button", { name: /^Model/ })).toContainText(LOCAL_MODEL_ID);
+    await page.keyboard.press("Escape");
+    await expect(localModel).toBeHidden();
     const connection = settings.getByRole("combobox", { name: "Model connection", exact: true });
     await expect(connection).toHaveText("Automatic");
     const connectionSaved = page.waitForResponse(
@@ -373,17 +371,23 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     );
     await chooseOption(connection, savedConnection!.label);
     const pinned = (await (await connectionSaved).json()) as {
-      json: { modelCredentialId?: string | null };
+      json: { modelCredentialId?: string | null; modelId?: string | null };
     };
-    expect(pinned.json.modelCredentialId).toBe(savedConnection!.id);
+    expect(pinned.json).toMatchObject({
+      modelId: LOCAL_MODEL_ID,
+      modelCredentialId: savedConnection!.id,
+    });
     await expect(connection).toHaveText(savedConnection!.label);
     await captureScreenshot(page, testInfo, "bot-model-connection");
+    await page.reload();
+    await openBotSettings(page);
+    await expect(connection).toHaveText(savedConnection!.label);
     const botSaved = page.waitForResponse(
       (response) => response.url().includes("/rpc/bots/update") && response.ok(),
     );
-    // A bot that picks no level runs at the one the model's settings chose.
+    // A bot that picks no level shows the one the model's settings chose.
     const thinking = settings.getByRole("combobox", { name: "Thinking", exact: true });
-    await expect(thinking).toHaveText("Default (Max)");
+    await expect(thinking).toHaveText("Max");
     await chooseOption(thinking, "High");
     await botSaved;
 
@@ -454,6 +458,27 @@ test("a rejected subscription sign-in asks to sign in again", async ({ page }, t
   await expect(connection.getByRole("button", { name: "Disconnect" })).toBeVisible();
   await expect(connection.getByRole("button", { name: "Test connection" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "model-connection-page");
+  // Disconnecting says what goes with the connection before it asks.
+  await page.route("**/rpc/models/disconnectPreview", (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          mainModel: true,
+          otherChoice: false,
+          usedBy: ["Inbox", "Morning digest"],
+          usedByTotal: 2,
+        },
+      },
+    }),
+  );
+  await connection.getByRole("button", { name: "Disconnect" }).click();
+  const question = page.getByRole("alertdialog");
+  await expect(question).toContainText(
+    "Reconnecting will not restore the main model choice that uses this connection.",
+  );
+  await expect(question).toContainText("Inbox, Morning digest may stop until you reconnect.");
+  await captureScreenshot(page, testInfo, "model-disconnect-warning");
+  await question.getByRole("button", { name: "Cancel" }).click();
 });
 
 test("a refused private model server names the setting that allows it", async ({

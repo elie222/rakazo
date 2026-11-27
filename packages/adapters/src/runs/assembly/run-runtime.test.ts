@@ -73,7 +73,15 @@ describe("runRuntimeEnvFromProcess", () => {
     },
     { NODE_ENV: "test", INBOUND_EMAIL_DOMAIN: "  ", PIPEDREAM_ENVIRONMENT: "staging" },
   ])("reads the values the worker read before (%#)", (source) => {
-    expect(runRuntimeEnvFromProcess(source)).toEqual(previousWorkerValues(source));
+    const { maxAttachmentsPerMessage: _, ...env } = runRuntimeEnvFromProcess(source);
+    expect(env).toEqual(previousWorkerValues(source));
+  });
+
+  it("reads the configured attachment count for the worker", () => {
+    expect(
+      runRuntimeEnvFromProcess({ NODE_ENV: "test", MAX_ATTACHMENTS_PER_MESSAGE: "7" })
+        .maxAttachmentsPerMessage,
+    ).toBe(7);
   });
 
   it("reads the computer save limit and rejects a bad one", () => {

@@ -41,6 +41,25 @@ async function addScheduleTrigger(page: Page, freq: string) {
   await page.getByRole("menuitem", { name: freq, exact: true }).click();
 }
 
+test("a routine row spells out several daily run times", async ({ page }, testInfo) => {
+  await signup(page, `routine-times-${Date.now()}@rakazo.test`, "password12", "Routine Times");
+  await completeOnboarding(page);
+  await rpc<Routine>(page, "routines/create", {
+    botId: activeBotId(page),
+    name: "Daily report",
+    prompt: "Prepare the report.",
+    crons: ["0 9,17 * * *"],
+    timezone: "UTC",
+    active: true,
+  });
+
+  await page.reload();
+  await openBotPanel(page);
+  const row = page.getByRole("button", { name: /Daily report/ });
+  await expect(row).toContainText("Every day at 9:00 AM and 5:00 PM");
+  await captureScreenshot(page, testInfo, "routine-multiple-daily-times");
+});
+
 test("a delayed schedule is visible only while the routine is active", async ({
   page,
 }, testInfo) => {
@@ -223,6 +242,41 @@ test("routine editing updates in place, preserves timezone, deletion persists, a
     "Renamed model check",
   ]);
   await expect(updatedButton).toHaveCount(0);
+});
+
+test("a routine's end date shows in its row and the editor removes it", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `routine-end-${Date.now()}@rakazo.test`, "password12", "Routine End");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+  const endsAt = new Date(Date.now() + 7 * 86_400_000);
+  endsAt.setUTCHours(23, 59, 59, 999);
+  await rpc<Routine>(page, "routines/create", {
+    botId,
+    name: "Deal check",
+    prompt: "Check the deals",
+    crons: ["0 9 * * *"],
+    timezone: "UTC",
+    active: true,
+    notify: true,
+    endsAt: endsAt.toISOString(),
+  });
+  await page.reload();
+  await openBotPanel(page);
+
+  const row = page.getByRole("button", { name: /Deal check/ });
+  await expect(row).toContainText("until");
+  await row.click();
+  await expect(page.getByLabel("Ends", { exact: true })).toHaveValue(
+    endsAt.toISOString().slice(0, 10),
+  );
+  await captureScreenshot(page, testInfo, "routine-end-date");
+
+  await page.getByRole("button", { name: "Remove end date", exact: true }).click();
+  expect(await saveAndReturn(page, "routines/update")).toMatchObject({ endsAt: null });
+  const [saved] = await rpc<Routine[]>(page, "routines/list", { botId });
+  expect(saved?.endsAt).toBeNull();
 });
 
 test("an email trigger claims the bot's address and saves who can start it", async ({

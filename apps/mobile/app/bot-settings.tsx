@@ -9,21 +9,18 @@ import {
 } from "@rakazo/contracts";
 import {
   botLookState,
-  botModelConnections,
-  credentialForModel,
+  botModelState,
   DEFAULT_BOT_AVATAR_COLOR,
   MODEL_SEARCH_THRESHOLD,
   modelOptionKey,
-  modelThinkingLevels,
-  parseModelOptionKey,
-  resolveSelectableModelId,
 } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import { typeScale } from "@rakazo/ui-tokens";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { Voice } from "expo-speech";
 import type { Dispatch, SetStateAction } from "react";
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ScrollViewInstance } from "react-native";
 import { Alert, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { BotAvatar } from "../components/bots/bot-avatar";
@@ -50,9 +47,8 @@ import { errorText } from "../lib/api/user-error";
 import { botReadsIn, useBotSetting, useNotifyOnFinish } from "../lib/bots/bot-setting";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computers/computer";
-import { dateLocaleForUi, useUiLocale } from "../lib/i18n/i18n";
+import { useDateLocale } from "../lib/i18n/i18n";
 import { useSideInsets } from "../lib/layout/side-insets";
-import { chatModelPickerChoices } from "../lib/models/chat-model";
 import { native, useMobileTokens } from "../lib/native/native";
 import { formRead, rpcQuery, useSave } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
@@ -72,7 +68,7 @@ function BotSettings() {
   const sideInsets = useSideInsets();
   const tokens = useMobileTokens();
   const { t } = useLingui();
-  const uiLocale = useUiLocale();
+  const dateLocale = useDateLocale();
   const router = useRouter();
   const {
     botId,
@@ -190,18 +186,27 @@ function BotSettings() {
     );
   }, [botQuery.data]);
 
-  const storedModel = modelKey ? parseModelOptionKey(modelKey) : null;
-  const selectedModel = storedModel
-    ? {
-        provider: storedModel.provider,
-        modelId: resolveSelectableModelId(catalog, storedModel.provider, storedModel.modelId),
-      }
-    : null;
-  const selectedModelKey = selectedModel
-    ? modelOptionKey(selectedModel.provider, selectedModel.modelId)
-    : "";
+  // Read each render, so model names follow a change of language.
+  const modelState = botModelState({
+    credentials,
+    catalog: catalog.map(localizeModelEntry),
+    me,
+    modelKey,
+    modelCredentialId,
+  });
+  const {
+    selectedModel,
+    selectedModelKey,
+    shownKey,
+    choices: modelChoices,
+    thinkingLevels: thinkingOptions,
+    defaultThinkingLevel,
+    savedModelKey,
+    savedThinkingLevel,
+    connectionModelKey,
+    connections: eligibleConnections,
+  } = modelState;
 
-  const eligibleConnections = botModelConnections(credentials, catalog, selectedModel);
   const connectionChoices: MenuPickerChoice[] = [
     { key: "", label: t`Automatic` },
     ...eligibleConnections.map(({ id, label }) => ({ key: id, label })),
@@ -209,49 +214,20 @@ function BotSettings() {
       ? [{ key: modelCredentialId, label: t`Unavailable connection`, disabled: true }]
       : []),
   ];
-
-  const effectiveProvider = selectedModel?.provider ?? me?.defaultProvider ?? null;
-  const effectiveModelId = selectedModel?.modelId ?? me?.defaultModel ?? null;
-  const effectiveEntry =
-    effectiveProvider && effectiveModelId
-      ? catalog.find(
-          (entry) =>
-            entry.provider === effectiveProvider &&
-            resolveSelectableModelId(catalog, entry.provider, entry.id) === effectiveModelId,
-        )
-      : undefined;
-  const effectiveCredential = modelCredentialId
-    ? eligibleConnections.find(({ id }) => id === modelCredentialId)
-    : credentialForModel(credentials, effectiveProvider, effectiveModelId);
-  const thinkingOptions = modelThinkingLevels(
-    effectiveCredential,
-    effectiveEntry,
-    effectiveModelId,
-  ).filter((level) => level !== "off");
-
-  const modelChoices = useMemo(
-    () => chatModelPickerChoices(me, catalog, credentials, selectedModelKey),
-    [catalog, credentials, me, selectedModelKey, t],
-  );
-
-  const thinkingChoices: MenuPickerChoice[] = useMemo(
-    () => [
-      { key: "", label: t`Default` },
-      ...thinkingOptions.map((level) => ({
-        key: level,
-        label: thinkingLevelLabel(level),
-      })),
-    ],
-    [t, thinkingOptions],
-  );
+  const thinkingChoices: MenuPickerChoice[] = thinkingOptions.map((level) => ({
+    key: level,
+    label: thinkingLevelLabel(level),
+  }));
 
   useEffect(() => {
     if (focus === "model") setAdvancedOpen(true);
   }, [focus]);
 
   function selectModel(key: string) {
-    if (key === selectedModelKey) return;
-    setModelKey(key);
+    if (modelCredentialId && key === shownKey) return;
+    const saved = savedModelKey(key);
+    if (saved === selectedModelKey) return;
+    setModelKey(saved);
     setModelCredentialId("");
     setThinkingLevel("");
   }
@@ -608,17 +584,21 @@ function BotSettings() {
                     ? () =>
                         router.push({
                           pathname: "/bot-model",
-                          params: { botId, value: selectedModelKey },
+                          params: { botId, value: shownKey },
                         })
                     : undefined
                 }
-                value={selectedModelKey}
+                value={shownKey}
               />
-              {selectedModel && (eligibleConnections.length > 0 || modelCredentialId) ? (
+              {shownKey && (eligibleConnections.length > 0 || modelCredentialId) ? (
                 <MenuPicker
                   choices={connectionChoices}
                   label={t`Model connection`}
-                  onChange={setModelCredentialId}
+                  onChange={(id) => {
+                    setModelKey(connectionModelKey(id));
+                    setModelCredentialId(id);
+                    setThinkingLevel("");
+                  }}
                   value={modelCredentialId}
                 />
               ) : null}
@@ -626,8 +606,10 @@ function BotSettings() {
                 <MenuPicker
                   choices={thinkingChoices}
                   label={t`Thinking`}
-                  onChange={setThinkingLevel}
-                  value={thinkingLevel}
+                  onChange={(level) =>
+                    setThinkingLevel(savedThinkingLevel(level as ThinkingLevel) ?? "")
+                  }
+                  value={thinkingLevel || defaultThinkingLevel}
                 />
               ) : null}
             </SettingsGroup>
@@ -711,7 +693,7 @@ function BotSettings() {
                       value=""
                       choices={bot.instructionHistory.map((version) => ({
                         key: version.id,
-                        label: `${new Date(version.createdAt).toLocaleString(dateLocaleForUi(uiLocale))} (${version.reason})`,
+                        label: `${new Date(version.createdAt).toLocaleString(dateLocale)} (${version.reason})`,
                       }))}
                       onChange={(versionId) => {
                         if (pending || instructions !== bot.instructions) return;

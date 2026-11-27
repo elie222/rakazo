@@ -6,7 +6,10 @@ import { AGENT_MEMORY_MAX_BYTES, buildAgentMemoryPrompt } from "./memory-context
 import { splitEndedEntries } from "./memory-expiry.js";
 import { appendMemoryFact } from "./memory-tools.js";
 
-/** Renders the bot's memory for a run, first moving entries whose end date has passed to the archive. */
+/**
+ * Renders the bot's and the Space's memory for a run, first moving entries whose end date has
+ * passed to each one's archive.
+ */
 export async function loadAgentMemoryContext(
   memory: MemoryStore,
   botId: string,
@@ -14,11 +17,18 @@ export async function loadAgentMemoryContext(
   options: { today?: string; maxBytes?: number } = {},
 ): Promise<string | undefined> {
   const stored = await readStoredMemory(memory, botId, context);
-  if (options.today) {
-    await bestEffort(
-      "archive ended memory entries",
-      archiveEndedEntries(memory, botId, stored.bot, options.today, context),
-    );
+  const { today } = options;
+  if (today) {
+    await Promise.all([
+      bestEffort(
+        "archive ended memory entries",
+        archiveEndedEntries(memory, { scope: "bot", botId }, stored.bot, today, context),
+      ),
+      bestEffort(
+        "archive ended shared memory entries",
+        archiveEndedEntries(memory, { scope: "user" }, stored.user, today, context),
+      ),
+    ]);
   }
   return buildAgentMemoryPrompt(
     promptDocuments(stored, options.today),
@@ -27,8 +37,8 @@ export async function loadAgentMemoryContext(
 }
 
 /**
- * The bot's own memory plus the user's, in the shape the prompt builder reads. The archive is
- * never shown, and with `today` neither are entries that ended before it.
+ * The bot's own memory plus the Space's shared memory, in the shape the prompt builder reads.
+ * Archives are never shown, and with `today` neither are entries that ended before it.
  */
 export async function readAgentMemory(
   memory: MemoryStore,
@@ -55,16 +65,15 @@ async function readStoredMemory(
 }
 
 function promptDocuments(stored: StoredMemory, today?: string): MemoryPromptDocument[] {
-  return [
-    ...stored.bot
+  const shown = (documents: StoredDocument[], scope: MemoryPromptDocument["scope"]) =>
+    documents
       .filter((document) => document.path !== MEMORY_ARCHIVE_PATH)
       .map((document) => ({
         ...document,
-        scope: "bot" as const,
+        scope,
         content: today ? splitEndedEntries(document.content, today).current : document.content,
-      })),
-    ...stored.user.map((document) => ({ ...document, scope: "user" as const })),
-  ];
+      }));
+  return [...shown(stored.bot, "bot"), ...shown(stored.user, "user")];
 }
 
 /**
@@ -73,7 +82,7 @@ function promptDocuments(stored: StoredMemory, today?: string): MemoryPromptDocu
  */
 async function archiveEndedEntries(
   memory: MemoryStore,
-  botId: string,
+  owner: { scope: "bot"; botId: string } | { scope: "user" },
   documents: StoredDocument[],
   today: string,
   context: AdapterContext,
@@ -86,8 +95,7 @@ async function archiveEndedEntries(
   const archive = documents.find((document) => document.path === MEMORY_ARCHIVE_PATH);
   await memory.commit(
     {
-      scope: "bot",
-      botId,
+      ...owner,
       path: MEMORY_ARCHIVE_PATH,
       content: moves.flatMap((move) => move.ended).reduce(appendMemoryFact, archive?.content ?? ""),
       expectedRevision: archive?.revision ?? 0,
@@ -97,8 +105,7 @@ async function archiveEndedEntries(
   for (const { document, current } of moves) {
     await memory.commit(
       {
-        scope: "bot",
-        botId,
+        ...owner,
         path: document.path,
         content: current,
         expectedRevision: document.revision,

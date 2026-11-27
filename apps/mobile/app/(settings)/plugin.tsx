@@ -3,13 +3,24 @@ import { useLingui } from "@lingui/react/macro";
 import type { McpServer, PluginPart } from "@rakazo/contracts";
 import { mcpServerConnection, mcpServerNeedsSignIn, PluginPreviewSchema } from "@rakazo/contracts";
 import {
+  canShareWithOrganization,
   catalogItemKey,
   connectCatalogItem,
+  connectionSharingOrganization,
   installedPluginParts,
   isCatalogItemConnected,
+  pluginInstallIsReadOnly,
+  pluginInstallScope,
+  selectPluginInstall,
 } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
-import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import {
+  Redirect,
+  useFocusEffect,
+  useIsFocused,
+  useLocalSearchParams,
+  useRouter,
+} from "expo-router";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
@@ -26,11 +37,13 @@ import { PluginIcon } from "../../components/integrations/plugin-icon";
 import { SkillSymbol } from "../../components/integrations/skill-symbol";
 import { NativeActionButton } from "../../components/native/native-action-button";
 import { NativeSymbol } from "../../components/native/native-symbol";
+import { SettingsGroup, SettingsSwitch } from "../../components/settings/settings-group";
 import {
   reachesOtherSpaces,
   SpaceAvailabilityPicker,
   useOwnSpaces,
 } from "../../components/settings/space-availability";
+import { useLiveStream } from "../../lib/api/roster-signals";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import { loadLastBotId } from "../../lib/inbox/last-bot";
@@ -44,6 +57,7 @@ import { openExternalUrl } from "../../lib/platform/open-url";
 import type { SaveSend } from "../../lib/query/query";
 import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
+import { activeOrganization, useOrganizations } from "../../lib/spaces/organizations";
 
 const SKILLS_SHOWN = 5;
 
@@ -59,7 +73,16 @@ function PluginScreen() {
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const { t } = useLingui();
+  useLiveStream(useIsFocused());
   const [lastBotId, setLastBotId] = useState<string | null>(null);
+  const organization = activeOrganization(useOrganizations().data);
+  const canShare = canShareWithOrganization(organization);
+  const [forOrganization, setForOrganization] = useState(false);
+  const organizationScope = pluginInstallScope(
+    params.organization === "1" ? true : undefined,
+    canShare,
+    forOrganization,
+  );
   const [allSkills, setAllSkills] = useState(false);
   const [noAuth, setNoAuth] = useState(new Set<string>());
 
@@ -72,6 +95,9 @@ function PluginScreen() {
   );
   const botId = lastBotId ?? "";
 
+  const organizationName = connectionSharingOrganization(
+    activeOrganization(useOrganizations().data),
+  );
   const managed = Boolean(params.managedConnectorId && params.managedSlug);
   const installsRead = rpcQuery("capabilities/list");
   const serversRead = rpcQuery("mcp/servers/list");
@@ -107,7 +133,7 @@ function PluginScreen() {
 
   // A pasted URL can differ from the normalized source the install is saved under.
   const savedAs = (source: string | undefined) =>
-    installs.find((row) => row.kind === "plugin" && row.source === source);
+    selectPluginInstall(installs, [source], params.installId, organizationScope);
   const previewRead = rpcQuery("capabilities/pluginPreview", { source: params.source });
   const previewQuery = useQuery(
     {
@@ -122,13 +148,16 @@ function PluginScreen() {
   const previewLoading = previewQuery.isLoading;
   const install =
     savedAs(params.installedSource) ?? (preview ? savedAs(preview.installedSource) : undefined);
+  const readOnly = pluginInstallIsReadOnly(install, organizationScope, canShare);
   const parts = install ? installedPluginParts(install.config) : [];
   const servers =
     install && parts.includes("connector")
       ? allServers.filter((server) => server.installId === install.id)
       : [];
   const installed = Boolean(install);
-  const everywhere = reachesOtherSpaces(install?.availability, useOwnSpaces().length);
+  const spaceCount = useOwnSpaces().length;
+  const everywhere =
+    Boolean(install?.organization) || reachesOtherSpaces(install?.availability, spaceCount);
 
   const change = useSave({
     save: (
@@ -160,6 +189,7 @@ function PluginScreen() {
             name: preview.name,
             source: preview.pinnedSource ?? params.source,
             pluginDigest: preview.digest,
+            ...(organizationScope ? { organization: true } : {}),
             config: {},
             pluginParts: next,
           });
@@ -243,9 +273,9 @@ function PluginScreen() {
   const managedConnected = managedApp ? isCatalogItemConnected(connections, managedApp) : false;
   const working = pending === "header";
   const action = managed
-    ? managedConnected
+    ? managedConnected || organizationName
       ? {
-          label: t`Added`,
+          label: managedConnected ? t`Added` : t`Connect`,
           onPress: () =>
             router.navigate({
               pathname: "/integrations",
@@ -281,13 +311,19 @@ function PluginScreen() {
         };
   useScreenHeader({
     title: params.name,
-    action: {
-      label: action.label,
-      prominence: action.destructive ? "destructive" : managedConnected ? "secondary" : "primary",
-      disabled: managed ? !managedApp : !ready,
-      busy,
-      onPress: action.onPress,
-    },
+    action: readOnly
+      ? null
+      : {
+          label: action.label,
+          prominence: action.destructive
+            ? "destructive"
+            : managedConnected
+              ? "secondary"
+              : "primary",
+          disabled: managed ? !managedApp : !ready,
+          busy,
+          onPress: action.onPress,
+        },
   });
 
   const description = detail?.description || params.description;
@@ -328,7 +364,20 @@ function PluginScreen() {
         </View>
 
         {description ? <Text style={styles.description}>{description}</Text> : null}
-        {install ? (
+        {!managed && canShare && !params.installId ? (
+          <SettingsGroup>
+            <SettingsSwitch
+              label={t`Install for organization`}
+              value={forOrganization}
+              onChange={setForOrganization}
+              disabled={busy}
+            />
+          </SettingsGroup>
+        ) : null}
+        {install?.organization && params.installId ? (
+          <Text style={styles.secondary}>{t`Organization`}</Text>
+        ) : null}
+        {install && !install.organization ? (
           <SpaceAvailabilityPicker
             kind="install"
             id={install.id}
@@ -402,7 +451,9 @@ function PluginScreen() {
                       ) : null}
                     </View>
                     <View style={styles.itemActions}>
-                      {!mcpServerNeedsSignIn(server) || noAuth.has(server.id) ? null : (
+                      {server.manageable === false ||
+                      !mcpServerNeedsSignIn(server) ||
+                      noAuth.has(server.id) ? null : (
                         <NativeActionButton
                           busy={pending === server.id}
                           disabled={busy}
@@ -412,7 +463,7 @@ function PluginScreen() {
                           prominence="secondary"
                         />
                       )}
-                      {botId ? (
+                      {botId && !server.organization ? (
                         assigned.has(server.id) ? (
                           <Text style={styles.secondary}>{t`In this bot`}</Text>
                         ) : (
@@ -456,7 +507,7 @@ function PluginScreen() {
               <Text style={styles.sectionTitle}>
                 {t`Skills`} <Text style={styles.count}>{skills.length}</Text>
               </Text>
-              {skillPack ? null : (
+              {skillPack || readOnly ? null : (
                 <NativeActionButton
                   busy={pending === "skills"}
                   disabled={busy || !ready}

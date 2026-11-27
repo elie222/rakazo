@@ -24,7 +24,6 @@ export function watchCheckoutLeaseClaims(prisma: PrismaClient) {
   return { prisma: watched, leaseRefused: leaseRefused.promise };
 }
 
-/** Lets the organization's checkout lease lapse, as a holder that stalled would. */
 export function expireCheckoutLease(prisma: Queries, organizationId: string) {
   return prisma.$executeRaw`
     UPDATE "leases" SET "expiresAt" = 'epoch' WHERE "key" = ${`billing-checkout:${organizationId}`}`;

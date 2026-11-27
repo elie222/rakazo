@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { rpc } from "../../../lib/query/rpc";
 import type { GalleryImage } from "./image-gallery";
-import { ImageGalleryProvider, useOpenImage } from "./image-gallery";
+import { ImageGalleryProvider, MessageImageRow, useOpenImage } from "./image-gallery";
 
 vi.mock("../../../lib/query/rpc", () => ({ rpc: { artifacts: { get: vi.fn() } } }));
 
@@ -222,4 +222,71 @@ it("keeps the selected picture when earlier images arrive", async () => {
   await render([{ artifactId: "x", name: "x", target: { botId: "bot" } }, ...first]);
   expect(previewName()).toBe("b");
   expect(document.querySelector('[role="dialog"]')?.textContent).toContain("3 / 4");
+});
+
+it("draws a message's pictures as one row and counts the ones it leaves out", async () => {
+  const many: GalleryImage[] = ["one", "two", "three", "four", "five"].map((name) => ({
+    artifactId: name,
+    name: `${name}.png`,
+    target: { botId: "bot" },
+  }));
+  await act(async () => {
+    root.render(
+      <ImageGalleryProvider images={many}>
+        <MessageImageRow images={many} />
+      </ImageGalleryProvider>,
+    );
+  });
+  const tiles = [...container.querySelectorAll("button")];
+  expect(tiles.map((tile) => tile.getAttribute("aria-label"))).toEqual([
+    "Show one.png",
+    "Show two.png",
+    "Show all 5 pictures",
+  ]);
+  expect(tiles[2]?.textContent).toBe("+3");
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+
+  // Each tile opens its own picture, so a run never lands on the wrong one.
+  for (const [index, name] of ["one.png", "two.png", "three.png"].entries()) {
+    await act(async () => {
+      tiles[index]?.click();
+    });
+    expect(previewName()).toBe(name);
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(`${index + 1} / 5`);
+    await press("Escape");
+  }
+});
+
+it("waits for the row to come near the viewport before downloading its pictures", async () => {
+  const observers: IntersectionObserverCallback[] = [];
+  class FakeObserver {
+    constructor(callback: IntersectionObserverCallback) {
+      observers.push(callback);
+    }
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  vi.stubGlobal("IntersectionObserver", FakeObserver as unknown as typeof IntersectionObserver);
+  vi.mocked(rpc.artifacts.get).mockClear();
+  const pair: GalleryImage[] = ["one", "two"].map((name) => ({
+    artifactId: name,
+    name: `${name}.png`,
+    target: { botId: "bot" },
+  }));
+  await act(async () => {
+    root.render(
+      <ImageGalleryProvider images={pair}>
+        <MessageImageRow images={pair} />
+      </ImageGalleryProvider>,
+    );
+  });
+  // A tile still shows which picture it stands for while it waits.
+  expect(container.textContent).toContain("one.png");
+  expect(vi.mocked(rpc.artifacts.get)).not.toHaveBeenCalled();
+
+  await act(async () => {
+    observers[0]?.([{ isIntersecting: true }] as IntersectionObserverEntry[], {} as never);
+  });
+  expect(vi.mocked(rpc.artifacts.get)).toHaveBeenCalledTimes(2);
 });

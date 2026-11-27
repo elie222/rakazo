@@ -81,7 +81,7 @@ async function getOwnedSkill(
 }
 
 export async function assertTeachingSendAllowed(
-  prisma: PrismaClient,
+  prisma: Pick<PrismaClient, "taughtSkill">,
   spaceId: string,
   botId: string,
 ): Promise<void> {

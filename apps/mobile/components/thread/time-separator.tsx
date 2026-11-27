@@ -3,11 +3,11 @@ import { formatTimeSeparator } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
 import { Text } from "react-native";
 import { mobileTokens } from "../../lib/appearance/appearance";
-import { dateLocaleForUi, useUiLocale } from "../../lib/i18n/i18n";
+import { useDateLocale } from "../../lib/i18n/i18n";
 
 export function TimeSeparator({ createdAt }: { createdAt?: string }) {
   const { t } = useLingui();
-  const locale = useUiLocale();
+  const dateLocale = useDateLocale();
   if (!createdAt) return null;
   return (
     <Text
@@ -20,7 +20,7 @@ export function TimeSeparator({ createdAt }: { createdAt?: string }) {
         marginVertical: 12,
       }}
     >
-      {formatTimeSeparator(createdAt, dateLocaleForUi(locale), {
+      {formatTimeSeparator(createdAt, dateLocale, {
         today: t`Today`,
         yesterday: t`Yesterday`,
       })}

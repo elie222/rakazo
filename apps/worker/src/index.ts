@@ -176,7 +176,6 @@ async function main() {
   // One provider instance so emulator launches and polls share the same Map.
   const cloudAgent = createCloudAgentConnection();
   const paymentWallet = await createPaymentWalletProvider();
-  // One instance: the executor submits videos and background polls finish them.
   const mediaGeneration = createMediaGenerationProvider();
   // Shared with the reconciler so a stuck wait uses the same push path as a finish notice.
   const { notifications, workActivities } = await createPushDelivery({
@@ -238,7 +237,6 @@ async function main() {
     jobs,
     events,
     onTicketChange: ticketChanges,
-    // Bots use a separate sending connection from account email.
     email,
     lifecycleEmail,
     messaging,
@@ -302,7 +300,6 @@ async function main() {
   let stopHealth: (() => Promise<void>) | undefined;
   let stopping = false;
   let stopped: Promise<void> | undefined;
-  // Every caller waits for the same shutdown, which can take as long as the running jobs do.
   const stop = () =>
     (stopped ??= (async () => {
       stopping = true;
@@ -312,7 +309,6 @@ async function main() {
         await stopHealth?.();
         await reconciler.stop();
         await jobHost.stop();
-        // A bot's email still on its way finishes before the process exits.
         await email?.drain?.();
         await accountEmail?.drain?.();
         await closeServerFoundation(foundation, { jobs, connectors });
@@ -326,7 +322,6 @@ async function main() {
         await logger.flush({ timeoutMs: 2_000 });
       }
     })());
-  // A failure hands the running turns back at once, as a process that may not be sound should.
   const stopNow = () => {
     runDrain.end();
     return stop();
