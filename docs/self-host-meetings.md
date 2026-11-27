@@ -30,8 +30,7 @@ Set `MEETING_PROVIDER=emulator` in a development process. The emulator immediate
 Run the web flow through the local emulator with:
 
 ```sh
-MEETING_PROVIDER=emulator MEETING_SIGNING_KEY="$(openssl rand -hex 32)" \
-  pnpm test:e2e -- --spec=meeting-transcript.spec.ts
+pnpm test:e2e -- --spec=meeting-transcript.spec.ts
 ```
 
 ## Add the branded camera and live voice
@@ -55,6 +54,5 @@ Before removing calendar credentials or switching meeting providers, disconnect 
 To exercise connection and scheduling with the local emulator, run:
 
 ```sh
-MEETING_PROVIDER=emulator MEETING_SIGNING_KEY="$(openssl rand -hex 32)" \
-  pnpm test:e2e -- --spec=meeting-calendar.spec.ts
+pnpm test:e2e -- --spec=meeting-calendar.spec.ts
 ```

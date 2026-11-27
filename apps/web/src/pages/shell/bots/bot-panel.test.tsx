@@ -448,7 +448,6 @@ describe("BotSettings thinking options", () => {
     const checked = (await openModelPicker()).find((option) => option.dataset.checked === "true");
     expect(checked?.dataset.value).toBe("openai-compatible::beta");
     expect((await openOptions(thinkingField())).map((option) => option.textContent)).toEqual([
-      "Default (Medium)",
       "Minimal",
       "Low",
       "Medium",

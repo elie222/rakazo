@@ -8,7 +8,7 @@
 
 内置 `web_search` 和 `web_fetch` 默认使用无密钥 HTTP 搜索（DuckDuckGo HTML）和本地 Readability 提取。要选择 [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp)，在 `.env` 中设置 `WEB_PROVIDER=parallel` 并重启 API 和 worker。相同的机器人工具会通过 HTTPS MCP 访问 `https://search.parallel.ai/mcp`，返回搜索摘录和提取后的页面 Markdown。无账号或 API 密钥时使用 Fast mode。
 
-该选项会把搜索查询和请求的页面 URL 发送给 Parallel，由其服务器抓取页面。会话统计使用以 `ENCRYPTION_KEY`（API 和 worker 共享）为密钥的内部 ID HMAC；密钥不同的部署会发送不同的会话 ID。轮换该密钥会重置会话 ID；仅开发环境使用的加密密钥回退同样适用于这里。匿名访问有服务限制；限流和提供商错误会返回给机器人，不会切换提供商。按机器人禁用的网页工具保持禁用。设置 `WEB_PROVIDER=keyless-http` 或删除该配置即可回到默认。
+该选项会把搜索查询和请求的页面 URL 发送给 Parallel，由其服务器抓取页面。会话统计使用以 `ENCRYPTION_KEY`（API 和 worker 共享）为密钥的内部 ID HMAC；密钥不同的部署会发送不同的会话 ID。轮换该密钥会重置会话 ID；仅开发环境使用的加密密钥回退同样适用于这里。匿名访问有服务限制；在 API 和 worker 上设置 `PARALLEL_API_KEY` 可以发送 Bearer 令牌并解除限制。限流和提供商错误会返回给机器人，不会切换提供商。按机器人禁用的网页工具保持禁用。设置 `WEB_PROVIDER=keyless-http` 或删除该配置即可回到默认。
 
 要改用 [Keenable](https://docs.keenable.ai)，设置 `WEB_PROVIDER=keenable` 并重启 API 和 worker。相同工具会通过 HTTPS MCP 访问 `https://api.keenable.ai/mcp`，无需账号或 API 密钥，返回搜索摘要和页面 Markdown。该选项会把查询和页面 URL 发送给 Keenable，由其服务器抓取。匿名访问按 IP 限流；在 API 和 worker 上设置 `KEENABLE_API_KEY` 可以发送密钥并解除限制。错误处理、按机器人禁用工具和恢复默认的方式与 Parallel 相同。
 

@@ -170,14 +170,11 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
               if (next) setRange(next as UsageDateRange);
             }}
             spacing={1}
-            className="grid grid-cols-4 rounded-lg bg-muted p-1"
+            variant="segmented"
+            className="grid grid-cols-4"
           >
             {ranges.map((r) => (
-              <ToggleGroupItem
-                key={r.id}
-                value={r.id}
-                className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
-              >
+              <ToggleGroupItem key={r.id} value={r.id}>
                 {r.label}
               </ToggleGroupItem>
             ))}

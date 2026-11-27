@@ -3,7 +3,9 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { BillingStatus, HeldCreditAmount } from "@rakazo/contracts";
 import {
+  ByokIntervalSchema,
   byokTierChangeOffered,
+  byokTrialRenewalOffered,
   byokYearlySwitchSavings,
   creditAmountChoices,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
@@ -137,6 +139,38 @@ export default function BillingScreen() {
         },
       ],
     );
+  // Each billing period lists the tiers offered at it; an action's id names both.
+  const renewalChoices = byokTrialRenewalOffered(status)
+    ? ByokIntervalSchema.options.flatMap((period) => {
+        const subactions = tiers.flatMap((offer) => {
+          // The plan the trial already has keeps the price it was started at.
+          const kept = period === interval && offer.tier === currentTier?.tier;
+          const cents = kept ? ownKeyCents : tierPriceCents(offer, period);
+          if (cents === null) return [];
+          const price = usd(cents);
+          return [
+            {
+              id: `${period}:${offer.tier}`,
+              title:
+                period === "year"
+                  ? t`${ph({ name: offer.name })}, ${price} / year`
+                  : t`${ph({ name: offer.name })}, ${price} / month`,
+              state: kept ? ("on" as const) : ("off" as const),
+            },
+          ];
+        });
+        return subactions.length
+          ? [
+              {
+                id: period,
+                title: period === "year" ? t`Yearly` : t`Monthly`,
+                displayInline: true,
+                subactions,
+              },
+            ]
+          : [];
+      })
+    : [];
   const tierRow = currentTier ? (
     <SettingsRow
       title={currentTier.name}
@@ -284,7 +318,22 @@ export default function BillingScreen() {
               }
             />
           ) : null}
-          {cancelledTrial && status.canManage && status.hasCustomer ? (
+          {renewalChoices.length ? (
+            <MenuView
+              actions={renewalChoices}
+              onPressAction={({ nativeEvent }) => {
+                const [period, tier] = nativeEvent.event.split(":");
+                const offer = tiers.find((candidate) => candidate.tier === tier);
+                const chosen = ByokIntervalSchema.safeParse(period).data;
+                if (offer && chosen)
+                  action((send) =>
+                    send("billing/renewTrial", { tier: offer.tier, interval: chosen }),
+                  );
+              }}
+            >
+              <SettingsRow title={t`Renew plan`} chevron="down" disabled={pending} />
+            </MenuView>
+          ) : cancelledTrial && status.canManage && status.hasCustomer ? (
             <SettingsRow
               title={t`Renew plan`}
               disabled={pending}

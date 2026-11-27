@@ -316,6 +316,9 @@ vi.mock("../platform/store-update", () => ({
   openStoreListing: storeUpdate.open,
   useStoreUpdateAvailable: () => storeUpdate.available,
 }));
+vi.mock("../appearance/app-icon", () => ({
+  appIconRead: { queryKey: ["device", "app-icon"], queryFn: async () => ({ supported: false }) },
+}));
 vi.mock("../appearance/appearance", () => ({
   getCachedAppearancePreference: () => "system",
   mobileTokens: () => ({}),
@@ -541,7 +544,6 @@ it("puts the bot style back and releases it when the save fails", async () => {
   const { screen } = await renderAccount(General);
   const { saving } = holdPreferenceSave();
   await act(async () => botStyleButton(screen, "Original").click());
-  // A second choice while the first is saving is not sent.
   await act(async () => botStyleButton(screen, "Rakazo").click());
   expect(
     vi.mocked(rpc).mock.calls.filter(([method]) => method === "preferences/update"),

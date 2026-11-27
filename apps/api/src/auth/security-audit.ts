@@ -17,7 +17,34 @@ type AuditedProcedure = {
  * new credential route is audited by adding a line here instead of a call in its handler.
  */
 export const AUDITED_PROCEDURES: Record<string, AuditedProcedure> = {
+  "apiKeys.create": { type: "credential.created", kind: "api_key" },
+  "apiKeys.revoke": { type: "credential.deleted", kind: "api_key", fields: ["id"] },
   "models.connect": { type: "credential.created", kind: "model", fields: ["provider"] },
+  "models.organizationConnections.create": {
+    type: "credential.created",
+    kind: "organization_model",
+    fields: ["provider"],
+  },
+  "models.organizationConnections.remove": {
+    type: "credential.deleted",
+    kind: "organization_model",
+    fields: ["id"],
+  },
+  "organizations.vault.signIn": {
+    type: "credential.changed",
+    kind: "organization_login_session",
+    fields: ["loginId"],
+  },
+  "organizations.vault.revokeSession": {
+    type: "credential.deleted",
+    kind: "organization_login_session",
+    fields: ["loginId"],
+  },
+  "organizations.vault.remove": {
+    type: "credential.deleted",
+    kind: "organization_login_session",
+    fields: ["loginId"],
+  },
   "models.finishOAuth": { type: "credential.created", kind: "model" },
   "models.disconnect": { type: "credential.deleted", kind: "model", fields: ["provider"] },
   "mcp.servers.create": { type: "credential.created", kind: "mcp" },

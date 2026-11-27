@@ -17,7 +17,6 @@ import android.util.Base64
 import android.util.Log
 import org.json.JSONObject
 
-/** What the messaging service does with a message push that is not a call. */
 internal enum class PushDisposition { EXPO, DROP, POST }
 
 /**

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { hostCredentialSource, resolveDeploymentModel } from "../../../models/deployment-model.js";
+import { agentCliModelSeesImages, modelAcceptsImageInput } from "../../../models/model-vision.js";
 import { openCodeAgent } from "./opencode-agent.js";
 import { OPENCODE_CLI_PROVIDER_ID } from "./provider-id.js";
 
@@ -65,6 +66,17 @@ describe("openCodeAgent", () => {
     expect(
       openCodeAgent.isMissingSession?.({ code: -32603, message: "Internal error", data: {} }),
     ).toBe(false);
+  });
+
+  it("lets its bots see images when the model it runs takes them", () => {
+    // A model the catalog knows decides; one it does not is taken at the CLI's word.
+    expect(
+      modelAcceptsImageInput(OPENCODE_CLI_PROVIDER_ID, "openrouter/anthropic/claude-haiku-4.5"),
+    ).toBe(true);
+    expect(modelAcceptsImageInput(OPENCODE_CLI_PROVIDER_ID, "opencode/big-pickle")).toBe(false);
+    expect(modelAcceptsImageInput(OPENCODE_CLI_PROVIDER_ID, "local/some-model")).toBe(true);
+    // The runtime asks the same of the model itself, whatever computer-use model a run also has.
+    expect(agentCliModelSeesImages(openCodeAgent, "opencode/big-pickle")).toBe(false);
   });
 
   it("is a deployment model the operator configures with the CLI's own sign-in", () => {

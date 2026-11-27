@@ -94,6 +94,9 @@ async function main() {
       process.env.INBOUND_EMAIL_SECRET = "test-inbound-email-secret-test-32chars";
       // The offline wallet, so Settings shows Wallet and sign-in completes without a provider.
       process.env.PAYMENT_WALLET_PROVIDER = "emulator";
+      process.env.MEETING_PROVIDER = "emulator";
+      process.env.MEETING_SIGNING_KEY = "test-meeting-signing-key-test-32chars";
+      process.env.MEETING_PUBLIC_ORIGIN = "";
       process.env.RAKAZO_NAV_LINKS = JSON.stringify([
         { id: "clients", label: "Clients", path: "/ext/clients/" },
       ]);

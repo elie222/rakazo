@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { guardedFlush, guardedWrite, logSinkHealth, reportSinkError } from "./sink-guard.js";
+import type * as SinkGuard from "./sink-guard.js";
 
-let now = Date.UTC(2026, 0, 1);
+let sinkGuard: typeof SinkGuard;
+const now = Date.UTC(2026, 0, 1);
 
-beforeEach(() => {
-  now += 30_000;
+beforeEach(async () => {
+  vi.resetModules();
+  sinkGuard = await import("./sink-guard.js");
   vi.spyOn(Date, "now").mockReturnValue(now);
 });
 
@@ -47,7 +49,7 @@ describe("sink failure diagnostics", () => {
   ])("redacts the $name before writing to the console", ({ error, expected }) => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    reportSinkError(error);
+    sinkGuard.reportSinkError(error);
 
     expect(consoleError).toHaveBeenCalledExactlyOnceWith("log sink failed", expected);
   });
@@ -56,24 +58,24 @@ describe("sink failure diagnostics", () => {
     {
       name: "synchronous write",
       fail: (error: Error) =>
-        guardedWrite(() => {
+        sinkGuard.guardedWrite(() => {
           throw error;
         }),
     },
     {
       name: "asynchronous write",
-      fail: (error: Error) => guardedWrite(() => Promise.reject(error)),
+      fail: (error: Error) => sinkGuard.guardedWrite(() => Promise.reject(error)),
     },
     {
       name: "synchronous flush",
       fail: (error: Error) =>
-        guardedFlush(() => {
+        sinkGuard.guardedFlush(() => {
           throw error;
         }),
     },
     {
       name: "asynchronous flush",
-      fail: (error: Error) => guardedFlush(() => Promise.reject(error)),
+      fail: (error: Error) => sinkGuard.guardedFlush(() => Promise.reject(error)),
     },
   ])("redacts $name failures without propagating them", async ({ fail }) => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -86,27 +88,25 @@ describe("sink failure diagnostics", () => {
 
   it("preserves throttling and sink health while redacting the next report", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
-    const failures = logSinkHealth().failures;
-
-    reportSinkError("first failure");
-    reportSinkError(sensitive);
+    sinkGuard.reportSinkError("first failure");
+    sinkGuard.reportSinkError(sensitive);
     expect(consoleError).toHaveBeenCalledExactlyOnceWith("log sink failed", "first failure");
-    expect(logSinkHealth()).toMatchObject({
-      failures: failures + 2,
+    expect(sinkGuard.logSinkHealth()).toMatchObject({
+      failures: 2,
       lastFailureAt: now,
       degraded: true,
     });
 
-    now += 30_000;
-    vi.mocked(Date.now).mockReturnValue(now);
-    reportSinkError(sensitive);
+    const nextReportAt = now + 30_000;
+    vi.mocked(Date.now).mockReturnValue(nextReportAt);
+    sinkGuard.reportSinkError(sensitive);
 
     expect(consoleError).toHaveBeenLastCalledWith("log sink failed (1 suppressed)", redacted);
-    expect(logSinkHealth()).toMatchObject({
-      failures: failures + 3,
-      lastFailureAt: now,
+    expect(sinkGuard.logSinkHealth()).toMatchObject({
+      failures: 3,
+      lastFailureAt: nextReportAt,
       degraded: true,
     });
-    expect(logSinkHealth(now + 300_000).degraded).toBe(false);
+    expect(sinkGuard.logSinkHealth(nextReportAt + 300_000).degraded).toBe(false);
   });
 });

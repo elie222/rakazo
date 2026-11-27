@@ -3,6 +3,7 @@
 // its first argument. What it does on a prompt depends on words in the prompt text:
 //   "weather"     calls the tool server's get_weather tool and replies with its result
 //   "note"        calls send_note, then waits to be cancelled
+//   "takeover"    calls request_takeover, then waits to be cancelled
 //   "native"      reports a call to a tool of its own
 //   "permission"  asks permission to run a tool of its own
 //   "fail"        answers the prompt with an error
@@ -141,6 +142,12 @@ async function prompt(params) {
       stopReason: "end_turn",
       usage: { inputTokens: 120, outputTokens: 8, totalTokens: 128 },
     };
+  }
+  if (text.includes("takeover")) {
+    const result = await callTool(sessionId, "request_takeover", { reason: "Log in for me" });
+    record({ type: "tool_result", result });
+    await cancelled;
+    return { stopReason: "cancelled" };
   }
   if (text.includes("note")) {
     const result = await callTool(sessionId, "send_note", { text: "hi" });

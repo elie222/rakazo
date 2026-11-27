@@ -80,6 +80,7 @@ import {
   throwIfAborted,
 } from "../models/model-credentials.js";
 import type { RouterContext } from "./context.js";
+import { organizationModelConnectionRoutes } from "./organization-model-connections.js";
 
 /** A secret store outage is answered as one the member waits out; any other failure is unchanged. */
 function secretStoreOutage(error: unknown): unknown {
@@ -164,6 +165,7 @@ export function modelsRoutes(ctx: RouterContext) {
     };
   return {
     models: {
+      organizationConnections: organizationModelConnectionRoutes(ctx),
       list: authed.models.list.handler(async ({ context }) =>
         withServingConnections(context.actor, await chatCatalog(context.actor)),
       ),
@@ -696,7 +698,6 @@ export function modelsRoutes(ctx: RouterContext) {
                 },
               );
               if (existing.length === 0) return;
-              // Credentials are account-wide, so disconnecting removes them from every Space.
               await tx.userModelCredential.deleteMany({
                 where: { userId: context.actor.userId, id: { in: ids } },
               });

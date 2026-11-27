@@ -32,6 +32,19 @@ it("marks only the reads a change kind covers as stale", async () => {
   expect(invalidated()).toEqual(["runs", "history", "usage", "routines"]);
 });
 
+it("marks the nested MCP server list stale after a capabilities signal", async () => {
+  const client = new QueryClient();
+  const servers = key("mcp", "servers", "list");
+  const tools = key("mcp", "servers", "tools");
+  client.setQueryData(servers, []);
+  client.setQueryData(tools, []);
+
+  await spaceChanged("capabilities", client);
+
+  expect(client.getQueryState(servers)?.isInvalidated).toBe(true);
+  expect(client.getQueryState(tools)?.isInvalidated).toBe(false);
+});
+
 it("knows which frames are read changes", () => {
   expect(isReadChangeKind("runs")).toBe(true);
   expect(isReadChangeKind("routines")).toBe(true);

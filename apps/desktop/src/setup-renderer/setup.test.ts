@@ -65,9 +65,7 @@ interface Harness {
   resolveCheck: (result: DesktopReachability) => void;
   /** What every `stack.start` call this mount receives resolves with. */
   startResult: Deferred<DesktopLocalStackState>;
-  /** How many times `stack.start` was called. */
   starts: () => number;
-  /** Links passed to `openLink`. */
   links: string[];
   /** Resolves the oldest pending `state` call, in call order. */
   resolveAppState: (saved: DesktopSetup | null) => void;
@@ -77,7 +75,6 @@ interface Harness {
   rejectStackState: (reason: unknown) => void;
   /** Delivers a pushed stack state the way the `desktop.setup.stack.changed` push does. */
   pushStackState: (state: DesktopLocalStackState) => void;
-  /** Payloads received by `save`. */
   saves: DesktopSetup[];
   /** Resolves the oldest pending `save` call, in call order. */
   resolveSave: (result: DesktopSetupResult) => void;

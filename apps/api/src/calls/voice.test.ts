@@ -53,10 +53,16 @@ describe("toVoiceStatus", () => {
   });
 });
 
+const voiceOriginEnv = {
+  webOrigin: "https://app.example.test",
+  apiUrl: "https://api.example.test",
+  authUrl: "https://app.example.test",
+};
+
 describe("voice HTTP routes", () => {
   it("rejects unauthenticated speak and transcribe", async () => {
     const app = new Hono();
-    mountVoiceHttpRoutes(app, {} as VoiceDeps, async () => null);
+    mountVoiceHttpRoutes(app, {} as VoiceDeps, async () => null, voiceOriginEnv);
     const speak = await app.request("/api/voice/speak", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -70,6 +76,53 @@ describe("voice HTTP routes", () => {
     expect(speak.status).toBe(401);
     expect(transcribe.status).toBe(401);
   });
+
+  it.each(["/api/voice/speak", "/api/voice/transcribe"])(
+    "rejects cookie requests to %s from an untrusted origin before authenticating",
+    async (path) => {
+      const authenticate = vi.fn(async () => actor);
+      const app = new Hono();
+      mountVoiceHttpRoutes(app, {} as VoiceDeps, authenticate, voiceOriginEnv);
+
+      const rejected = await app.request(path, {
+        method: "POST",
+        headers: {
+          cookie: "session=1",
+          origin: "https://other.example.test",
+          "content-type": "text/plain",
+        },
+        body: JSON.stringify({ text: "hello" }),
+      });
+
+      expect(rejected.status).toBe(403);
+      await expect(rejected.json()).resolves.toEqual({ error: "Request origin is not allowed." });
+      expect(authenticate).not.toHaveBeenCalled();
+
+      const trusted = await app.request(path, {
+        method: "POST",
+        headers: {
+          cookie: "session=1",
+          origin: voiceOriginEnv.webOrigin,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      const bearer = await app.request(path, {
+        method: "POST",
+        headers: {
+          cookie: "session=1",
+          origin: "https://other.example.test",
+          authorization: "Bearer token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+
+      expect(trusted.status).not.toBe(403);
+      expect(bearer.status).not.toBe(403);
+      expect(authenticate).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it.each([
     ["/api/voice/speak", MAX_SPEAK_REQUEST_BYTES],
@@ -92,6 +145,7 @@ describe("voice HTTP routes", () => {
         app,
         {} as VoiceDeps,
         async () => ({ userId: "user", spaceId: "space" }) as Actor,
+        voiceOriginEnv,
       );
 
       const response = await app.request(request);
@@ -120,6 +174,7 @@ describe("voice HTTP routes", () => {
       app,
       {} as VoiceDeps,
       async () => ({ userId: "user", spaceId: "space" }) as Actor,
+      voiceOriginEnv,
     );
 
     const response = await app.request(request);
@@ -392,7 +447,7 @@ describe("prepareVoice", () => {
       const result = await prepareVoice(deps, actor, { text, botId: "bot-1" });
       expect(result.ready).toBe(true);
       const app = new Hono();
-      mountVoiceHttpRoutes(app, deps, async () => actor);
+      mountVoiceHttpRoutes(app, deps, async () => actor, voiceOriginEnv);
       synthesize.mockClear();
 
       for (const utterance of result.utterances) {
@@ -589,7 +644,7 @@ describe("synthesizeVoice", () => {
       secrets: { load: vi.fn().mockReturnValue("fish-key"), put: vi.fn() },
     } as unknown as VoiceDeps;
     const app = new Hono();
-    mountVoiceHttpRoutes(app, deps, async () => actor);
+    mountVoiceHttpRoutes(app, deps, async () => actor, voiceOriginEnv);
 
     const response = await app.request("/api/voice/speak", {
       method: "POST",

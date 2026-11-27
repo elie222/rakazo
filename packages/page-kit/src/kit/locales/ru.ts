@@ -56,6 +56,8 @@ export const ru: Messages = {
   },
   slideOf: "{n} из {total}",
   showPhoto: "Показать фото {n}",
+  previousPhoto: "Предыдущее фото",
+  nextPhoto: "Следующее фото",
   view: "Открыть",
   viewTitle: "Открыть: {title}",
   rated: "Оценка {rating} из 5",

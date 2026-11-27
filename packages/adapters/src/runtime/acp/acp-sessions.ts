@@ -10,6 +10,8 @@ export interface AgentSession {
   cwd: string;
   /** Chat history ids the session has seen. */
   seen: Set<string>;
+  /** For each history message, how many images of each hash the session has been sent. */
+  imaged: Map<string, Map<string, number>>;
   /** Hashes of history entries without an id (summaries, recall) the session has seen. */
   context: Set<string>;
   /** Hashes of the replies this session wrote, told apart from replies written elsewhere. */

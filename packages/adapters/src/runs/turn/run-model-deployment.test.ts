@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
+import { createStreamingRedactor, MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 import { resolveConnectedModelKey, resolvedModelRunFields, resolveModelKey } from "./run-model.js";
@@ -178,7 +178,7 @@ function startHostRun(deps: ExecutorDeps) {
 }
 
 describe("an operator's workload identity", () => {
-  it("registers rotated bearers for redaction before returning them to the runtime", async () => {
+  it("redacts old and renewed credentials from progress throughout a run", async () => {
     await withHostIdentity(async () => {
       const now = vi.spyOn(Date, "now");
       const initialTime = Date.now();
@@ -193,7 +193,8 @@ describe("an operator's workload identity", () => {
         );
       vi.stubGlobal("fetch", fetcher);
       const { deps, load } = setup(false);
-      const registerSecrets = vi.fn();
+      const secrets: string[] = [];
+      const registerSecrets = vi.fn((values: string[]) => secrets.push(...values));
       const resolved = await resolveModelKey(
         deps,
         scope.userId,
@@ -206,15 +207,36 @@ describe("an operator's workload identity", () => {
       expect(resolved).toMatchObject({ apiKey: "fixture-runtime-bearer", billing: "deployment" });
       expect(registerSecrets).toHaveBeenCalledWith(["fixture-runtime-bearer"]);
       expect(load).not.toHaveBeenCalled();
+      const redactor = createStreamingRedactor(secrets);
+      const initialProgress = redactor.push("Before fixture-runtime-");
       now.mockReturnValue(initialTime + 32_000);
       const { resolveApiKey } = resolvedModelRunFields(resolved);
       expect(resolveApiKey).toBeTypeOf("function");
       expect(await resolveApiKey?.()).toBe("fixture-rotated-bearer");
+      const progress = [
+        initialProgress,
+        redactor.push("bearer then fixture-ro"),
+        redactor.push("tated-bearer."),
+        redactor.finish(),
+      ].join("");
+      expect(progress).toBe("Before [redacted] then [redacted].");
       expect(registerSecrets.mock.calls).toEqual([
         [["fixture-runtime-bearer"]],
         [["fixture-rotated-bearer"]],
       ]);
       expect(fetcher).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("rejects a different keyless model without exchanging the host assertion", async () => {
+    await withHostIdentity(async () => {
+      const fetcher = vi.fn<typeof fetch>();
+      vi.stubGlobal("fetch", fetcher);
+      const { deps } = setup(false);
+      await expect(
+        resolveModelKey(deps, scope.userId, scope.spaceId, null, "openai", "gpt-other"),
+      ).rejects.toThrow(MISSING_MODEL_RUN_ERROR);
+      expect(fetcher).not.toHaveBeenCalled();
     });
   });
 

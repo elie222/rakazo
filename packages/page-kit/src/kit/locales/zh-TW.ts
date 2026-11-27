@@ -51,6 +51,8 @@ export const zhTW: Messages = {
   photos: { other: "{count} 張照片" },
   slideOf: "第 {n} 張，共 {total} 張",
   showPhoto: "顯示第 {n} 張照片",
+  previousPhoto: "上一張照片",
+  nextPhoto: "下一張照片",
   view: "查看",
   viewTitle: "查看{title}",
   rated: "評分 {rating}/5",

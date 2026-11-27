@@ -384,6 +384,34 @@ test("start the own-key plan billed yearly", async ({ page }, testInfo) => {
   expect(selected).toEqual({ funding: "byok", interval: "year" });
 });
 
+test("an early user whose free period ended can still self-host", async ({ page }, testInfo) => {
+  await signup(page, `free-ended-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await completeOnboarding(page);
+  await page.route("**/api/auth/capabilities", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), billing: true } });
+  });
+  await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
+  await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
+  const status = billingStatus({
+    creditPurchasesEnabled: true,
+    byokPriceCents: 1500,
+    byokAnnualPriceCents: 14400,
+    funding: "byok",
+    balanceUsd: 0,
+    monthlyAmountCents: null,
+    trialAvailable: false,
+    freePeriodEnded: true,
+  });
+  await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: status } }));
+  await page.reload();
+  await expect(page.getByRole("link", { name: "self-host" })).toHaveAttribute(
+    "href",
+    "https://rakazo.com/docs/self-host",
+  );
+  await captureScreenshot(page, testInfo, "billing-free-period-ended");
+});
+
 test("end an own-key trial early to get full computer hours", async ({ page }, testInfo) => {
   await signup(page, `trial-end-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
   await completeOnboarding(page);
@@ -429,9 +457,7 @@ test("end an own-key trial early to get full computer hours", async ({ page }, t
   await expect.poll(() => ended).toBe(true);
 });
 
-test("a cancelled trial explains its missing computer hours and offers renewal", async ({
-  page,
-}, testInfo) => {
+test("a cancelled yearly trial renews on a monthly plan", async ({ page }, testInfo) => {
   await signup(page, `trial-cancelled-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
   await completeOnboarding(page);
   await page.route("**/api/auth/capabilities", async (route) => {
@@ -440,11 +466,22 @@ test("a cancelled trial explains its missing computer hours and offers renewal",
   });
   await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
   await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
-  const trial = billingStatus({
+  let trial = billingStatus({
     access: true,
     trialAvailable: false,
     creditPurchasesEnabled: true,
-    byokPriceCents: 1000,
+    byokPriceCents: 14400,
+    byokInterval: "year",
+    byokAnnualPriceCents: 14400,
+    byokTier: "standard",
+    byokTiers: tiers.map((offer) => ({
+      ...offer,
+      computerSizeChoice: true,
+      computerHours: sandboxAllowanceHours(
+        BYOK_TIERS[offer.tier].computerAllowanceCents,
+        SANDBOX_SIZE_HOURLY_COST_MICROS.standard,
+      ),
+    })),
     funding: "byok",
     balanceUsd: 0,
     monthlyAmountCents: null,
@@ -456,10 +493,11 @@ test("a cancelled trial explains its missing computer hours and offers renewal",
     computerHoursLeft: 0,
   });
   await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: trial } }));
-  let portalOpened = false;
-  await page.route("**/rpc/billing/portal", async (route) => {
-    portalOpened = true;
-    await route.fulfill({ json: { json: { url: "/app" } } });
+  let renewedOn: unknown = null;
+  await page.route("**/rpc/billing/renewTrial", async (route) => {
+    renewedOn = route.request().postDataJSON()?.json;
+    trial = { ...trial, byokPriceCents: 1500, byokInterval: "month", cancelAtPeriodEnd: false };
+    await route.fulfill({ json: { json: trial } });
   });
   await page.reload();
   const settings = await openUserSettings(page, "billing");
@@ -468,8 +506,15 @@ test("a cancelled trial explains its missing computer hours and offers renewal",
   ).toBeVisible();
   await expect(settings.getByRole("button", { name: "Start plan now" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "billing-cancelled-trial-computer-hours");
-  await settings.getByRole("button", { name: "Renew plan", exact: true }).click();
-  await expect.poll(() => portalOpened).toBe(true);
+  await expect(settings.getByRole("button", { name: "Renew for $144 / year" })).toBeVisible();
+  await settings
+    .getByRole("group", { name: "Billing period" })
+    .getByRole("button", { name: "Monthly" })
+    .click();
+  await captureScreenshot(page, testInfo, "billing-cancelled-trial-renew-monthly");
+  await settings.getByRole("button", { name: "Renew for $15 / month", exact: true }).click();
+  await expect.poll(() => renewedOn).toEqual({ tier: "standard", interval: "month" });
+  await expect(settings.getByTestId("own-key-plan").getByText("$15 / month")).toBeVisible();
 });
 
 test("switch a monthly own-key plan to yearly", async ({ page }, testInfo) => {

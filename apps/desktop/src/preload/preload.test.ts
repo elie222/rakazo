@@ -53,6 +53,7 @@ describe("desktop preload bridge", () => {
     expect(globalName).toBe("rakazoDesktop");
     expect(bridge.platform).toBe("linux");
     expect(Object.keys(bridge).sort()).toEqual([
+      "appIcon",
       "badge",
       "clipboard",
       "computer",
@@ -77,6 +78,10 @@ describe("desktop preload bridge", () => {
       "toggleMaximize",
     ]);
     expect(Object.keys(bridge.update).sort()).toEqual(["check", "download", "install", "state"]);
+
+    await bridge.appIcon!.get();
+    await bridge.appIcon!.set("cap");
+    expect(invoke).toHaveBeenCalledWith("desktop.appIcon.set", "cap");
 
     expect(Object.keys(bridge.badge!)).toEqual(["set"]);
     await bridge.badge!.set(7);
@@ -105,6 +110,8 @@ describe("desktop preload bridge", () => {
     await bridge.update.install();
     await bridge.server!.change();
     expect(invoke.mock.calls.map(([channel]) => channel)).toEqual([
+      "desktop.appIcon.get",
+      "desktop.appIcon.set",
       "desktop.badge.set",
       "desktop.clipboard.write",
       "desktop.device.state",

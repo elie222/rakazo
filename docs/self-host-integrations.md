@@ -15,7 +15,7 @@ This option sends search queries and requested page URLs to Parallel, which retr
 on its servers. Conversation accounting uses an HMAC of internal IDs keyed by
 `ENCRYPTION_KEY` (shared by the API and worker), so deployments with distinct secrets send
 distinct session IDs. Rotating that secret resets the session IDs; the existing development-only
-encryption-key fallback also applies here. Anonymous access has service limits; rate-limit and provider errors are returned
+encryption-key fallback also applies here. Anonymous access has service limits; set `PARALLEL_API_KEY` on the API and worker to send a Bearer token and lift those limits. Rate-limit and provider errors are returned
 to the bot without switching providers. Per-bot disabled web tools remain disabled. Set
 `WEB_PROVIDER=keyless-http` (or remove the setting) to return to the default.
 
@@ -60,7 +60,8 @@ listed there, including banks created by another app using that prefix.
 
 Remote MCP servers and installed API / GraphQL connectors default to public HTTPS. The deployment
 owner can attach one on localhost, the same LAN, or a Docker network. Set
-`MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker to allow these for every user. Cloud
+`MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker to allow these for every user. It also
+lets bots send [saved credentials](./bot-secrets.md) to HTTPS origins on private addresses. Cloud
 metadata addresses stay blocked. Leave the flag unset on public installs.
 
 Remote MCP servers that use OAuth normally register Rakazo with their provider on the first
@@ -156,6 +157,12 @@ option uses browser sign-in and exposes the apps the person has configured in th
 organization. [Composio Connect](https://docs.composio.dev/docs/composio-connect) offers a separate
 personal MCP connection at `https://connect.composio.dev/mcp`. It supports browser sign-in for
 compatible MCP clients and a consumer key for header-based clients.
+
+Browsing and importing plugins reads public repositories through the GitHub API, which gives
+anonymous callers a small hourly quota per address. If plugin previews start to fail, set
+`PLUGIN_GITHUB_TOKEN` on the API. The token is sent only to `api.github.com`.
+Anyone who can browse or import plugins triggers requests using this token, so use only
+a classic token with no scopes to avoid granting private repo or other access.
 
 A call on a shared mailbox is refused when the Outlook sign-in does not request the matching
 `.Shared` permission, and a connection made through Composio's default Outlook setup has been seen

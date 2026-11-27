@@ -51,7 +51,13 @@ import {
   modelProviderAllowed,
   modelProviderAllowlist,
 } from "../../models/model-provider-allowlist.js";
-import { resolveMemberMainModel, selectConfiguredModel } from "../../models/model-roles.js";
+import { modelProviderDefinition } from "../../models/model-provider-registry.js";
+import {
+  ORGANIZATION_MODEL_CONNECTION_PREFIX,
+  resolveMemberMainModel,
+  selectConfiguredModel,
+  selectedOrganizationModelConnection,
+} from "../../models/model-roles.js";
 import type { StoredModelSecret } from "../../models/model-secret.js";
 import { modelBilling, parseModelSecret, secretValuesToRedact } from "../../models/model-secret.js";
 import {
@@ -177,6 +183,17 @@ export async function modelCreditBillingEnabled(
 
 export async function resolveModelKey(...args: Parameters<typeof resolveModelKeyMaterial>) {
   const [deps, userId, spaceId, , provider] = args;
+  const selectedConnection = args[7]?.connectionId;
+  if (selectedConnection?.startsWith(ORGANIZATION_MODEL_CONNECTION_PREFIX)) {
+    return resolveOrganizationModelKey(
+      deps,
+      { userId, spaceId },
+      selectedConnection,
+      provider,
+      args[5],
+      args[6],
+    );
+  }
   const operatorFunded = args[7]?.operatorFunded === true;
   if (operatorFunded && (args[3] || args[7]?.creditOfferingId || args[7]?.requireStoredSecret))
     throw new UnavailableModelForAuthError("Conflicting model funding sources");
@@ -214,7 +231,10 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
     provider === LOCAL_PROVIDER_ID ||
     (provider === OPENAI_COMPATIBLE_PROVIDER_ID && Boolean(material.baseUrl)) ||
     (provider === "scripted" && deps.runtime?.describe().capabilities.scripted) ||
-    (!credential && deployment.provider === provider && deployment.hostCredentials);
+    (!credential &&
+      deployment.provider === provider &&
+      deployment.hostCredentials &&
+      !modelProviderDefinition(provider)?.hostCredentials?.key);
   // Match Pi's OpenRouter fallback only when no explicit key overrides it.
   const runtimeKey =
     material.apiKey === undefined && (provider === "openrouter" || provider === "scripted")
@@ -243,6 +263,102 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
   };
 }
 
+export async function resolveOrganizationModelKey(
+  deps: Pick<ExecutorDeps, "prisma" | "secretStore" | "mcpAllowPrivateEndpoint">,
+  scope: { userId: string; spaceId: string },
+  connectionId: string,
+  provider: string,
+  modelId: string,
+  registerSecrets?: (values: string[]) => void,
+): Promise<
+  Awaited<ReturnType<typeof resolveModelKeyMaterial>> & {
+    connectionId: string;
+    callObserver?: undefined;
+  }
+> {
+  if (!modelProviderAllowed(modelProviderAllowlist(), provider))
+    throw new UnavailableModelForAuthError(MODEL_PROVIDER_NOT_ALLOWED_ERROR);
+  const row = await selectedOrganizationModelConnection(
+    deps.prisma,
+    scope,
+    connectionId,
+    provider,
+    modelId,
+  );
+  if (!row)
+    throw new UnavailableModelForAuthError(
+      "Choose an available organization model or switch to your saved model.",
+    );
+  const plaintext = await deps.secretStore.load(row.ciphertext, row.secretId);
+  const secret = parseModelSecret(plaintext);
+  const redact = secretValuesToRedact(secret);
+  registerSecrets?.(redact);
+  if (secret.kind === "oauth")
+    throw new UnavailableModelForAuthError("The organization model requires an API key.");
+  const authError = validateModelAuthAvailability(provider, modelId, plaintext);
+  if (authError) throw new UnavailableModelForAuthError(authError);
+  const apiKey = secret.kind === "api_key" ? secret.key : secret.apiKey;
+  if (!apiKey?.trim()) throw new UnavailableModelForAuthError(MISSING_MODEL_RUN_ERROR);
+  return {
+    ...storedModelRunFields(deps, secret, provider, modelId, {
+      defaultModel: modelId,
+      supportsImages: row.supportsImages,
+    }),
+    apiKey,
+    billing: "organization",
+    redact,
+    connectionId,
+  };
+}
+
+function storedModelRunFields(
+  deps: Pick<ExecutorDeps, "mcpAllowPrivateEndpoint">,
+  secret: StoredModelSecret,
+  provider: string,
+  modelId: string,
+  credential: NonNullable<Parameters<typeof connectionModelSettings>[3]>,
+) {
+  const endpoint = secret.kind === "openai_compatible" ? secret : undefined;
+  const apiKeySecret = secret.kind === "api_key" ? secret : undefined;
+  const baseUrl = endpoint?.baseUrl;
+  const allowPrivateEndpoint = baseUrl ? deps.mcpAllowPrivateEndpoint === true : undefined;
+  if (baseUrl) {
+    try {
+      // The public gate stays with the request-time fetch guard.
+      assertAllowedOpenAiCompatibleUrl(baseUrl, {
+        allowPublic: true,
+        allowPrivate: allowPrivateEndpoint,
+      });
+    } catch (error) {
+      throw new UnavailableModelForAuthError((error as Error).message);
+    }
+  }
+  const settings = connectionModelSettings(secret, provider, modelId, credential);
+  cloudflareProviderEnv({
+    provider,
+    accountId: apiKeySecret?.accountId,
+    gatewayId: apiKeySecret?.gatewayId,
+  });
+  return {
+    baseUrl,
+    headers: endpoint?.headers,
+    apiProtocol: endpoint?.apiProtocol,
+    allowPrivateEndpoint,
+    accountId: apiKeySecret?.accountId,
+    gatewayId: apiKeySecret?.gatewayId,
+    projectId: apiKeySecret?.projectId,
+    region: apiKeySecret?.region,
+    zeroDataRetention: apiKeySecret?.zeroDataRetention,
+    cacheCapabilities: secret.kind !== "oauth" ? secret.cacheCapabilities : undefined,
+    acceptsImages: settings.images,
+    maxImagesPerPrompt: settings.maxImagesPerPrompt,
+    contextWindow: settings.contextWindow,
+    maxTokens: settings.maxTokens,
+    reasoning: settings.reasoning,
+    thinkingLevel: settings.thinkingLevel,
+  };
+}
+
 async function resolveModelKeyMaterial(
   deps: ExecutorDeps,
   userId: string,
@@ -265,6 +381,7 @@ async function resolveModelKeyMaterial(
   }: {
     requireStoredSecret?: boolean;
     creditOfferingId?: string;
+    connectionId?: string;
     operatorFunded?: boolean;
     /** The same settings snapshot used to choose the deployment fallback. */
     adminSettings?: SavedDeploymentModel | null;
@@ -368,58 +485,19 @@ async function resolveModelKeyMaterial(
       }
       assertCompatibleModelEnabled(credential, resolved.secret, modelId);
       const oauth = resolved.secret.kind === "oauth" ? resolved.secret.credential : undefined;
-      const baseUrl =
-        resolved.secret.kind === "openai_compatible" ? resolved.secret.baseUrl : undefined;
-      // Recheck operator configuration for saved private connections on every run.
-      const allowPrivateEndpoint = baseUrl ? deps.mcpAllowPrivateEndpoint === true : undefined;
-      if (baseUrl) {
-        try {
-          // The public gate stays with the request-time fetch guard.
-          assertAllowedOpenAiCompatibleUrl(baseUrl, {
-            allowPublic: true,
-            allowPrivate: allowPrivateEndpoint,
-          });
-        } catch (error) {
-          throw new UnavailableModelForAuthError((error as Error).message);
-        }
-      }
-      const settings = connectionModelSettings(resolved.secret, provider, modelId, credential);
-      // The account catalog knows what a Codex model reads; elsewhere the model's setting
-      // decides wherever the bundled catalog cannot.
-      // Live-only models have no static reasoning or context card to fall back to.
-      // Keep explicit context limits; enable thinking when the account advertises efforts.
-      const acceptsImages = liveCodex?.supportsImages ?? settings.images;
-      const accountId = resolved.secret.kind === "api_key" ? resolved.secret.accountId : undefined;
-      const gatewayId = resolved.secret.kind === "api_key" ? resolved.secret.gatewayId : undefined;
-      cloudflareProviderEnv({ provider, accountId, gatewayId });
-      const projectId = resolved.secret.kind === "api_key" ? resolved.secret.projectId : undefined;
-      const region = resolved.secret.kind === "api_key" ? resolved.secret.region : undefined;
-      const zeroDataRetention =
-        resolved.secret.kind === "api_key" ? resolved.secret.zeroDataRetention : undefined;
+      const fields = storedModelRunFields(deps, resolved.secret, provider, modelId, credential);
+      // The live catalog can describe models absent from the bundled catalog.
       return {
+        ...fields,
         apiKey: resolved.apiKey,
-        accountId,
-        gatewayId,
-        projectId,
-        region,
-        zeroDataRetention,
-        baseUrl,
-        apiProtocol:
-          resolved.secret.kind === "openai_compatible" ? resolved.secret.apiProtocol : undefined,
-        headers: resolved.secret.kind === "openai_compatible" ? resolved.secret.headers : undefined,
-        allowPrivateEndpoint,
-        cacheCapabilities:
-          resolved.secret.kind !== "oauth" ? resolved.secret.cacheCapabilities : undefined,
-        contextWindow: settings.contextWindow ?? liveCodex?.contextWindow,
-        reasoning: liveCodex?.reasoningEfforts.length ? true : settings.reasoning,
+        contextWindow: fields.contextWindow ?? liveCodex?.contextWindow,
+        reasoning: liveCodex?.reasoningEfforts.length ? true : fields.reasoning,
         thinkingLevel: savedThinkingLevel(
-          settings.thinkingLevel,
+          fields.thinkingLevel,
           { modelId: credential.defaultModel, thinkingLevel: credential.thinkingLevel },
           modelId,
         ),
-        maxTokens: settings.maxTokens,
-        acceptsImages,
-        maxImagesPerPrompt: settings.maxImagesPerPrompt,
+        acceptsImages: liveCodex?.supportsImages ?? fields.acceptsImages,
         oauth,
         persistOAuth: oauth
           ? persistRefreshedModelCredential(
@@ -563,6 +641,18 @@ export async function resolveConnectedModelKey(
   if (!modelProviderAllowed(modelProviderAllowlist(), provider)) {
     throw new UnavailableModelForAuthError(MODEL_PROVIDER_NOT_ALLOWED_ERROR);
   }
+  if (credentialId?.startsWith(ORGANIZATION_MODEL_CONNECTION_PREFIX))
+    return {
+      credential: null,
+      resolved: await resolveOrganizationModelKey(
+        deps,
+        scope,
+        credentialId,
+        provider,
+        modelId,
+        registerSecrets,
+      ),
+    };
   const creditOfferingId = creditOfferingFromConnectionId(credentialId);
   if (creditOfferingId) {
     const resolved = await resolveModelKey(
@@ -721,6 +811,7 @@ export async function resolveRunModel(
     undefined,
     {
       adminSettings: settings,
+      connectionId: selected.connectionId,
       creditOfferingId: creditOfferingFromConnectionId(selected.connectionId),
       requireStoredSecret: Boolean(
         selected.connectionId && !creditOfferingFromConnectionId(selected.connectionId),

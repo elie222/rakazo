@@ -40,7 +40,12 @@ import {
 } from "../thinking-signatures.js";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./models/pi-openai-compatible-provider.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
-import { assistantText, messageHasToolCall, sanitizeProviderError } from "./pi-runtime-errors.js";
+import {
+  assistantText,
+  failedAssistantMessage,
+  messageHasToolCall,
+  sanitizeProviderError,
+} from "./pi-runtime-errors.js";
 import {
   effectiveOutputReserve,
   modelStreamTimeoutMs,
@@ -354,27 +359,8 @@ export function fallbackAwareModelStream(
   const finishWithThrownError = (target: RuntimeModelTarget, error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     recordFailure(target, message);
-    const aborted = signalAborted() || /abort|cancel/i.test(message);
-    const stopReason: "aborted" | "error" = aborted ? "aborted" : "error";
-    const failure: AssistantMessage = {
-      role: "assistant",
-      content: lastPartial?.content ?? [],
-      api: target.model.api,
-      provider: target.model.provider,
-      model: target.model.id,
-      usage: {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 0,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-      },
-      stopReason,
-      errorMessage: message,
-      timestamp: Date.now(),
-    };
-    output.push({ type: "error", reason: stopReason, error: failure });
+    const failure = failedAssistantMessage(target.model, message, signalAborted(), lastPartial);
+    output.push({ type: "error", reason: failure.stopReason, error: failure });
     output.end(failure);
   };
   const failIfAborted = (target: RuntimeModelTarget) => {
@@ -484,6 +470,7 @@ export function fallbackAwareModelStream(
     let firstRetryableError: Extract<AssistantMessageEvent, { type: "error" }> | undefined;
     // Set once this call has been repeated after spending its output budget on nothing visible.
     let lengthRecovered = false;
+    let regeneratedToolCall = false;
     let emptyRetries = 0;
     let outputBudget = state.nextCallRecovery?.maxTokens;
     let thinkingOverride = state.nextCallRecovery?.thinkingLevel;
@@ -570,10 +557,27 @@ export function fallbackAwareModelStream(
           });
         }
       }
+      let renewableKey: string | undefined;
       try {
-        const renewableKey = target.config.resolveApiKey
-          ? await target.config.resolveApiKey(signal)
-          : undefined;
+        if (target.config.resolveApiKey) renewableKey = await target.config.resolveApiKey(signal);
+      } catch {
+        paceSlot?.release();
+        if (failIfAborted(target)) return;
+        // Nothing has streamed yet. Keep raw credential errors out of progress.
+        const failure = new Error("Could not renew the model credential.");
+        recordFailure(target, failure.message);
+        state.primaryFailure ??= failure.message;
+        const switched = await switchToNext(target);
+        if (failIfAborted(target)) return;
+        if (switched) {
+          resetForBackup();
+          buffered = [];
+          continue;
+        }
+        finishWithThrownError(target, failure);
+        return;
+      }
+      try {
         const apiKey = renewableKey ?? target.credentials?.accessToken ?? target.apiKey;
         const reasoning = thinkingLevel === "off" ? undefined : thinkingLevel;
         stream = state.stream(
@@ -615,6 +619,25 @@ export function fallbackAwareModelStream(
               !sizingFailure &&
               state.isProviderFailure(event.error)
             ) {
+              if (
+                event.error.rawStopReason === "MALFORMED_FUNCTION_CALL" &&
+                !regeneratedToolCall &&
+                state.selfRecoveries < MAX_SELF_RECOVERIES_PER_RUN
+              ) {
+                // The provider rejected its own output. Regenerate only this model step;
+                // the context already contains the results of all previously executed tools.
+                regeneratedToolCall = true;
+                state.selfRecoveries += 1;
+                getLogger().info("model.malformed_tool_call.retry", {
+                  runId: state.request.runId,
+                  provider: target.config.provider,
+                  model: target.config.id,
+                });
+                lastPartial = undefined;
+                buffered = [];
+                restart = true;
+                break;
+              }
               const requestWindow = groqRequestContextWindow(
                 target.config.provider,
                 event.error.errorMessage,

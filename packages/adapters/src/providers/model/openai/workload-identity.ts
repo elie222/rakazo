@@ -71,6 +71,21 @@ function logTransportFailure(phase: "fetch" | "read_response", error: unknown) {
   return true;
 }
 
+function unexpectedExchangeFailure(
+  phase: "read_assertion" | "fetch" | "read_response",
+  error: unknown,
+  message: string,
+) {
+  // Names, messages and codes from an arbitrary error can contain private input.
+  // Classify known JS types instead of passing diagnostic data through.
+  getLogger().warn("Unexpected OpenAI workload identity failure", {
+    phase,
+    type:
+      error instanceof TypeError ? "type_error" : error instanceof Error ? "error" : "non_error",
+  });
+  return new Error(message);
+}
+
 export async function exchangeWorkloadIdentity(
   value: unknown,
   signal: AbortSignal,
@@ -83,7 +98,12 @@ export async function exchangeWorkloadIdentity(
     .catch((error: unknown) => {
       signal.throwIfAborted();
       const code = knownFailureCode(error, FILE_FAILURES);
-      if (!code) throw new Error("Unexpected workload identity assertion read failure.");
+      if (!code)
+        throw unexpectedExchangeFailure(
+          "read_assertion",
+          error,
+          "Unexpected workload identity assertion read failure.",
+        );
       getLogger().warn("OpenAI workload identity assertion read failed", { code });
       throw new ClientError(
         "SERVICE_UNAVAILABLE",
@@ -107,7 +127,11 @@ export async function exchangeWorkloadIdentity(
   }).catch((error: unknown) => {
     signal.throwIfAborted();
     if (!logTransportFailure("fetch", error))
-      throw new Error("Unexpected OpenAI token service request failure.");
+      throw unexpectedExchangeFailure(
+        "fetch",
+        error,
+        "Unexpected OpenAI token service request failure.",
+      );
     throw new ClientError("SERVICE_UNAVAILABLE", "Could not reach the OpenAI token service.");
   });
   if (!response.ok) {
@@ -128,7 +152,11 @@ export async function exchangeWorkloadIdentity(
     signal.throwIfAborted();
     if (error instanceof SyntaxError) throw invalidResponse();
     if (!logTransportFailure("read_response", error))
-      throw new Error("Unexpected OpenAI token service response failure.");
+      throw unexpectedExchangeFailure(
+        "read_response",
+        error,
+        "Unexpected OpenAI token service response failure.",
+      );
     throw new ClientError(
       "SERVICE_UNAVAILABLE",
       "Could not read the OpenAI token service response.",
@@ -178,7 +206,17 @@ export function createWorkloadIdentityKeyResolver(exchange = exchangeWorkloadIde
           entry.pending = undefined;
         });
     }
-    return (await (signal ? withAbort(entry.pending, signal) : entry.pending)).key;
+    try {
+      return (await (signal ? withAbort(entry.pending, signal) : entry.pending)).key;
+    } catch (error) {
+      signal?.throwIfAborted();
+      const transient =
+        (error instanceof ClientError && error.kind === "SERVICE_UNAVAILABLE") ||
+        (error instanceof DOMException && error.name === "TimeoutError");
+      if (transient && active === entry && entry.token && entry.token.expiresAt > Date.now())
+        return entry.token.key;
+      throw error;
+    }
   };
 }
 

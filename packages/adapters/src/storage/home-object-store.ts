@@ -5,6 +5,7 @@ import path from "node:path";
 import type {
   AdapterContext,
   AgentHomeStore,
+  HomeExportOptions,
   ObjectStorage,
   PortableFile,
   WorkspaceExportLimits,
@@ -147,7 +148,7 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
   override async *exportHome(
     botId: string,
     context: AdapterContext,
-    options?: { directory?: string; skipHidden?: boolean },
+    options?: HomeExportOptions,
   ): AsyncGenerator<PortableFile> {
     const done = this.startReading(botId);
     try {

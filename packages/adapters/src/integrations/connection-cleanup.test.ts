@@ -20,6 +20,7 @@ import {
   dropLeftoverAuthorization,
   leftoverAuthorization,
   providerScopeKey,
+  readHostedSignIn,
   recordConnectionCleanupAttemptsExhausted,
 } from "./connection-cleanup.js";
 import { IntegrationProviderSettings } from "./integration-provider-settings.js";
@@ -37,7 +38,9 @@ function cleanupJob(connector: Record<string, unknown> | undefined) {
     // Active rows that have saved the authorization being removed.
     count: vi.fn(async (_args: { where: { providerRef: string } }) => 0),
     findMany: vi.fn(
-      async (): Promise<Array<{ providerRef: string | null; status?: string }>> => [],
+      async (): Promise<
+        Array<{ provider: string; providerRef: string | null; status?: string }>
+      > => [],
     ),
   };
   const integrationProviderConfig = { findUnique: vi.fn(async (): Promise<null> => null) };
@@ -149,7 +152,7 @@ describe("connection.cleanup", () => {
   it("deletes the accounts no row references, keeping the referenced ones", async () => {
     const revokeUnreferencedAccounts = vi.fn(async () => undefined);
     const { run, connection } = cleanupJob({ revokeUnreferencedAccounts });
-    connection.findMany.mockResolvedValue([{ providerRef: "account-1" }]);
+    connection.findMany.mockResolvedValue([{ provider: "mail", providerRef: "account-1" }]);
 
     await run(scope);
     expect(revokeUnreferencedAccounts).toHaveBeenCalledWith(
@@ -165,16 +168,16 @@ describe("connection.cleanup", () => {
     // A row without a concrete account id may own any remote account, so nothing is deleted yet.
     for (const pending of ["mail", null]) {
       connection.findMany.mockResolvedValue([
-        { providerRef: "account-1" },
-        { providerRef: pending },
+        { provider: "mail", providerRef: "account-1" },
+        { provider: "mail", providerRef: pending },
       ]);
       await expect(run(scope)).rejects.toBeInstanceOf(RetryJobLaterError);
     }
     expect(revokeUnreferencedAccounts).not.toHaveBeenCalled();
 
     connection.findMany.mockResolvedValue([
-      { providerRef: "account-1" },
-      { providerRef: "account-2" },
+      { provider: "mail", providerRef: "account-1" },
+      { provider: "mail", providerRef: "account-2" },
     ]);
     await expect(run(scope)).resolves.toBeUndefined();
     expect(revokeUnreferencedAccounts).toHaveBeenCalledWith(
@@ -189,8 +192,8 @@ describe("connection.cleanup", () => {
     const { run, connection } = cleanupJob({ revokeUnreferencedAccounts });
     // The begin this cleanup is for left its own row failed, with no reference: it owns nothing.
     connection.findMany.mockResolvedValue([
-      { providerRef: "account-1", status: "connected" },
-      { providerRef: null, status: "error" },
+      { provider: "mail", providerRef: "account-1", status: "connected" },
+      { provider: "mail", providerRef: null, status: "error" },
     ]);
     await expect(run(scope)).resolves.toBeUndefined();
     expect(revokeUnreferencedAccounts).toHaveBeenCalledWith(
@@ -201,9 +204,9 @@ describe("connection.cleanup", () => {
 
     // A failed row that names the app, or one still connecting, may own an account.
     for (const sibling of [
-      { providerRef: "mail", status: "error" },
-      { providerRef: null, status: "pending" },
-      { providerRef: null, status: "connected" },
+      { provider: "mail", providerRef: "mail", status: "error" },
+      { provider: "mail", providerRef: null, status: "pending" },
+      { provider: "mail", providerRef: null, status: "connected" },
     ]) {
       revokeUnreferencedAccounts.mockClear();
       connection.findMany.mockResolvedValue([sibling]);
@@ -214,7 +217,9 @@ describe("connection.cleanup", () => {
 
   it("says what it waits for when it asks the queue for a later try", async () => {
     const { run, connection } = cleanupJob({ revokeUnreferencedAccounts: vi.fn() });
-    connection.findMany.mockResolvedValue([{ providerRef: null, status: "pending" }]);
+    connection.findMany.mockResolvedValue([
+      { provider: "mail", providerRef: null, status: "pending" },
+    ]);
 
     const waiting = await run(scope).catch((error: unknown) => error);
     expect(waiting).toBeInstanceOf(RetryJobLaterError);
@@ -533,4 +538,15 @@ describe("leftoverAuthorization", () => {
     ).toEqual(scope);
     expect(leftoverAuthorization(connector(), scope, undefined)).toBeUndefined();
   });
+});
+
+it("distinguishes malformed hosted sign-in metadata from a legacy row with no expiry", () => {
+  const row = {
+    ...scope,
+    id: "hosted-sign-in",
+    providerRef: scope.provider,
+    updatedAt: new Date(),
+  };
+  expect(readHostedSignIn({ ...row, metadata: { expiresAt: "invalid" } })).toBeUndefined();
+  expect(readHostedSignIn({ ...row, metadata: { state: scope.provider } })).toEqual({});
 });

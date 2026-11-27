@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { ClientError } from "@rakazo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createWorkloadIdentityKeyResolver,
@@ -86,7 +87,9 @@ describe("workload identity exchange", () => {
     ).catch((error: unknown) => error);
     expect(error).toStrictEqual(new Error("Unexpected OpenAI token service request failure."));
     expect(error).not.toHaveProperty("cause");
-    expect(warn).not.toHaveBeenCalled();
+    expect(warn.mock.calls).toEqual([
+      ["Unexpected OpenAI workload identity failure", { phase: "fetch", type: "type_error" }],
+    ]);
   });
 
   it("reports a token service outage without exposing its response", async () => {
@@ -149,6 +152,41 @@ describe("deployment workload identity cache", () => {
       "other-account",
     );
     expect(exchange).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses a still-valid token only during a transient refresh failure", async () => {
+    const initialTime = Date.now();
+    const now = vi.spyOn(Date, "now").mockReturnValue(initialTime);
+    try {
+      const transient = new ClientError("SERVICE_UNAVAILABLE", "fixture outage");
+      const exchange = vi
+        .fn<typeof exchangeWorkloadIdentity>()
+        .mockResolvedValueOnce({ key: "fixture-cached-bearer", expiresAt: initialTime + 60_000 })
+        .mockRejectedValue(transient);
+      const resolve = createWorkloadIdentityKeyResolver(exchange);
+      await expect(resolve(env)).resolves.toBe("fixture-cached-bearer");
+      now.mockReturnValue(initialTime + 31_000);
+      await expect(Promise.all([resolve(env), resolve(env)])).resolves.toEqual([
+        "fixture-cached-bearer",
+        "fixture-cached-bearer",
+      ]);
+      expect(exchange).toHaveBeenCalledTimes(2);
+      now.mockReturnValue(initialTime + 60_000);
+      await expect(resolve(env)).rejects.toBe(transient);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("never falls back to a cached token when the exchange refuses the binding", async () => {
+    const denied = new ClientError("BAD_REQUEST", "fixture refusal");
+    const exchange = vi
+      .fn<typeof exchangeWorkloadIdentity>()
+      .mockResolvedValueOnce({ key: "fixture-cached-bearer", expiresAt: Date.now() + 10_000 })
+      .mockRejectedValueOnce(denied);
+    const resolve = createWorkloadIdentityKeyResolver(exchange);
+    await expect(resolve(env)).resolves.toBe("fixture-cached-bearer");
+    await expect(resolve(env)).rejects.toBe(denied);
   });
 
   it("replaces a token near expiry", async () => {

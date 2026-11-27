@@ -198,6 +198,7 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     /** Inline app authorization card: logo, name, one-line
         description, and an Authorize button that flips to connected. */
     kind: z.literal("app_connect"),
+    organizationConnectionId: z.string().optional(),
     /** Absent on cards stored before connector ids; the server reads those as its default. */
     connectorId: z.string().optional(),
     provider: z.string(),

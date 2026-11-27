@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/server";
-import type { AccessGrant, AccessGrantInput } from "@rakazo/contracts";
-import { AccessGrantInputSchema } from "@rakazo/contracts";
+import type { AccessGrant, AccessGrantInput, ByokTier } from "@rakazo/contracts";
+import { AccessGrantInputSchema, ByokTierSchema } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
@@ -17,11 +17,13 @@ const WITH_CREATOR = { createdBy: { select: { email: true } } } as const;
 function accessGrantDto(
   row: Prisma.AccessGrantGetPayload<{ include: typeof WITH_CREATOR }>,
 ): AccessGrant {
+  const byokTier = ByokTierSchema.safeParse(row.byokTier).data;
   return {
     id: row.id,
     email: row.email,
     creditCents: row.creditCents,
     freeMonths: row.freeMonths,
+    ...(byokTier && { byokTier }),
     createdBy: row.createdBy?.email ?? null,
     status: row.revokedAt ? "revoked" : row.appliedAt ? "applied" : "pending",
     createdAt: row.createdAt.toISOString(),
@@ -44,10 +46,14 @@ export async function createAccessGrant(
   prisma: PrismaClient,
   createdById: string | null,
   input: AccessGrantInput,
+  byokTier?: ByokTier,
 ): Promise<AccessGrant> {
   const data = AccessGrantInputSchema.parse(input);
   return accessGrantDto(
-    await prisma.accessGrant.create({ data: { ...data, createdById }, include: WITH_CREATOR }),
+    await prisma.accessGrant.create({
+      data: { ...data, createdById, byokTier },
+      include: WITH_CREATOR,
+    }),
   );
 }
 
@@ -106,7 +112,12 @@ export async function applyAccessGrants(
         update: {},
       });
       if (grant.freeMonths > 0)
-        await extendByokFreePeriod(tx, organizationId, grant.freeMonths * FREE_MONTH_DAYS);
+        await extendByokFreePeriod(
+          tx,
+          organizationId,
+          grant.freeMonths * FREE_MONTH_DAYS,
+          ByokTierSchema.safeParse(grant.byokTier).data,
+        );
       await tx.modelCreditAccount.updateMany({
         where: { organizationId, mode: null },
         data: { mode: grant.creditCents > 0 ? "credits" : "byok" },

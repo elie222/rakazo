@@ -37,6 +37,11 @@ msgstr "{0, plural, one {# ücretsiz ay kazanıldı} other {# ücretsiz ay kazan
 msgid "{0, plural, one {# free month} other {# free months}}"
 msgstr "{0, plural, one {# ücretsiz ay} other {# ücretsiz ay}}"
 
+#. placeholder {0}: images.length
+#: apps/mobile/components/media/image-attachment-deck.tsx
+msgid "{0, plural, one {# image} other {# images}}"
+msgstr "{0, plural, one {# görsel} other {# görsel}}"
+
 #. placeholder {0}: skills.length - shownSkills.length
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "{0, plural, one {# more} other {# more}}"
@@ -58,6 +63,16 @@ msgstr "{0, plural, one {# alan} other {# alan}}"
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 msgid "{0, plural, one {# tool} other {# tools}}"
 msgstr "{0, plural, one {# araç} other {# araç}}"
+
+#. placeholder {0}: picked.length
+#: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
+msgid "{0, plural, one {Import # Bot} other {Import # Bots}}"
+msgstr "{0, plural, one {# botu içe aktar} other {# botu içe aktar}}"
+
+#. placeholder {0}: images.length
+#: apps/web/src/pages/shell/chat/image-gallery.tsx
+msgid "{0, plural, one {Show all # picture} other {Show all # pictures}}"
+msgstr "{0, plural, one {Tüm # görseli göster} other {Tüm # görseli göster}}"
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
@@ -100,6 +115,11 @@ msgstr "{0} GB"
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
 msgid "{0} handling"
 msgstr "{0} işleme biçimi"
+
+#. placeholder {0}: formatBillingAmount(added, "USD", i18n.locale)
+#: apps/web/src/pages/auth/Redeem.tsx
+msgid "{0} in credits added"
+msgstr "{0} tutarında kredi eklendi"
 
 #. placeholder {0}: bot.name
 #: apps/web/src/components/call/IncomingCall.tsx
@@ -978,7 +998,7 @@ msgstr "Erişim token'ı (isteğe bağlı)"
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/mobile/components/inbox/inbox-header.tsx
-#: apps/mobile/lib/inbox/use-inbox-header.ts
+#: apps/mobile/components/inbox/inbox-toolbar.tsx
 #: apps/web/src/components/account/AccountMenu.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Account"
@@ -1056,7 +1076,6 @@ msgstr "Etkinlik"
 msgid "Activity log"
 msgstr "Etkinlik günlüğü"
 
-#: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
@@ -1078,7 +1097,6 @@ msgstr "{0} kişisini gruba ekle"
 msgid "Add {label}"
 msgstr "{label} ekle"
 
-#: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Add {name}"
 msgstr "{name} ekle"
@@ -1191,6 +1209,10 @@ msgstr "Üstbilgi ekle"
 msgid "Add item"
 msgstr "Öğe ekle"
 
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
+msgid "Add login"
+msgstr "Giriş ekle"
+
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
 msgid "Add MCP server"
 msgstr "MCP sunucusu ekle"
@@ -1205,6 +1227,11 @@ msgstr "Model ekle"
 #: apps/web/src/pages/space/ScratchpadSection.tsx
 msgid "Add open work"
 msgstr "Açık iş ekle"
+
+#: apps/mobile/components/models/organization-model-settings.tsx
+#: apps/web/src/pages/model-settings/organization-model-settings.tsx
+msgid "Add organization model"
+msgstr "Kuruluş modeli ekle"
 
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
@@ -1462,6 +1489,10 @@ msgstr "Ayarlar'da konuşma tanımaya izin ver veya yazıya döken bir ses sağl
 msgid "Allow writing"
 msgstr "Yazmaya izin ver"
 
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
+msgid "Allowed agents"
+msgstr "İzin verilen agent'lar"
+
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/web/src/components/messages/AskCard.tsx
 msgid "Allowed in this space"
@@ -1632,9 +1663,14 @@ msgstr "Herkes görüntüleyebilir. Eklediğin kişiler kaldırılır."
 msgid "Anyone with the link"
 msgstr "Bağlantıya sahip herkes"
 
+#: apps/web/src/components/settings/ApiKeysSettings.tsx
+msgid "Anything using this key stops working."
+msgstr "Bu anahtarı kullanan her şey çalışmayı durdurur."
+
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/mobile/components/integrations/add-custom-integration.tsx
+#: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/mobile/components/thread/ask-block.tsx
 #: apps/mobile/lib/vault/vault.ts
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
@@ -1645,6 +1681,7 @@ msgstr "Bağlantıya sahip herkes"
 #: apps/web/src/pages/model-settings/compatible-key-field.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 #: apps/web/src/pages/model-settings/deployment-model-settings.tsx
+#: apps/web/src/pages/model-settings/organization-model-settings.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "API key"
@@ -1663,6 +1700,7 @@ msgstr "API anahtarı üstbilgisi"
 msgid "API key header name"
 msgstr "API anahtarı başlık adı"
 
+#: apps/web/src/components/settings/ApiKeysSettings.tsx
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 msgid "API keys"
 msgstr "API anahtarları"
@@ -1674,6 +1712,13 @@ msgstr "API belirteci"
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 msgid "API URL"
 msgstr "API URL'si"
+
+#: apps/mobile/app/(settings)/_layout.tsx
+#: apps/mobile/app/(settings)/app-icon.tsx
+#: apps/mobile/app/(settings)/general.tsx
+#: apps/web/src/pages/settings/AppIconPicker.tsx
+msgid "App icon"
+msgstr "Uygulama simgesi"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
@@ -1913,6 +1958,12 @@ msgstr "Kullanılabilir krediler"
 msgid "Available in"
 msgstr "Kullanılabilir:"
 
+#: apps/mobile/components/integrations/connection-owner-picker.tsx
+#: apps/web/src/components/integrations/connection-owner-picker.tsx
+#: apps/web/src/pages/integrations/McpServerForm.tsx
+msgid "Available to"
+msgstr "Kullanabilenler"
+
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Available to shell commands as {commandVariable}"
 msgstr "Kabuk komutlarında {commandVariable} olarak kullanılabilir"
@@ -1939,6 +1990,7 @@ msgstr "Avatar Stüdyosu"
 #: apps/web/src/pages/plugins/connector-detail.tsx
 #: apps/web/src/pages/plugins/parts.tsx
 #: apps/web/src/pages/routines/RoutineEditor.tsx
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
@@ -1979,7 +2031,9 @@ msgstr "Toplantılara dön"
 msgid "Back to sign in"
 msgstr "Oturum açmaya geri dön"
 
+#: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
+#: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Base URL"
 msgstr "Temel URL"
 
@@ -1992,6 +2046,10 @@ msgstr "Temel kimlik doğrulama"
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 msgid "Basic auth ({username})"
 msgstr "Temel kimlik doğrulama ({username})"
+
+#: packages/i18n/src/app-icon.ts
+msgid "Beanie"
+msgstr "Bere"
 
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 msgid "Bearer"
@@ -2200,6 +2258,10 @@ msgstr "Kendi modeli olan botlar"
 msgid "Bound to bots"
 msgstr "Botlara bağlı"
 
+#: packages/i18n/src/app-icon.ts
+msgid "Bow tie"
+msgstr "Papyon"
+
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Brain label"
 msgstr "Beyin etiketi"
@@ -2320,6 +2382,7 @@ msgstr "Görselleri okuyamaz"
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
+#: apps/mobile/app/(settings)/tool-source.tsx
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/app/(settings)/wallet.tsx
 #: apps/mobile/app/artifact.tsx
@@ -2344,6 +2407,7 @@ msgstr "Görselleri okuyamaz"
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/mobile/components/messages/message-action-menu.tsx
 #: apps/mobile/components/models/model-providers.tsx
+#: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/mobile/components/settings/account-deletion.tsx
 #: apps/mobile/components/settings/space-bots-model.tsx
 #: apps/mobile/components/thread/failed-send-bubble.tsx
@@ -2370,11 +2434,14 @@ msgstr "Görselleri okuyamaz"
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/components/messages/AskCard.tsx
 #: apps/web/src/components/messages/markdown-link-prompt.tsx
+#: apps/web/src/components/settings/ApiKeysSettings.tsx
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
+#: apps/web/src/pages/model-settings/organization-model-settings.tsx
 #: apps/web/src/pages/plugins/PluginSubmissionsPanel.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 #: apps/web/src/pages/settings/PaymentWalletSettingsPanel.tsx
 #: apps/web/src/pages/shell/bots/create-bot-dialog.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -2428,6 +2495,10 @@ msgstr "İptal edildi"
 #: apps/web/src/pages/shell/composer/composer-error.tsx
 msgid "Cancelled trials have no computer hours."
 msgstr "İptal edilen denemelerin bilgisayar saati yoktur."
+
+#: packages/i18n/src/app-icon.ts
+msgid "Cap"
+msgstr "Şapka"
 
 #: apps/mobile/lib/vault/secret-destination.ts
 #: apps/mobile/lib/vault/vault.ts
@@ -2618,9 +2689,15 @@ msgstr "Seç"
 msgid "Choose a bot shape, color, or upload an image"
 msgstr "Bir bot şekli ve rengi seçin veya görüntü yükleyin"
 
+#: apps/mobile/components/models/organization-model-settings.tsx
+msgid "Choose a connection"
+msgstr "Bir bağlantı seç"
+
 #: apps/mobile/app/(settings)/models.tsx
 #: apps/mobile/components/models/media-model-settings.tsx
+#: apps/mobile/lib/composer/composer-model.ts
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
+#: apps/web/src/pages/shell/chat/chat-model-picker.tsx
 #: apps/web/src/pages/shell/composer/composer-error.tsx
 msgid "Choose a model"
 msgstr "Bir model seçin"
@@ -2637,6 +2714,7 @@ msgstr "Yeni bir parola seçin"
 msgid "Choose a plan"
 msgstr "Bir plan seç"
 
+#: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Choose a provider"
 msgstr "Sağlayıcı seç"
@@ -2859,6 +2937,7 @@ msgstr "Bulut bilgisayarlar"
 #: apps/mobile/components/vault/confirm-identity.tsx
 #: apps/web/src/components/account/ConfirmIdentityDialog.tsx
 #: apps/web/src/components/messages/SecretAskCard.tsx
+#: apps/web/src/pages/auth/Redeem.tsx
 msgid "Code"
 msgstr "Kod"
 
@@ -3049,12 +3128,14 @@ msgstr "Kaldırmayı onayla"
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/mobile/components/integrations/connected-apps.tsx
 #: apps/mobile/components/integrations/integration-catalog-search.tsx
+#: apps/mobile/components/integrations/integration-detail.tsx
 #: apps/mobile/components/models/model-picker-list.tsx
 #: apps/mobile/lib/cards/app-connect.ts
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
+#: apps/web/src/pages/plugins/connector-detail.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 #: apps/web/src/pages/settings/PaymentWalletSettingsPanel.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
@@ -3079,6 +3160,7 @@ msgstr "{app} bağla"
 #: apps/mobile/components/cards/AppConnectCard.tsx
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/mobile/components/integrations/integration-catalog-search.tsx
+#: apps/mobile/components/integrations/integration-detail.tsx
 msgid "Connect {name}"
 msgstr "{name} bağla"
 
@@ -3220,6 +3302,11 @@ msgstr "Bağlanıyor…"
 msgid "Connection"
 msgstr "Bağlantı"
 
+#: apps/mobile/components/models/organization-model-settings.tsx
+#: apps/web/src/pages/model-settings/organization-model-settings.tsx
+msgid "Connection name"
+msgstr "Bağlantı adı"
+
 #: apps/mobile/app/(settings)/model-settings.tsx
 msgid "Connection not found"
 msgstr "Bağlantı bulunamadı"
@@ -3332,6 +3419,7 @@ msgstr "Bağlamı saklamak ve hatırlamak için sohbetler, adlar, hafıza kayıt
 #: apps/web/src/components/pages/PagePeople.tsx
 #: apps/web/src/components/pages/PublicPageShell.tsx
 #: apps/web/src/components/pages/SharePopover.tsx
+#: apps/web/src/components/settings/ApiKeysSettings.tsx
 #: apps/web/src/components/spaces/InviteDialog.tsx
 #: apps/web/src/components/vault/BotEmailAddresses.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
@@ -3396,7 +3484,12 @@ msgstr "Diyagram kaynağını kopyala"
 msgid "Copy invite link"
 msgstr "Davet bağlantısını kopyala"
 
+#: apps/web/src/components/settings/ApiKeysSettings.tsx
+msgid "Copy it now. It won't be shown again."
+msgstr "Şimdi kopyala. Bir daha gösterilmeyecek."
+
 #: apps/mobile/components/thread/routine-event-row.tsx
+#: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Copy key"
 msgstr "Anahtarı kopyala"
 
@@ -3607,6 +3700,7 @@ msgstr "Bilgisayar ekranına bağlanılamadı"
 #: apps/web/src/components/account/PasskeySettings.tsx
 #: apps/web/src/components/computers/ComputerCard.tsx
 #: apps/web/src/components/settings/AccountDataSettings.tsx
+#: apps/web/src/components/settings/ApiKeysSettings.tsx
 #: apps/web/src/components/settings/TrustedLinkSitesSettings.tsx
 #: apps/web/src/lib/auth/account-security.ts
 #: apps/web/src/lib/auth/sso-flow.ts
@@ -3630,6 +3724,10 @@ msgstr "Bağlantı kopyalanamadı."
 #: apps/web/src/pages/shell/bots/create-bot-dialog.tsx
 msgid "Could not create bot"
 msgstr "Bot oluşturulamadı"
+
+#: apps/web/src/pages/shell/bots/agent-import.tsx
+msgid "Could not create bots"
+msgstr "Botlar oluşturulamadı"
 
 #: apps/mobile/app/new-group.tsx
 #: apps/web/src/pages/space/GroupPanel.tsx
@@ -3931,6 +4029,7 @@ msgid "Could not load installed skill packs."
 msgstr "Yüklü beceri paketleri yüklenemedi."
 
 #: apps/mobile/app/(settings)/integrations.tsx
+#: apps/mobile/app/(settings)/tool-source.tsx
 #: apps/web/src/pages/plugins/PluginsOverlay.tsx
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
 msgid "Could not load integrations"
@@ -4092,7 +4191,7 @@ msgid "Could not open computer"
 msgstr "Bilgisayar açılamadı"
 
 #: apps/mobile/app/peer-chat.tsx
-#: apps/mobile/components/thread/message-bubble.tsx
+#: apps/mobile/components/media/attachment-file.tsx
 msgid "Could not open file"
 msgstr "Dosya açılamadı"
 
@@ -4179,6 +4278,10 @@ msgstr "Bu model sunucusuna ulaşılamadı"
 msgid "Could not read these files"
 msgstr "Bu dosyalar okunamadı"
 
+#: apps/web/src/pages/auth/Redeem.tsx
+msgid "Could not redeem the code"
+msgstr "Kod kullanılamadı"
+
 #: apps/mobile/lib/board/board.ts
 msgid "Could not refresh the board. {detail}"
 msgstr "Pano yenilenemedi. {detail}"
@@ -4221,7 +4324,7 @@ msgstr "Kural kaldırılamadı"
 msgid "Could not remove skills"
 msgstr "Beceriler kaldırılamadı"
 
-#: apps/mobile/components/integrations/use-custom-source-form.ts
+#: apps/mobile/app/(settings)/tool-source.tsx
 msgid "Could not remove source"
 msgstr "Kaynak kaldırılamadı"
 
@@ -4346,6 +4449,11 @@ msgstr "Model kaydedilemedi"
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Could not save model settings"
 msgstr "Model ayarları kaydedilemedi"
+
+#: apps/mobile/components/models/organization-model-settings.tsx
+#: apps/web/src/pages/model-settings/organization-model-settings.tsx
+msgid "Could not save organization model"
+msgstr "Kuruluş modeli kaydedilemedi"
 
 #: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/web/src/pages/plugins/tool-permissions.tsx
@@ -4642,6 +4750,11 @@ msgstr "Cüzdan güncellenemedi"
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
 msgstr "Bilgisayar kurulumu doğrulanamadı ({failureMessage}). Bağlantıyı düzeltip tekrar kontrol et."
 
+#: apps/mobile/app/(settings)/app-icon.tsx
+#: apps/web/src/pages/settings/AppIconPicker.tsx
+msgid "Couldn't change the app icon"
+msgstr "Uygulama simgesi değiştirilemedi"
+
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Couldn't copy. Select the link and copy it."
 msgstr "Kopyalanamadı. Bağlantıyı seçip kopyalayın."
@@ -4719,6 +4832,7 @@ msgstr "Ülke"
 #: apps/mobile/components/inbox/inbox-header.tsx
 #: apps/mobile/lib/inbox/use-inbox-chat-actions.ts
 #: apps/mobile/lib/inbox/use-inbox-header.ts
+#: apps/web/src/components/settings/ApiKeysSettings.tsx
 #: apps/web/src/components/spaces/CreateOrganizationDialog.tsx
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/bots/create-bot-dialog.tsx
@@ -4750,6 +4864,10 @@ msgstr "Bot oluştur"
 #: apps/web/src/pages/space/GroupPanel.tsx
 msgid "Create group"
 msgstr "Grup oluştur"
+
+#: apps/web/src/components/settings/ApiKeysSettings.tsx
+msgid "Create key"
+msgstr "Anahtar oluştur"
 
 #: apps/mobile/app/new-organization.tsx
 #: apps/web/src/components/spaces/CreateOrganizationDialog.tsx
@@ -4978,17 +5096,8 @@ msgstr "Varsayılan"
 
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
 #: apps/web/src/pages/routines/routine-editor/model-settings.tsx
-#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Default ({0})"
 msgstr "Varsayılan ({0})"
-
-#: apps/web/src/pages/shell/composer/composer-model-picker.tsx
-msgid "Default ({defaultLabel})"
-msgstr "Varsayılan ({defaultLabel})"
-
-#: apps/mobile/app/chat-model.tsx
-msgid "Default ({level})"
-msgstr "Varsayılan ({level})"
 
 #: apps/web/src/pages/model-settings/deployment-model-settings.tsx
 msgid "Default for everyone"
@@ -5029,6 +5138,7 @@ msgstr "Varsayılan kapsam"
 #: apps/web/src/components/account/AccountAccess.tsx
 #: apps/web/src/components/account/PasskeySettings.tsx
 #: apps/web/src/components/pages/PagesList.tsx
+#: apps/web/src/components/settings/ApiKeysSettings.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 #: apps/web/src/pages/routines/RoutineEditor.tsx
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
@@ -5041,9 +5151,11 @@ msgstr "Varsayılan kapsam"
 msgid "Delete"
 msgstr "Sil"
 
+#. placeholder {0}: deleting.name
 #. placeholder {0}: passkeyLabel(deleting, t`Passkey`)
 #. placeholder {0}: pendingDelete.name
 #: apps/web/src/components/account/PasskeySettings.tsx
+#: apps/web/src/components/settings/ApiKeysSettings.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
 msgid "Delete \"{0}\"?"
 msgstr "\"{0}\" silinsin mi?"
@@ -5056,6 +5168,8 @@ msgid "Delete \"{name}\"?"
 msgstr "\"{name}\" silinsin mi?"
 
 #. placeholder {0}: artifact.name
+#. placeholder {0}: key.name
+#: apps/web/src/components/settings/ApiKeysSettings.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
 msgid "Delete {0}"
 msgstr "{0} sil"
@@ -5105,6 +5219,10 @@ msgstr "Hesabı sil"
 msgid "Delete group"
 msgstr "Grubu sil"
 
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
+msgid "Delete login"
+msgstr "Girişi sil"
+
 #: apps/mobile/lib/bots/bot-lifecycle.ts
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
 msgid "Delete memories too"
@@ -5141,6 +5259,10 @@ msgstr "Dışa aktarılan dosyayı şimdi sil. Parolalarını şifrelenmemiş ol
 #: apps/mobile/app/routines.tsx
 msgid "Delete this routine?"
 msgstr "Bu rutin silinsin mi?"
+
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
+msgid "Delete this shared login and its session?"
+msgstr "Bu paylaşılan giriş ve oturumu silinsin mi?"
 
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
@@ -5191,6 +5313,7 @@ msgid "Deleted routine \"{name}\""
 msgstr "\"{name}\" rutini silindi"
 
 #: apps/web/src/components/account/PasskeySettings.tsx
+#: apps/web/src/components/settings/ApiKeysSettings.tsx
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
@@ -5456,6 +5579,7 @@ msgstr "Hesabın yok mu?"
 #: apps/web/src/components/settings/AccountDataSettings.tsx
 #: apps/web/src/components/vault/VaultImport.tsx
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
+#: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
 #: apps/web/src/pages/shell/bots/import-setup-card.tsx
 #: apps/web/src/pages/space/ticket-status.ts
 #: packages/i18n/src/activity.ts
@@ -5908,10 +6032,15 @@ msgstr "Başarısız oldu."
 msgid "Failure handling"
 msgstr "Hata yönetimi"
 
+#: packages/i18n/src/app-icon.ts
+msgid "Feet"
+msgstr "Ayaklar"
+
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Fields to compare (optional)"
 msgstr "Karşılaştırılacak alanlar (isteğe bağlı)"
 
+#: apps/mobile/components/media/attachment-file.tsx
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/mobile/lib/thread/send/thread-attachments.ts
 #: apps/web/src/pages/integrations/McpServerForm.tsx
@@ -5978,6 +6107,10 @@ msgstr "Aranıyor…"
 msgid "Finish connecting in the browser, then refresh this page."
 msgstr "Bağlantıyı tarayıcıda tamamla, sonra bu sayfayı yenile."
 
+#: apps/mobile/components/integrations/use-connection-actions.ts
+msgid "Finish connecting in the browser. If the connection stays pending, select Reconnect."
+msgstr "Bağlanmayı tarayıcıda tamamla. Bağlantı beklemede kalırsa Yeniden bağlan'ı seç."
+
 #: apps/mobile/components/cards/McpApprovalCard.tsx
 msgid "Finish MCP authorization in the web app."
 msgstr "MCP yetkilendirmesini web uygulamasında tamamla."
@@ -5986,6 +6119,11 @@ msgstr "MCP yetkilendirmesini web uygulamasında tamamla."
 #: apps/web/src/pages/shell/bots/import-setup-card.tsx
 msgid "Finish setting up"
 msgstr "Kurulumu tamamla"
+
+#. placeholder {0}: item.name
+#: apps/web/src/pages/plugins/use-plugin-connections.ts
+msgid "Finish signing in to {0} in the browser. If the connection stays pending, select Reconnect."
+msgstr "{0} oturum açma işlemini tarayıcıda tamamla. Bağlantı beklemede kalırsa Yeniden bağlan'ı seç."
 
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/CloudAgentCard.tsx
@@ -6000,6 +6138,10 @@ msgstr "Tamamlandı."
 #: apps/web/src/pages/integrations/McpOAuthCallback.tsx
 msgid "Finishing MCP connection…"
 msgstr "MCP bağlantısı tamamlanıyor…"
+
+#: packages/i18n/src/app-icon.ts
+msgid "Flower"
+msgstr "Çiçek"
 
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Focus message"
@@ -6268,6 +6410,14 @@ msgstr "Üstbilgi değeri"
 msgid "Headers"
 msgstr "Üstbilgiler"
 
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
+msgid "Heading after sign-in"
+msgstr "Oturum açtıktan sonraki başlık"
+
+#: packages/i18n/src/app-icon.ts
+msgid "Headphones"
+msgstr "Kulaklık"
+
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Hear a sample"
@@ -6496,6 +6646,14 @@ msgstr "CSV içe aktar"
 msgid "Import data"
 msgstr "Verileri içe aktar"
 
+#: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
+msgid "Imported"
+msgstr "İçe aktarıldı"
+
+#: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
+msgid "Importing…"
+msgstr "İçe aktarılıyor…"
+
 #: apps/mobile/lib/board/board.ts
 #: apps/web/src/pages/space/ticket-status.ts
 msgid "In progress"
@@ -6563,6 +6721,11 @@ msgstr "Girdi"
 msgid "Inputs"
 msgstr "Girdiler"
 
+#: apps/mobile/app/(settings)/plugin.tsx
+#: apps/web/src/components/integrations/plugin-marketplace.tsx
+msgid "Install for organization"
+msgstr "Kuruluş için yükle"
+
 #: apps/web/src/pages/shell/sidebar/sidebar-footer.tsx
 msgid "Install update"
 msgstr "Güncellemeyi yükle"
@@ -6620,6 +6783,7 @@ msgstr "Entegrasyon etki alanı"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/components/inbox/inbox-toolbar.tsx
 #: apps/web/src/pages/plugins/PluginsOverlay.tsx
 msgid "Integrations"
 msgstr "Entegrasyonlar"
@@ -6771,6 +6935,12 @@ msgstr "En yeniye git, yeni mesajlar"
 msgid "Jump to replied message: {excerpt}"
 msgstr "Yanıtlanan mesaja git: {excerpt}"
 
+#: apps/mobile/components/integrations/connection-owner-picker.tsx
+#: apps/web/src/components/integrations/connection-owner-picker.tsx
+#: apps/web/src/pages/integrations/McpServerForm.tsx
+msgid "Just me"
+msgstr "Yalnızca ben"
+
 #: packages/i18n/src/activity.ts
 msgid "just now"
 msgstr "az önce"
@@ -6798,6 +6968,10 @@ msgstr "Hafızayı koru"
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Keep tool results whole"
 msgstr "Araç sonuçlarını bütün tut"
+
+#: apps/web/src/components/settings/ApiKeysSettings.tsx
+msgid "Key name"
+msgstr "Anahtar adı"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Key options"
@@ -7000,6 +7174,7 @@ msgid "Loading calendar…"
 msgstr "Takvim yükleniyor…"
 
 #: apps/mobile/components/media/image-artifact-viewer.tsx
+#: apps/mobile/components/media/image-attachment-deck.tsx
 #: apps/mobile/components/media/inline-image-attachment.tsx
 msgid "Loading image…"
 msgstr "Görsel yükleniyor…"
@@ -7064,6 +7239,7 @@ msgstr "Ses sağlayıcıları yükleniyor…"
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/skills.tsx
+#: apps/mobile/app/(settings)/tool-source.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/mobile/app/sign-in.tsx
 #: apps/mobile/components/integrations/integration-plugins.tsx
@@ -7080,6 +7256,7 @@ msgstr "Ses sağlayıcıları yükleniyor…"
 #: apps/web/src/pages/integrations/IntegrationSetup.tsx
 #: apps/web/src/pages/plugins/PluginSubmissionsPanel.tsx
 #: apps/web/src/pages/routines/RoutineRunHistory.tsx
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 #: apps/web/src/pages/settings/PeerMessagesOverlay.tsx
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/chat/transcript.tsx
@@ -7172,6 +7349,10 @@ msgstr "Yönet"
 msgid "Manage {0}"
 msgstr "{0} yönet"
 
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
+msgid "Manage access"
+msgstr "Erişimi yönet"
+
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
@@ -7188,6 +7369,10 @@ msgstr "MCP sunucularını yönet"
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 msgid "Manage model"
 msgstr "Modeli yönet"
+
+#: apps/web/src/pages/model-settings/organization-model-settings.tsx
+msgid "Manage organization models"
+msgstr "Kuruluş modellerini yönet"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
@@ -7518,6 +7703,11 @@ msgstr "Model"
 msgid "Model id"
 msgstr "Model kimliği"
 
+#: apps/mobile/components/models/organization-model-settings.tsx
+#: apps/web/src/pages/model-settings/organization-model-settings.tsx
+msgid "Model ID"
+msgstr "Model kimliği"
+
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Model name unavailable"
 msgstr "Model adı kullanılamıyor"
@@ -7689,6 +7879,7 @@ msgstr "Bilgisayarlarım"
 #: apps/web/src/pages/routines/RoutineEditor.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 #: apps/web/src/pages/settings/SpaceSettingsPanel.tsx
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
@@ -7768,6 +7959,13 @@ msgstr "Girdi bekliyor"
 msgid "Needs sign-in"
 msgstr "Oturum açılması gerekiyor"
 
+#: apps/mobile/components/cards/AppConnectCard.tsx
+#: apps/mobile/components/integrations/integration-detail.tsx
+#: apps/web/src/pages/plugins/connector-detail.tsx
+#: apps/web/src/pages/shell/chat/message-cards.tsx
+msgid "Needs sign-in"
+msgstr "Oturum açılması gerekiyor"
+
 #: packages/i18n/src/activity.ts
 msgid "Needs takeover"
 msgstr "Devralma bekliyor"
@@ -7787,6 +7985,10 @@ msgstr "Gerekenler: {names}"
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
 msgid "Never ask"
 msgstr "Asla sorma"
+
+#: apps/web/src/components/settings/ApiKeysSettings.tsx
+msgid "Never used"
+msgstr "Hiç kullanılmadı"
 
 #: apps/mobile/components/thread/unread-divider.tsx
 #: apps/web/src/components/vault/VaultSettings.tsx
@@ -7942,6 +8144,10 @@ msgstr "Sonraki veya önceki bot"
 #: apps/web/src/components/messages/markdown-copy.tsx
 msgid "Next page"
 msgstr "Sonraki sayfa"
+
+#: apps/mobile/components/media/image-artifact-viewer.tsx
+msgid "Next picture"
+msgstr "Sonraki görsel"
 
 #: apps/mobile/app/routine.tsx
 #: packages/i18n/src/routine-approval.ts
@@ -8138,6 +8344,10 @@ msgstr "Bu filtrelerle eşleşen çalıştırma yok."
 msgid "No runs yet"
 msgstr "Henüz çalıştırma yok"
 
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
+msgid "No session"
+msgstr "Oturum yok"
+
 #: apps/mobile/app/page-share.tsx
 msgid "No sign-in needed"
 msgstr "Oturum açmak gerekmez"
@@ -8318,6 +8528,7 @@ msgstr "Bildirim ayarları"
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-profile.tsx
 #: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Notifications"
 msgstr "Bildirimler"
@@ -8538,9 +8749,16 @@ msgstr "Bağlantıyı aç"
 msgid "Open navigation"
 msgstr "Gezinmeyi aç"
 
+#. placeholder {0}: index + 1
+#. placeholder {1}: images.length
+#: apps/mobile/components/media/image-attachment-deck.tsx
+msgid "Open photo {0} of {1}"
+msgstr "Fotoğrafı aç ({0}/{1})"
+
 #: apps/web/src/components/pages/PublicPageShell.tsx
 #: apps/web/src/pages/auth/Invite.tsx
 #: apps/web/src/pages/auth/JoinOrganization.tsx
+#: apps/web/src/pages/auth/Redeem.tsx
 #: apps/web/src/pages/SharedPage.tsx
 msgid "Open Rakazo"
 msgstr "Rakazo'yu aç"
@@ -8613,8 +8831,23 @@ msgstr "Veya bir API anahtarı yapıştır"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/integrations.tsx
+#: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/app/(settings)/skill.tsx
+#: apps/mobile/app/(settings)/skills.tsx
+#: apps/mobile/components/cards/AppConnectCard.tsx
+#: apps/mobile/components/integrations/connected-apps.tsx
+#: apps/mobile/components/integrations/integration-detail.tsx
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
+#: apps/web/src/components/integrations/plugin-marketplace.tsx
+#: apps/web/src/components/integrations/skills-dialog.tsx
+#: apps/web/src/pages/integrations/McpServersOverlay.tsx
+#: apps/web/src/pages/plugins/connector-detail.tsx
+#: apps/web/src/pages/plugins/manage-view.tsx
+#: apps/web/src/pages/plugins/parts.tsx
 #: apps/web/src/pages/settings/settings-nav.ts
+#: apps/web/src/pages/shell/chat/message-cards.tsx
+#: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Organization"
 msgstr "Kuruluş"
 
@@ -8626,6 +8859,11 @@ msgstr "Kuruluş API anahtarı"
 msgid "Organization options"
 msgstr "Kuruluş seçenekleri"
 
+#: apps/mobile/components/models/organization-model-settings.tsx
+#: apps/web/src/pages/model-settings/organization-model-settings.tsx
+msgid "Organization override for this Space"
+msgstr "Bu Alan için kuruluş modeli geçersiz kılma"
+
 #: apps/mobile/components/inbox/organization-menu.tsx
 msgid "Organization settings"
 msgstr "Kuruluş ayarları"
@@ -8634,6 +8872,7 @@ msgstr "Kuruluş ayarları"
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
+#: packages/i18n/src/app-icon.ts
 msgid "Original"
 msgstr "Orijinal"
 
@@ -8791,8 +9030,13 @@ msgstr "Geçiş anahtarları"
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 #: apps/web/src/pages/auth/Auth.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Password"
 msgstr "Parola"
+
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
+msgid "Password field label"
+msgstr "Parola alanı etiketi"
 
 #: packages/i18n/src/user-error.ts
 msgid "Password must be {max} characters or fewer"
@@ -9074,6 +9318,10 @@ msgstr "Önceki eşleşme"
 msgid "Previous page"
 msgstr "Önceki sayfa"
 
+#: apps/mobile/components/media/image-artifact-viewer.tsx
+msgid "Previous picture"
+msgstr "Önceki görsel"
+
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
 msgid "Previous settings sections"
 msgstr "Önceki ayar bölümleri"
@@ -9141,13 +9389,19 @@ msgstr "Proje kimliği"
 msgid "Protected input"
 msgstr "Korumalı giriş"
 
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
+msgid "Protected sign-in is unavailable."
+msgstr "Korumalı oturum açma kullanılamıyor."
+
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 msgid "Protocol"
 msgstr "Protokol"
 
 #: apps/mobile/app/(settings)/voice.tsx
+#: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/deployment-model-settings.tsx
+#: apps/web/src/pages/model-settings/organization-model-settings.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
@@ -9246,6 +9500,10 @@ msgstr "Tepki ver"
 msgid "Reactions"
 msgstr "Tepkiler"
 
+#: apps/web/src/pages/shell/chat/message-hover-actions.tsx
+msgid "Read aloud"
+msgstr "Sesli oku"
+
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 msgid "Read calendar events?"
 msgstr "Takvim etkinlikleri okunsun mu?"
@@ -9330,9 +9588,13 @@ msgstr "Önerilen"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/app/(settings)/voice.tsx
+#: apps/mobile/components/cards/AppConnectCard.tsx
 #: apps/mobile/components/integrations/connected-apps.tsx
+#: apps/mobile/components/integrations/integration-detail.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
+#: apps/web/src/pages/plugins/connector-detail.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
+#: apps/web/src/pages/shell/chat/message-cards.tsx
 msgid "Reconnect"
 msgstr "Yeniden bağlan"
 
@@ -9432,6 +9694,14 @@ msgstr "Bilgisayar yeniden oluşturuluyor"
 msgid "Recruiting & HR"
 msgstr "İşe Alım ve İK"
 
+#: apps/web/src/pages/auth/Redeem.tsx
+msgid "Redeem"
+msgstr "Kullan"
+
+#: apps/web/src/pages/auth/Redeem.tsx
+msgid "Redeem a code"
+msgstr "Kod kullan"
+
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Redirect URI"
 msgstr "Yönlendirme URI'si"
@@ -9497,12 +9767,13 @@ msgstr "Uzak MCP sunucusu"
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
+#: apps/mobile/app/(settings)/tool-source.tsx
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/app/server.tsx
 #: apps/mobile/app/space-members.tsx
-#: apps/mobile/components/integrations/connected-apps.tsx
 #: apps/mobile/components/integrations/integration-detail.tsx
 #: apps/mobile/components/models/model-role-settings.tsx
+#: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/mobile/components/vault/login-fields-editor.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/web/src/components/billing/SpendingLimitSettings.tsx
@@ -9514,6 +9785,7 @@ msgstr "Uzak MCP sunucusu"
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
+#: apps/web/src/pages/model-settings/organization-model-settings.tsx
 #: apps/web/src/pages/plugins/connector-detail.tsx
 #: apps/web/src/pages/plugins/manage-view.tsx
 #: apps/web/src/pages/space/ScratchpadSection.tsx
@@ -9522,10 +9794,19 @@ msgstr "Kaldır"
 
 #. placeholder {0}: attachment.file.name
 #. placeholder {0}: device.name
+#. placeholder {0}: entry.label
 #: apps/web/src/components/computers/ComputerDeviceSettings.tsx
+#: apps/web/src/pages/model-settings/organization-model-settings.tsx
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "Remove {0}"
 msgstr "{0} kaldır"
+
+#. placeholder {0}: connection.label
+#. placeholder {0}: removing.label
+#: apps/mobile/components/models/organization-model-settings.tsx
+#: apps/web/src/pages/model-settings/organization-model-settings.tsx
+msgid "Remove {0} for everyone in the organization?"
+msgstr "{0}, kuruluştaki herkes için kaldırılsın mı?"
 
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/space/GroupPanel.tsx
@@ -9559,6 +9840,7 @@ msgstr "{name} kaldır"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/app/(settings)/tool-source.tsx
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/app/space-members.tsx
 msgid "Remove {name}?"
@@ -9603,6 +9885,7 @@ msgid "Remove end date"
 msgstr "Bitiş tarihini kaldır"
 
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/app/(settings)/tool-source.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 #: apps/web/src/pages/plugins/manage-view.tsx
@@ -9622,6 +9905,10 @@ msgstr "Üstbilgiyi kaldır"
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Remove message trigger"
 msgstr "Mesaj tetikleyicisini kaldır"
+
+#: apps/mobile/components/models/organization-model-settings.tsx
+msgid "Remove organization model"
+msgstr "Kuruluş modelini kaldır"
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Remove photo"
@@ -9646,6 +9933,10 @@ msgstr "{name} becerisini kaldır"
 msgid "Remove skills"
 msgstr "Becerileri kaldır"
 
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
+msgid "Remove this saved session?"
+msgstr "Bu kayıtlı oturum kaldırılsın mı?"
+
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Remove webhook"
 msgstr "Webhook'u kaldır"
@@ -9656,7 +9947,6 @@ msgid "Removes everyone you added"
 msgstr "Eklediğin herkesi kaldırır"
 
 #: apps/mobile/app/(settings)/plugin.tsx
-#: apps/mobile/components/integrations/connected-apps.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/pages/plugins/connector-detail.tsx
 #: apps/web/src/pages/plugins/manage-view.tsx
@@ -9996,6 +10286,11 @@ msgstr "Gelen kutusuna dön"
 msgid "Return to Rakazo"
 msgstr "Rakazo'ya dön"
 
+#. placeholder {0}: bot.name
+#: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
+msgid "Review {0}"
+msgstr "{0} gözden geçir"
+
 #: apps/mobile/app/page.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
 msgid "Review page"
@@ -10021,6 +10316,10 @@ msgstr "Revizyon {version}"
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Revoke"
 msgstr "İptal et"
+
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
+msgid "Revoke session"
+msgstr "Oturumu iptal et"
 
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Revoked"
@@ -10215,6 +10514,10 @@ msgstr "Cumartesi"
 msgid "Save"
 msgstr "Kaydet"
 
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
+msgid "Save access"
+msgstr "Erişimi kaydet"
+
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Save and sign in"
@@ -10231,6 +10534,10 @@ msgstr "Ekran görüntüsünü kaydet"
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
 msgid "Save section name"
 msgstr "Bölüm adını kaydet"
+
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
+msgid "Save session"
+msgstr "Oturumu kaydet"
 
 #: apps/mobile/components/cards/secret-ask-sheet.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
@@ -10323,6 +10630,10 @@ msgstr "Kaydediliyor…"
 #: apps/web/src/lib/calls/call-session.ts
 msgid "Say yes or no, or answer in a sentence."
 msgstr "Evet ya da hayır de veya bir cümleyle yanıtla."
+
+#: packages/i18n/src/app-icon.ts
+msgid "Scarf"
+msgstr "Atkı"
 
 #: packages/i18n/src/routine-approval.ts
 msgid "Schedule"
@@ -10514,6 +10825,10 @@ msgstr "Seçildi"
 msgid "Self-hosted"
 msgstr "Kendi sunucunuz"
 
+#: apps/mobile/app/paywall.tsx
+msgid "Self-hosting guide"
+msgstr "Kendi sunucunda barındırma kılavuzu"
+
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
 #: apps/mobile/components/composer/thread-composer.tsx
 #: apps/web/src/components/messages/OutgoingDraftCard.tsx
@@ -10626,6 +10941,10 @@ msgstr "Sunucu URL'si"
 #: apps/web/src/components/billing/PlanUsage.tsx
 msgid "Session"
 msgstr "Oturum"
+
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
+msgid "Session saved"
+msgstr "Oturum kaydedildi"
 
 #: apps/web/src/components/billing/SpendingLimitSettings.tsx
 msgid "Set"
@@ -10743,6 +11062,11 @@ msgstr "Dökümü Alanla paylaş"
 msgid "Share voice data with {name}?"
 msgstr "Ses verileri {name} ile paylaşılsın mı?"
 
+#: apps/mobile/app/(settings)/skill.tsx
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "Share with organization"
+msgstr "Kuruluşla paylaş"
+
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Share, anyone with the link can view"
 msgstr "Paylaş, bağlantıya sahip herkes görüntüleyebilir"
@@ -10751,6 +11075,11 @@ msgstr "Paylaş, bağlantıya sahip herkes görüntüleyebilir"
 #: packages/i18n/src/page-review.ts
 msgid "Shared"
 msgstr "Ortak"
+
+#: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
+msgid "Shared logins"
+msgstr "Paylaşılan girişler"
 
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Shared memory"
@@ -10811,9 +11140,11 @@ msgstr "Listeyi göster"
 #: apps/mobile/app/shared-pages.tsx
 #: apps/mobile/components/bots/bot-context-cards.tsx
 #: apps/mobile/components/integrations/integration-plugins.tsx
+#: apps/mobile/components/models/model-picker-list.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
 #: apps/web/src/components/pages/PagesList.tsx
 #: apps/web/src/pages/plugins/plugin-browse.tsx
+#: apps/web/src/pages/shell/chat/chat-model-picker.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 #: apps/web/src/pages/space/ScratchpadSection.tsx
 msgid "Show more"
@@ -10861,6 +11192,7 @@ msgstr "Kenar çubuğu yoğunluğu"
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 #: apps/web/src/pages/onboarding/use-onboarding-model.ts
 #: apps/web/src/pages/plugins/manage-view.tsx
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Sign in"
 msgstr "Oturum aç"
 
@@ -10926,6 +11258,10 @@ msgstr "Kaydol"
 msgid "Sign up for Rakazo"
 msgstr "Rakazo'ya kaydol"
 
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
+msgid "Sign-in button label"
+msgstr "Oturum açma düğmesi etiketi"
+
 #: apps/web/src/pages/plugins/PluginsOverlay.tsx
 msgid "Sign-in cancelled. Retry in Manage MCP servers."
 msgstr "Oturum açma iptal edildi. MCP sunucularını yönet bölümünden tekrar dene."
@@ -10939,6 +11275,10 @@ msgstr "Oturum açma iptal edildi. Tekrar dene."
 #: apps/mobile/lib/auth/sso.ts
 msgid "Sign-in did not return a session"
 msgstr "Oturum açma bir oturum döndürmedi"
+
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
+msgid "Sign-in page"
+msgstr "Oturum açma sayfası"
 
 #: apps/mobile/lib/auth/api-auth.ts
 msgid "Sign-up did not return a session"
@@ -11145,6 +11485,11 @@ msgstr "{column} sütununa göre sıralandı, azalan"
 msgid "Sorts new email and drafts the replies"
 msgstr "Yeni e-postaları ayıklar ve yanıt taslaklarını hazırlar"
 
+#: apps/mobile/app/(settings)/general.tsx
+#: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
+msgid "Sound for alerts that need attention"
+msgstr "Dikkat gerektiren uyarılar için ses"
+
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
 #: packages/i18n/src/identity-display.ts
@@ -11158,14 +11503,6 @@ msgstr "{name} alanı işlemleri"
 #: apps/mobile/app/new-space.tsx
 msgid "Space created"
 msgstr "Alan oluşturuldu"
-
-#: apps/mobile/app/chat-model.tsx
-#: apps/mobile/lib/composer/composer-model.ts
-#: apps/mobile/lib/models/chat-model.ts
-#: apps/web/src/pages/shell/bots/bot-panel.tsx
-#: apps/web/src/pages/shell/composer/composer-model-picker.tsx
-msgid "Space default"
-msgstr "Alan varsayılanı"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/meeting.ts
@@ -11188,17 +11525,9 @@ msgstr "Alanlar işleri ayrı tutar. Botlar, sohbetler, hafıza ve bilgisayarlar
 msgid "Spaces only they use pass to you."
 msgstr "Yalnızca bu kişinin kullandığı alanlar sana geçer."
 
-#: apps/web/src/pages/shell/chat/message-view.tsx
-msgid "Speak"
-msgstr "Seslendir"
-
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Speak message"
 msgstr "Mesajı seslendir"
-
-#: apps/web/src/pages/shell/chat/message-view.tsx
-msgid "Speak this reply"
-msgstr "Bu yanıtı seslendir"
 
 #: apps/web/src/components/call/CallCard.tsx
 msgid "Speaking"
@@ -11221,6 +11550,10 @@ msgstr "Konuşma modeli"
 #: apps/web/src/components/billing/SpendingLimitSettings.tsx
 msgid "Spending limit"
 msgstr "Harcama limiti"
+
+#: packages/i18n/src/app-icon.ts
+msgid "Sprout"
+msgstr "Filiz"
 
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/account/AccountAccess.tsx
@@ -11332,7 +11665,6 @@ msgstr "Adımlar"
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/SubagentCard.tsx
 #: apps/web/src/pages/routines/RoutineList.tsx
-#: apps/web/src/pages/shell/chat/message-view.tsx
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 #: apps/web/src/pages/shell/computers/computer-overlay.tsx
 msgid "Stop"
@@ -11347,9 +11679,9 @@ msgstr "Dikteyi durdur"
 msgid "Stop joining this series"
 msgstr "Bu seriye katılmayı bırak"
 
-#: apps/web/src/pages/shell/chat/message-view.tsx
-msgid "Stop speaking"
-msgstr "Seslendirmeyi durdur"
+#: apps/web/src/pages/shell/chat/message-hover-actions.tsx
+msgid "Stop reading aloud"
+msgstr "Sesli okumayı durdur"
 
 #: apps/web/src/components/teach/TeachRecordingChrome.tsx
 msgid "Stop teaching"
@@ -11440,6 +11772,10 @@ msgstr "Özetler ve bilgiler"
 #: packages/i18n/src/cron.ts
 msgid "Sunday"
 msgstr "Pazar"
+
+#: packages/i18n/src/app-icon.ts
+msgid "Sunglasses"
+msgstr "Güneş gözlüğü"
 
 #: apps/mobile/lib/billing/self-hosted-support.ts
 msgid "Support for $25 / month"
@@ -11588,6 +11924,14 @@ msgstr "Bağlantıyı test et"
 #: apps/web/src/pages/plugins/PluginSubmissionsPanel.tsx
 msgid "Testing"
 msgstr "Test ediliyor"
+
+#: apps/web/src/components/billing/CreditChoice.tsx
+msgid "Thanks for being an early user. Running Rakazo in the cloud has real costs, so it's now paid. It's still free if you <0>self-host</0>."
+msgstr "İlk kullanıcılardan biri olduğun için teşekkürler. Rakazo'yu bulutta çalıştırmanın gerçek maliyetleri var, bu yüzden artık ücretli. <0>Kendi sunucunda barındırırsan</0> hâlâ ücretsiz."
+
+#: apps/mobile/app/paywall.tsx
+msgid "Thanks for being an early user. Running Rakazo in the cloud has real costs, so it's now paid. It's still free if you self-host."
+msgstr "İlk kullanıcılardan biri olduğun için teşekkürler. Rakazo'yu bulutta çalıştırmanın gerçek maliyetleri var, bu yüzden artık ücretli. Kendi sunucunda barındırırsan hâlâ ücretsiz."
 
 #: apps/mobile/components/bots/bot-email.tsx
 #: apps/web/src/components/BotEmailAddressField.tsx
@@ -12118,6 +12462,10 @@ msgstr "Perşembe"
 msgid "Ticket"
 msgstr "Talep"
 
+#: packages/i18n/src/app-icon.ts
+msgid "Tie"
+msgstr "Kravat"
+
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
 #: apps/web/src/pages/routines/RoutineSchedule.tsx
 msgid "Time of day"
@@ -12369,6 +12717,7 @@ msgstr "Tekrar dene"
 #: apps/mobile/app/space-members.tsx
 #: apps/mobile/components/bots/bot-profile-menu.tsx
 #: apps/mobile/components/inbox/organization-menu.tsx
+#: apps/mobile/components/media/attachment-file.tsx
 #: apps/mobile/components/media/audio-attachment.tsx
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 #: apps/mobile/components/thread/message-bubble.tsx
@@ -12427,6 +12776,11 @@ msgstr "Yanıtını yaz"
 #: apps/web/src/pages/shell/sidebar/use-sidebar-view.ts
 msgid "Unassigned"
 msgstr "Atanmamış"
+
+#: apps/mobile/components/models/organization-model-settings.tsx
+#: apps/web/src/pages/model-settings/organization-model-settings.tsx
+msgid "Unavailable organization model"
+msgstr "Kullanılamayan kuruluş modeli"
 
 #: apps/mobile/components/cards/change-undo.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -12735,6 +13089,11 @@ msgstr "Parolalar için Korumalı giriş'i kullan."
 msgid "Use Rakazo credits"
 msgstr "Rakazo kredilerini kullan"
 
+#: apps/mobile/components/models/organization-model-settings.tsx
+#: apps/web/src/pages/model-settings/organization-model-settings.tsx
+msgid "Use saved main model"
+msgstr "Kayıtlı ana modeli kullan"
+
 #: apps/mobile/components/settings/space-bots-model.tsx
 msgid "Use space default"
 msgstr "Alan varsayılanını kullan"
@@ -12743,9 +13102,18 @@ msgstr "Alan varsayılanını kullan"
 msgid "Use up to 512 letters, digits, _ or -."
 msgstr "En fazla 512 harf, rakam, _ veya - kullan."
 
+#: apps/web/src/components/settings/ApiKeysSettings.tsx
+msgid "Use your bots from scripts and other agents"
+msgstr "Botlarını betiklerden ve diğer agent'lardan kullan"
+
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Use your own key"
 msgstr "Kendi anahtarını kullan"
+
+#. placeholder {0}: formatRelativeTime(key.lastUsedAt)
+#: apps/web/src/components/settings/ApiKeysSettings.tsx
+msgid "Used {0}"
+msgstr "Kullanıldı: {0}"
 
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemActivity.tsx
@@ -12762,8 +13130,13 @@ msgstr "Kullanıcı eşi"
 #: apps/web/src/components/messages/SecretAskCard.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Username"
 msgstr "Kullanıcı adı"
+
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
+msgid "Username field label"
+msgstr "Kullanıcı adı alanı etiketi"
 
 #: apps/mobile/lib/cards/import-setup.ts
 #: apps/web/src/pages/shell/bots/import-status.ts
@@ -12954,6 +13327,10 @@ msgstr "Web, masaüstü ve mobil uygulamalar"
 msgid "Webhook"
 msgstr "Webhook"
 
+#: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
+msgid "Website"
+msgstr "Web sitesi"
+
 #: packages/i18n/src/cron.ts
 msgid "Wednesday"
 msgstr "Çarşamba"
@@ -13090,10 +13467,6 @@ msgstr "Botlar nerede çalışsın?"
 #: apps/web/src/pages/settings/settings-nav.ts
 msgid "Where your bots pay from."
 msgstr "Botlarının ödemeyi nereden yaptığı."
-
-#: apps/web/src/pages/shell/bots/agent-import.tsx
-msgid "Which Bot?"
-msgstr "Hangi Bot?"
 
 #: apps/web/src/pages/settings/settings-nav.ts
 msgid "Which LLMs your bots use."
@@ -13277,6 +13650,13 @@ msgstr "Kartınızdan bugün orantılı fark tahsil edilir."
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Your card was not charged"
 msgstr "Kartından ücret alınmadı"
+
+#: apps/mobile/app/page-review.tsx
+#: apps/mobile/app/page.tsx
+#: apps/web/src/components/pages/PageReviewHost.tsx
+#: apps/web/src/components/pages/PageViewHost.tsx
+msgid "Your changes aren't saved. Check your connection."
+msgstr "Değişikliklerin kaydedilmedi. Bağlantını kontrol et."
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/shell/computers/use-computer-controls.tsx

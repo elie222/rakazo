@@ -1,5 +1,12 @@
 import type { FileHandle } from "node:fs/promises";
 import { Inflate } from "fflate";
+import {
+  END_OF_CENTRAL_DIRECTORY,
+  MAX_ARCHIVE_ENTRIES,
+  MAX_CENTRAL_DIRECTORY_BYTES,
+  ZIP64_END_OF_CENTRAL_DIRECTORY,
+  ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR,
+} from "./account-zip-format.js";
 
 /**
  * Random-access ZIP reading for account imports.
@@ -21,9 +28,6 @@ import { Inflate } from "fflate";
 
 const LOCAL_HEADER = 0x04034b50;
 const CENTRAL_HEADER = 0x02014b50;
-const END_OF_CENTRAL_DIRECTORY = 0x06054b50;
-const ZIP64_END_OF_CENTRAL_DIRECTORY = 0x06064b50;
-const ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR = 0x07064b50;
 const DATA_DESCRIPTOR = 0x08074b50;
 const ZIP64_EXTRA_TAG = 0x0001;
 
@@ -35,15 +39,6 @@ export class ZipFormatError extends Error {
   }
 }
 
-// A malicious archive can declare millions of central-directory records;
-// each record is an object plus a name and extra-field copy held in memory
-// until every record is sorted and validated. Cap the count and the total
-// central-directory size before any record is accumulated: a legitimate
-// account export holds a few hundred entries at most, so 100,000 entries
-// and a 16 MiB directory leave ample headroom.
-export const MAX_ARCHIVE_ENTRIES = 100_000;
-export const MAX_CENTRAL_DIRECTORY_BYTES = 16 * 1024 * 1024;
-
 /** One entry, located by the central directory and its local header. */
 export type ZipEntry = {
   name: string;
@@ -53,7 +48,6 @@ export type ZipEntry = {
   compressedSize: number;
   uncompressedSize: number;
   localHeaderOffset: number;
-  /** Offset of the entry's data, past its local header. */
   dataOffset: number;
   /** The data-descriptor flag (bit 3) is set: sizes live after the data. */
   dataDescriptor: boolean;
@@ -63,7 +57,6 @@ export type ZipEntry = {
 
 /** Bounds one read so a single slice never holds a whole entry. */
 const READ_SLICE_BYTES = 16 * 1024;
-/** The central directory is parsed through windows this size. */
 const CENTRAL_DIRECTORY_WINDOW_BYTES = 64 * 1024;
 
 const crcTable = (() => {

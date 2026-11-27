@@ -502,6 +502,299 @@ describe("acpAgentRuntime", () => {
     expect(error?.message).toBe("Fake agent is not installed.");
   });
 
+  describe("on a CLI that passes images on", () => {
+    const SCREEN_TOOLS: ConnectorTool[] = [
+      {
+        name: "computer_observe",
+        description: "Take a screenshot.",
+        inputSchema: { type: "object", properties: {} },
+        readOnly: true,
+      },
+      {
+        name: "enter_computer_mode",
+        description: "Switch to the computer model.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
+        name: "request_takeover",
+        description: "Ask the person to take over the screen.",
+        inputSchema: { type: "object", properties: { reason: { type: "string" } } },
+      },
+    ];
+    const screenshot = {
+      kind: "agent_tool_result",
+      content: [
+        { type: "text", text: "The screen." },
+        { type: "image", data: "aW1hZ2U=", mimeType: "image/png" },
+      ],
+    };
+
+    it("offers the screen tools and returns screenshots as images", async () => {
+      const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+        accessCheck: allowed,
+      });
+
+      await collect(
+        runtime,
+        request({
+          prompt: "weather",
+          tools: [...TOOLS, ...SCREEN_TOOLS],
+          executeTool: vi.fn(async () => screenshot),
+        }),
+      );
+
+      // One model, so there is no computer mode to switch into.
+      expect(recorded().find((event) => event.type === "tools")?.names).toEqual([
+        "computer_observe",
+        "get_weather",
+        "request_takeover",
+        "send_note",
+      ]);
+      expect(recorded().find((event) => event.type === "tool_result")?.result).toMatchObject({
+        content: [
+          { type: "text", text: "The screen." },
+          { type: "image", data: "aW1hZ2U=", mimeType: "image/png" },
+        ],
+      });
+    });
+
+    it("pauses for a takeover and continues the same session afterwards", async () => {
+      const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+        accessCheck: allowed,
+      });
+      const threadId = `thread-${randomUUID()}`;
+      const tools = [...TOOLS, ...SCREEN_TOOLS];
+
+      const paused = await collect(runtime, request({ threadId, prompt: "takeover", tools }));
+      await collect(
+        runtime,
+        request({ threadId, prompt: "The user finished on the computer.", tools }),
+      );
+
+      expect(paused.events).toContainEqual(
+        expect.objectContaining({ type: "takeover", reason: "Log in for me" }),
+      );
+      expect(paused.events.at(-1)?.type).toBe("done");
+      expect(
+        recorded().some(
+          (event) => event.type === "notification" && event.method === "session/cancel",
+        ),
+      ).toBe(true);
+      expect(requests("session/resume")).toHaveLength(1);
+    });
+
+    it("sends the images people attach with their message", async () => {
+      const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+        accessCheck: allowed,
+      });
+
+      await collect(
+        runtime,
+        request({
+          currentTurnImages: [
+            { name: "photo.png", mimeType: "image/png", data: new Uint8Array([1, 2, 3]) },
+          ],
+        }),
+      );
+
+      const prompt = requests("session/prompt")[0]?.params as { prompt: unknown[] };
+      expect(prompt.prompt).toContainEqual({ type: "image", mimeType: "image/png", data: "AQID" });
+    });
+
+    it("puts each image after its message and names which message each came from", async () => {
+      const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+        accessCheck: allowed,
+      });
+      const old = { name: "old.png", mimeType: "image/png" as const, data: new Uint8Array([1]) };
+      const fresh = { name: "new.png", mimeType: "image/png" as const, data: new Uint8Array([2]) };
+
+      await collect(
+        runtime,
+        request({
+          prompt: "What is in my new photo?",
+          history: [{ id: "m1", role: "user", content: "An old photo", images: [old] }],
+          currentTurnImages: [fresh],
+        }),
+      );
+
+      const prompt = requests("session/prompt")[0]?.params as {
+        prompt: Array<{ type: string; text?: string; data?: string }>;
+      };
+      expect(prompt.prompt.map((block) => block.data ?? block.type)).toEqual([
+        "text",
+        "AQ==",
+        "text",
+        "Ag==",
+        "text",
+      ]);
+      expect(prompt.prompt[0]?.text).toContain("[User]: An old photo");
+      expect(prompt.prompt[2]?.text).toContain("What is in my new photo?");
+      expect(prompt.prompt[4]?.text).toContain("1. From [User]: An old photo");
+      expect(prompt.prompt[4]?.text).toContain("2. Attached to this message");
+    });
+
+    it("does not send a message's images again once it is in the history", async () => {
+      const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+        accessCheck: allowed,
+      });
+      const threadId = `thread-${randomUUID()}`;
+      const images = [{ name: "p.png", mimeType: "image/png" as const, data: new Uint8Array([1]) }];
+
+      await collect(
+        runtime,
+        request({ threadId, sourceMessageId: "m1", prompt: "Look", currentTurnImages: images }),
+      );
+      await collect(
+        runtime,
+        request({
+          threadId,
+          prompt: "next",
+          history: [{ id: "m1", role: "user", content: "Look", images }],
+        }),
+      );
+
+      const prompt = requests("session/prompt")[1]?.params as { prompt: Array<{ type: string }> };
+      expect(prompt.prompt.map((block) => block.type)).toEqual(["text"]);
+    });
+
+    it("does not send the bot's own screenshots back to it", async () => {
+      const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+        accessCheck: allowed,
+      });
+      const threadId = `thread-${randomUUID()}`;
+      const screenshot = {
+        name: "s.png",
+        mimeType: "image/png" as const,
+        data: new Uint8Array([9]),
+      };
+
+      await collect(runtime, request({ threadId, sourceMessageId: "m1" }));
+      const history: AgentRunRequest["history"] = [
+        { id: "m1", role: "user", content: "hello" },
+        { id: "m2", role: "assistant", content: "ok", images: [screenshot] },
+      ];
+      await collect(runtime, request({ threadId, prompt: "next", history }));
+      await collect(runtime, request({ threadId, prompt: "again", history }));
+
+      for (const index of [1, 2]) {
+        const prompt = requests("session/prompt")[index]?.params as {
+          prompt: Array<{ type: string }>;
+        };
+        expect(prompt.prompt.map((block) => block.type)).toEqual(["text"]);
+      }
+    });
+
+    it("sends the same photo attached twice as two images", async () => {
+      const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+        accessCheck: allowed,
+      });
+      const photo = { name: "p.png", mimeType: "image/png" as const, data: new Uint8Array([3]) };
+
+      await collect(runtime, request({ sourceMessageId: "m1", currentTurnImages: [photo, photo] }));
+
+      const prompt = requests("session/prompt")[0]?.params as { prompt: Array<{ type: string }> };
+      expect(prompt.prompt.filter((block) => block.type === "image")).toHaveLength(2);
+    });
+
+    it("does not resend a message's photos when a paused run resumes", async () => {
+      const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+        accessCheck: allowed,
+      });
+      const threadId = `thread-${randomUUID()}`;
+      const photo = { name: "p.png", mimeType: "image/png" as const, data: new Uint8Array([7]) };
+      const run = { threadId, sourceMessageId: "m1", currentTurnImages: [photo] };
+
+      await collect(runtime, request({ ...run, prompt: "Look" }));
+      await collect(runtime, request({ ...run, prompt: "Look, the person approved" }));
+
+      const prompt = requests("session/prompt")[1]?.params as { prompt: Array<{ type: string }> };
+      expect(prompt.prompt.map((block) => block.type)).toEqual(["text"]);
+    });
+
+    it("sends a message's other images once they can be read, whatever their order", async () => {
+      const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+        accessCheck: allowed,
+      });
+      const threadId = `thread-${randomUUID()}`;
+      const first = { name: "a.png", mimeType: "image/png" as const, data: new Uint8Array([1]) };
+      const second = { name: "b.png", mimeType: "image/png" as const, data: new Uint8Array([2]) };
+      const message = { id: "m1", role: "user" as const, content: "Two photos" };
+
+      // Only the second photo could be read on the first turn.
+      await collect(runtime, request({ threadId, history: [{ ...message, images: [second] }] }));
+      await collect(
+        runtime,
+        request({ threadId, prompt: "next", history: [{ ...message, images: [first, second] }] }),
+      );
+
+      const prompt = requests("session/prompt")[1]?.params as {
+        prompt: Array<{ type: string; data?: string }>;
+      };
+      expect(
+        prompt.prompt.filter((block) => block.type === "image").map((block) => block.data),
+      ).toEqual(["AQ=="]);
+    });
+
+    it("sends an earlier message's image once it can be read", async () => {
+      const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+        accessCheck: allowed,
+      });
+      const threadId = `thread-${randomUUID()}`;
+      const message = { id: "m1", role: "user" as const, content: "Look at this" };
+
+      await collect(runtime, request({ threadId, history: [message] }));
+      await collect(
+        runtime,
+        request({
+          threadId,
+          prompt: "next",
+          history: [
+            {
+              ...message,
+              images: [{ name: "p.png", mimeType: "image/png", data: new Uint8Array([4, 5]) }],
+            },
+          ],
+        }),
+      );
+
+      const prompt = requests("session/prompt")[1]?.params as {
+        prompt: Array<{ type: string; text?: string; data?: string }>;
+      };
+      expect(prompt.prompt).toContainEqual({ type: "image", mimeType: "image/png", data: "BAU=" });
+      // On its own, it is still named as an earlier message's image.
+      expect(prompt.prompt.at(-1)?.text).toContain("1. From [User]: Look at this");
+    });
+  });
+
+  it("keeps screen tools and images from a CLI that does not pass images on", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
+
+    await collect(
+      runtime,
+      request({
+        prompt: "weather",
+        tools: [
+          ...TOOLS,
+          {
+            name: "computer_observe",
+            description: "Take a screenshot.",
+            inputSchema: { type: "object", properties: {} },
+          },
+        ],
+        currentTurnImages: [
+          { name: "photo.png", mimeType: "image/png", data: new Uint8Array([1, 2, 3]) },
+        ],
+      }),
+    );
+
+    expect(recorded().find((event) => event.type === "tools")?.names).toEqual([
+      "get_weather",
+      "send_note",
+    ]);
+    const prompt = requests("session/prompt")[0]?.params as { prompt: Array<{ type: string }> };
+    expect(prompt.prompt.map((block) => block.type)).toEqual(["text"]);
+  });
+
   it("leaves every other model to the runtime it wraps", async () => {
     const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
 

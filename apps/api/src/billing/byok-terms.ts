@@ -1,5 +1,5 @@
-import type { BillingSubscriptionSnapshot } from "@rakazo/adapter-kit";
-import type { AnalyticsEvent, ByokInterval } from "@rakazo/contracts";
+import type { BillingByokPlan, BillingSubscriptionSnapshot } from "@rakazo/adapter-kit";
+import type { AnalyticsEvent, ByokInterval, ByokTier } from "@rakazo/contracts";
 import {
   BYOK_TIERS,
   ByokTierSchema,
@@ -75,4 +75,32 @@ export function byokTierOffers(sizeChoice: boolean, hourMicros?: number) {
       },
     ];
   });
+}
+
+/** The yearly plan a monthly subscriber can switch to; null when it would not save them money. */
+export function yearlyPlan(from: BillingByokPlan): BillingByokPlan | null {
+  const amountCents = byokTierPriceCents(from.tier, "year");
+  // A subscriber on an older, cheaper price would pay more.
+  return from.interval === "month" && amountCents !== null && from.amountCents * 12 > amountCents
+    ? { tier: from.tier, interval: "year", amountCents }
+    : null;
+}
+
+/** The plan at another tier and the same interval; null when it is the same tier or not offered. */
+export function planAtTier(from: BillingByokPlan, tier: ByokTier): BillingByokPlan | null {
+  const amountCents = byokTierPriceCents(tier, from.interval);
+  return tier !== from.tier && amountCents !== null
+    ? { tier, interval: from.interval, amountCents }
+    : null;
+}
+
+/** The plan a cancelled trial continues on; the one it already has keeps the price it started at. */
+export function renewedPlan(
+  from: BillingByokPlan,
+  tier: ByokTier,
+  interval: ByokInterval,
+): BillingByokPlan | null {
+  if (tier === from.tier && interval === from.interval) return from;
+  const amountCents = byokTierPriceCents(tier, interval);
+  return amountCents === null ? null : { tier, interval, amountCents };
 }

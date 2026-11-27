@@ -483,7 +483,6 @@ export class DesktopUpdateController {
     let now = this.clock.now();
     if (!shouldCheck(this.current, now, this.lastCheck, checkOptions)) {
       if (userInitiated && this.current.phase === "idle" && this.lastCheckWasOffline) {
-        // Surface the last result to the requester without making background state noisy.
         return { ...this.current, message: t("Could not reach the update server.") };
       }
       return this.current;
@@ -609,7 +608,6 @@ export class DesktopUpdateController {
       }
       this.quitInstallSettled = settle;
       try {
-        // Quitting, not restarting: the user chose to quit.
         updater.autoRunAppAfterInstall = false;
         updater.quitAndInstall();
       } catch (error) {
