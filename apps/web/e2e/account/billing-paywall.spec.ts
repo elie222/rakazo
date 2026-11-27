@@ -366,13 +366,23 @@ test("start a bigger own-key plan billed yearly", async ({ page }, testInfo) => 
   await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: status } }));
   await page.reload();
   const period = page.getByRole("group", { name: "Billing period" });
-  await expect(page.getByText("$15", { exact: true })).toBeVisible();
-  await period.getByRole("button", { name: /Yearly/ }).click();
-  await expect(page.getByText("$12", { exact: true })).toBeVisible();
+  const plan = page.getByRole("combobox", { name: "Plan" });
+  // Billed yearly unless changed, priced per month.
+  await expect(plan).toContainText("$12 / month");
   await expect(period.getByText("−20%", { exact: true })).toBeVisible();
-  await page.getByRole("combobox", { name: "Plan" }).click();
+  await period.getByRole("button", { name: "Monthly" }).click();
+  await expect(plan).toContainText("$15 / month");
+  await period.getByRole("button", { name: /Yearly/ }).click();
+  // Both plan cards' selects sit on the same line at the same height.
+  const [planBox, creditsBox] = await Promise.all([
+    plan.boundingBox(),
+    page.getByRole("combobox", { name: "Monthly credits" }).boundingBox(),
+  ]);
+  expect(planBox?.y).toBe(creditsBox?.y);
+  expect(planBox?.height).toBe(creditsBox?.height);
+  await plan.click();
   await page.getByRole("option", { name: /^Pro/ }).click();
-  await expect(page.getByText("$39", { exact: true })).toBeVisible();
+  await expect(plan).toContainText("$39 / month");
   await captureScreenshot(page, testInfo, "billing-byok-yearly");
   let selected: unknown;
   await page.route("**/rpc/billing/selectFunding", async (route) => {

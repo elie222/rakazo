@@ -26,6 +26,7 @@ type PlanFeature = string | { text: string; info: { label: string; text: string 
 /** One plan to choose: its name, price, what it includes and the button that picks it. */
 function PlanCard({
   title,
+  titleAction,
   price,
   detail,
   features,
@@ -33,6 +34,8 @@ function PlanCard({
   highlighted = false,
 }: {
   title: ReactNode;
+  /** Beside the title, in a row as tall as a segmented toggle so cards side by side line up. */
+  titleAction?: ReactNode;
   price: ReactNode;
   detail?: ReactNode;
   features: PlanFeature[];
@@ -41,8 +44,9 @@ function PlanCard({
 }) {
   return (
     <Card className={highlighted ? "ring-2 ring-primary" : undefined}>
-      <CardHeader>
+      <CardHeader className="flex h-9 items-center justify-between gap-3">
         <h2 className="text-heading3 font-medium">{title}</h2>
+        {titleAction}
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-4">
         {price}
@@ -99,7 +103,7 @@ export function CreditChoice({
   ];
   const trialDays = status.trialDays;
   const [amount, setAmount] = useState<CreditAmount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
-  const [chosenInterval, setByokInterval] = useState<ByokInterval>("month");
+  const [chosenInterval, setByokInterval] = useState<ByokInterval>("year");
   const tiers = status.byokTiers ?? [];
   const [tier, setTier] = useState<ByokTier>("standard");
   const offer = tiers.find((candidate) => candidate.tier === tier);
@@ -192,41 +196,44 @@ export function CreditChoice({
       </div>
       <div className="grid gap-4 min-[480px]:grid-cols-2">
         <PlanCard
-          title={<Trans>Your subscription or API key</Trans>}
+          title={<Trans>Your own AI</Trans>}
+          titleAction={
+            monthlyCents && annualCents ? (
+              <ByokIntervalToggle
+                monthlyCents={monthlyCents}
+                annualCents={annualCents}
+                value={interval}
+                onChange={setByokInterval}
+              />
+            ) : null
+          }
           price={
-            <div className="flex flex-col gap-3">
-              {monthlyCents && annualCents ? (
-                <div className="flex h-12 items-center justify-between gap-3">
+            tiers.length > 1 ? (
+              <ByokTierSelect
+                wide
+                tiers={tiers}
+                interval={interval}
+                value={tier}
+                disabled={pending}
+                onChange={(next) => setTier(next.tier)}
+              />
+            ) : (
+              <div className="flex h-12 items-center">
+                {monthlyCents && annualCents ? (
                   <MonthlyPrice
                     cents={interval === "year" ? Math.round(annualCents / 12) : monthlyCents}
                   />
-                  <ByokIntervalToggle
-                    monthlyCents={monthlyCents}
-                    annualCents={annualCents}
-                    value={interval}
-                    onChange={setByokInterval}
-                  />
-                </div>
-              ) : (
-                <p className="flex h-12 items-center text-display font-medium tracking-tight">
-                  {monthlyCents ? (
-                    formatMonthlyPrice(monthlyCents, i18n.locale)
-                  ) : (
-                    <Trans>Free</Trans>
-                  )}
-                </p>
-              )}
-              {tiers.length > 1 ? (
-                <ByokTierSelect
-                  wide
-                  tiers={tiers}
-                  interval={interval}
-                  value={tier}
-                  disabled={pending}
-                  onChange={(next) => setTier(next.tier)}
-                />
-              ) : null}
-            </div>
+                ) : (
+                  <p className="text-display font-medium tracking-tight">
+                    {monthlyCents ? (
+                      formatMonthlyPrice(monthlyCents, i18n.locale)
+                    ) : (
+                      <Trans>Free</Trans>
+                    )}
+                  </p>
+                )}
+              </div>
+            )
           }
           detail={<Trans>Works with your ChatGPT or Claude plan.</Trans>}
           features={features}

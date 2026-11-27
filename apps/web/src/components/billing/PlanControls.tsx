@@ -44,31 +44,29 @@ export function ByokTierSelect({
   value: ByokTier;
   disabled?: boolean;
   onChange: (offer: TierOffer) => void;
-  /** Fills its card at the plan picker's height. */
+  /** Fills a plan card at the credits picker's height, showing the chosen price per month. */
   wide?: boolean;
 }) {
   const { t, i18n } = useLingui();
   const offered = tiers.flatMap((offer) => {
     const cents = tierPriceCents(offer, interval);
-    return cents === null
-      ? []
-      : [
-          {
-            offer,
-            price: formatBillingPrice(
-              { amount: cents, currency: "usd", interval, intervalCount: 1 },
-              i18n.locale,
-            ),
-          },
-        ];
+    if (cents === null) return [];
+    const price = wide
+      ? formatMonthlyPrice(interval === "year" ? Math.round(cents / 12) : cents, i18n.locale)
+      : formatBillingPrice(
+          { amount: cents, currency: "usd", interval, intervalCount: 1 },
+          i18n.locale,
+        );
+    return [{ offer, price }];
   });
+  const chosen = offered.find(({ offer }) => offer.tier === value);
   return (
     <Select
       value={value}
       disabled={disabled}
       onValueChange={(next) => {
-        const chosen = offered.find(({ offer }) => offer.tier === next);
-        if (chosen) onChange(chosen.offer);
+        const picked = offered.find(({ offer }) => offer.tier === next);
+        if (picked) onChange(picked.offer);
       }}
       items={offered.map(({ offer }) => ({ value: offer.tier, label: offer.name }))}
     >
@@ -77,7 +75,14 @@ export function ByokTierSelect({
         size={wide ? "xl" : "default"}
         className={wide ? "w-full" : "min-w-28"}
       >
-        <SelectValue />
+        {wide && chosen ? (
+          <span className="flex flex-1 justify-between gap-3">
+            <span>{chosen.offer.name}</span>
+            <span className="text-muted-foreground">{chosen.price}</span>
+          </span>
+        ) : (
+          <SelectValue />
+        )}
       </SelectTrigger>
       <SelectContent
         alignItemWithTrigger={false}
@@ -87,7 +92,7 @@ export function ByokTierSelect({
         <SelectGroup>
           {offered.map(({ offer, price }) => (
             <SelectItem key={offer.tier} value={offer.tier} className="py-2">
-              <span className="flex flex-col gap-0.5">
+              <span className="flex flex-1 flex-col gap-0.5">
                 <span className="flex justify-between gap-4">
                   <span>{offer.name}</span>
                   <span className="text-muted-foreground">{price}</span>
