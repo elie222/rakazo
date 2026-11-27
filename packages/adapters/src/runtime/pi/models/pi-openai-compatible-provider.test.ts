@@ -3310,4 +3310,66 @@ describe("compatible gateway connection reuse", () => {
       }
     }
   });
+
+  it("releases a retained unread response when its request signal aborts", async () => {
+    let connections = 0;
+    const bodyGate = deferred<void>();
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "text/plain" });
+      response.write("first ");
+      void bodyGate.promise.then(() => {
+        if (!response.destroyed) response.end("chunk");
+      });
+    });
+    server.on("connection", () => {
+      connections += 1;
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    try {
+      const safeFetch = createOpenAiCompatibleFetch(undefined, undefined, { allowPrivate: true });
+      const controller = new AbortController();
+      // Keep the response strongly referenced and unread, then abort its request signal.
+      const retained = await safeFetch(`http://127.0.0.1:${port}/v1/models`, {
+        signal: controller.signal,
+      });
+      const reason = new Error("caller aborted unread response");
+      controller.abort(reason);
+      // Force the idle pool cap (32) with other origins so the aborted entry is evicted once released.
+      const extraServers: Server[] = [];
+      try {
+        for (let index = 0; index < 33; index += 1) {
+          const extra = createServer((_req, res) => {
+            res.setHeader("content-type", "application/json");
+            res.end(MODEL_LIST);
+          });
+          await new Promise<void>((resolve) => extra.listen(0, "127.0.0.1", resolve));
+          extraServers.push(extra);
+          const extraPort = (extra.address() as AddressInfo).port;
+          const res = await safeFetch(`http://127.0.0.1:${extraPort}/v1/models`);
+          await res.text();
+        }
+      } finally {
+        for (const extra of extraServers) {
+          extra.closeAllConnections();
+          await new Promise<void>((resolve, reject) => {
+            extra.close((error) => (error ? reject(error) : resolve()));
+          });
+        }
+      }
+      // If the aborted borrow was released, the entry was evicted and a fresh request opens a new TCP socket.
+      const followUp = await safeFetch(`http://127.0.0.1:${port}/v1/models`);
+      bodyGate.resolve();
+      expect(await followUp.text()).toBe("first chunk");
+      expect(connections).toBe(2);
+      // Reading the retained aborted response still surfaces the abort error rather than empty EOF.
+      await expect(retained.text()).rejects.toBe(reason);
+    } finally {
+      bodyGate.resolve();
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
 });

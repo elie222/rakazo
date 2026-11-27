@@ -472,15 +472,24 @@ export async function releaseCompatibleResponse(
   const reader = response.body.getReader();
   let released = false;
   let stopWatching = () => {};
-  const finish = (failed: boolean) => {
-    if (released) return;
-    released = true;
-    stopWatching();
-    void release(failed);
-  };
   let activePulls = 0;
   let draining = false;
   let grace: GraceWait | undefined;
+  const abortError = (): unknown =>
+    signal?.reason ?? new DOMException("The operation was aborted.", "AbortError");
+  const onAbort = () => {
+    // An active pull or cancel already observes the abort and owns the upstream reader.
+    if (released || activePulls > 0 || draining) return;
+    bestEffort("cancel aborted compatible gateway response", reader.cancel(signal?.reason));
+    finish(false);
+  };
+  const finish = (failed: boolean) => {
+    if (released) return;
+    released = true;
+    signal?.removeEventListener("abort", onAbort);
+    stopWatching();
+    void release(failed);
+  };
   const settleGrace = (ended: boolean) => {
     const pending = grace;
     grace = undefined;
@@ -516,6 +525,11 @@ export async function releaseCompatibleResponse(
   const stream = new ReadableStream<Uint8Array>(
     {
       async pull(controller) {
+        if (signal?.aborted) {
+          controller.error(abortError());
+          finish(false);
+          return;
+        }
         activePulls += 1;
         try {
           const result = await reader.read();
@@ -571,6 +585,10 @@ export async function releaseCompatibleResponse(
     { highWaterMark: 0 },
   );
   stopWatching = armAbandonedBody(stream, reader, finish);
+  if (signal) {
+    if (signal.aborted) onAbort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+  }
   return new Response(stream, {
     status: response.status,
     statusText: response.statusText,
