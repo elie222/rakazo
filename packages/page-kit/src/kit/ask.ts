@@ -8,6 +8,9 @@ const ASK_MESSAGE = "rakazo-page:ask";
 const ANSWER_MESSAGE = "rakazo-page:answer";
 const NOTIFY_MESSAGE = "rakazo-page:notify";
 
+// Unique to this document, so an answer meant for the page before a reload never resolves a
+// question this one asks.
+const DOCUMENT_KEY = Math.random().toString(36).slice(2, 10);
 let asks = 0;
 
 /** Only hosts that can send a question into the page's chat mark the document. */
@@ -25,7 +28,7 @@ export function askBot(question: unknown): Promise<string> {
     return Promise.reject(new Error(`askBot takes 1 to ${PAGE_ASK_MAX_LENGTH} characters.`));
   if (!askAvailable()) return Promise.reject(new Error("The bot can't be asked from here."));
   asks += 1;
-  const id = `ask-${asks}`;
+  const id = `ask-${DOCUMENT_KEY}-${asks}`;
   return new Promise((resolve, reject) => {
     function answer(event: MessageEvent) {
       const data = event.data as { type?: unknown; id?: unknown; ok?: unknown; text?: unknown };
