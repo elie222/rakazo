@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, rename, rmdir } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { PAGE_APP_TOKEN } from "@rakazo/contracts";
 import { pollUntil } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import {
   buildPageAppBundle,
+  findBundle,
   readBuiltApp,
   readBundleVersion,
   registerWithLaunchServices,
@@ -134,6 +136,14 @@ export function createPageAppInstaller(options: {
 }) {
   const { registry, home, appData } = options;
   const source = options.source ?? runningBundle();
+  // Installs, removals and refreshes share the registry, token files and staging folder.
+  let queue: Promise<unknown> = Promise.resolve();
+  const exclusive = <T>(work: () => Promise<T>): Promise<T> => {
+    const next = queue.then(work, work);
+    // The caller gets the failure; the next one waits only for this one to settle.
+    queue = Promise.allSettled([next]);
+    return next;
+  };
 
   async function install(request: PageAppInstallRequest, server: string): Promise<boolean> {
     const config: PageAppConfig = {
@@ -160,15 +170,15 @@ export function createPageAppInstaller(options: {
           }),
         async (built) => {
           await writePageAppToken(request.appId, request.token, appData);
-          const taken = await bundleNames(folder);
-          if (previous) taken.delete(path.basename(previous.bundlePath));
-          if (previous && existsSync(previous.bundlePath)) await remove(previous.bundlePath);
-          const target = path.join(folder, uniqueBundleName(name, taken));
+          const target = path.join(folder, uniqueBundleName(name, await bundleNames(folder)));
           await rename(built, target);
           return target;
         },
       );
       await registry.put({ ...config, bundlePath: placed });
+      // The old bundle goes only once its replacement is in place and recorded.
+      if (previous && previous.bundlePath !== placed && existsSync(previous.bundlePath))
+        await bestEffort("remove replaced page app", remove(previous.bundlePath));
       await bestEffort("register page app", registerWithLaunchServices(placed));
       await bestEffort("open page app", options.open(placed));
       return true;
@@ -185,14 +195,18 @@ export function createPageAppInstaller(options: {
     await options.trash(bundle);
   }
 
+  async function forget(app: InstalledPageApp) {
+    const token = await readPageAppToken(app.appId, appData);
+    if (token) await bestEffort("revoke page app", createPageAppApi(app.server, token).revoke());
+    await removePageAppData(app.appId, appData);
+    await registry.remove(app.appId);
+  }
+
   async function uninstall(appId: string): Promise<boolean> {
     const app = (await registry.list()).find((entry) => entry.appId === appId);
     if (!app) return false;
     if (existsSync(app.bundlePath)) await remove(app.bundlePath);
-    const token = await readPageAppToken(appId, appData);
-    if (token) await bestEffort("revoke page app", createPageAppApi(app.server, token).revoke());
-    await removePageAppData(appId, appData);
-    await registry.remove(appId);
+    await forget(app);
     return true;
   }
 
@@ -203,7 +217,13 @@ export function createPageAppInstaller(options: {
   async function refresh() {
     await removeBundle(path.join(pageAppsFolder(home), STAGING));
     for (const app of await registry.list()) {
-      if (!existsSync(app.bundlePath)) continue;
+      // An app moved to the Trash from Finder ends with its token, as an uninstall does.
+      if (!existsSync(app.bundlePath)) {
+        const moved = await findBundle(pageAppBundleId(app.appId), home ?? os.homedir());
+        if (moved) await registry.put({ ...app, bundlePath: moved });
+        else await forget(app);
+        continue;
+      }
       if ((await readBundleVersion(app.bundlePath)) === options.version) continue;
       if ((await runningAppPids(app.bundlePath)).length > 0) continue;
       const built = await readBuiltApp(app.bundlePath);
@@ -223,11 +243,21 @@ export function createPageAppInstaller(options: {
         async (next) => {
           const old = `${next}.old`;
           await rename(app.bundlePath, old);
-          await rename(next, app.bundlePath);
+          try {
+            await rename(next, app.bundlePath);
+          } catch (error) {
+            await rename(old, app.bundlePath);
+            throw error;
+          }
         },
       );
     }
   }
 
-  return { install, uninstall, refresh };
+  return {
+    install: (request: PageAppInstallRequest, server: string) =>
+      exclusive(() => install(request, server)),
+    uninstall: (appId: string) => exclusive(() => uninstall(appId)),
+    refresh: () => exclusive(refresh),
+  };
 }

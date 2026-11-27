@@ -116,9 +116,12 @@ describe.skipIf(!databaseUrl)("paired computers end with the sign-in that paired
     for (const device of devices) expect(await active(device.token)).toBe(false);
   });
 
-  it("signing out everywhere removes the pages installed as apps", async () => {
+  it("signing out everywhere removes the pages installed as apps, even with no other session", async () => {
     const owner = await newAccount();
-    const { userId } = await pair(await owner.signIn());
+    const cookie = await owner.signIn();
+    const { userId } = await pair(cookie);
+    // Nothing is left to sign out after this, so only the request itself can end the apps.
+    await auth("/revoke-other-sessions", {}, cookie);
     await runAsSystem("install a page app", async () => {
       const { spaceId } = await handles.prisma.spaceMember.findFirstOrThrow({ where: { userId } });
       await handles.prisma.page.create({
@@ -133,7 +136,7 @@ describe.skipIf(!databaseUrl)("paired computers end with the sign-in that paired
     const apps = () =>
       runAsSystem("count page apps", () => handles.prisma.pageApp.count({ where: { userId } }));
     expect(await apps()).toBe(1);
-    await auth("/revoke-sessions", {}, await owner.signIn());
+    await auth("/revoke-other-sessions", {}, cookie);
     expect(await apps()).toBe(0);
   });
 

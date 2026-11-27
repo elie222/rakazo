@@ -434,7 +434,15 @@ async function savePage(ctx: RunContext, call: ToolCall) {
             groupId: thread.groupId,
             title: title!,
             ...appIcon,
-            versions: { create: { version: 1, title: title!, source, code: check.code } },
+            versions: {
+              create: {
+                version: 1,
+                title: title!,
+                source,
+                code: check.code,
+                abilities: check.abilities,
+              },
+            },
           },
         });
         const stored = await storePageImages(tx, created, {}, staged, source);
@@ -481,7 +489,15 @@ async function savePage(ctx: RunContext, call: ToolCall) {
         source,
       );
       await tx.pageVersion.create({
-        data: { pageId: page.id, version, title: nextTitle, source, code: check.code, images },
+        data: {
+          pageId: page.id,
+          version,
+          title: nextTitle,
+          source,
+          code: check.code,
+          abilities: check.abilities,
+          images,
+        },
       });
       return { pageId: page.id, version, title: nextTitle, kept: keptImages };
     });

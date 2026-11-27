@@ -34,6 +34,7 @@ export function PageView({
   share,
   composer,
   onReply,
+  onAsk,
   onSections,
   onSaveState,
   returnFocus,
@@ -51,6 +52,8 @@ export function PageView({
   composer?: ReactNode;
   /** Takes a page's reply text into the docked composer. */
   onReply?: (text: unknown) => void;
+  /** Sends a page's question to its bot and resolves with the answer. */
+  onAsk?: (text: string) => Promise<string | null>;
   onSections?: (sections: PageSectionAnchor[]) => void;
   onSaveState?: (values: PageState) => void;
   /** Puts focus back on close; false tells the dialog it is done. */
@@ -201,6 +204,7 @@ export function PageView({
                       title={title}
                       interactive
                       onReply={onReply}
+                      onAsk={onAsk}
                       onSections={onSections}
                       onSaveState={onSaveState}
                       onHeight={onDrawn}
