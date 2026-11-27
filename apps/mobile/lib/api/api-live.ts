@@ -1,11 +1,12 @@
-import type { IncomingBotCall } from "@rakazo/contracts";
-import { IncomingBotCallSchema, SpaceChangeKind } from "@rakazo/contracts";
+import type { IncomingBotCall, PageAskEvent } from "@rakazo/contracts";
+import { IncomingBotCallSchema, PageAskEventSchema, SpaceChangeKind } from "@rakazo/contracts";
 import {
   cancelResponseBody,
   displayIdentityEvent,
   IDLE_TIMEOUT_MS,
   isServerUnreachable,
   isUnreachableStatus,
+  newClientId,
 } from "@rakazo/core";
 import { identityLabels } from "@rakazo/i18n/identity-display";
 import {
@@ -107,13 +108,37 @@ export async function subscribeRosterSignals(
     context,
   );
 }
-async function subscribeRpcEvents(
+/** A page's question to its bot: the text of the bot's reply, or null when there is none. */
+export async function askPage(pageId: string, text: string): Promise<string | null> {
+  const context = await captureApiRequestContext();
+  let answer: string | null = null;
+  await subscribeRpcEvents<PageAskEvent>(
+    "pages/ask",
+    { pageId, text, clientNonce: newClientId() },
+    (event) => {
+      if (event.kind === "answer") answer = event.text;
+    },
+    new AbortController().signal,
+    context,
+    undefined,
+    (json) => PageAskEventSchema.safeParse(json).data ?? null,
+  );
+  return answer;
+}
+// Heartbeats prove liveness only; forwarding one would advance the caller's cursor.
+const threadEventFrame = (json: ThreadEvent) =>
+  json.type && json.type !== "heartbeat" ? json : null;
+
+async function subscribeRpcEvents<Event = ThreadEvent>(
   procedure: string,
   input: Record<string, unknown>,
-  onEvent: (event: ThreadEvent) => void,
+  onEvent: (event: Event) => void,
   signal: AbortSignal,
   context: ApiRequestContext,
   onClose: () => void = () => {},
+  read: (json: ThreadEvent) => Event | null = threadEventFrame as (
+    json: ThreadEvent,
+  ) => Event | null,
 ) {
   const current = () =>
     context.apiBase === currentApiBase() &&
@@ -178,13 +203,12 @@ async function subscribeRpcEvents(
       if (!data || data === "[DONE]") return;
       try {
         const parsed = JSON.parse(data) as { json?: ThreadEvent; error?: { message?: string } };
-        // Heartbeats prove liveness only; forwarding one would advance the caller's cursor.
-        if (parsed.json?.type && parsed.json.type !== "heartbeat") {
+        const event = parsed.json ? read(parsed.json) : null;
+        if (event) {
           if (!current()) {
             onClose();
             return;
           }
-          const event = parsed.json;
           onEvent(event);
         }
       } catch {

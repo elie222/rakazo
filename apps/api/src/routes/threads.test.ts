@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { answerComputerRequest } from "../computers/computer-control.js";
 import type { RouterDeps } from "../router.js";
 import { purgeClearedThreadMemory } from "../threads/thread-memory.js";
+import { takeoverReleaser } from "../threads/thread-takeover.js";
 import type { ThreadTarget } from "../threads/thread-target.js";
-import { takeoverReleaser } from "./threads.js";
 
 vi.mock("../computers/computer-control.js", () => ({
   answerComputerRequest: vi.fn().mockResolvedValue(null),

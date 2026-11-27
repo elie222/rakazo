@@ -2,6 +2,8 @@ import { useLingui } from "@lingui/react/macro";
 import { useNativeLinkConfirm } from "@rakazo/chat-ui/native";
 import type { PageDetail } from "@rakazo/contracts";
 import {
+  pageAskAnswer,
+  pageAskRequest,
   pageCopyRequest,
   pageCopyResult,
   pageLinkRequest,
@@ -19,6 +21,7 @@ import { NativeActionButton } from "../components/native/native-action-button";
 import { currentApiBase } from "../lib/api/api";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native/native";
 import { HEADER_CONTROL_SIZE } from "../lib/native/native-controls";
+import { askPageBot } from "../lib/pages/page-ask";
 import { PageLoadFailure } from "../lib/pages/page-load-failure";
 import { usePageStateSaver } from "../lib/pages/page-state";
 import {
@@ -73,7 +76,11 @@ export default function PageScreen() {
           { ...page, pageId: page.id },
           theme,
           t`This page couldn't be shown.`,
-          { reply: pageChat(page) !== null, state: page.readerState },
+          {
+            reply: pageChat(page) !== null,
+            ask: pageChat(page) !== null,
+            state: page.readerState,
+          },
         );
         if (!active) return;
         setLoaded({ status: "ready", page, document });
@@ -102,10 +109,22 @@ export default function PageScreen() {
         stateSaver.save(values);
         return;
       }
-      if (!pageActionAllowed(tappedAt.current, Date.now())) return;
+      const allowed = pageActionAllowed(tappedAt.current, Date.now());
       const message = pageMessage(data) as { type?: unknown; text?: unknown } | null;
-      const reply = message?.type === "rakazo-page:reply" ? pageReplyText(message.text) : null;
       const page = loaded.status === "ready" ? loaded.page : null;
+      const ask = pageAskRequest(message);
+      if (ask) {
+        // A page waits on every question, so one it may not send is answered at once.
+        if (!allowed || !page || !pageChat(page)) {
+          answer(pageAskAnswer(ask.id, null));
+          return;
+        }
+        tappedAt.current = null;
+        void askPageBot(page, ask.text).then((text) => answer(pageAskAnswer(ask.id, text)));
+        return;
+      }
+      if (!allowed) return;
+      const reply = message?.type === "rakazo-page:reply" ? pageReplyText(message.text) : null;
       const chat = reply && page ? pageChat(page) : null;
       const url = pageLinkRequest(message);
       const copy = pageCopyRequest(message);

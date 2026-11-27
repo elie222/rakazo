@@ -9,13 +9,16 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { usePageStateSaver } from "../../lib/pages/page-state";
 import type { PageSession } from "../../lib/pages/pages";
 import {
+  askPageBot,
   PAGE_PARAM,
+  pageAskChat,
   useMedia,
   usePageDocument,
   usePageSession,
   useReviewedPageContent,
 } from "../../lib/pages/pages";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
+import { useSpaceRpc } from "../../lib/query/space-rpc";
 import { errorCode } from "../../lib/query/user-error";
 import { PageNotice } from "./PageNotice";
 import { PagePeople } from "./PagePeople";
@@ -69,6 +72,8 @@ function OpenPage({
   });
   const savedState = pageId === null ? undefined : page.data?.readerState;
   const content = useReviewedPageContent(shownId, page.data);
+  const rpc = useSpaceRpc();
+  const askChat = page.data ? pageAskChat(page.data) !== null : false;
   const viewer = usePageDocument(
     content,
     sheet ? "background" : "card",
@@ -77,6 +82,7 @@ function OpenPage({
     false,
     undefined,
     savedState,
+    askChat,
   );
   const [shareOpen, setShareOpen] = useState(false);
   const link = useQuery({
@@ -188,6 +194,7 @@ function OpenPage({
       }
       composer={<div ref={setDockNode} />}
       onReply={session.offerReply}
+      onAsk={data && askChat ? (text) => askPageBot(rpc, data, text) : undefined}
       onSaveState={savedState ? readerState.save : undefined}
       share={
         data ? (

@@ -44,7 +44,7 @@ import {
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import { pageViewerCode } from "@rakazo/page-kit/compile";
-import { checkPageSource } from "@rakazo/page-kit/validate";
+import { checkPageSource, pageAbilities } from "@rakazo/page-kit/validate";
 import type { Hono } from "hono";
 import { cancelBody } from "../http/http-body.js";
 import type { SpaceDeletionDeps } from "../spaces/space-deletion.js";
@@ -719,6 +719,7 @@ class AccountImporter implements ArchiveSink {
             title: record.title,
             source: record.source,
             code: check.ok ? check.code : pageViewerCode(record.source),
+            abilities: check.ok ? check.abilities : pageAbilities(record.source),
             createdAt: new Date(record.createdAt),
           },
         });

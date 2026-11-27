@@ -17,6 +17,7 @@ const detail = (id: string, title: string): PageDetail => ({
   version: 1,
   code: "",
   images: {},
+  abilities: [],
   owner: { name: "Elie", image: null },
   shareUrl: null,
 });
