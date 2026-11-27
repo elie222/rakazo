@@ -88,6 +88,7 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
   /** The reader's values as the shown frame has them: what it opened with and saved since. */
   let known: PageState = {};
   let saving: Promise<void> | null = null;
+  let retrying = false;
   let consenting = false;
 
   function show(next: PageAppScreen) {
@@ -236,9 +237,25 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
         fail(error);
         if (!refusedForGood(error)) {
           unsaved = { ...sending, ...unsaved };
+          void bestEffort("retry page app values", retryState());
           return;
         }
       }
+    }
+  }
+
+  /** Tries unsaved values again after a growing wait, until they save or the app closes. */
+  async function retryState() {
+    if (retrying) return;
+    retrying = true;
+    try {
+      for (let delay = 2_000; Object.keys(unsaved).length; delay = Math.min(delay * 2, 60_000)) {
+        await abortableDelay(delay, stopped.signal);
+        if (stopped.signal.aborted) return;
+        if (!saving) await saveState({});
+      }
+    } finally {
+      retrying = false;
     }
   }
 
