@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { PageAbility } from "@rakazo/contracts";
-import { bestEffort } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { BrowserWindow, MessageBoxOptions } from "electron";
 import { app, clipboard, dialog, Notification, nativeTheme, shell } from "electron";
 import { desktop } from "./desktop-state.js";
@@ -41,8 +41,15 @@ registerPageAppScheme();
  * the app in the Trash on its next start and revokes the token from there.
  */
 async function removeSelf(revoked: boolean) {
-  await bestEffort("trash page app", shell.trashItem(runningBundle()));
-  if (revoked) await bestEffort("remove page app data", removePageAppData(appId));
+  // A bundle the Trash refused stays usable: its data goes only once the bundle is gone.
+  const trashed = await shell.trashItem(runningBundle()).then(
+    () => true,
+    (error: unknown) => {
+      getLogger().warn("page app could not move itself to the Trash", { error });
+      return false;
+    },
+  );
+  if (revoked && trashed) await bestEffort("remove page app data", removePageAppData(appId));
   app.exit(0);
 }
 

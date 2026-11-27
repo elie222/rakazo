@@ -36,6 +36,7 @@ const MAX_ICON_BASE64 = 4 * 1024 * 1024;
 const MAX_ICON_ENTRIES = 12;
 /** Where bundles are made before they appear in the apps folder, on the same volume. */
 const STAGING = ".staging";
+const SET_ASIDE = ".previous.app";
 
 export type PageAppInstallRequest = {
   appId: string;
@@ -178,7 +179,8 @@ export function createPageAppInstaller(options: {
     };
     const name = pageAppName(request.title);
     const folder = pageAppsFolder(home);
-    const previous = (await registry.list()).find((app) => app.appId === request.appId);
+    // Every install has a new app id, so there is never an earlier bundle to replace.
+    if ((await registry.list()).some((app) => app.appId === request.appId)) return false;
     let placed: string | null = null;
     try {
       placed = await staged(
@@ -200,15 +202,12 @@ export function createPageAppInstaller(options: {
         },
       );
       await registry.put({ ...config, bundlePath: placed });
-      // The old bundle goes only once its replacement is in place and recorded.
-      if (previous && previous.bundlePath !== placed && existsSync(previous.bundlePath))
-        await bestEffort("remove replaced page app", remove(previous.bundlePath));
       await bestEffort("register page app", registerWithLaunchServices(placed));
       await bestEffort("open page app", options.open(placed));
       return true;
     } catch (error) {
       if (placed !== null) await removeBundle(placed);
-      if (!previous) await removePageAppData(request.appId, home);
+      await removePageAppData(request.appId, home);
       // Nothing will use the token now, so it ends here rather than waiting for the server.
       await bestEffort(
         "revoke an unfinished page app",
@@ -251,6 +250,7 @@ export function createPageAppInstaller(options: {
     if ((await readBundleVersion(app.bundlePath)) === options.version) return;
     if ((await runningAppPids(app.bundlePath)).length > 0) return;
     const built = await readBuiltApp(app.bundlePath);
+    const old = setAside(app.appId);
     const config = pageAppConfig(built.config);
     if (!config || config.appId !== app.appId) return;
     await staged(
@@ -265,7 +265,9 @@ export function createPageAppInstaller(options: {
           config,
         }),
       async (next) => {
-        const old = `${next}.old`;
+        // Building takes a while; an app opened meanwhile is left for the next start.
+        if ((await runningAppPids(app.bundlePath)).length > 0) return;
+        await removeBundle(old);
         await rename(app.bundlePath, old);
         try {
           await rename(next, app.bundlePath);
@@ -277,12 +279,49 @@ export function createPageAppInstaller(options: {
     );
   }
 
+  /** Where an app's previous bundle waits after an update, until nothing runs from it. */
+  const setAside = (appId: string) =>
+    path.join(pageAppsFolder(home), STAGING, `${appId}${SET_ASIDE}`);
+
+  /**
+   * Clears what earlier runs left in the staging folder: an unfinished build goes, and a bundle
+   * set aside by an update goes back if the update never placed its replacement, or is removed
+   * once nothing runs from it.
+   */
+  async function settleStaging() {
+    const staging = path.join(pageAppsFolder(home), STAGING);
+    const apps = await registry.list();
+    for (const name of await bundleNames(staging)) {
+      const entry = path.join(staging, name);
+      const app = name.endsWith(SET_ASIDE)
+        ? apps.find((each) => setAside(each.appId) === entry)
+        : undefined;
+      if (app && !existsSync(app.bundlePath)) {
+        await rename(entry, app.bundlePath);
+        continue;
+      }
+      // A process keeps the path it started from, so one running from a set-aside bundle
+      // still shows the app's own path.
+      const running = [entry, ...(app ? [app.bundlePath] : [])];
+      if ((await Promise.all(running.map(runningAppPids))).every((pids) => pids.length === 0))
+        await removeBundle(entry);
+    }
+  }
+
+  /** Records an app whose install placed its bundle but ended before writing the registry. */
+  async function adoptUntracked() {
+    const known = new Set((await registry.list()).map((app) => app.appId));
+    for (const found of await installedBundles(home))
+      if (!known.has(found.appId)) await registry.put(found);
+  }
+
   /**
    * Makes each installed app again from this Rakazo when it was made from another version, so
    * apps get Rakazo's fixes. An app that is running is left for the next start.
    */
   async function refresh() {
-    await removeBundle(path.join(pageAppsFolder(home), STAGING));
+    await settleStaging();
+    await adoptUntracked();
     for (const app of await registry.list()) {
       // One app that cannot be rebuilt or forgotten leaves the others to go ahead.
       await bestEffort(`refresh page app ${app.appId}`, refreshApp(app));
