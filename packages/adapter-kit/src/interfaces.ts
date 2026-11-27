@@ -514,6 +514,7 @@ export interface HomeExportOptions {
   skipHidden?: boolean;
   /** Omit files larger than this many bytes, including files that grow while being read. */
   maxFileBytes?: number;
+  onOversizedFile?: (sizeAtLeast: number) => void;
 }
 
 export interface AgentHomeStore {

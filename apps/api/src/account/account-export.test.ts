@@ -232,6 +232,18 @@ describe("account export archive", () => {
     },
   );
 
+  it("keeps other workspace files when a filename cannot be safely restored", async () => {
+    const fakes = stores();
+    fakes.home.exportHome = async function* () {
+      yield { path: "C:report.txt", content: new Uint8Array(0), executable: true };
+      yield { path: "notes.txt", content: new Uint8Array(0) };
+    };
+    const entries = await unzipStream(zipStream(accountArchiveFiles(source(), fakes)));
+    expect(entries.map(({ name }) => name).filter((name) => name.includes("/homes/"))).toEqual([
+      accountExportPaths.homeFile("space-a", "bot-1", "notes.txt"),
+    ]);
+  });
+
   it("lists executable workspace files after them", async () => {
     const fakes = stores();
     fakes.home.exportHome = async function* () {

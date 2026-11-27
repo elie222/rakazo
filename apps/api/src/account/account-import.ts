@@ -114,14 +114,11 @@ export function parseEntryName(name: string, index: number): ArchiveEntry {
   if (section === "executables.json" && id === undefined) return { kind: "executables", spaceId };
   if (section === "artifacts" && id && rest.length === 0)
     return { kind: "artifact", spaceId, artifactId: id };
-  if (section === "homes" && id && rest.length > 0)
-    return { kind: "home", spaceId, botId: id, path: archiveHomePath(rest.join("/")) };
+  if (section === "homes" && id) {
+    const path = rest.join("/");
+    if (isAccountHomePath(path)) return { kind: "home", spaceId, botId: id, path };
+  }
   throw invalidEntry();
-}
-
-function archiveHomePath(value: string): string {
-  if (!isAccountHomePath(value)) throw invalidEntry();
-  return value;
 }
 
 function entryLimit(entry: ArchiveEntry, limits: ArchiveLimits): number {
@@ -1038,9 +1035,9 @@ class AccountImporter implements ArchiveSink {
     }
     const executables = AccountExportExecutablesSchema.safeParse(parsed);
     if (!executables.success) throw unreadable();
-    for (const { botId, path: filePath } of executables.data) {
+    for (const { botId, path: relativePath } of executables.data) {
       const bot = space.bots.get(botId);
-      const relativePath = archiveHomePath(filePath);
+      if (!isAccountHomePath(relativePath)) throw invalidEntry();
       const staging = bot && space.homes.get(bot.homeKey);
       if (!bot || !staging || !space.receivedHomeFiles.has(`${botId}/${relativePath}`))
         throw invalidEntry();

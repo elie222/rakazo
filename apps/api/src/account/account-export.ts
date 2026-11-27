@@ -180,13 +180,13 @@ export async function* accountArchiveFiles(
         );
       } catch (error) {
         options.signal?.throwIfAborted();
-        if (error instanceof ObjectStorageUnavailableError) throw error;
         // One unreadable file should not cost the user the rest of their export.
         getLogger().warn("account.export.artifact_unreadable", {
           "artifact.id": artifact.id,
           "space.id": space.id,
           error: error instanceof Error ? error.message : String(error),
         });
+        if (error instanceof ObjectStorageUnavailableError) throw error;
         continue;
       }
       yield { path: accountExportPaths.artifact(space.id, artifact.id), data: [bytes] };
@@ -202,10 +202,21 @@ export async function* accountArchiveFiles(
         directory,
         skipHidden: true,
         maxFileBytes: ACCOUNT_EXPORT_MAX_HOME_FILE_BYTES,
+        onOversizedFile: (sizeAtLeast) =>
+          getLogger().warn("account.export.home_file_too_large", {
+            "bot.id": home.botId,
+            "space.id": space.id,
+            sizeAtLeast,
+          }),
       });
       for await (const file of runGeneratorAsTenant(tenant, iterate(files))) {
-        if (!isAccountHomePath(file.path))
-          throw new Error("The workspace contains a filename that cannot be safely restored.");
+        if (!isAccountHomePath(file.path)) {
+          getLogger().warn("account.export.home_path_unsupported", {
+            "bot.id": home.botId,
+            "space.id": space.id,
+          });
+          continue;
+        }
         if (file.executable) executables.push({ botId: home.botId, path: file.path });
         yield {
           path: accountExportPaths.homeFile(space.id, home.botId, file.path),

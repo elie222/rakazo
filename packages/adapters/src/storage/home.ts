@@ -170,7 +170,7 @@ export class LocalAgentHomeStore implements AgentHomeStore {
   async *exportHome(
     botId: string,
     _context: AdapterContext,
-    { directory = "", skipHidden = false, maxFileBytes }: HomeExportOptions = {},
+    { directory = "", ...options }: HomeExportOptions = {},
   ): AsyncIterable<PortableFile> {
     await this.waitForBotWrite(botId);
     await this.recoverInterruptedCommit(botId);
@@ -183,7 +183,7 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     const expected = safeJoin(home, directory);
     const root = await resolveExportPath(expected);
     if (root !== expected) return;
-    yield* walkFiles(root, root, { skipHidden, maxFileBytes });
+    yield* walkFiles(root, root, options);
   }
 
   async readFile(
@@ -606,10 +606,12 @@ async function readTraversalFile(
     assertContained(root, opened);
     if (skipHidden && isHiddenTopEntry(root, opened)) throw new Error("Home entry is hidden");
     if (maxFileBytes === undefined) return { content: await handle.readFile(), mode: info.mode };
-    if (info.size > maxFileBytes) return;
+    if (info.size > maxFileBytes) return { exceededBytes: info.size };
     // The end offset is inclusive. Read at most one byte beyond the limit to detect growth.
     const content = await buffer(handle.createReadStream({ end: maxFileBytes, autoClose: false }));
-    if (content.length <= maxFileBytes) return { content, mode: info.mode };
+    return content.length > maxFileBytes
+      ? { exceededBytes: content.length }
+      : { content, mode: info.mode };
   } finally {
     await handle.close();
   }
@@ -732,8 +734,11 @@ async function* walkFiles(
       yield* walkFiles(root, full, options, portablePath, visited);
     } else if (info.isFile()) {
       const file = await readTraversalFile(root, full, options);
-      if (file)
-        yield { path: portablePath, content: file.content, executable: Boolean(file.mode & 0o100) };
+      if (file.exceededBytes !== undefined) {
+        options.onOversizedFile?.(file.exceededBytes);
+        continue;
+      }
+      yield { path: portablePath, content: file.content, executable: Boolean(file.mode & 0o100) };
     }
   }
 }

@@ -298,10 +298,15 @@ describe("LocalAgentHomeStore path containment", () => {
     await writeFile(path.join(home, "within.txt"), "1234");
     await writeFile(path.join(home, "over.txt"), "12345");
 
+    const onOversizedFile = vi.fn();
     const files = [];
-    for await (const file of store.exportHome("bot-1", context, { maxFileBytes: 4 })) {
+    for await (const file of store.exportHome("bot-1", context, {
+      maxFileBytes: 4,
+      onOversizedFile,
+    })) {
       files.push([file.path, Buffer.from(file.content).toString()]);
     }
+    expect(onOversizedFile).toHaveBeenCalledExactlyOnceWith(5);
     expect(files).toEqual([["within.txt", "1234"]]);
   });
 
