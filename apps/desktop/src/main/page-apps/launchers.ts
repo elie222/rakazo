@@ -65,20 +65,13 @@ function linuxLauncher(): PageAppLauncher {
       const folder = applicationsDir(process.env);
       await mkdir(folder, { recursive: true });
       const entry = path.join(folder, desktopFileName(config.appId));
-      // Written beside it and moved into place, so a failed write leaves no broken entry.
-      const next = `${entry}.${process.pid}.tmp`;
-      try {
-        await writeFile(next, entryText(config, dataDir));
-        await rename(next, entry);
-      } finally {
-        await rm(next, { force: true });
-      }
+      await replaceFile(entry, entryText(config, dataDir));
       return entry;
     },
     repoint: async (installed, dataDir) => {
       const text = entryText(installed, dataDir);
       if ((await readFile(installed.bundlePath, "utf8")) !== text)
-        await writeFile(installed.bundlePath, text);
+        await replaceFile(installed.bundlePath, text);
     },
     remove: (entry) => rm(entry, { force: true }),
     find: async (appId) => {
@@ -96,6 +89,17 @@ async function ownShortcuts(folder: string, appId: string): Promise<string[]> {
     .filter((name) => name.toLowerCase().endsWith(".lnk"))
     .map((name) => path.join(folder, name))
     .filter((shortcut) => ownShortcut(shortcut, argument));
+}
+
+/** Written beside the file and moved into place, so a failed write never leaves it half written. */
+async function replaceFile(file: string, text: string) {
+  const next = `${file}.${process.pid}.tmp`;
+  try {
+    await writeFile(next, text);
+    await rename(next, file);
+  } finally {
+    await rm(next, { force: true });
+  }
 }
 
 /** The launcher kind of the running platform; macOS apps are bundles instead. */
