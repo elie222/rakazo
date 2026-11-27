@@ -72,7 +72,7 @@ import { fleetPrepareDeps } from "../turn/run-model.js";
 import { refusal } from "../turn/tool-refusal.js";
 import { BUILTIN_AGENT_TOOL_NAMES, FLEET_WRITE_TOOL_NAMES_SET } from "./run-tool-selection.js";
 import { holdSharedPageSave } from "./run-tools-pages.js";
-import { scheduleCreateRefusal } from "./run-tools-tasks.js";
+import { scheduleCreateRefusal, scheduleUpdatePreview } from "./run-tools-tasks.js";
 import { USER_COMPUTER_TOOLS } from "./run-tools-user-computer.js";
 
 /** A tool call resolved to the tool it runs and the exact request an approval covers. */
@@ -535,6 +535,11 @@ export async function prepareToolRequest(
       args = target.id === bot.id ? rest : { ...rest, bot_id: target.id, bot_name: target.name };
     }
   }
+  // Only a persisted approval may supply the before-values the save checks against.
+  if (name === "schedule_update" && nextApprovedTool !== name) {
+    const { expected: _modelExpected, ...given } = args;
+    args = given;
+  }
   if (name === "update_bot" && argumentGiven(args.bot_id)) {
     // An approved replay runs the stored request, whose settings were checked before the card.
     if (nextApprovedTool === name) request.heldForApproval = args.settings !== undefined;
@@ -719,6 +724,14 @@ export async function prepareToolRequest(
   )
     request.effectRequest = args;
   return undefined;
+}
+
+/** Prepare the review and persist its before-values only in the request replayed after approval. */
+export async function prepareScheduleUpdateApproval(ctx: RunContext, request: ToolRequest) {
+  const prepared = await scheduleUpdatePreview(ctx, request.args);
+  if ("error" in prepared) return refusal("schedule_update_refused", prepared.error);
+  request.fleetSummary = prepared.summary;
+  if (prepared.pinned) request.effectRequest = { ...request.args, expected: prepared.pinned };
 }
 
 /** What the model is told when a press could not be checked for a payment, so nothing was pressed. */

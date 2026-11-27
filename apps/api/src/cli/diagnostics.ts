@@ -16,6 +16,7 @@ const serverFields = {
   id: true,
   spaceId: true,
   userId: true,
+  organizationId: true,
   transport: true,
   enabled: true,
   allSpaces: true,

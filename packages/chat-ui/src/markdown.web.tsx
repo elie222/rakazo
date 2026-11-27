@@ -13,6 +13,7 @@ import {
 } from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
+import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
@@ -182,9 +183,7 @@ function MarkdownPre({
 }: React.ComponentPropsWithoutRef<"pre"> & { node?: MarkdownHast }) {
   const streamingSource = useContext(StreamingSourceContext);
   const diagram = mermaidFenceSource(node);
-  // Prose an author wrote in a fence reads as prose; code keeps the monospaced font.
   const prose = diagram === undefined && isProseFence(fenceLanguage(node));
-  // An empty fence has nothing to copy.
   const codeBlock = (
     <CodeBlock {...props} copyable={/\S/.test(codeText(codeElement(node)))} prose={prose} />
   );
@@ -744,7 +743,7 @@ export function LinkifiedText({
   );
 }
 
-const remarkPlugins = [remarkGfm];
+const remarkPlugins = [remarkGfm, remarkBreaks];
 const rehypePlugins = [preserveSkippedTableText];
 
 // MarkdownImage decides what an image source may do, so it receives the source as written.

@@ -17,6 +17,10 @@ export const ChatAlertSchema = z.object({
 });
 export type ChatAlert = z.infer<typeof ChatAlertSchema>;
 
+export function chatAlertNeedsAttention(kind: ChatAlert["kind"]): boolean {
+  return kind === "help" || kind === "takeover" || kind === "failure";
+}
+
 /** Selected-text excerpt carried by a reply; capped so a quote stays a quote. */
 export const REPLY_QUOTE_MAX_LENGTH = 2_000;
 

@@ -976,6 +976,26 @@ describePostgres("row-level security (PostgreSQL)", () => {
     }
   });
 
+  it("repairs the organization capability grant when provisioning after restore", async () => {
+    const canExecute = async () => {
+      const { rows } = await owner.pool.query<{ allowed: boolean }>(
+        "SELECT has_function_privilege($1, 'public.app_manage_organization_item(text)', 'EXECUTE') AS allowed",
+        [RUNTIME_ROLE],
+      );
+      return rows[0]?.allowed;
+    };
+
+    await owner.pool.query(
+      `REVOKE EXECUTE ON FUNCTION app_manage_organization_item(text) FROM ${RUNTIME_ROLE}`,
+    );
+    try {
+      expect(await canExecute()).toBe(false);
+    } finally {
+      await provisionRuntimeRole(migrationUrl!, runtimeUrl!);
+    }
+    expect(await canExecute()).toBe(true);
+  });
+
   it("gives the runtime login the job queue, replacing a hand-made policy", async () => {
     const policies = () =>
       owner.prisma.$queryRaw<Array<{ tablename: string; cmd: string; roles: string[] }>>`
@@ -1174,6 +1194,51 @@ describePostgres("row-level security (PostgreSQL)", () => {
     const all = await runAsSystem("row-level security test", visible);
     expect(all.threads.sort()).toEqual(threadIds().sort());
     expect(all.secrets).toHaveLength(6);
+  });
+
+  it("enforces personal and organization capability ownership with the runtime role", async () => {
+    const memberId = `${b.userId}-member`;
+    await owner.prisma.member.update({ where: { id: memberId }, data: { role: "member" } });
+    const data = { kind: "plugin", name: "Example", source: "https://example.test/plugin" };
+    try {
+      const [personal, shared] = await runAsTenant(a, async () => [
+        await db.capabilityInstall.create({
+          data: { ...data, spaceId: a.spaceId, userId: a.userId },
+        }),
+        await db.capabilityInstall.create({ data: { ...data, organizationId } }),
+      ]);
+      const where = { id: { in: [personal.id, shared.id] } };
+      await runAsTenant(b, async () => {
+        expect(await db.capabilityInstall.findMany({ where, select: { id: true } })).toEqual([
+          { id: shared.id },
+        ]);
+        expect(await db.capabilityInstall.updateMany({ where, data: { name: "Denied" } })).toEqual({
+          count: 0,
+        });
+        expect(await db.capabilityInstall.deleteMany({ where })).toEqual({ count: 0 });
+        await expect(
+          db.capabilityInstall.create({ data: { ...data, organizationId, source: "other" } }),
+        ).rejects.toThrow(/row-level security/);
+      });
+      await runAsTenant({ ...b, spaceId: "another-organization-space" }, async () => {
+        expect(await db.capabilityInstall.count({ where })).toBe(0);
+      });
+      expect(
+        await runAsSystem("inspect capability ownership fixture", () =>
+          db.capabilityInstall.count({ where }),
+        ),
+      ).toBe(2);
+      await runAsTenant(a, async () => {
+        expect(await db.capabilityInstall.updateMany({ where, data: { name: "Updated" } })).toEqual(
+          {
+            count: 2,
+          },
+        );
+        expect(await db.capabilityInstall.deleteMany({ where })).toEqual({ count: 2 });
+      });
+    } finally {
+      await owner.prisma.member.update({ where: { id: memberId }, data: { role: "owner" } });
+    }
   });
 
   it("protects exactly the tables the client treats as protected", async () => {

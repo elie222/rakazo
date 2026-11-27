@@ -3,9 +3,11 @@ import { createRouterClient } from "@orpc/server";
 import {
   EncryptedSecretStore,
   previewPluginInstall,
+  skillReadFromTool,
   withSecretPersistence,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { buildSkillMd } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { createDb, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -13,6 +15,8 @@ import { createAgentSkillsService } from "../bots/agent-skills.js";
 import type { RouterDeps } from "../router.js";
 import { createRouter } from "../router.js";
 import { installPlugin } from "./plugin-installs.js";
+
+const actorScope = ({ userId, spaceId }: Actor) => ({ userId, spaceId });
 
 const enabled = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const sha = "a".repeat(40);
@@ -45,6 +49,14 @@ describe.skipIf(!enabled)("plugin install lifecycle (PostgreSQL, offline provide
   let actor: Actor;
   const suffix = randomUUID();
   const organizationId = `plugin-org-${suffix}`;
+  const teammateId = `plugin-teammate-${suffix}`;
+  const teammateSpaceId = `plugin-teammate-space-${suffix}`;
+  const teammate: Actor = {
+    userId: teammateId,
+    spaceId: teammateSpaceId,
+    email: `${teammateId}@example.test`,
+    isDeploymentOwner: false,
+  };
   const secrets = new EncryptedSecretStore("fake-plugin-test-encryption-key");
   const endpoint = vi.fn().mockResolvedValue(undefined);
   const deps = () => ({ prisma, secrets, fetcher, assertEndpoint: endpoint });
@@ -108,6 +120,40 @@ describe.skipIf(!enabled)("plugin install lifecycle (PostgreSQL, offline provide
           createdByUserId: userId,
         },
       });
+      await prisma.user.create({
+        data: {
+          id: teammateId,
+          name: "Plugin Teammate",
+          email: teammate.email,
+          emailVerified: false,
+        },
+      });
+      await prisma.member.createMany({
+        data: [
+          { id: `admin-${suffix}`, organizationId, userId, role: "admin", createdAt: new Date() },
+          {
+            id: `member-${suffix}`,
+            organizationId,
+            userId: teammateId,
+            role: "member",
+            createdAt: new Date(),
+          },
+        ],
+      });
+      await prisma.space.create({
+        data: { id: teammateSpaceId, organizationId, name: "Teammate Space" },
+      });
+      await prisma.spaceMember.upsert({
+        where: { spaceId_userId: { spaceId: teammateSpaceId, userId: teammateId } },
+        create: {
+          id: `teammate-space-member-${suffix}`,
+          organizationId,
+          spaceId: teammateSpaceId,
+          userId: teammateId,
+          createdAt: new Date(),
+        },
+        update: {},
+      });
       actor = { spaceId, userId, email: `${userId}@example.test`, isDeploymentOwner: false };
     }),
   );
@@ -115,11 +161,318 @@ describe.skipIf(!enabled)("plugin install lifecycle (PostgreSQL, offline provide
     runAsSystem("plugin install fixture", async () => {
       if (prisma) {
         await prisma.organization.deleteMany({ where: { id: organizationId } });
-        await prisma.user.deleteMany({ where: { id: actor?.userId } });
+        await prisma.user.deleteMany({ where: { id: { in: [actor.userId, teammateId] } } });
         await prisma.$disconnect();
         await db.pool.end();
       }
       await secrets.close();
+    }),
+  );
+
+  describe("personal and organization installs of the same plugin", () => {
+    let personalId: string;
+    let sharedId: string;
+    const asMember = (fn: () => Promise<void>) => () => runAsTenant(teammate, fn);
+    const sharedRequest = async () => ({
+      kind: "plugin" as const,
+      ...(await input()),
+      organization: true,
+    });
+
+    beforeAll(
+      asActor(async () => {
+        const request = await sharedRequest();
+        personalId = (await client().capabilities.install({ ...request, organization: false })).id;
+        sharedId = (await client().capabilities.install(request)).id;
+      }),
+    );
+    afterAll(
+      asActor(async () => {
+        if (sharedId) await client().capabilities.remove({ id: sharedId });
+        if (personalId) await client().capabilities.remove({ id: personalId });
+      }),
+    );
+
+    it(
+      "rejects a second organization install",
+      asActor(async () => {
+        await expect(client().capabilities.install(await sharedRequest())).rejects.toMatchObject({
+          code: "CONFLICT",
+        });
+      }),
+    );
+    it(
+      "lists only the shared install in a teammate's Space",
+      asMember(async () => {
+        expect(
+          (await client(teammate).capabilities.list()).filter((row) => row.source === source),
+        ).toEqual([
+          expect.objectContaining({ id: sharedId, organization: true, manageable: false }),
+        ]);
+      }),
+    );
+    it(
+      "exposes the shared connector in a teammate's Space",
+      asMember(async () => {
+        expect(await client(teammate).mcp.servers.list()).toContainEqual(
+          expect.objectContaining({
+            installId: sharedId,
+            organization: true,
+            allBots: true,
+            manageable: false,
+            hasSecret: true,
+          }),
+        );
+      }),
+    );
+    it(
+      "lets a teammate read the installed skill",
+      asMember(async () => {
+        expect(
+          await skillReadFromTool(prisma, teammate, { name: "plugin-test-skill" }),
+        ).toMatchObject({
+          content: expect.stringContaining("Follow these steps."),
+        });
+      }),
+    );
+    it(
+      "refuses a member's organization install",
+      asMember(async () => {
+        await expect(
+          client(teammate).capabilities.install(await sharedRequest()),
+        ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      }),
+    );
+    it(
+      "hides the shared parts editor from a member",
+      asMember(async () => {
+        await expect(
+          client(teammate).capabilities.pluginParts({ id: sharedId, parts: ["skills"] }),
+        ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      }),
+    );
+    it(
+      "preserves the shared install after a member requests removal",
+      asMember(async () => {
+        const member = client(teammate);
+        await expect(member.capabilities.remove({ id: sharedId })).rejects.toMatchObject({
+          code: "FORBIDDEN",
+        });
+        expect(await member.capabilities.list()).toContainEqual(
+          expect.objectContaining({ id: sharedId }),
+        );
+      }),
+    );
+  });
+
+  it(
+    "rejects an organization connector endpoint already installed by a different source",
+    asActor(async () => {
+      const rpc = client();
+      const request = { kind: "plugin" as const, ...(await input()), organization: true };
+      const installed = await rpc.capabilities.install(request);
+      try {
+        await expect(
+          rpc.capabilities.install({
+            ...request,
+            source: "https://github.com/example/another-plugin",
+            pluginParts: ["connector"],
+          }),
+        ).rejects.toMatchObject({ code: "MCP_SERVER_IN_ORGANIZATION" });
+      } finally {
+        await rpc.capabilities.remove({ id: installed.id });
+      }
+    }),
+  );
+
+  it(
+    "dismisses an organization plugin's approval in another Space when removing its connector",
+    asActor(async () => {
+      const rpc = client();
+      const install = await rpc.capabilities.install({
+        kind: "plugin",
+        ...(await input()),
+        organization: true,
+      });
+      const server = await prisma.mcpServer.findFirstOrThrow({ where: { installId: install.id } });
+      const card = await runAsTenant(teammate, async () => {
+        const bot = await prisma.bot.create({
+          data: { ...actorScope(teammate), name: "Approval bot", color: "blue" },
+        });
+        const thread = await prisma.thread.create({
+          data: { ...actorScope(teammate), botId: bot.id },
+        });
+        const message = await prisma.message.create({
+          data: {
+            threadId: thread.id,
+            botId: bot.id,
+            seq: 0,
+            role: "bot",
+            blocks: [
+              { kind: "mcp_approval", name: "Example", serverId: server.id, status: "pending" },
+            ],
+          },
+        });
+        return { bot, message, thread };
+      });
+      try {
+        await rpc.capabilities.pluginParts({ id: install.id, parts: ["skills"] });
+        await runAsTenant(teammate, async () => {
+          const message = await prisma.message.findUniqueOrThrow({
+            where: { id: card.message.id },
+          });
+          expect(message.blocks).toMatchObject([{ status: "dismissed" }]);
+          const event = await prisma.event.findFirstOrThrow({
+            where: { threadId: card.thread.id },
+          });
+          expect(event).toMatchObject({
+            spaceId: teammate.spaceId,
+            type: "thread.message.updated",
+          });
+        });
+      } finally {
+        await rpc.capabilities.remove({ id: install.id });
+        await runAsTenant(teammate, () => prisma.bot.delete({ where: { id: card.bot.id } }));
+      }
+    }),
+  );
+
+  it(
+    "lets members read a shared standalone skill and reserves edits for admins",
+    asActor(async () => {
+      const rpc = client();
+      const skill = await rpc.agentSkills.create({
+        name: "shared-standalone",
+        description: "Shared instructions",
+        organization: true,
+      });
+      try {
+        expect(skill).toMatchObject({ organization: true, readOnly: false });
+        await runAsTenant(teammate, async () => {
+          const member = client(teammate);
+          expect(await member.agentSkills.get({ skillId: skill.id })).toMatchObject({
+            organization: true,
+            readOnly: true,
+          });
+          await expect(
+            member.agentSkills.update({ skillId: skill.id, description: "Unauthorized" }),
+          ).rejects.toMatchObject({ code: "FORBIDDEN" });
+        });
+        expect(
+          await rpc.agentSkills.update({ skillId: skill.id, description: "Revised" }),
+        ).toMatchObject({ description: "Revised" });
+      } finally {
+        await rpc.agentSkills.remove({ skillId: skill.id });
+      }
+    }),
+  );
+
+  it(
+    "renames organization skill references according to each routine's visible skills",
+    asActor(async () => {
+      const rpc = client();
+      const name = "Shared review";
+      const destination = "Weekly review";
+      const shared = await rpc.agentSkills.create({
+        name,
+        description: "Shared instructions",
+        organization: true,
+      });
+      const fixtures = await runAsSystem("routine skill rename fixture", async () => {
+        const ownerBot = await prisma.bot.create({
+          data: { ...actorScope(actor), name: "Owner bot", color: "blue" },
+        });
+        const teammateBot = await prisma.bot.create({
+          data: { ...actorScope(teammate), name: "Teammate bot", color: "blue" },
+        });
+        const ownerRoutine = await prisma.routine.create({
+          data: {
+            ...actorScope(actor),
+            botId: ownerBot.id,
+            name: "Owner routine",
+            prompt: "Run @Shared review, then @Shared review tools.",
+            crons: [],
+          },
+        });
+        const teammateRoutine = await prisma.routine.create({
+          data: {
+            ...actorScope(teammate),
+            botId: teammateBot.id,
+            name: "Teammate routine",
+            prompt: "Run @Shared review.",
+            crons: [],
+          },
+        });
+        const longer = await prisma.agentSkill.create({
+          data: { ...actorScope(actor), name: "Shared review tools", description: "", content: "" },
+        });
+        const shadow = await prisma.agentSkill.create({
+          data: { ...actorScope(teammate), name: name.toLowerCase(), description: "", content: "" },
+        });
+        const destinationShadow = await prisma.agentSkill.create({
+          data: { ...actorScope(actor), name: destination, description: "", content: "" },
+        });
+        return {
+          ownerBot,
+          teammateBot,
+          ownerRoutine,
+          teammateRoutine,
+          longer,
+          shadow,
+          destinationShadow,
+        };
+      });
+      try {
+        await expect(
+          rpc.agentSkills.update({ skillId: shared.id, name: destination }),
+        ).rejects.toMatchObject({ code: "CONFLICT" });
+        expect(await rpc.agentSkills.get({ skillId: shared.id })).toMatchObject({ name });
+        await prisma.agentSkill.delete({ where: { id: fixtures.destinationShadow.id } });
+        await rpc.agentSkills.update({ skillId: shared.id, name: destination });
+        await runAsSystem("check routine skill references", async () => {
+          expect(
+            await prisma.routine.findUniqueOrThrow({ where: { id: fixtures.ownerRoutine.id } }),
+          ).toMatchObject({ prompt: "Run @Weekly review, then @Shared review tools." });
+          expect(
+            await prisma.routine.findUniqueOrThrow({ where: { id: fixtures.teammateRoutine.id } }),
+          ).toMatchObject({ prompt: "Run @Shared review." });
+        });
+        await runAsTenant(teammate, async () => {
+          await client(teammate).agentSkills.update({
+            skillId: fixtures.shadow.id,
+            content: buildSkillMd({
+              name: "Personal review",
+              description: "Personal instructions",
+              body: "",
+            }),
+          });
+          expect(
+            await prisma.routine.findUniqueOrThrow({ where: { id: fixtures.teammateRoutine.id } }),
+          ).toMatchObject({ prompt: "Run @Personal review." });
+          await prisma.routine.update({
+            where: { id: fixtures.teammateRoutine.id },
+            data: { prompt: "Run @Weekly review." },
+          });
+        });
+        await rpc.agentSkills.update({ skillId: shared.id, name: "Monthly review" });
+        await runAsTenant(teammate, async () => {
+          expect(
+            await prisma.routine.findUniqueOrThrow({ where: { id: fixtures.teammateRoutine.id } }),
+          ).toMatchObject({ prompt: "Run @Monthly review." });
+        });
+      } finally {
+        await rpc.agentSkills.remove({ skillId: shared.id });
+        await runAsSystem("remove routine skill rename fixture", async () => {
+          await prisma.bot.deleteMany({
+            where: { id: { in: [fixtures.ownerBot.id, fixtures.teammateBot.id] } },
+          });
+          await prisma.agentSkill.deleteMany({
+            where: {
+              id: { in: [fixtures.longer.id, fixtures.shadow.id, fixtures.destinationShadow.id] },
+            },
+          });
+        });
+      }
     }),
   );
 

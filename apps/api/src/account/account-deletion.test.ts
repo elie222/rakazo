@@ -33,6 +33,7 @@ describe("deleteOrganization lease", () => {
   let spacesLeft: number;
   const prisma = {
     organization: { findUnique: vi.fn(async () => ({ name: "Work" })) },
+    connection: { findMany: vi.fn(async () => []) },
     artifact: { findMany: vi.fn(async () => []) },
     bot: { findMany: vi.fn(async () => []) },
     computer: { findMany: vi.fn(async () => []) },

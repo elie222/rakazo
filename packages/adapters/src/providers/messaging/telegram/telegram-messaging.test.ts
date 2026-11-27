@@ -8,6 +8,7 @@ import {
   messagingPlatformsFromEnv,
   splitOutboundBody,
 } from "../../../messaging/messaging-platforms.js";
+import { telegramOutbound } from "./telegram-messaging.js";
 
 const context: AdapterContext = {
   operationId: "op-test",
@@ -280,7 +281,7 @@ describe("Telegram messaging Markdown", () => {
     [`\`\`\`text\n${"\\".repeat(4090)}\n\`\`\``, "\\".repeat(4090)],
   ])("sends every split part without adapter truncation", async (body, expected) => {
     const { surface, sends, threadId } = createSurface();
-    const parts = splitOutboundBody("telegram", body);
+    const parts = splitOutboundBody(telegramOutbound, body);
     for (const part of parts) {
       await surface.sendToThread({ threadId, body: part }, context);
     }
@@ -304,7 +305,7 @@ describe("Telegram messaging Markdown", () => {
 
   async function sendSplit(body: string): Promise<string[]> {
     const { surface, sends, threadId } = createSurface();
-    for (const part of splitOutboundBody("telegram", body)) {
+    for (const part of splitOutboundBody(telegramOutbound, body)) {
       await surface.sendToThread({ threadId, body: part }, context);
     }
     return sends.map(({ text }) => text);
@@ -349,7 +350,7 @@ describe("Telegram messaging Markdown", () => {
 
   it("keeps the address of a link in a reply that fits in one message", () => {
     const body = "Read [the docs](https://example.com/docs/start) first.";
-    expect(splitOutboundBody("telegram", body)).toEqual([body]);
+    expect(splitOutboundBody(telegramOutbound, body)).toEqual([body]);
   });
 
   it("keeps every split part in the plain-text fallback after Markdown rejection", async () => {
@@ -359,7 +360,7 @@ describe("Telegram messaging Markdown", () => {
       "Bad Request: can't parse entities",
     ]);
     const body = "!".repeat(4096);
-    for (const part of splitOutboundBody("telegram", body)) {
+    for (const part of splitOutboundBody(telegramOutbound, body)) {
       await surface.sendToThread({ threadId, body: part }, context);
     }
 
@@ -423,7 +424,7 @@ describe("Telegram messaging Markdown", () => {
       { length: 90 },
       (_, row) => `- [Article ${row}](https://example.com/articles/${row}/${"path/".repeat(8)})`,
     );
-    const parts = splitOutboundBody("telegram", rows.join("\n"));
+    const parts = splitOutboundBody(telegramOutbound, rows.join("\n"));
     const { surface, sends, threadId } = createSurface(
       parts.flatMap(() => ["Bad Request: can't parse entities", ""]),
     );
@@ -990,6 +991,7 @@ describe("Telegram messaging files", () => {
     const surface = new ChatSdkMessagingSurface([
       {
         provider: "telegram",
+        outbound: telegramOutbound,
         capabilities: { direct: true, groups: false, receipt: null, files: true },
         adapter,
       },

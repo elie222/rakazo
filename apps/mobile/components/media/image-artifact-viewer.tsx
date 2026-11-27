@@ -16,23 +16,16 @@ import { scheduleOnRN } from "react-native-worklets";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import { downloadArtifactToDevice } from "../../lib/artifacts/artifact-download";
+import type { ImageArtifactPreviewTarget } from "../../lib/artifacts/artifact-gallery";
 import type { MobileArtifactTarget } from "../../lib/artifacts/artifact-open";
-import {
-  imageArtifactPreview,
-  imageArtifactUri,
-  shareLocalFile,
-} from "../../lib/artifacts/artifact-open";
+import { imageArtifactUri, shareLocalFile } from "../../lib/artifacts/artifact-open";
 import { imageDismissBackdropOpacity, shouldDismissImage } from "../../lib/messages/image-dismiss";
 import type { ImageSize } from "../../lib/messages/inline-image";
 import { fitImageSize } from "../../lib/messages/inline-image";
 import { iosAtLeast } from "../../lib/native/native-controls";
 import { GlassIconButton } from "../native/glass-icon-button";
 
-export type ImageArtifactPreviewTarget = {
-  artifactId: string;
-  name: string;
-  mimeType: string;
-};
+import { useImagePreview } from "./use-image-preview";
 
 const HEADER_HEIGHT = 54;
 const MIN_SCALE = 1;
@@ -226,10 +219,14 @@ function ZoomableImage({
 export function ImageArtifactViewer({
   threadTarget,
   target,
+  gallery,
   onClose,
 }: {
   threadTarget: MobileArtifactTarget;
+  /** The picture to open first. */
   target: ImageArtifactPreviewTarget;
+  /** Every picture of the opened message, in order, when there is more than one. */
+  gallery?: ImageArtifactPreviewTarget[];
   onClose: () => void;
 }) {
   const { t } = useLingui();
@@ -243,6 +240,13 @@ export function ImageArtifactViewer({
       ["transparent", tokens.background],
     ),
   }));
+  const initialIndex =
+    gallery?.findIndex((picture) => picture.artifactId === target.artifactId) ?? -1;
+  const pictures = initialIndex >= 0 && gallery ? gallery : [target];
+  const [at, setAt] = useState(Math.max(0, initialIndex));
+  const current = pictures[at] ?? target;
+  const step = (delta: number) =>
+    setAt((index) => (index + delta + pictures.length) % pictures.length);
   const closed = useRef(false);
   useEffect(() => {
     closed.current = false;
@@ -250,62 +254,39 @@ export function ImageArtifactViewer({
       closed.current = true;
     };
   }, []);
-  const downloading = useRef(false);
+  const downloading = useRef(new Set<string>());
   const close = () => {
     if (closed.current) return;
     closed.current = true;
     onClose();
   };
   const [box, setBox] = useState<ImageSize | null>(null);
-  const [state, setState] = useState<
-    | { status: "loading" }
-    | { status: "ready"; uri: string; natural: ImageSize }
-    | { status: "error"; message: string }
-  >({ status: "loading" });
-  const targetBotId = "botId" in threadTarget ? threadTarget.botId : undefined;
-  const targetGroupId = "groupId" in threadTarget ? threadTarget.groupId : undefined;
-  const requestTarget = (): MobileArtifactTarget =>
-    targetBotId !== undefined ? { botId: targetBotId } : { groupId: targetGroupId! };
-  const fail = (error: unknown) =>
-    setState({
-      status: "error",
-      message: errorText(error, t`Could not load image`),
-    });
-
-  useEffect(() => {
-    let cancelled = false;
-    void imageArtifactPreview(requestTarget(), target.artifactId, target.mimeType)
-      .then(({ uri, size }) => {
-        if (!cancelled) setState({ status: "ready", uri, natural: size });
-      })
-      .catch((error) => {
-        if (!cancelled) fail(error);
-      });
-    return () => {
-      cancelled = true;
-    };
-    // The request target is derived from the two ids below.
-  }, [targetBotId, targetGroupId, target.artifactId, target.mimeType]);
+  const { preview, recordError } = useImagePreview(
+    threadTarget,
+    current.artifactId,
+    current.mimeType,
+  );
 
   // Re-resolve the file before sharing: it re-downloads when the OS purged the cache since load.
   const share = () =>
-    void imageArtifactUri(requestTarget(), target.artifactId, target.mimeType)
-      .then((uri) => shareLocalFile(uri, target.mimeType, target.name))
+    void imageArtifactUri(threadTarget, current.artifactId, current.mimeType)
+      .then((uri) => shareLocalFile(uri, current.mimeType, current.name))
       .catch((error) => Alert.alert(t`Could not share image`, errorText(error, t`Try again.`)));
 
   const download = async () => {
-    if (downloading.current) return;
-    downloading.current = true;
+    const { artifactId } = current;
+    if (downloading.current.has(artifactId)) return;
+    downloading.current.add(artifactId);
     try {
-      const uri = await imageArtifactUri(requestTarget(), target.artifactId, target.mimeType);
+      const uri = await imageArtifactUri(threadTarget, artifactId, current.mimeType);
       if (closed.current) return;
-      const result = await downloadArtifactToDevice(uri, target.mimeType, target.name);
+      const result = await downloadArtifactToDevice(uri, current.mimeType, current.name);
       if (result === "saved" && !closed.current) Alert.alert(t`Saved to Photos`);
     } catch (error) {
       if (!closed.current)
         Alert.alert(t`Could not download image`, errorText(error, t`Try again.`));
     } finally {
-      downloading.current = false;
+      downloading.current.delete(artifactId);
     }
   };
 
@@ -338,16 +319,23 @@ export function ImageArtifactViewer({
           iconSize={18}
           onPress={close}
         />
+        {pictures.length > 1 ? (
+          <View style={styles.headerTitle}>
+            <Text style={[styles.counter, { color: tokens.mutedForeground }]}>
+              {`${at + 1} / ${pictures.length}`}
+            </Text>
+          </View>
+        ) : null}
         <View style={styles.headerActions}>
           <GlassIconButton
-            accessibilityLabel={t`Download ${ph({ name: target.name })}`}
+            accessibilityLabel={t`Download ${ph({ name: current.name })}`}
             ios="arrow.down.circle"
             android="download-outline"
             iconSize={18}
             onPress={() => void download()}
           />
           <GlassIconButton
-            accessibilityLabel={t`Share ${ph({ name: target.name })}`}
+            accessibilityLabel={t`Share ${ph({ name: current.name })}`}
             ios="square.and.arrow.up"
             android="share-social-outline"
             iconSize={18}
@@ -365,23 +353,46 @@ export function ImageArtifactViewer({
           );
         }}
       >
-        {state.status === "ready" && box ? (
+        {preview.status === "ready" && box ? (
           <ZoomableImage
-            uri={state.uri}
-            displayed={fitImageSize(state.natural, box.width, box.height)}
+            key={current.artifactId}
+            uri={preview.uri}
+            displayed={fitImageSize(preview.size, box.width, box.height)}
             box={box}
             onClose={close}
             dismissY={dismissY}
-            onError={() => fail(new Error(t`Could not load image`))}
+            onError={() => recordError(new Error(t`Could not load image`))}
           />
-        ) : state.status === "error" ? (
-          <Text style={[styles.message, { color: tokens.mutedForeground }]}>{state.message}</Text>
+        ) : preview.status === "error" ? (
+          <Text style={[styles.message, { color: tokens.mutedForeground }]}>
+            {errorText(preview.error, t`Could not load image`)}
+          </Text>
         ) : (
           <ActivityIndicator
             color={tokens.mutedForeground}
             accessibilityLabel={t`Loading image…`}
           />
         )}
+        {pictures.length > 1 ? (
+          <>
+            <View style={[styles.pager, styles.pagerStart]}>
+              <GlassIconButton
+                accessibilityLabel={t`Previous picture`}
+                ios="chevron.left"
+                android="chevron-back"
+                onPress={() => step(-1)}
+              />
+            </View>
+            <View style={[styles.pager, styles.pagerEnd]}>
+              <GlassIconButton
+                accessibilityLabel={t`Next picture`}
+                ios="chevron.right"
+                android="chevron-forward"
+                onPress={() => step(1)}
+              />
+            </View>
+          </>
+        ) : null}
       </View>
     </Animated.View>
   );
@@ -397,6 +408,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   headerActions: { flexDirection: "row", gap: 8 },
+  headerTitle: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    pointerEvents: "none",
+  },
+  counter: { fontSize: 13 },
+  pager: { position: "absolute", top: 0, bottom: 0, justifyContent: "center", zIndex: 10 },
+  pagerStart: { left: 12 },
+  pagerEnd: { right: 12 },
   stage: { flex: 1, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   message: { fontSize: 15, textAlign: "center", padding: 24 },
 });

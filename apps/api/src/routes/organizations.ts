@@ -25,6 +25,7 @@ import { invitationRecipientKey, sendInvitationEmail } from "../email/invitation
 import type { RouterDeps } from "../router.js";
 import { afterSpaceDeparture } from "../spaces/space-departure.js";
 import type { RouterContext } from "./context.js";
+import { organizationVaultRoutes } from "./organization-vault.js";
 
 function invitationUrl(deps: RouterDeps, invitationId: string): string {
   return new URL(`/join/${invitationId}`, deps.env.webOrigin).toString();
@@ -34,6 +35,7 @@ export function organizationsRoutes(ctx: RouterContext) {
   const { deps, authed } = ctx;
   return {
     organizations: {
+      vault: organizationVaultRoutes(ctx),
       list: authed.organizations.list.handler(({ context }) =>
         runAsSystem("list the organizations a user belongs to", () =>
           listMemberOrganizations(deps.prisma, context.actor),

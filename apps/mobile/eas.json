@@ -43,6 +43,12 @@
         "releaseStatus": "completed",
         "changesNotSentForReview": false
       }
+    },
+    "internal": {
+      "android": {
+        "track": "internal",
+        "releaseStatus": "completed"
+      }
     }
   }
 }

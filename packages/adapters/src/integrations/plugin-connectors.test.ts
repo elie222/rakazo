@@ -13,6 +13,7 @@ import {
   parsePluginDirectory,
   parsePluginSource,
   pluginPreviewDto,
+  pluginSourceHeaders,
   previewPluginInstall,
 } from "./plugin-connectors.js";
 
@@ -880,6 +881,19 @@ describe("GitHub acquisition", () => {
           : JSON.stringify({ tree: [], truncated: true }),
       ),
     ).rejects.toThrow(/incomplete/);
+  });
+  it("sends a configured token to the source API and to no other host", () => {
+    expect(pluginSourceHeaders("https://api.github.com/repos/a/b/commits/HEAD", "t0ken")).toEqual({
+      authorization: "Bearer t0ken",
+    });
+    for (const url of [
+      "https://raw.githubusercontent.com/a/b/HEAD/plugin.json",
+      "https://api.github.com.example.test/repos/a/b",
+      "http://api.github.com/repos/a/b",
+    ]) {
+      expect(pluginSourceHeaders(url, "t0ken")).toBeUndefined();
+    }
+    expect(pluginSourceHeaders("https://api.github.com/repos/a/b", "")).toBeUndefined();
   });
   it("scopes to a monorepo plugin subdirectory", async () => {
     const preview = await previewPluginInstall({

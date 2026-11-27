@@ -156,13 +156,13 @@ it("offers Dismiss only on secret cards", async () => {
   expect(button("Dismiss")).toBeUndefined();
 });
 
-it("puts primary Save before secondary Dismiss at the default button size", async () => {
+it("pairs a text Dismiss with primary Save at the default button size", async () => {
   await render(secretCard);
   expect(
     [...button("Save")!.parentElement!.querySelectorAll("button")].map((item) => item.textContent),
-  ).toEqual(["Save", "Dismiss"]);
+  ).toEqual(["Dismiss", "Save"]);
   expect(button("Save")?.classList.contains("bg-primary")).toBe(true);
-  expect(button("Dismiss")?.classList.contains("border-border")).toBe(true);
+  expect(button("Dismiss")?.classList.contains("text-muted-foreground")).toBe(true);
   expect(button("Save")!.disabled).toBe(true);
   expect(container.querySelector("input")?.classList.contains("w-full")).toBe(true);
   const card = container.querySelector('[data-testid="secret-ask-card"]')!;

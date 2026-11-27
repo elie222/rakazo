@@ -31,6 +31,11 @@ msgstr "{0, plural, other {ได้รับฟรี # เดือน}}"
 msgid "{0, plural, one {# free month} other {# free months}}"
 msgstr "{0, plural, other {ฟรี # เดือน}}"
 
+#. placeholder {0}: images.length
+#: apps/mobile/components/media/image-attachment-deck.tsx
+msgid "{0, plural, one {# image} other {# images}}"
+msgstr "{0, plural, other {# รูปภาพ}}"
+
 #. placeholder {0}: skills.length - shownSkills.length
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "{0, plural, one {# more} other {# more}}"
@@ -52,6 +57,11 @@ msgstr "{0, plural, other {# สเปซ}}"
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 msgid "{0, plural, one {# tool} other {# tools}}"
 msgstr "{0, plural, other {# เครื่องมือ}}"
+
+#. placeholder {0}: images.length
+#: apps/web/src/pages/shell/chat/image-gallery.tsx
+msgid "{0, plural, one {Show all # picture} other {Show all # pictures}}"
+msgstr "{0, plural, other {แสดงรูปภาพทั้งหมด # รูป}}"
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
@@ -94,6 +104,11 @@ msgstr "{0} GB"
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
 msgid "{0} handling"
 msgstr "วิธีจัดการ {0}"
+
+#. placeholder {0}: formatBillingAmount(added, "USD", i18n.locale)
+#: apps/web/src/pages/auth/Redeem.tsx
+msgid "{0} in credits added"
+msgstr "เพิ่มเครดิต {0} แล้ว"
 
 #. placeholder {0}: bot.name
 #: apps/web/src/components/call/IncomingCall.tsx
@@ -323,10 +338,6 @@ msgstr "{count} รายการที่ต้องดูแล"
 msgid "{count} on"
 msgstr "เปิดอยู่ {count} ตัว"
 
-#: apps/mobile/components/integrations/integration-detail.tsx
-msgid "{count} tools"
-msgstr "{count} เครื่องมือ"
-
 #: apps/mobile/components/inbox/unread-jump-overlay.tsx
 msgid "{count} unread"
 msgstr "ยังไม่อ่าน {count}"
@@ -509,6 +520,16 @@ msgstr "{name}, เปิด"
 #: packages/i18n/src/computer-usage.ts
 msgid "{name}’s computer"
 msgstr "คอมพิวเตอร์ของ {name}"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/model-disconnect.ts
+msgid "{names} and {more} more may stop until you reconnect."
+msgstr "{names} และอีก {more} รายการอาจหยุดทำงานจนกว่าคุณจะเชื่อมต่อใหม่"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/model-disconnect.ts
+msgid "{names} may stop until you reconnect."
+msgstr "{names} อาจหยุดทำงานจนกว่าคุณจะเชื่อมต่อใหม่"
 
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "{owner}'s {peer} wants to connect to {agent}"
@@ -736,7 +757,6 @@ msgid "{title}, saved as {savedAs}"
 msgstr "{title}, บันทึกเป็น {savedAs}"
 
 #: apps/web/src/components/messages/ToolActivityDisclosure.tsx
-#: apps/web/src/pages/plugins/connector-detail.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, other {# เครื่องมือ}}"
 
@@ -758,12 +778,11 @@ msgid "@{0}"
 msgstr "@{0}"
 
 #. placeholder {0}: mention.name
-#. placeholder {1}: mention.subtitle
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
-msgid "@{0}, {1}"
-msgstr "@{0}, {1}"
+msgid "@{0}, {details}"
+msgstr "@{0}, {details}"
 
-#: apps/mobile/components/composer/thread-composer.tsx
+#: apps/mobile/components/composer/composer-mention-picker.tsx
 msgid "@{name}"
 msgstr "@{name}"
 
@@ -887,10 +906,6 @@ msgstr "1 ชั่วโมง"
 msgid "1 space"
 msgstr "1 สเปซ"
 
-#: apps/mobile/components/integrations/integration-detail.tsx
-msgid "1 tool"
-msgstr "1 เครื่องมือ"
-
 #: apps/mobile/components/inbox/unread-jump-overlay.tsx
 msgid "1 unread"
 msgstr "ยังไม่อ่าน 1 รายการ"
@@ -971,9 +986,8 @@ msgstr "Access token (ไม่บังคับ)"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/paywall.tsx
-#: apps/mobile/components/inbox/inbox-footer.tsx
 #: apps/mobile/components/inbox/inbox-header.tsx
-#: apps/mobile/lib/inbox/use-inbox-header.ts
+#: apps/mobile/components/inbox/inbox-toolbar.tsx
 #: apps/web/src/components/account/AccountMenu.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Account"
@@ -1029,6 +1043,7 @@ msgstr "การดำเนินการสำหรับ {name}"
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/routines/RoutineEditor.tsx
 #: apps/web/src/pages/settings/BillingSettingsPanel.tsx
+#: packages/i18n/src/routine-approval.ts
 msgid "Active"
 msgstr "เปิดใช้งาน"
 
@@ -1158,7 +1173,6 @@ msgid "Add credits"
 msgstr "เพิ่มเครดิต"
 
 #: apps/mobile/app/(settings)/integrations.tsx
-#: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/add-menu.tsx
 msgid "Add custom"
 msgstr "เพิ่มแบบกำหนดเอง"
@@ -1406,10 +1420,12 @@ msgid "Allow"
 msgstr "อนุญาต"
 
 #: apps/mobile/app/(settings)/messaging.tsx
+#: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 #: apps/mobile/lib/settings/ai-consent.ts
 #: apps/web/src/components/call/AiDataConsentDialog.tsx
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Allow"
 msgstr "อนุญาต"
@@ -1500,6 +1516,10 @@ msgstr "อนุญาตเสมอ"
 #: apps/web/src/components/messages/AskCard.tsx
 msgid "Always allow {site}"
 msgstr "อนุญาต {site} เสมอ"
+
+#: packages/i18n/src/routine-approval.ts
+msgid "Always allow routine updates"
+msgstr "อนุญาตการอัปเดตรูทีนเสมอ"
 
 #: apps/mobile/lib/cards/ask-action-label.ts
 #: apps/web/src/components/messages/AskCard.tsx
@@ -1710,6 +1730,10 @@ msgstr "การอนุมัติ"
 msgid "Approve"
 msgstr "อนุมัติ"
 
+#: packages/i18n/src/routine-approval.ts
+msgid "Approve once"
+msgstr "อนุมัติครั้งเดียว"
+
 #: apps/mobile/lib/calls/call-session.ts
 #: apps/web/src/lib/calls/call-session.ts
 msgid "Approve or deny it on screen."
@@ -1771,8 +1795,10 @@ msgstr "อาร์ติแฟกต์"
 msgid "Artifacts"
 msgstr "อาร์ติแฟกต์"
 
+#: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/mobile/components/settings/approval-settings-rows.tsx
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
 msgid "Ask"
 msgstr "ถามก่อน"
 
@@ -1809,6 +1835,10 @@ msgstr "กำลังพักเครื่อง"
 #: packages/i18n/src/cron.ts
 msgid "at {time}"
 msgstr "เวลา {time}"
+
+#: packages/i18n/src/cron.ts
+msgid "at {times} and {last}"
+msgstr "เวลา {times} และ {last}"
 
 #: apps/web/src/pages/routines/RoutineSchedule.tsx
 msgid "at {timeSelect}"
@@ -2014,7 +2044,9 @@ msgstr "รอบการเรียกเก็บเงิน"
 msgid "Block"
 msgstr "บล็อก"
 
+#: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
 msgid "Block"
 msgstr "บล็อก"
 
@@ -2142,6 +2174,11 @@ msgstr "บอท"
 #: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Bots and browser automation"
 msgstr "บอทและการทำงานอัตโนมัติของเบราว์เซอร์"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/model-disconnect.ts
+msgid "Bots and routines that rely on this connection may stop."
+msgstr "บอทและรูทีนที่ใช้การเชื่อมต่อนี้อาจหยุดทำงาน"
 
 #: apps/mobile/lib/bots/bot-lifecycle.ts
 msgid "Bots and their own chats stay."
@@ -2286,7 +2323,6 @@ msgstr "อ่านรูปภาพไม่ได้"
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
-#: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/app/(settings)/profile.tsx
@@ -2332,6 +2368,7 @@ msgstr "อ่านรูปภาพไม่ได้"
 #: apps/mobile/lib/dialogs/text-prompt.ts
 #: apps/mobile/lib/inbox/sections/confirm-delete-section.ts
 #: apps/mobile/lib/inbox/use-inbox-chat-actions.ts
+#: apps/mobile/lib/models/model-disconnect.ts
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 #: apps/mobile/lib/thread/send/unsent-send-warning.ts
 #: apps/mobile/lib/thread/thread-voice.ts
@@ -2523,6 +2560,10 @@ msgstr "การสมัครใช้งาน ChatGPT"
 #: packages/i18n/src/identity-display.ts
 msgid "Chats"
 msgstr "แชท"
+
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Chats and other work"
+msgstr "แชทและงานอื่น ๆ"
 
 #: apps/web/src/components/computers/ComputersUnavailableHint.tsx
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
@@ -2827,6 +2868,7 @@ msgstr "คอมพิวเตอร์บนคลาวด์"
 #: apps/mobile/components/vault/confirm-identity.tsx
 #: apps/web/src/components/account/ConfirmIdentityDialog.tsx
 #: apps/web/src/components/messages/SecretAskCard.tsx
+#: apps/web/src/pages/auth/Redeem.tsx
 msgid "Code"
 msgstr "รหัส"
 
@@ -2880,11 +2922,6 @@ msgstr "คำสั่ง"
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Command menu"
 msgstr "เมนูคำสั่ง"
-
-#: apps/mobile/lib/vault/secret-destination.ts
-#: apps/web/src/components/messages/SecretAskCard.tsx
-msgid "Command variable"
-msgstr "ตัวแปรคำสั่ง"
 
 #: apps/mobile/lib/pages/page-review-comments.tsx
 #: apps/web/src/components/pages/PageReviewComments.tsx
@@ -3077,6 +3114,11 @@ msgstr "เชื่อมต่อโมเดลในการตั้งค
 msgid "Connect a voice provider first."
 msgstr "เชื่อมต่อผู้ให้บริการเสียงก่อน"
 
+#: apps/mobile/lib/calls/call-language-preference.ts
+#: apps/web/src/lib/calls/dictation.ts
+msgid "Connect a voice provider that transcribes, or turn off automatic language detection in Voice settings."
+msgstr "เชื่อมต่อผู้ให้บริการเสียงที่ถอดเสียงเป็นข้อความได้ หรือปิดการตรวจจับภาษาอัตโนมัติในการตั้งค่าเสียง"
+
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 msgid "Connect API key"
@@ -3204,6 +3246,7 @@ msgstr "การเชื่อมต่อกับ {0} ยังอยู่�
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
+#: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "Connector"
 msgstr "คอนเนกเตอร์"
 
@@ -3749,6 +3792,10 @@ msgstr "ดาวน์โหลดรูปภาพไม่สำเร็จ
 msgid "Could not download this artifact"
 msgstr "ดาวน์โหลดอาร์ติแฟกต์นี้ไม่สำเร็จ"
 
+#: apps/mobile/components/bots/bot-profile-menu.tsx
+msgid "Could not duplicate bot"
+msgstr "ทำสำเนาบอทไม่สำเร็จ"
+
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Could not enable tools"
@@ -3938,6 +3985,13 @@ msgstr "โหลดการตั้งค่าโมเดลไม่สำ
 msgid "Could not load pages."
 msgstr "โหลดหน้าไม่สำเร็จ"
 
+#: apps/mobile/components/integrations/integration-detail.tsx
+#: apps/mobile/components/integrations/tool-permissions.tsx
+#: apps/web/src/pages/plugins/connector-detail.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
+msgid "Could not load permissions"
+msgstr "โหลดสิทธิ์ไม่สำเร็จ"
+
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "Could not load permissions."
 msgstr "โหลดสิทธิ์ไม่สำเร็จ"
@@ -4048,7 +4102,7 @@ msgid "Could not open computer"
 msgstr "เปิดคอมพิวเตอร์ไม่สำเร็จ"
 
 #: apps/mobile/app/peer-chat.tsx
-#: apps/mobile/components/thread/message-bubble.tsx
+#: apps/mobile/components/media/attachment-file.tsx
 msgid "Could not open file"
 msgstr "เปิดไฟล์ไม่สำเร็จ"
 
@@ -4134,6 +4188,10 @@ msgstr "เชื่อมต่อเซิร์ฟเวอร์โมเด
 #: apps/web/src/pages/shell/bots/use-agent-import-source.ts
 msgid "Could not read these files"
 msgstr "อ่านไฟล์เหล่านี้ไม่สำเร็จ"
+
+#: apps/web/src/pages/auth/Redeem.tsx
+msgid "Could not redeem the code"
+msgstr "ใช้รหัสไม่สำเร็จ"
 
 #: apps/mobile/lib/board/board.ts
 msgid "Could not refresh the board. {detail}"
@@ -4302,6 +4360,11 @@ msgstr "บันทึกโมเดลไม่สำเร็จ"
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Could not save model settings"
 msgstr "บันทึกการตั้งค่าโมเดลไม่สำเร็จ"
+
+#: apps/mobile/components/integrations/tool-permissions.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
+msgid "Could not save permission"
+msgstr "บันทึกสิทธิ์ไม่สำเร็จ"
 
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/shell/use-routine-editor.ts
@@ -4519,6 +4582,10 @@ msgstr "ถอดเสียงไฟล์บันทึกเสียงน
 #: apps/mobile/lib/voice/voice-clip.ts
 msgid "Could not transcribe that."
 msgstr "ถอดเสียงไม่สำเร็จ"
+
+#: apps/web/src/pages/shell/composer/use-composer-actions.ts
+msgid "Could not try again"
+msgstr "ลองอีกครั้งไม่สำเร็จ"
 
 #: apps/web/src/pages/space/ScratchpadSection.tsx
 msgid "Could not update"
@@ -4899,6 +4966,7 @@ msgstr "วัน"
 #: apps/web/src/components/call/IncomingCall.tsx
 #: apps/web/src/components/messages/ToolQuestionCard.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+#: packages/i18n/src/routine-approval.ts
 msgid "Decline"
 msgstr "ปฏิเสธ"
 
@@ -4910,11 +4978,13 @@ msgstr "ปฏิเสธแล้ว"
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/bots/bot-look-picker.tsx
+#: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/mobile/components/models/model-role-settings.tsx
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 #: apps/web/src/pages/model-settings/deployment-model-settings.tsx
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
 msgid "Default"
@@ -5183,6 +5253,11 @@ msgstr "อัปเดตเดสก์ท็อป"
 msgid "Details"
 msgstr "รายละเอียด"
 
+#: apps/mobile/app/(settings)/voice.tsx
+#: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
+msgid "Detect call language automatically"
+msgstr "ตรวจจับภาษาในการโทรอัตโนมัติ"
+
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Developer"
@@ -5269,6 +5344,7 @@ msgstr "ละทิ้งแล้ว"
 #: apps/mobile/app/(settings)/wallet.tsx
 #: apps/mobile/app/meeting-calendar.tsx
 #: apps/mobile/components/models/model-providers.tsx
+#: apps/mobile/lib/models/model-disconnect.ts
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
@@ -5282,9 +5358,8 @@ msgstr "ตัดการเชื่อมต่อ"
 msgid "Disconnect {disconnectName}?"
 msgstr "ตัดการเชื่อมต่อ {disconnectName} ไหม?"
 
-#: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/wallet.tsx
-#: apps/mobile/components/models/model-providers.tsx
+#: apps/mobile/lib/models/model-disconnect.ts
 #: apps/web/src/pages/settings/PaymentWalletSettingsPanel.tsx
 msgid "Disconnect {name}?"
 msgstr "ตัดการเชื่อมต่อ {name} ไหม?"
@@ -5454,6 +5529,7 @@ msgstr "สกิลฉบับร่าง"
 msgid "Drag, drop, or paste an image"
 msgstr "ลากและวาง หรือวางรูปภาพ"
 
+#: apps/mobile/components/bots/bot-profile-menu.tsx
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 msgid "Duplicate"
 msgstr "ทำสำเนา"
@@ -5557,11 +5633,18 @@ msgstr "โมเดลที่เปิดใช้"
 msgid "Enabled routine \"{name}\""
 msgstr "เปิดใช้รูทีน “{name}” แล้ว"
 
+#: apps/mobile/components/routines/routine-end-date.tsx
+msgid "End date"
+msgstr "วันที่สิ้นสุด"
+
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 msgid "End user ID"
 msgstr "ID ผู้ใช้ปลายทาง"
 
 #: apps/mobile/app/(settings)/billing.tsx
+#: apps/mobile/app/routine.tsx
+#: apps/mobile/components/routines/routine-end-date.tsx
+#: apps/web/src/pages/routines/RoutineEditor.tsx
 msgid "Ends"
 msgstr "วันสิ้นสุด"
 
@@ -5843,6 +5926,7 @@ msgstr "การจัดการเมื่อล้มเหลว"
 msgid "Fields to compare (optional)"
 msgstr "ฟิลด์ที่จะเปรียบเทียบ (ไม่บังคับ)"
 
+#: apps/mobile/components/media/attachment-file.tsx
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/mobile/lib/thread/send/thread-attachments.ts
 #: apps/web/src/pages/integrations/McpServerForm.tsx
@@ -6160,6 +6244,10 @@ msgstr "วางสาย แล้วจึงกรอกรหัสที�
 msgid "Haptics"
 msgstr "การสั่น"
 
+#: apps/mobile/app/(settings)/general.tsx
+msgid "Hardware keyboard"
+msgstr "คีย์บอร์ดภายนอก"
+
 #: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Header"
@@ -6443,6 +6531,10 @@ msgstr "อยู่ในการประชุม"
 msgid "In this bot"
 msgstr "ในบอทนี้"
 
+#: packages/i18n/src/routine-approval.ts
+msgid "In this chat"
+msgstr "ในแชทนี้"
+
 #: apps/mobile/app/(settings)/mcp-server.tsx
 msgid "In use"
 msgstr "ใช้งานอยู่"
@@ -6543,6 +6635,7 @@ msgstr "โดเมนที่เชื่อมต่อ"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/components/inbox/inbox-toolbar.tsx
 #: apps/web/src/pages/plugins/PluginsOverlay.tsx
 msgid "Integrations"
 msgstr "การเชื่อมต่อ"
@@ -6923,6 +7016,7 @@ msgid "Loading calendar…"
 msgstr "กำลังโหลดปฏิทิน…"
 
 #: apps/mobile/components/media/image-artifact-viewer.tsx
+#: apps/mobile/components/media/image-attachment-deck.tsx
 #: apps/mobile/components/media/inline-image-attachment.tsx
 msgid "Loading image…"
 msgstr "กำลังโหลดรูปภาพ…"
@@ -6961,8 +7055,9 @@ msgid "Loading preview…"
 msgstr "กำลังโหลดพรีวิว…"
 
 #: apps/mobile/components/integrations/integration-detail.tsx
-msgid "Loading tools…"
-msgstr "กำลังโหลดเครื่องมือ…"
+#: apps/web/src/pages/plugins/connector-detail.tsx
+msgid "Loading tool permissions…"
+msgstr "กำลังโหลดสิทธิ์ของเครื่องมือ…"
 
 #: apps/mobile/app/meeting-transcript.tsx
 #: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
@@ -7536,6 +7631,11 @@ msgstr "เพิ่มเติม"
 msgid "More actions"
 msgstr "การทำงานเพิ่มเติม"
 
+#: apps/mobile/components/cards/AskActions.tsx
+#: apps/web/src/components/messages/AskCard.tsx
+msgid "More approval options"
+msgstr "ตัวเลือกการอนุมัติเพิ่มเติม"
+
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
 msgstr "แอปเพิ่มเติม"
@@ -7559,7 +7659,7 @@ msgid "Move them to your shared memory."
 msgstr "ย้ายไปยังความจำที่ใช้ร่วมกัน"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 #: apps/mobile/lib/board/board-list.ios.tsx
 #: apps/mobile/lib/board/board-list.tsx
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
@@ -7612,6 +7712,7 @@ msgstr "คอมพิวเตอร์ของฉัน"
 #: apps/web/src/pages/shell/bots/create-bot-dialog.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
 #: apps/web/src/pages/space/GroupPanel.tsx
+#: packages/i18n/src/routine-approval.ts
 msgid "Name"
 msgstr "ชื่อ"
 
@@ -7758,6 +7859,10 @@ msgstr "แชทกลุ่มใหม่"
 msgid "New header value"
 msgstr "ค่าเฮดเดอร์ใหม่"
 
+#: packages/i18n/src/routine-approval.ts
+msgid "New instructions"
+msgstr "คำสั่งใหม่"
+
 #: apps/mobile/app/(settings)/vault.tsx
 msgid "New item"
 msgstr "รายการใหม่"
@@ -7806,7 +7911,7 @@ msgid "New routine"
 msgstr "รูทีนใหม่"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 #: apps/mobile/lib/inbox/use-inbox-chat-actions.ts
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -7855,7 +7960,12 @@ msgstr "บอทถัดไปหรือก่อนหน้า"
 msgid "Next page"
 msgstr "หน้าถัดไป"
 
+#: apps/mobile/components/media/image-artifact-viewer.tsx
+msgid "Next picture"
+msgstr "รูปภาพถัดไป"
+
 #: apps/mobile/app/routine.tsx
+#: packages/i18n/src/routine-approval.ts
 msgid "Next run"
 msgstr "การรันถัดไป"
 
@@ -8073,10 +8183,6 @@ msgstr "ยังไม่มีตั๋ว"
 msgid "No tickets yet."
 msgstr "ยังไม่มีตั๋ว"
 
-#: apps/mobile/components/integrations/integration-detail.tsx
-msgid "No tools available."
-msgstr "ไม่มีเครื่องมือที่ใช้ได้"
-
 #: apps/web/src/pages/routines/RoutineList.tsx
 msgid "No trigger"
 msgstr "ไม่มีทริกเกอร์"
@@ -8103,6 +8209,7 @@ msgstr "ไม่พบคอลัมน์เว็บไซต์และร
 #: apps/web/src/components/billing/SpendingLimitSettings.tsx
 #: apps/web/src/components/messages/ToolQuestionCard.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
+#: packages/i18n/src/routine-approval.ts
 msgid "None"
 msgstr "ไม่มี"
 
@@ -8232,6 +8339,7 @@ msgstr "การตั้งค่าการแจ้งเตือน"
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-profile.tsx
 #: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Notifications"
 msgstr "การแจ้งเตือน"
@@ -8326,6 +8434,11 @@ msgstr "ซื้อครั้งเดียว เครดิตไม่�
 #: apps/web/src/pages/routines/routine-editor/access-note.tsx
 msgid "Only {name} can change this routine."
 msgstr "มีเพียง {name} เท่านั้นที่เปลี่ยนรูทีนนี้ได้"
+
+#: apps/mobile/components/integrations/tool-permissions.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
+msgid "Only Block rules apply in Never ask."
+msgstr "ในโหมดไม่ต้องถาม ใช้เฉพาะกฎบล็อกเท่านั้น"
 
 #: apps/web/src/components/messages/SecretAskCard.tsx
 msgid "Only enter a code {codeHost} sent you."
@@ -8447,9 +8560,16 @@ msgstr "เปิดลิงก์"
 msgid "Open navigation"
 msgstr "เปิดการนำทาง"
 
+#. placeholder {0}: index + 1
+#. placeholder {1}: images.length
+#: apps/mobile/components/media/image-attachment-deck.tsx
+msgid "Open photo {0} of {1}"
+msgstr "เปิดรูปภาพที่ {0} จาก {1}"
+
 #: apps/web/src/components/pages/PublicPageShell.tsx
 #: apps/web/src/pages/auth/Invite.tsx
 #: apps/web/src/pages/auth/JoinOrganization.tsx
+#: apps/web/src/pages/auth/Redeem.tsx
 #: apps/web/src/pages/SharedPage.tsx
 msgid "Open Rakazo"
 msgstr "เปิด Rakazo"
@@ -8513,8 +8633,10 @@ msgstr "ตัวเลือกสำหรับ {app}"
 msgid "Or connect an API key"
 msgstr "หรือเชื่อมต่อ API key"
 
+#: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
+#: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Or paste an API key"
 msgstr "หรือวาง API key"
 
@@ -8556,6 +8678,16 @@ msgstr "OTA {id}"
 #: apps/mobile/lib/platform/app-version.ts
 msgid "OTA {id}, {date}"
 msgstr "OTA {id}, {date}"
+
+#: apps/mobile/components/integrations/tool-permissions.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
+msgid "Other actions"
+msgstr "การทำงานอื่น ๆ"
+
+#: apps/mobile/components/integrations/tool-permissions.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
+msgid "Other approval rules still apply."
+msgstr "กฎการอนุมัติอื่น ๆ ยังคงมีผล"
 
 #: packages/i18n/src/computer-usage.ts
 msgid "Other computers"
@@ -8757,6 +8889,7 @@ msgstr "หยุด {name} ชั่วคราว"
 #: apps/mobile/lib/routines/routine.ts
 #: apps/web/src/pages/routines/RoutineList.tsx
 #: apps/web/src/pages/shell/bots/import-status.ts
+#: packages/i18n/src/routine-approval.ts
 msgid "Paused"
 msgstr "หยุดชั่วคราว"
 
@@ -8949,9 +9082,18 @@ msgstr "ดูตัวอย่างฉบับร่าง"
 msgid "Preview isn't available for this file type. Download it to view it."
 msgstr "ไม่สามารถดูตัวอย่างไฟล์ประเภทนี้ได้ ดาวน์โหลดเพื่อดูไฟล์"
 
+#: apps/web/src/components/pages/PageCard.tsx
+msgid "Preview of {title}"
+msgstr "ตัวอย่างของ {title}"
+
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
 msgid "Previous image"
 msgstr "รูปภาพก่อนหน้า"
+
+#: apps/mobile/components/cards/routine-approval-detail.tsx
+#: apps/web/src/components/messages/RoutineApprovalDetail.tsx
+msgid "Previous instructions"
+msgstr "คำสั่งก่อนหน้า"
 
 #: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "Previous match"
@@ -8961,9 +9103,17 @@ msgstr "รายการที่ตรงกันก่อนหน้า"
 msgid "Previous page"
 msgstr "หน้าก่อนหน้า"
 
+#: apps/mobile/components/media/image-artifact-viewer.tsx
+msgid "Previous picture"
+msgstr "รูปภาพก่อนหน้า"
+
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
 msgid "Previous settings sections"
 msgstr "ส่วนการตั้งค่าก่อนหน้า"
+
+#: packages/i18n/src/routine-approval.ts
+msgid "Previously: {value}"
+msgstr "ก่อนหน้านี้: {value}"
 
 #: apps/web/src/pages/space/board-views.tsx
 #: apps/web/src/pages/space/Board.tsx
@@ -9129,6 +9279,10 @@ msgstr "แสดงปฏิกิริยา"
 msgid "Reactions"
 msgstr "ปฏิกิริยา"
 
+#: apps/web/src/pages/shell/chat/message-hover-actions.tsx
+msgid "Read aloud"
+msgstr "อ่านออกเสียง"
+
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 msgid "Read calendar events?"
 msgstr "อ่านกิจกรรมในปฏิทินไหม"
@@ -9146,6 +9300,11 @@ msgstr "อ่านการแจ้งเตือนไหม"
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Read replies aloud"
 msgstr "อ่านข้อความตอบกลับออกเสียง"
+
+#: apps/mobile/components/integrations/tool-permissions.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
+msgid "Reads"
+msgstr "การอ่าน"
 
 #: apps/web/src/pages/shell/bots/import-status.ts
 msgid "Ready"
@@ -9224,6 +9383,21 @@ msgstr "เชื่อมต่อ OAuth ใหม่"
 msgid "Reconnecting"
 msgstr "กำลังเชื่อมต่อใหม่"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/model-disconnect.ts
+msgid "Reconnecting will not restore saved model choices that use this connection."
+msgstr "การเชื่อมต่อใหม่จะไม่กู้คืนตัวเลือกโมเดลที่บันทึกไว้ซึ่งใช้การเชื่อมต่อนี้"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/model-disconnect.ts
+msgid "Reconnecting will not restore the main model choice or other choices that use this connection."
+msgstr "การเชื่อมต่อใหม่จะไม่กู้คืนตัวเลือกโมเดลหลักหรือตัวเลือกอื่น ๆ ที่ใช้การเชื่อมต่อนี้"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/model-disconnect.ts
+msgid "Reconnecting will not restore the main model choice that uses this connection."
+msgstr "การเชื่อมต่อใหม่จะไม่กู้คืนตัวเลือกโมเดลหลักที่ใช้การเชื่อมต่อนี้"
+
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 msgid "Recording may have started, but the view could not refresh"
 msgstr "อาจเริ่มบันทึกวิดีโอแล้ว แต่รีเฟรชมุมมองไม่สำเร็จ"
@@ -9294,6 +9468,14 @@ msgstr "กำลังสร้างคอมพิวเตอร์ใหม
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Recruiting & HR"
 msgstr "สรรหาบุคลากรและ HR"
+
+#: apps/web/src/pages/auth/Redeem.tsx
+msgid "Redeem"
+msgstr "ใช้รหัส"
+
+#: apps/web/src/pages/auth/Redeem.tsx
+msgid "Redeem a code"
+msgstr "ใช้รหัส"
 
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Redirect URI"
@@ -9461,6 +9643,10 @@ msgstr "นำทริกเกอร์การเปลี่ยนแปล
 msgid "Remove email trigger"
 msgstr "นำทริกเกอร์อีเมลออก"
 
+#: apps/web/src/pages/routines/RoutineEditor.tsx
+msgid "Remove end date"
+msgstr "ลบวันที่สิ้นสุด"
+
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
@@ -9533,8 +9719,8 @@ msgid "Rename"
 msgstr "เปลี่ยนชื่อ"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 #: apps/mobile/components/inbox/inbox-render-item.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
 #: apps/mobile/lib/inbox/use-inbox-chat-actions.ts
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -9786,7 +9972,7 @@ msgid "Restoring…"
 msgstr "กำลังคืนค่า…"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 msgid "Resume notifications"
 msgstr "เปิดการแจ้งเตือนอีกครั้ง"
 
@@ -9900,11 +10086,18 @@ msgstr "หมุนเวียน key"
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/routines/RoutineEditor.tsx
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+#: apps/web/src/pages/shell/composer/composer-parts.tsx
 #: apps/web/src/pages/shell/use-routine-editor.ts
 #: packages/i18n/src/identity-display.ts
 #: packages/i18n/src/search.ts
 msgid "Routine"
 msgstr "รูทีน"
+
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Routine \"{name}\" ended"
+msgstr "รูทีน \"{name}\" สิ้นสุดแล้ว"
 
 #: apps/mobile/app/routine.tsx
 msgid "Routine link is incomplete"
@@ -10176,6 +10369,10 @@ msgstr "กำลังบันทึก…"
 msgid "Say yes or no, or answer in a sentence."
 msgstr "ตอบใช่หรือไม่ หรือตอบเป็นประโยคก็ได้"
 
+#: packages/i18n/src/routine-approval.ts
+msgid "Schedule"
+msgstr "ตารางเวลา"
+
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/lib/routines/routine.ts
 #: apps/web/src/pages/routines/RoutineEditor.tsx
@@ -10420,10 +10617,12 @@ msgstr "ส่งพรอมต์นี้ถึง {assistantName}"
 msgid "Send this prompt to your assistant"
 msgstr "ส่งพรอมต์นี้ถึงผู้ช่วยของคุณ"
 
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Send with Enter"
 msgstr "ส่งด้วย Enter"
 
+#: apps/mobile/components/cards/AskActions.tsx
 #: apps/mobile/components/thread/failed-send-bubble.tsx
 #: apps/web/src/components/messages/AskCard.tsx
 #: apps/web/src/components/messages/SecretAskCard.tsx
@@ -10438,6 +10637,10 @@ msgstr "กำลังส่ง…"
 #: apps/web/src/components/messages/ToolQuestionCard.tsx
 msgid "Sent"
 msgstr "ส่งแล้ว"
+
+#: packages/i18n/src/routine-approval.ts
+msgid "Separately from this chat"
+msgstr "แยกจากแชทนี้"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/(settings)/mcp-server.tsx
@@ -10475,6 +10678,7 @@ msgstr "ตั้งค่า"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/components/calls/CallCard.tsx
+#: apps/mobile/components/inbox/inbox-footer.tsx
 #: apps/mobile/components/inbox/inbox-render-item.tsx
 #: apps/web/src/components/call/CallCard.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
@@ -10794,7 +10998,7 @@ msgid "Signing out deletes unsent messages."
 msgstr "การออกจากระบบจะลบข้อความที่ยังไม่ได้ส่ง"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 msgid "Silence notifications"
 msgstr "ปิดเสียงการแจ้งเตือน"
 
@@ -10903,7 +11107,7 @@ msgid "Slide up to lock"
 msgstr "เลื่อนขึ้นเพื่อล็อก"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 msgid "Snooze"
 msgstr "ปักเวลา"
@@ -10986,6 +11190,11 @@ msgstr "เรียงตาม {column} จากมากไปน้อย"
 msgid "Sorts new email and drafts the replies"
 msgstr "คัดแยกอีเมลใหม่และสร้างฉบับร่างการตอบกลับ"
 
+#: apps/mobile/app/(settings)/general.tsx
+#: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
+msgid "Sound for alerts that need attention"
+msgstr "เสียงสำหรับการแจ้งเตือนที่ต้องดำเนินการ"
+
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
 #: packages/i18n/src/identity-display.ts
@@ -11029,17 +11238,9 @@ msgstr "สเปซแยกงานออกจากกัน บอท แ�
 msgid "Spaces only they use pass to you."
 msgstr "สเปซที่มีแต่พวกเขาใช้จะถูกส่งต่อให้คุณ"
 
-#: apps/web/src/pages/shell/chat/message-view.tsx
-msgid "Speak"
-msgstr "อ่านออกเสียง"
-
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Speak message"
 msgstr "อ่านข้อความออกเสียง"
-
-#: apps/web/src/pages/shell/chat/message-view.tsx
-msgid "Speak this reply"
-msgstr "อ่านการตอบกลับนี้ออกเสียง"
 
 #: apps/web/src/components/call/CallCard.tsx
 msgid "Speaking"
@@ -11161,6 +11362,7 @@ msgstr "จังหวัดหรือภูมิภาค"
 #: apps/web/src/pages/space/ActivityList.tsx
 #: apps/web/src/pages/space/board-views.tsx
 #: apps/web/src/pages/space/Board.tsx
+#: packages/i18n/src/routine-approval.ts
 msgid "Status"
 msgstr "สถานะ"
 
@@ -11172,7 +11374,6 @@ msgstr "ขั้นตอน"
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/SubagentCard.tsx
 #: apps/web/src/pages/routines/RoutineList.tsx
-#: apps/web/src/pages/shell/chat/message-view.tsx
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 #: apps/web/src/pages/shell/computers/computer-overlay.tsx
 msgid "Stop"
@@ -11187,8 +11388,8 @@ msgstr "หยุดพิมพ์ด้วยเสียง"
 msgid "Stop joining this series"
 msgstr "หยุดเข้าร่วมการประชุมชุดนี้"
 
-#: apps/web/src/pages/shell/chat/message-view.tsx
-msgid "Stop speaking"
+#: apps/web/src/pages/shell/chat/message-hover-actions.tsx
+msgid "Stop reading aloud"
 msgstr "หยุดอ่านออกเสียง"
 
 #: apps/web/src/components/teach/TeachRecordingChrome.tsx
@@ -11877,8 +12078,7 @@ msgstr "ข้อความทั้งหมดจะถูกลบอย่
 msgid "This removes every message and stops current work. The bot, computer, memory, and routines are kept."
 msgstr "ข้อความทั้งหมดจะถูกลบและงานปัจจุบันจะหยุด ส่วนบอท คอมพิวเตอร์ ความจำ และรูทีนจะยังคงอยู่"
 
-#: apps/mobile/app/(settings)/model-connection.tsx
-#: apps/mobile/components/models/model-providers.tsx
+#: apps/mobile/lib/models/model-disconnect.ts
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 msgid "This removes the connection from every space."
 msgstr "การเชื่อมต่อนี้จะถูกนำออกจากทุกสเปซ"
@@ -11963,6 +12163,10 @@ msgstr "ตั๋ว"
 #: apps/web/src/pages/routines/RoutineSchedule.tsx
 msgid "Time of day"
 msgstr "เวลา"
+
+#: packages/i18n/src/routine-approval.ts
+msgid "Time zone"
+msgstr "เขตเวลา"
 
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Timezone"
@@ -12053,9 +12257,12 @@ msgstr "อาร์กิวเมนต์เครื่องมือต้
 msgid "Tool name"
 msgstr "ชื่อเครื่องมือ"
 
-#: apps/mobile/components/integrations/integration-detail.tsx
+#: apps/mobile/components/integrations/tool-permissions.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
+msgid "Tool permissions"
+msgstr "สิทธิ์ของเครื่องมือ"
+
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
-#: apps/web/src/pages/plugins/connector-detail.tsx
 #: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Tools"
 msgstr "เครื่องมือ"
@@ -12168,6 +12375,7 @@ msgstr "เว็บไซต์ที่เชื่อถือ"
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/mobile/components/routines/routine-run-history.tsx
 #: apps/mobile/components/thread/failed-send-bubble.tsx
+#: apps/mobile/components/thread/thread-error-notice.tsx
 #: apps/mobile/components/ui/app-error-boundary.tsx
 #: apps/mobile/lib/pages/page-load-failure.tsx
 #: apps/web/src/components/pages/PageNotice.tsx
@@ -12177,6 +12385,7 @@ msgstr "เว็บไซต์ที่เชื่อถือ"
 #: apps/web/src/pages/onboarding/first-bot.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/SharedPage.tsx
+#: apps/web/src/pages/shell/composer/composer-error.tsx
 #: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
 #: apps/web/src/pages/space/ActivityList.tsx
 #: apps/web/src/pages/space/SpaceSearch.tsx
@@ -12201,6 +12410,7 @@ msgstr "ลองอีกครั้ง"
 #: apps/mobile/app/space-members.tsx
 #: apps/mobile/components/bots/bot-profile-menu.tsx
 #: apps/mobile/components/inbox/organization-menu.tsx
+#: apps/mobile/components/media/attachment-file.tsx
 #: apps/mobile/components/media/audio-attachment.tsx
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 #: apps/mobile/components/thread/message-bubble.tsx
@@ -12253,7 +12463,7 @@ msgid "Type your answer"
 msgstr "พิมพ์คำตอบ"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 #: apps/mobile/lib/inbox/inbox-spaces.ts
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 #: apps/web/src/pages/shell/sidebar/use-sidebar-view.ts
@@ -12310,7 +12520,7 @@ msgid "Unsent messages"
 msgstr "ข้อความที่ยังไม่ได้ส่ง"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 #: apps/web/src/pages/shell/sidebar/snoozed-chats.tsx
 msgid "Unsnooze"
@@ -12325,6 +12535,11 @@ msgstr "ยกเลิกการปิดชั่วคราว {0}"
 #: apps/web/src/pages/shell/composer/use-composer-actions.ts
 msgid "Unsupported file type: {0}"
 msgstr "ประเภทไฟล์ที่ไม่รองรับ: {0}"
+
+#: apps/mobile/lib/routines/routine.ts
+#: apps/web/src/pages/routines/RoutineList.tsx
+msgid "until {end}"
+msgstr "จนถึง {end}"
 
 #: apps/mobile/app/meeting-calendar.tsx
 #: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
@@ -12473,6 +12688,11 @@ msgstr "ใช้ {0}"
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "Use {hostLabel}"
 msgstr "ใช้ {hostLabel}"
+
+#: apps/mobile/components/models/voice-model-connection-actions.tsx
+#: apps/web/src/pages/settings/voice-model-connection-actions.tsx
+msgid "Use {label}"
+msgstr "ใช้ {label}"
 
 #: apps/mobile/lib/dialogs/text-prompt.ts
 msgid "Use {maxLength} characters or fewer"
@@ -12901,6 +13121,10 @@ msgstr "กำหนดเวลารัน"
 msgid "When to use"
 msgstr "ใช้เมื่อไร"
 
+#: packages/i18n/src/routine-approval.ts
+msgid "Where it runs"
+msgstr "ที่ที่รัน"
+
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "Where should bots run?"
 msgstr "บอทควรรันที่ไหน"
@@ -13095,6 +13319,13 @@ msgstr "ระบบจะตัดส่วนต่างตามสัดส
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Your card was not charged"
 msgstr "ยังไม่มีการตัดเงินจากบัตร"
+
+#: apps/mobile/app/page-review.tsx
+#: apps/mobile/app/page.tsx
+#: apps/web/src/components/pages/PageReviewHost.tsx
+#: apps/web/src/components/pages/PageViewHost.tsx
+msgid "Your changes aren't saved. Check your connection."
+msgstr "การเปลี่ยนแปลงของคุณยังไม่ได้บันทึก ตรวจสอบการเชื่อมต่อ"
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/shell/computers/use-computer-controls.tsx

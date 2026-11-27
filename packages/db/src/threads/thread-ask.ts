@@ -35,7 +35,10 @@ import { JsonObject, readJsonColumn } from "../database/json-column.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS } from "../database/transaction-retry.js";
 import { contentEncryptionOf } from "../encryption/content-encryption.js";
 import { deleteRunSecretsInTransaction } from "../runs/run-secrets.js";
-import { RUN_TURN_CHECKPOINT_KIND } from "../runs/run-turn-checkpoint.js";
+import {
+  RUN_TURN_CHECKPOINT_KIND,
+  retireIntroTurnCheckpoint,
+} from "../runs/run-turn-checkpoint.js";
 import { publishSpaceChange } from "../spaces/space-changes.js";
 import { notifyCommittedEvent, notifyRealtime } from "./event-stream.js";
 import type { FinalizeRunResult } from "./events.js";
@@ -383,6 +386,11 @@ async function commitAnswerRunInput(
     },
   });
   if (queued.count !== 1) return null;
+  // The answer starts the user's task. Replaying the intro would keep its hidden
+  // instruction to greet the user and ask what they want as the model's request.
+  if (run.trigger === "created" && resumedTrigger === "user") {
+    await retireIntroTurnCheckpoint(tx, { id: input.runId, spaceId: input.spaceId });
+  }
 
   const recordedAnswer = secretAsk ? "" : (selectedChoice?.id ?? approvalAnswer);
   const callId = callIdFromClientNonce(input.clientNonce);
@@ -581,7 +589,6 @@ export async function answerRunInput(
     );
   // Unwrapping space keys can wait on the key manager; keep that wait outside the transaction.
   await contentEncryptionOf(prisma)?.ring.all(input.spaceId);
-  // A dismissal has no secret to prepare.
   const committed =
     runSecretWriter?.withPrepared && !input.dismiss
       ? await runSecretWriter.withPrepared(prisma, input, commit)

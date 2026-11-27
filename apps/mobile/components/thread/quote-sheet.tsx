@@ -7,7 +7,7 @@ import type { MobileMessage } from "../../lib/api/mobile-types";
 import { useSheetPadding } from "../../lib/layout/side-insets";
 import { quotableMessageSegments } from "../../lib/messages/message-presentation";
 import { useMobileTokens } from "../../lib/native/native";
-import { NativeActionButton } from "../native/native-action-button";
+import { SheetBar, SheetBarClose, SheetBarConfirm } from "../native/sheet-bar";
 
 export function QuoteSheet({
   message,
@@ -43,24 +43,16 @@ export function QuoteSheet({
           ...sheetPadding,
         }}
       >
-        <View
-          style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            alignItems: "center",
-            paddingHorizontal: 20,
-            paddingBottom: 12,
-          }}
-        >
-          <NativeActionButton label={t`Cancel`} onPress={onCancel} prominence="plain" />
-          <NativeActionButton
-            disabled={!excerpt}
-            fill={false}
-            label={t`Quote`}
-            onPress={() => onQuote(excerpt)}
-            prominence={excerpt ? "primary" : "plain"}
-          />
-        </View>
+        <SheetBar
+          leading={<SheetBarClose label={t`Cancel`} onPress={onCancel} />}
+          trailing={
+            <SheetBarConfirm
+              disabled={!excerpt}
+              label={t`Quote`}
+              onPress={() => onQuote(excerpt)}
+            />
+          }
+        />
         <ScrollView style={{ flex: 1, paddingHorizontal: 20 }}>
           {segments.map((text, index) => (
             <TextInput

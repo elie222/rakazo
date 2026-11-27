@@ -7,6 +7,10 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("../../lib/spaces/organizations", () => ({
+  useOrganizations: () => ({ organizations: [], activeOrganizationId: null }),
+}));
+
 const api = vi.hoisted(() => ({
   catalog: vi.fn(),
   installs: vi.fn(),

@@ -21,7 +21,6 @@ type HeaderOptions = {
   headerShown?: boolean;
   headerTransparent?: boolean;
   headerStyle?: { backgroundColor: string };
-  unstable_headerLeftItems?: () => HeaderItem[];
   unstable_headerRightItems?: () => HeaderItem[];
 };
 
@@ -72,7 +71,6 @@ function Inbox({ embedded = false }: { embedded?: boolean }) {
     nativeHeader: !embedded,
     ready: true,
     hasSession: true,
-    initials: "A",
     activityMode: false,
     toggleActivityMode,
     runCreateAction,
@@ -124,9 +122,6 @@ it.each([false, true])(
       if (!split) {
         expect(home.options.headerTransparent).toBe(true);
         expect(home.options.headerStyle).toEqual({ backgroundColor: "transparent" });
-        expect(home.options.unstable_headerLeftItems?.().map((item) => item.label)).toEqual([
-          "Account",
-        ]);
         const right = home.options.unstable_headerRightItems?.() ?? [];
         expect(right.map((item) => item.accessibilityLabel)).toEqual([
           "Activity",
@@ -148,13 +143,11 @@ it("leaves the navigation bar alone from the embedded inbox", () => {
 
 it("wires the compact header items to their actions", () => {
   act(() => root.render(<Inbox />));
-  const [account] = home.options.unstable_headerLeftItems?.() ?? [];
   const [activity, search, create] = home.options.unstable_headerRightItems?.() ?? [];
-  account?.onPress();
   search?.onPress();
   activity?.onPress();
   for (const item of create?.menu?.items ?? []) item.onPress();
-  expect(home.push.mock.calls).toEqual([["/account"], ["/search"]]);
+  expect(home.push.mock.calls).toEqual([["/search"]]);
   expect(toggleActivityMode).toHaveBeenCalledOnce();
   expect(runCreateAction.mock.calls).toEqual([["bot"], ["group"], ["space"]]);
 });

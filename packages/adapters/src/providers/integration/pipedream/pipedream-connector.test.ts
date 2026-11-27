@@ -1,5 +1,10 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
-import { ResponseTooLargeError } from "@rakazo/core";
+import {
+  appToolApprovalKey,
+  connectorToolApprovalIdentity,
+  ResponseTooLargeError,
+  resolveActionApprovalDetail,
+} from "@rakazo/core";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThirdPartyConnectorEmulator } from "../../../integrations/third-party-connector-emulator.js";
@@ -427,6 +432,39 @@ describe("PipedreamConnector", () => {
     );
   });
 
+  it.each([403, 503])("handles HTTP %s from the mailbox profile", async (status) => {
+    const connector = new PipedreamConnector(FAKE_CONFIG, {
+      fetch: async (input) =>
+        String(input).endsWith("/v1/oauth/token")
+          ? Response.json({ access_token: "fake-access-token", expires_in: 3_600 })
+          : Response.json({ error: "Profile unavailable" }, { status }),
+    });
+    const identity = connector.connectedAccountIdentity("GMAIL", "account-1", context);
+    if (status === 403) await expect(identity).resolves.toBeUndefined();
+    else await expect(identity).rejects.toThrow("HTTP 503");
+  });
+
+  it("deletes only the selected account when an organization has two accounts for an app", async () => {
+    const deleted: string[] = [];
+    const connector = new PipedreamConnector(FAKE_CONFIG, {
+      fetch: async (input, init) => {
+        const path = new URL(String(input)).pathname;
+        if (path.endsWith("/v1/oauth/token")) {
+          return Response.json({ access_token: "fake-access-token", expires_in: 3_600 });
+        }
+        if (init?.method === "DELETE") {
+          deleted.push(path);
+          return new Response(null, { status: 204 });
+        }
+        return Response.json({
+          data: ["account-1", "account-2"].map((id) => ({ id, app: { name_slug: "gmail" } })),
+        });
+      },
+    });
+    await connector.revoke("account-2", { ...context, organizationId: "org-example" });
+    expect(deleted).toEqual(["/v1/connect/fake-project-id/accounts/account-2"]);
+  });
+
   it("marks account-list failures as pre-delete so revoke can restore local retry state", async () => {
     vi.stubGlobal(
       "fetch",
@@ -530,6 +568,36 @@ describe("PipedreamConnector", () => {
     ]);
   });
 
+  it("rejects the settings catalog when its account's tools cannot be loaded", async () => {
+    const healthy = pipedreamMcpFetch({ gmail: ["send_email"] });
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (request.headers.get("x-pd-app-slug") === "gmail") {
+        return new Response("upstream down", { status: 503 });
+      }
+      return healthy(input, init);
+    });
+    const connector = new PipedreamConnector(FAKE_CONFIG, { ...TEST_NETWORK, fetch });
+
+    await expect(connector.listAppTools(connectedContext("gmail"), "gmail")).rejects.toThrow();
+  });
+
+  it("keeps tools from a healthy account in the settings catalog when another account fails", async () => {
+    const healthy = pipedreamMcpFetch({ gmail: ["send_email"] });
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, init);
+      if (request.headers.get("x-pd-account-id") === "apn_work") {
+        return new Response("upstream down", { status: 503 });
+      }
+      return healthy(request);
+    });
+    const connector = new PipedreamConnector(FAKE_CONFIG, { ...TEST_NETWORK, fetch });
+
+    const tools = await connector.listAppTools(gmailContext("apn_work", "apn_home"), "gmail");
+
+    expect(tools).toMatchObject([{ name: "send_email", route: { connectionId: "connection-1" } }]);
+  });
+
   it("lists catalog names grouped by connected app", async () => {
     const connector = new PipedreamConnector(FAKE_CONFIG, {
       ...TEST_NETWORK,
@@ -563,6 +631,51 @@ describe("PipedreamConnector", () => {
         },
       },
     ]);
+  });
+
+  it("lists action permissions that apply to resolved catalog calls across accounts", async () => {
+    const connector = new PipedreamConnector(FAKE_CONFIG, {
+      ...TEST_NETWORK,
+      fetch: pipedreamMcpFetch({
+        gmail: ["send_email", ...appTools("gmail", 20).gmail!],
+        another_mail_app: ["send_email"],
+      }),
+    });
+    const secondAccount = gmailContext("fake-other-ref");
+    const listed = await connector.listAppTools(connectedContext("gmail"), "gmail");
+    const sendEmail = listed.find((tool) => tool.name === "send_email");
+    const key = appToolApprovalKey(sendEmail?.route);
+    expect(listed).toHaveLength(21);
+    expect(key).toBeTruthy();
+
+    const wrapper = (await connector.discoverTools(secondAccount)).at(-1)!;
+    const resolved = await connector.resolveCall(
+      {
+        tool: wrapper.name,
+        route: wrapper.route,
+        args: { id: "gmail:connection-0:send_email", arguments: { text: "Example" } },
+        executionId: "permission-test",
+      },
+      secondAccount,
+    );
+    expect(resolved).toBeDefined();
+    const action = resolved!.tool;
+    const rules = [{ matchKind: "tool", matchValue: key!, effect: "deny" }] as const;
+    const decision = (name: string, route: typeof action.route) => {
+      const identity = connectorToolApprovalIdentity(name, route);
+      return resolveActionApprovalDetail({
+        toolName: identity.name,
+        toolAliases: identity.aliases,
+        rules: [...rules],
+      }).decision;
+    };
+    expect(decision(action.name, action.route)).toBe("deny");
+    const [otherAction] = await connector.listAppTools(
+      connectedContext("another_mail_app"),
+      "another_mail_app",
+    );
+    expect(otherAction).toBeDefined();
+    expect(decision(otherAction!.name, otherAction!.route)).toBe("allow");
   });
 
   it("routes a catalog execute call to the app that owns the tool", async () => {
@@ -856,6 +969,71 @@ describe("PipedreamConnector", () => {
         connectedContext("gmail"),
       ),
     ).resolves.toBeUndefined();
+  });
+
+  it("uses the organization's external identity from another member's Space", async () => {
+    const emulator = new ThirdPartyConnectorEmulator();
+    let expectedOwner: string | undefined;
+    const toolOwners: string[] = [];
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      if (url.pathname.endsWith("/tokens")) {
+        const data = JSON.parse(String(init?.body)) as { external_user_id: string };
+        expectedOwner = data.external_user_id;
+      }
+      const toolOwner = new Headers(init?.headers).get("x-pd-external-user-id");
+      if (toolOwner) toolOwners.push(toolOwner);
+      return emulator.fetch(input, init);
+    };
+    const connector = new PipedreamConnector(FAKE_CONFIG, {
+      fetch,
+      resolveHostname: emulator.resolveHostname,
+    });
+    const organizationId = "fixture-team";
+    await connector.begin(
+      { provider: "linear", redirectUrl: "https://rakazo.example.test/app" },
+      { ...context, organizationId },
+    );
+    const member = { ...context, userId: "fixture-member", spaceId: "another-space" };
+    expect(await connector.connectionReady(member, "linear")).toBe(false);
+    const providerRef = await connector.resolveConnectedAccountId(
+      member.userId,
+      "linear",
+      "linear",
+      [],
+      member.spaceId,
+      organizationId,
+    );
+    expect(providerRef).toBe("account-linear");
+    const ctx = {
+      ...member,
+      connectedConnections: [
+        {
+          id: "shared",
+          connectorId: "pipedream",
+          externalId: "linear",
+          displayName: "Shared Linear",
+          providerRef,
+          organizationId,
+        },
+      ],
+    };
+    const [tool] = await connector.discoverTools(ctx);
+    expect(tool).toBeDefined();
+    const events = [];
+    for await (const event of connector.execute(
+      {
+        tool: tool!.name,
+        route: tool!.route,
+        args: { text: "fixture" },
+        executionId: "fixture-execution",
+      },
+      ctx,
+    ))
+      events.push(event);
+    expect(events[0]?.type).toBe("result");
+    expect(expectedOwner).toBeTruthy();
+    expect(new Set(toolOwners)).toEqual(new Set([expectedOwner]));
   });
 
   it("runs catalog, connection, discovery, execution, and revoke against the protocol emulator", async () => {

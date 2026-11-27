@@ -1,4 +1,5 @@
 import type { Bot, ChatAlert, ProductEvent } from "@rakazo/contracts";
+import { chatAlertNeedsAttention } from "@rakazo/contracts";
 import { chatSnoozed } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
@@ -8,6 +9,7 @@ import {
   deliverBrowserNotification as deliverNativeBrowserNotification,
   shouldNotifyBrowser,
 } from "../../lib/platform/browser-notifications";
+import { desktopBridge } from "../../lib/platform/desktop";
 import { notificationIcon, prepareNotificationIcons } from "../../lib/platform/notification-icon";
 import { followStream } from "../../lib/query/follow-stream";
 import type { RpcClient } from "../../lib/query/rpc";
@@ -30,6 +32,7 @@ type ChatAlertOptions = {
   openChat: (chat: Pick<ChatAlert, "botId" | "groupId">) => void;
   /** The signed-in person, whose own messages never notify them. */
   meId: string | undefined;
+  notificationSounds?: boolean;
   /** Current groups, so a snooze that lands after a reply was queued is still honored. */
   groupsRef?: RefObject<readonly SnoozableChat[]>;
   /** The server's roster signals: one when the stream opens, then one per change. */
@@ -84,10 +87,21 @@ function openChatOnClick(
 export function useBrowserNotifications(
   bots: Bot[],
   botsRef: RefObject<Bot[]>,
-  { rpc, activeBotId, activeGroupId, openChat, meId, groupsRef, roster }: ChatAlertOptions,
+  {
+    rpc,
+    activeBotId,
+    activeGroupId,
+    openChat,
+    meId,
+    groupsRef,
+    roster,
+    notificationSounds,
+  }: ChatAlertOptions,
 ) {
   const meIdRef = useRef(meId);
   meIdRef.current = meId;
+  const soundEnabled = useRef(false);
+  soundEnabled.current = notificationSounds === true;
   useEffect(() => prepareNotificationIcons(bots), [bots]);
   const openChatRef = useRef(openChat);
   openChatRef.current = openChat;
@@ -100,13 +114,21 @@ export function useBrowserNotifications(
       const isOpen = alert.groupId
         ? alert.groupId === activeGroupId.current
         : !activeGroupId.current && alert.botId === activeBotId.current;
-      // The open chat's own stream alerts for its replies and failures; only a takeover is missed.
+      const desktop = Boolean(desktopBridge());
+      const playSound = desktop && soundEnabled.current && chatAlertNeedsAttention(alert.kind);
+      // Leave the open chat to its thread stream, except for takeovers and opted-in sounds
+      // while the window is in the background. Only the server alert can request a sound.
       if (
         isOpen &&
-        (alert.kind !== "takeover" ||
+        (!(alert.kind === "takeover" || playSound) ||
           (document.visibilityState === "visible" && document.hasFocus()))
       )
         return;
+      // Reuse the thread stream's tag where both paths show this alert.
+      const tag =
+        isOpen && playSound && alert.kind === "failure"
+          ? alert.threadId
+          : `${alert.threadId}:${isOpen && playSound && alert.kind === "help" ? "ask" : alert.kind}`;
       try {
         const bot = botsRef.current.find((candidate) => candidate.id === alert.botId);
         const icon = bot ? notificationIcon(bot) : undefined;
@@ -114,7 +136,8 @@ export function useBrowserNotifications(
           body: alert.body,
           ...(icon ? { icon } : {}),
           // Per chat and kind: a repeat replaces its copy, but a question after a reply still pops up.
-          tag: `${alert.threadId}:${alert.kind}`,
+          tag,
+          ...(desktop ? { silent: !playSound } : {}),
         });
         openChatOnClick(notification, shown.current, () => openChatRef.current(alert));
       } catch {
@@ -124,8 +147,10 @@ export function useBrowserNotifications(
     const stop = followStream(
       (signal) => rpc.notifications.subscribe(undefined, { signal }),
       (frame) => {
-        if (frame.type === "roster") rosterRef.current?.changed();
-        else if (frame.type === "organizations") void organizationsChanged();
+        if (frame.type === "roster") {
+          rosterRef.current?.changed();
+          void spaceChanged("capabilities");
+        } else if (frame.type === "organizations") void organizationsChanged();
         else if (frame.type === "computerUpdates") computerUpdates.signalled();
         else if (isReadChangeKind(frame.type)) void spaceChanged(frame.type);
         else if (frame.alert) show(frame.alert);
@@ -167,7 +192,12 @@ export function useBrowserNotifications(
         notifiedEventIds: notifiedBrowserEvents.current,
         show: (title, body, tag) => {
           const icon = notificationIcon(currentBot);
-          const notification = new Notification(title, { body, tag, ...(icon ? { icon } : {}) });
+          const notification = new Notification(title, {
+            body,
+            tag,
+            ...(icon ? { icon } : {}),
+            ...(desktopBridge() ? { silent: true } : {}),
+          });
           openChatOnClick(notification, shown.current, () =>
             openChatRef.current({ botId: pending.botId, groupId: pending.groupId }),
           );

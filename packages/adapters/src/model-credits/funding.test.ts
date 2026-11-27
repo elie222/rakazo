@@ -42,6 +42,8 @@ function setup() {
       key: sealed === "operator-secret" ? "fake-operator-key" : "fake-personal-key",
     }),
   );
+  const organizationConnection =
+    vi.fn<() => Promise<{ secretId: string; ciphertext: string } | null>>();
   const deps = {
     billingEnabled: true,
     prisma: {
@@ -53,10 +55,11 @@ function setup() {
         })),
       },
       secret: { findFirst },
+      organizationModelConnection: { findFirst: organizationConnection },
     },
     secretStore: { load },
   } as unknown as ExecutorDeps;
-  return { deps, personal, load, findUnique, findFirst };
+  return { deps, personal, load, findUnique, findFirst, organizationConnection };
 }
 afterEach(() => vi.unstubAllEnvs());
 describe("explicit model credit funding", () => {
@@ -237,5 +240,50 @@ it("keeps an unpinned legacy backup on the exact approved offering", async () =>
     apiKey: "fake-operator-key",
     connectionId: `credits:${offering.id}`,
     callObserver: expect.any(Object),
+  });
+});
+
+describe("organization model funding", () => {
+  it("runs a selected organization connection without a credit observer", async () => {
+    const { deps, load, findUnique, organizationConnection } = setup();
+    const connectionId = "organization:team-connection";
+    organizationConnection.mockResolvedValue({ secretId: "org-secret", ciphertext: "sealed-org" });
+    load.mockResolvedValueOnce(JSON.stringify({ kind: "api_key", key: "fake-team-key" }));
+    const result = await resolveModelKey(
+      deps,
+      scope.userId,
+      scope.spaceId,
+      null,
+      offering.provider,
+      offering.modelId,
+      undefined,
+      { connectionId },
+    );
+    expect(result).toMatchObject({
+      apiKey: "fake-team-key",
+      billing: "organization",
+      connectionId,
+    });
+    expect(result.callObserver).toBeUndefined();
+    expect(findUnique).not.toHaveBeenCalled();
+  });
+
+  it("refuses a stale organization selection before loading a key or routing to credits", async () => {
+    const { deps, load, findUnique, organizationConnection } = setup();
+    organizationConnection.mockResolvedValue(null);
+    await expect(
+      resolveModelKey(
+        deps,
+        scope.userId,
+        scope.spaceId,
+        null,
+        offering.provider,
+        offering.modelId,
+        undefined,
+        { connectionId: "organization:removed" },
+      ),
+    ).rejects.toThrow("Choose an available organization model");
+    expect(load).not.toHaveBeenCalled();
+    expect(findUnique).not.toHaveBeenCalled();
   });
 });

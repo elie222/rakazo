@@ -27,7 +27,7 @@ import {
 import { selectedSpaceId } from "../../lib/api/api";
 import { currentPlan, openBillingPage, planEndsAt } from "../../lib/billing/billing";
 import { rememberReferral } from "../../lib/billing/referral";
-import { dateLocaleForUi } from "../../lib/i18n/i18n";
+import { useDateLocale } from "../../lib/i18n/i18n";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { analyticsClient } from "../../lib/native/analytics-surface";
 import type { SaveSend } from "../../lib/query/query";
@@ -40,6 +40,7 @@ export default function BillingScreen() {
   const sideInsets = useSideInsets();
   const stacked = useStackedSettings();
   const { t } = useLingui();
+  const locale = useDateLocale();
   const router = useRouter();
   const [amount, setAmount] = useState<HeldCreditAmount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
   // This screen shows the Space it opened in; its reads and saves stay there.
@@ -87,7 +88,6 @@ export default function BillingScreen() {
   const pending = change.pending;
   const action = (work: BillingChange, failure?: string) => change.run({ work, failure });
   if (!status) return null;
-  const locale = dateLocaleForUi();
   const usageDetails =
     status.canManage && showComputerUsage ? computerUsageDetails(computerUsage, locale) : null;
   const usd = (cents: number) => formatBillingAmount(cents, "usd", locale);

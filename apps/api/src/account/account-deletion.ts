@@ -36,6 +36,8 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { BillingService } from "../billing/billing.js";
+import { cleanOrganizationConnections } from "../integrations/organization-connection-deletion.js";
+import type { RouterDeps } from "../router.js";
 import type { SpaceDeletionDeps } from "../spaces/space-deletion.js";
 import { disconnectMeetingCalendarsForDeletion } from "../spaces/space-deletion.js";
 import { afterSpaceDeparture } from "../spaces/space-departure.js";
@@ -126,12 +128,30 @@ export async function deleteAccountContent(
     });
     stage = "done";
 
-    // Pages in Spaces that stay go with the user row; their links' tokens leave the store now.
-    const memberPageSecrets = await deps.prisma.$transaction(async (tx) => {
+    // Pages in Spaces that stay go now; their links' tokens and pictures leave the stores after.
+    const memberPages = { userId, spaceId: { notIn: spaceIds } };
+    const removedPages = await deps.prisma.$transaction(async (tx) => {
       await assertLeaseHeld(tx, lease);
-      return deletePageShareSecrets(tx, { userId, spaceId: { notIn: spaceIds } });
+      const secrets = await deletePageShareSecrets(tx, memberPages);
+      const images = await tx.pageImage.findMany({
+        where: { page: { is: memberPages } },
+        select: { spaceId: true, storageKey: true },
+      });
+      await tx.page.deleteMany({ where: memberPages });
+      return { secrets, images };
     });
-    if (deps.secrets) await forgetPageShareSecrets(deps.secrets, memberPageSecrets);
+    // The rows are gone, so a retry could not find these again; failures only log.
+    const pictureCleanup = await Promise.allSettled(
+      removedPages.images.map(({ spaceId, storageKey }) =>
+        deps.artifacts.remove(
+          storageKey,
+          adapterContext(`account-delete:${userId}`, userId, spaceId),
+        ),
+      ),
+    );
+    for (const result of pictureCleanup)
+      if (result.status === "rejected") getLogger().error("page picture cleanup", result.reason);
+    if (deps.secrets) await forgetPageShareSecrets(deps.secrets, removedPages.secrets);
 
     // Bot deletion cleans these best-effort; here a failure fails the account deletion, and the
     // retry finds the ids again in bot_deletions.
@@ -177,9 +197,10 @@ export async function deleteAccountContent(
   }
 }
 
-type OrganizationDeletionDeps = SpaceDeletionDeps & {
-  billing?: Pick<BillingService, "cancelOrganizationSubscriptions">;
-};
+type OrganizationDeletionDeps = SpaceDeletionDeps &
+  Pick<RouterDeps, "connectors"> & {
+    billing?: Pick<BillingService, "cancelOrganizationSubscriptions">;
+  };
 
 /**
  * Claiming hides the organization from the owner's list. Calendar cleanup and subscription
@@ -249,6 +270,12 @@ export async function deleteOrganization(
     stillLeased();
     await deps.billing?.cancelOrganizationSubscriptions(organizationId);
     billingCancelled = true;
+    stillLeased();
+    await cleanOrganizationConnections(
+      deps,
+      { organizationId, userId, spaceId: spaceIds[0] ?? organizationId },
+      lease,
+    );
     stillLeased();
     const inOrganization = { spaceId: { in: spaceIds } };
     // The claim leaves the owner as its only member, so every Space goes: its files can go before

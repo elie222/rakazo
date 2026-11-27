@@ -463,6 +463,43 @@ describe("model credential persistence", () => {
     );
   });
 
+  it("saves what a compatible server's model list says about the enabled models", async () => {
+    const { deps, handler } = persistDeps();
+    const transport = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        data: [
+          {
+            id: "fixture-model",
+            max_input_tokens: 200_000,
+            max_tokens: 32_000,
+            capabilities: { image_input: { supported: false }, thinking: { supported: true } },
+          },
+          { id: "other-model", max_input_tokens: 100_000 },
+        ],
+      }),
+    );
+    Object.assign(deps, { modelConnectionFetch: transport });
+    const response = await call(handler, "models/connect", {
+      provider: "openai-compatible",
+      baseUrl: "https://api.concentrate.ai/v1",
+      apiKey: "fake-fixture-key",
+      modelId: "fixture-model",
+    });
+    expect(response.status).toBe(200);
+    const plaintext = vi.mocked(deps.secrets.put).mock.calls[0]?.[0] as string;
+    expect(adapters.parseModelSecret(plaintext)).toMatchObject({
+      listedModels: {
+        "fixture-model": {
+          contextWindow: 200_000,
+          maxTokens: 32_000,
+          images: false,
+          reasoning: true,
+        },
+      },
+    });
+    expect(adapters.parseModelSecret(plaintext)).not.toHaveProperty("listedModels.other-model");
+  });
+
   it.each([401, 403, 503])(
     "rejects an unverified compatible Ollama connection (%i) before saving",
     async (status) => {

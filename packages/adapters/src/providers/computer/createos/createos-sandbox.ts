@@ -54,6 +54,7 @@ import {
   shellQuote,
   workspaceCwd,
   workspacePath,
+  workspaceRelativePath,
 } from "../../../computers/screens/computer-support.js";
 import { observationSnapshot } from "../../../computers/screens/linux-desktop.js";
 import { shouldSkipPortableWorkspaceFile } from "../../../storage/workspace-save-policy.js";
@@ -602,7 +603,7 @@ export class CreateOSSandboxProvider implements SandboxProvider {
     directory: string,
     context: AdapterContext,
   ): Promise<ComputerFileEntry[]> {
-    const relative = normalizeWorkspacePath(directory);
+    const relative = workspaceRelativePath(CREATEOS_WORKSPACE, directory);
     const target = workspacePath(CREATEOS_WORKSPACE, relative);
     const script = `
 import json, os, stat, sys

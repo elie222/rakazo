@@ -114,4 +114,13 @@ describe("useThreadKeyboard", () => {
     act(() => mocks.handlers.onStart?.({ progress: 1, height: 300 }));
     expect(keyboard.avoiding).toBe(true);
   });
+
+  it("avoids the keyboard again when an input focuses under a keyboard that stayed up", () => {
+    focus(true);
+    keyboardEnd(1);
+    focus(false);
+    act(() => vi.advanceTimersByTime(KEYBOARD_SETTLE_MS));
+    focus(true);
+    expect(keyboard.avoiding).toBe(true);
+  });
 });
