@@ -39,7 +39,7 @@ export default function PageAppPage() {
   const spaceId = searchParams.get(PAGE_WEB_APP_SPACE_PARAM);
   return (
     <SpaceRpcProvider spaceId={spaceId ?? undefined}>
-      <PageApp key={pageId} pageId={pageId} spaceId={spaceId} />
+      <PageApp key={`${pageId}:${spaceId ?? ""}`} pageId={pageId} spaceId={spaceId} />
     </SpaceRpcProvider>
   );
 }
