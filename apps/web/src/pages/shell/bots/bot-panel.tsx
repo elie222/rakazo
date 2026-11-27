@@ -16,6 +16,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   Input,
+  OptionSelect,
   SectionHeading,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
@@ -59,6 +60,7 @@ function advancedValues(bot: Bot) {
     bot.computerMode,
     bot.autoSpeak,
     bot.voiceId ?? "",
+    bot.modelCredentialId ?? "",
   ] as const;
 }
 
@@ -103,6 +105,7 @@ export function BotSettings({
     voiceId?: string | null;
     modelProvider?: string | null;
     modelId?: string | null;
+    modelCredentialId?: string | null;
     thinkingLevel?: ThinkingLevel | null;
     disabledBuiltinTools?: string[];
   }) => Promise<void>;
@@ -186,6 +189,7 @@ export function BotSettings({
   const [modelKey, setModelKey] = useState(
     bot.modelProvider && bot.modelId ? modelOptionKey(bot.modelProvider, bot.modelId) : "",
   );
+  const [modelCredentialId, setModelCredentialId] = useState(bot.modelCredentialId ?? "");
   const [thinkingLevel, setThinkingLevel] = useState(bot.thinkingLevel ?? "");
   const [disabledBuiltinTools, setDisabledBuiltinTools] = useState<string[]>(
     bot.disabledBuiltinTools ?? [],
@@ -225,6 +229,7 @@ export function BotSettings({
     computerMode,
     autoSpeak,
     voiceId,
+    modelCredentialId,
   ]);
   const [error, setError] = useState<string | null>(null);
   const saveQueueRef = useRef(Promise.resolve());
@@ -274,12 +279,16 @@ export function BotSettings({
     if (computerMode === saved[2]) setComputerMode(next[2]);
     if (autoSpeak === saved[3]) setAutoSpeak(next[3]);
     if (voiceId === saved[4]) setVoiceId(next[4]);
+    if (modelCredentialId === saved[5]) setModelCredentialId(next[5]);
     setSavedAdvanced(JSON.stringify(next));
   }, [bot]);
 
   const {
     selectedModel,
+    selectedModelKey,
     shownKey,
+    connections: eligibleConnections,
+    connectionModelKey,
     choices: modelChoices,
     thinkingLevels: thinkingOptions,
     defaultThinkingLevel,
@@ -290,7 +299,16 @@ export function BotSettings({
     catalog: catalog.map(localizeModelEntry),
     me,
     modelKey,
+    modelCredentialId,
   });
+
+  const connectionOptions = [
+    { value: "", label: t`Automatic` },
+    ...eligibleConnections.map(({ id, label }) => ({ value: id, label })),
+    ...(modelCredentialId && !eligibleConnections.some(({ id }) => id === modelCredentialId)
+      ? [{ value: modelCredentialId, label: t`Unavailable connection`, disabled: true }]
+      : []),
+  ];
 
   async function executeSave(
     patchOverrides?: {
@@ -352,6 +370,9 @@ export function BotSettings({
         voiceId: voiceId || null,
         modelProvider: selected?.provider ?? null,
         modelId: selected?.modelId ?? null,
+        ...(modelCredentialId !== (JSON.parse(savedAdvanced) as unknown[])[5]
+          ? { modelCredentialId: modelCredentialId || null }
+          : {}),
         ...(modelMetaReady &&
         (thinkingOptions.length > 0 ||
           (selected?.provider ?? null) !== bot.modelProvider ||
@@ -402,7 +423,16 @@ export function BotSettings({
       };
       if (nextName) savedNameRef.current = nextName;
       savedDescriptionRef.current = nextDescription;
-      setSavedAdvanced(JSON.stringify([modelKey, thinkingLevel, computerMode, autoSpeak, voiceId]));
+      setSavedAdvanced(
+        JSON.stringify([
+          modelKey,
+          thinkingLevel,
+          computerMode,
+          autoSpeak,
+          voiceId,
+          modelCredentialId,
+        ]),
+      );
     } catch (err) {
       if (
         patchOverrides?.color !== undefined &&
@@ -433,6 +463,7 @@ export function BotSettings({
         setComputerMode(saved[2]);
         setAutoSpeak(saved[3]);
         setVoiceId(saved[4]);
+        setModelCredentialId(saved[5]);
       }
       setError(errorText(err, t`Could not save`));
     } finally {
@@ -663,7 +694,11 @@ export function BotSettings({
                 choices={modelChoices}
                 value={shownKey}
                 onModelChange={(key) => {
-                  setModelKey(savedModelKey(key));
+                  if (modelCredentialId && key === shownKey) return;
+                  const saved = savedModelKey(key);
+                  if (saved === selectedModelKey) return;
+                  setModelKey(saved);
+                  setModelCredentialId("");
                   setThinkingLevel("");
                 }}
                 thinkingOptions={thinkingOptions}
@@ -672,6 +707,25 @@ export function BotSettings({
                   setThinkingLevel(savedThinkingLevel(level as ThinkingLevel) ?? "")
                 }
               />
+              {shownKey && (eligibleConnections.length > 0 || modelCredentialId) ? (
+                <label
+                  htmlFor={`${ids}-model-connection`}
+                  className="flex min-h-12 items-center justify-between gap-3 text-body text-foreground"
+                >
+                  <Trans>Model connection</Trans>
+                  <OptionSelect
+                    id={`${ids}-model-connection`}
+                    className="w-fit max-w-2/3"
+                    value={modelCredentialId}
+                    onValueChange={(id) => {
+                      setModelKey(connectionModelKey(id));
+                      setModelCredentialId(id);
+                      setThinkingLevel("");
+                    }}
+                    options={connectionOptions}
+                  />
+                </label>
+              ) : null}
               <SwitchRow
                 id={`${ids}-notify-finish`}
                 label={<Trans>Notifications</Trans>}

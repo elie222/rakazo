@@ -1,4 +1,10 @@
-import type { Bot, ModelApiProtocol, ModelCatalogEntry, ModelSettings } from "@rakazo/contracts";
+import type {
+  Bot,
+  ModelApiProtocol,
+  ModelCatalogEntry,
+  ModelCredential,
+  ModelSettings,
+} from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
   modelConnectionNames,
@@ -302,6 +308,41 @@ export function credentialForModel<C extends CredentialModelRef>(
     refs,
     modelId,
   )?.credential;
+}
+
+/** Connections advertised for an explicit model. The server rechecks the selected connection. */
+export function botModelConnections(
+  credentials: readonly ModelCredential[],
+  catalog: readonly Pick<ModelCatalogEntry, "provider" | "id" | "auth" | "placeholder">[],
+  model: { provider: string; modelId: string } | null,
+): ModelCredential[] {
+  if (!model) return [];
+  const provider = canonicalPiProviderId(model.provider);
+  const entry = catalog.find(
+    (item) =>
+      !item.placeholder &&
+      canonicalPiProviderId(item.provider) === provider &&
+      item.id === model.modelId,
+  );
+  return credentials.filter((credential) => {
+    if (
+      (!credential.hasKey &&
+        credential.authKind !== "oauth" &&
+        credential.authKind !== "openai_compatible") ||
+      credential.reconnectRequired ||
+      canonicalPiProviderId(credential.provider) !== provider
+    )
+      return false;
+    if (provider === OPENAI_COMPATIBLE_PROVIDER_ID || !entry) {
+      return (
+        credential.modelId === model.modelId ||
+        Boolean(credential.enabledModelIds?.includes(model.modelId))
+      );
+    }
+    if (entry.auth === "oauth") return credential.authKind === "oauth";
+    if (entry.auth === "api-key") return credential.authKind !== "oauth";
+    return true;
+  });
 }
 
 /**
