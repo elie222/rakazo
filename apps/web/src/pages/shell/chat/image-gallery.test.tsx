@@ -234,12 +234,6 @@ async function openPicture(name: string) {
   await act(async () => {});
 }
 
-async function openKept(shown?: GalleryImage) {
-  await renderGallery(kept, shown);
-  await openPicture("kept-5");
-}
-
-/** Gives each download its own object URL, blob:1, blob:2 and so on, so a test can tell them apart. */
 function numberObjectUrls() {
   let created = 0;
   const revokeObjectURL = vi.fn();
@@ -250,73 +244,40 @@ function numberObjectUrls() {
   return revokeObjectURL;
 }
 
-// Only the kept gallery downloads in these tests, so every call is one of its pictures.
-const downloads = () => vi.mocked(rpc.artifacts.get).mock.calls.length;
-
-it("keeps the pictures it downloaded until the lightbox closes", async () => {
-  await openKept();
-  expect(downloads()).toBe(7);
-  for (let step = 0; step < 10; step += 1) await press("ArrowRight");
-  expect(previewName()).toBe("kept-15");
-  expect(downloads()).toBe(17);
-  for (let step = 0; step < 10; step += 1) await press("ArrowLeft");
+it("reuses opened pictures after they leave the thumbnail strip", async () => {
+  await renderGallery(kept);
+  await openPicture("kept-5");
+  for (let step = 0; step < 4; step += 1) await press("ArrowRight");
+  for (let step = 0; step < 4; step += 1) await press("ArrowLeft");
   expect(previewName()).toBe("kept-5");
-  expect(downloads()).toBe(17);
+  const fetched = vi.mocked(rpc.artifacts.get).mock.calls.map(([input]) => input.artifactId);
+  expect(fetched.filter((id) => id === "kept-5")).toHaveLength(1);
+  expect(fetched.filter((id) => id === "kept-2")).toHaveLength(2);
 });
 
-it("frees the kept pictures when the lightbox closes", async () => {
+it("frees cached pictures on close while preserving the chat's own image", async () => {
   const revokeObjectURL = numberObjectUrls();
-  await openKept();
+  await renderGallery(kept, kept[5]);
+  await openPicture("kept-5");
   await press("ArrowRight");
-  // The window moved past the first picture, which only the lightbox still holds.
-  expect(downloads()).toBe(8);
-  expect(revokeObjectURL).not.toHaveBeenCalled();
   await press("Escape");
   expect(document.querySelector('[role="dialog"]')).toBeNull();
-  expect(revokeObjectURL).toHaveBeenCalledTimes(8);
-});
-
-it("does not free a picture the chat still shows when the lightbox closes", async () => {
-  const revokeObjectURL = numberObjectUrls();
-  await openKept(kept[3]!);
-  expect(downloads()).toBe(7);
-  await press("Escape");
-  expect(revokeObjectURL).toHaveBeenCalledTimes(6);
-  // The chat letting go of it is what frees it.
-  await renderGallery(kept);
   expect(revokeObjectURL).toHaveBeenCalledTimes(7);
+  expect(revokeObjectURL).not.toHaveBeenCalledWith("blob:1");
+  await renderGallery(kept);
+  expect(revokeObjectURL).toHaveBeenCalledWith("blob:1");
 });
 
-it("keeps one share in a picture however often the lightbox returns to it", async () => {
+it("releases a cached slide when the gallery removes it", async () => {
   const revokeObjectURL = numberObjectUrls();
   await renderGallery(kept.slice(0, 2));
   await openPicture("kept-0");
-  for (let step = 0; step < 100; step += 1) {
-    await press(step % 2 === 0 ? "ArrowRight" : "ArrowLeft");
-  }
-  expect(previewName()).toBe("kept-0");
-  expect(downloads()).toBe(2);
-  // A share left behind by every return would keep the other picture past its removal.
-  await renderGallery([kept[0]!]);
-  expect(revokeObjectURL.mock.calls).toEqual([["blob:2"]]);
-  expect(previewName()).toBe("kept-0");
-  await press("Escape");
-  expect(revokeObjectURL.mock.calls).toEqual([["blob:2"], ["blob:1"]]);
-});
-
-it("releases pictures that leave the gallery while it stays open", async () => {
-  const revokeObjectURL = numberObjectUrls();
-  await openKept();
   await press("ArrowRight");
+  await press("ArrowLeft");
   await press("ArrowRight");
-  expect(downloads()).toBe(9);
-  await renderGallery(kept.filter((image) => image.name !== "kept-3" && image.name !== "kept-6"));
-  // The third and the fifth download.
-  expect(revokeObjectURL.mock.calls).toEqual([["blob:3"], ["blob:5"]]);
-  expect(previewName()).toBe("kept-7");
-  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("6 / 22");
-  await press("Escape");
-  expect(revokeObjectURL).toHaveBeenCalledTimes(9);
+  await renderGallery([kept[1]!]);
+  expect(revokeObjectURL).toHaveBeenCalledExactlyOnceWith("blob:1");
+  expect(previewName()).toBe("kept-1");
 });
 
 it("keeps the selected picture when earlier images arrive", async () => {

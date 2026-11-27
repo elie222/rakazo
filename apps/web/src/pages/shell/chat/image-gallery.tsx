@@ -127,19 +127,17 @@ export function ImageGalleryProvider({
 
 function GalleryThumb({
   image,
-  keeper,
   active,
   onSelect,
   tabIndex,
 }: {
   image: GalleryImage;
-  keeper: ArtifactImageKeeper;
   active: boolean;
   onSelect: () => void;
   tabIndex?: number;
 }) {
   const { t } = useLingui();
-  const src = useArtifactImage(image.target, image.artifactId, true, keeper);
+  const src = useArtifactImage(image.target, image.artifactId);
   return (
     <button
       type="button"
@@ -191,8 +189,6 @@ export function ImageLightbox({
   const index = images.findIndex((image) => galleryImageKey(image) === selectedKey);
   const current = images[index];
   const close = useRef<HTMLButtonElement>(null);
-  // Pictures the carousel moves past stay downloaded while the lightbox is open and they are
-  // still among the chat's pictures, so coming back to one does not download it again.
   const keeper = useArtifactImageKeeper(images);
   const single = images.length < 2;
   const step = (delta: number) => {
@@ -286,7 +282,6 @@ export function ImageLightbox({
                   >
                     <GalleryThumb
                       image={image}
-                      keeper={keeper}
                       active={distance === 0}
                       onSelect={() => onSelect(galleryImageKey(image))}
                       // Clipped neighbours stay out of the tab order; the arrows reach every image.
