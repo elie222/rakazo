@@ -488,7 +488,7 @@ describe("replaying an earlier reply's tool steps", () => {
     expect(messages.find((message) => message.role === "toolResult")?.content).toEqual(text(saved));
   });
 
-  it("keeps the omission marker and saved tail when a replayed head ends inside a redacted JSON field", () => {
+  it("redacts an open credential when a placeholder prefix has no closing quote", () => {
     const marker = "\n… [100 characters not kept] …\n";
     const headSecret = "api_key=head-secret-value";
     const tailSecret = "password=tail-secret-value";
@@ -533,11 +533,13 @@ describe("replaying an earlier reply's tool steps", () => {
       ? content.map((part) => (part.type === "text" ? part.text : "")).join("")
       : "";
     expect(replayed).toContain(marker);
-    expect(replayed).toContain("END_OF_TAIL");
+    expect(replayed).not.toContain("END_OF_TAIL");
     expect(replayed).not.toContain(headSecret);
     expect(replayed).not.toContain(tailSecret);
     expect(replayed).toContain("api_key=[redacted]");
-    expect(replayed).toContain("password=[redacted]");
+    expect(replayed).not.toContain("password=");
+    expect(replayed.split(marker)[0]).toMatch(/"token": "\[redacted\]"$/);
+    expect(replayed.split(marker)[1]).toBe("[redacted]");
   });
 
   it("keeps a split redacted placeholder without growing it on replay", () => {
@@ -590,11 +592,13 @@ describe("replaying an earlier reply's tool steps", () => {
     expect(tail).toHaveLength(300);
     const replayed = replayedCallText(`${head}${marker}${tail}`);
     expect(replayed).toContain(marker);
-    expect(replayed).toContain("END_OF_TAIL");
+    expect(replayed).not.toContain("END_OF_TAIL");
     expect(replayed).not.toContain(headSecret);
     expect(replayed).not.toContain(tailSecret);
     expect(replayed).toContain("api_key=[redacted]");
-    expect(replayed).toContain("password=[redacted]");
+    expect(replayed).not.toContain("password=");
+    expect(replayed.split(marker)[0]).toMatch(/"token": "\[redacted\]"$/);
+    expect(replayed.split(marker)[1]).toBe("[redacted]");
   });
 
   it("redacts an unclosed legacy credential tail on replay", () => {
@@ -622,8 +626,8 @@ describe("replaying an earlier reply's tool steps", () => {
     expect(glued).toContain(marker);
     expect(glued).toContain('"after": "END_OF_TAIL"');
     expect(glued).not.toContain("secret-tail-open");
-    expect(glued.split(marker)[0]).toMatch(/"token": "\[r$/);
-    expect(glued.split(marker)[1]).toMatch(/^edacted\]\[redacted\]", "after": "END_OF_TAIL"/);
+    expect(glued.split(marker)[0]).toMatch(/"token": "\[redacted\]"$/);
+    expect(glued.split(marker)[1]).toMatch(/^\[redacted\]", "after": "END_OF_TAIL"/);
 
     const whole = replayedCallText(`{"token": "[redacted]${marker}secret-tail-open`);
     expect(whole).toContain(marker);
@@ -679,6 +683,61 @@ describe("replaying an earlier reply's tool steps", () => {
     expect(saved.length).toBeGreaterThan(TOOL_CALL_SAVED_TEXT_MAX_CHARS);
     const replayed = replayedCallText(saved);
     expect(replayed).toContain(marker);
+  });
+
+  it("redacts a raw token whose kept head is only a prefix of the redacted placeholder", () => {
+    const marker = "\n… [40 characters not kept] …\n";
+    const replayed = replayedCallText(
+      `{"token": "[r${marker}aw-secret-value", "status": "Job completed"}`,
+    );
+    expect(replayed).toContain(marker);
+    expect(replayed).toContain("Job completed");
+    expect(replayed).not.toContain("aw-secret-value");
+    expect(replayed.split(marker)[0]).toMatch(/"token": "\[redacted\]"$/);
+    expect(replayed.split(marker)[1]).toMatch(/^\[redacted\]", "status": "Job completed"/);
+  });
+
+  it("does not treat a bracket or a comma after a cut escape as the end of a credential", () => {
+    const marker = "\n… [30 characters not kept] …\n";
+    const bracket = replayedCallText(`{"token": "secret-head${marker}]raw-credential-tail`);
+    expect(bracket).toContain(marker);
+    expect(bracket).not.toContain("secret-head");
+    expect(bracket).not.toContain("raw-credential-tail");
+
+    // The cut dropped the backslash, so this quote-and-comma is still inside the value.
+    const comma = replayedCallText(`{"token": "secret-head${marker}", still-secret, more-secret}`);
+    expect(comma).toContain(marker);
+    expect(comma).not.toContain("secret-head");
+    expect(comma).not.toContain("still-secret");
+    expect(comma).not.toContain("more-secret");
+  });
+
+  it("keeps a following field when its key contains a JSON escape", () => {
+    const marker = "\n… [20 characters not kept] …\n";
+    const saved = `{"token": "secret-head${marker}, "status\\u0020message": "Job completed"}`;
+    const replayed = replayedCallText(saved);
+    expect(replayed).toContain(marker);
+    expect(replayed).toContain("Job completed");
+    expect(replayed).not.toContain("secret-head");
+    expect(replayed).toContain(`${marker}, "status\\u0020message": "Job completed"}`);
+  });
+
+  it("does not cut the second omission marker when two markers share a newline", () => {
+    const first = "\n… [8 characters not kept] …\n";
+    const second = "\n… [750 characters not kept] …\n";
+    const shared = `${first.slice(0, -1)}${second}`;
+    const headCut = Math.floor(TOOL_CALL_SAVED_TEXT_MAX_CHARS * 0.7);
+    const padLen = headCut - 12 - (first.length - 1);
+    const saved = `${"c".repeat(padLen)}${shared}${"d".repeat(400)}`;
+    const secondStart = padLen + first.length - 1;
+    expect(padLen).toBeGreaterThan(0);
+    expect(saved.length).toBeGreaterThan(TOOL_CALL_SAVED_TEXT_MAX_CHARS);
+    expect(secondStart).toBeLessThan(headCut);
+    expect(secondStart + second.length).toBeGreaterThan(headCut);
+    const replayed = replayedCallText(saved);
+    expect(replayed).toContain(first);
+    expect(replayed).toContain(second);
+    expect(replayed.split(second)).toHaveLength(2);
   });
 
   it("says in its result when a replayed call's tool is not offered now", () => {

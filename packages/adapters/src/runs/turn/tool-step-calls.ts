@@ -206,26 +206,92 @@ function skipJsonSpace(text: string, index: number): number {
   return index;
 }
 
-/** True when `index` is the opening quote of a JSON key followed by `:`. */
-function keyColonAt(text: string, index: number): boolean {
-  if (text[index] !== '"') return false;
+/** Length of one JSON string escape at the backslash, or 0 when the escape is incomplete. */
+function jsonEscapeLength(text: string, index: number): number {
+  const next = text[index + 1];
+  if (
+    next === '"' ||
+    next === "\\" ||
+    next === "/" ||
+    next === "b" ||
+    next === "f" ||
+    next === "n" ||
+    next === "r" ||
+    next === "t"
+  ) {
+    return 2;
+  }
+  if (next !== "u") return 0;
+  for (let hex = 0; hex < 4; hex += 1) {
+    const code = text.charCodeAt(index + 2 + hex);
+    const digit =
+      (code >= 48 && code <= 57) || (code >= 65 && code <= 70) || (code >= 97 && code <= 102);
+    if (!digit) return 0;
+  }
+  return 6;
+}
+
+/** Index just after the JSON string that opens at `index`, or -1. A raw newline ends it. */
+function jsonStringEnd(text: string, index: number): number {
+  if (text[index] !== '"') return -1;
   let end = index + 1;
   while (end < text.length) {
     const ch = text[end]!;
-    if (ch === "\\" || ch === "\n" || ch === "\r") return false;
-    if (ch === '"') break;
+    if (ch === "\n" || ch === "\r") return -1;
+    if (ch === "\\") {
+      const size = jsonEscapeLength(text, end);
+      if (size === 0) return -1;
+      end += size;
+      continue;
+    }
+    if (ch === '"') return end + 1;
     end += 1;
   }
-  if (end >= text.length || text[end] !== '"') return false;
-  return text[skipJsonSpace(text, end + 1)] === ":";
+  return -1;
 }
 
-/** A `"` ends a credential when JSON structure follows it, not more of the value. */
-function structuralAfterQuote(text: string, quote: number): boolean {
-  const next = skipJsonSpace(text, quote + 1);
-  if (next >= text.length) return true;
-  const ch = text[next]!;
-  return ch === "," || ch === "}" || ch === "]";
+/** True when `index` is the opening quote of a JSON key followed by `:`. */
+function keyColonAt(text: string, index: number): boolean {
+  const afterKey = jsonStringEnd(text, index);
+  if (afterKey < 0) return false;
+  return text[skipJsonSpace(text, afterKey)] === ":";
+}
+
+function jsonValueStarts(text: string, index: number): boolean {
+  const at = skipJsonSpace(text, index);
+  if (at >= text.length) return false;
+  const ch = text[at]!;
+  if (ch === '"' || ch === "{" || ch === "[" || ch === "-") return true;
+  if (ch >= "0" && ch <= "9") return true;
+  return text.startsWith("true", at) || text.startsWith("false", at) || text.startsWith("null", at);
+}
+
+/**
+ * A `"` ends a credential when the object ends or another field starts after it.
+ * A comma counts only with a quoted key, a colon, and a value. A `]` does not.
+ */
+function authenticAfterQuote(text: string, quote: number): boolean {
+  let index = skipJsonSpace(text, quote + 1);
+  while (index < text.length) {
+    const ch = text[index]!;
+    if (ch === "}") {
+      index = skipJsonSpace(text, index + 1);
+      if (index >= text.length) return true;
+      continue;
+    }
+    if (ch !== ",") return false;
+    const at = skipJsonSpace(text, index + 1);
+    if (at >= text.length) return false;
+    if (text[at] === "}") {
+      index = at;
+      continue;
+    }
+    if (!keyColonAt(text, at)) return false;
+    const keyEnd = jsonStringEnd(text, at);
+    const colon = skipJsonSpace(text, keyEnd);
+    return text[colon] === ":" && jsonValueStarts(text, colon + 1);
+  }
+  return true;
 }
 
 /** Value text between the opening quote and the marker, ignoring one trailing carriage return. */
@@ -240,10 +306,10 @@ function credentialHeadValue(text: string, openQuote: number, markerAt: number):
  * Rewriting that placeholder would grow the saved text.
  */
 function redactedSplitQuote(headValue: string, tail: string): number {
-  if (!REDACTED_PLACEHOLDER.startsWith(headValue)) return -1;
+  if (headValue.length === 0 || !REDACTED_PLACEHOLDER.startsWith(headValue)) return -1;
   const rest = REDACTED_PLACEHOLDER.slice(headValue.length);
   if (!tail.startsWith(rest) || tail[rest.length] !== '"') return -1;
-  return rest.length;
+  return authenticAfterQuote(tail, rest.length) ? rest.length : -1;
 }
 
 /**
@@ -258,7 +324,7 @@ function confirmedCredentialClose(tail: string): number {
       index += 1;
       continue;
     }
-    if (ch === '"' && structuralAfterQuote(tail, index)) return index;
+    if (ch === '"' && authenticAfterQuote(tail, index)) return index;
   }
   return -1;
 }
@@ -267,27 +333,10 @@ function confirmedCredentialClose(tail: string): number {
  * The credential closed inside the omitted span. The tail is the next JSON field, a brace, or a
  * short non-secret lead into that field. It is not the rest of the credential.
  */
-function isStructuralContinuation(tail: string): boolean {
-  const start = skipJsonSpace(tail, 0);
-  if (start >= tail.length) return true;
-  const ch = tail[start]!;
-  if (ch === "}" || ch === "]") return true;
-  if (ch === ",") {
-    const after = skipJsonSpace(tail, start + 1);
-    if (after >= tail.length) return true;
-    const next = tail[after]!;
-    if (next === "}" || next === "]" || next === ",") return true;
-    if (next === '"') return keyColonAt(tail, after) || structuralAfterQuote(tail, after);
-    return false;
-  }
-  if (ch === '"') {
-    if (structuralAfterQuote(tail, start)) return true;
-    if (keyColonAt(tail, start)) return true;
-  }
+function structuralLeadEnd(tail: string): number {
   let index = 0;
   while (index < tail.length) {
     const lead = tail[index]!;
-    if (lead === '"') return keyColonAt(tail, index);
     if (
       lead !== " " &&
       lead !== "\t" &&
@@ -296,10 +345,25 @@ function isStructuralContinuation(tail: string): boolean {
       lead !== "…" &&
       lead !== "."
     ) {
-      return false;
+      break;
     }
     index += 1;
   }
+  return index;
+}
+
+function isStructuralContinuation(tail: string): boolean {
+  const start = structuralLeadEnd(tail);
+  if (start >= tail.length) return true;
+  const ch = tail[start]!;
+  if (ch === '"') {
+    if (authenticAfterQuote(tail, start)) return true;
+    if (!keyColonAt(tail, start)) return false;
+    const keyEnd = jsonStringEnd(tail, start);
+    const colon = skipJsonSpace(tail, keyEnd);
+    return tail[colon] === ":" && jsonValueStarts(tail, colon + 1);
+  }
+  if (ch === "," || ch === "}") return authenticAfterQuote(tail, start - 1);
   return false;
 }
 
@@ -345,24 +409,9 @@ function redactCredentialJsonFields(text: string, honorOmissionMarker: boolean):
       const headValue = credentialHeadValue(text, pos, scanned.fragmentEnd);
       const tail = text.slice(scanned.nextIndex);
       const splitQuote = redactedSplitQuote(headValue, tail);
-      // `[r` + `edacted]"` is the saved placeholder. Rewriting it would grow the text.
+      // `[r` + `edacted]"` is the saved placeholder, and nothing raw sits inside that value.
       if (splitQuote >= 0) {
         index = scanned.nextIndex + splitQuote + 1;
-        continue;
-      }
-      const placeholderHead = headValue.length > 0 && REDACTED_PLACEHOLDER.startsWith(headValue);
-      const rest = placeholderHead ? REDACTED_PLACEHOLDER.slice(headValue.length) : "";
-      // The placeholder suffix is in the tail, and raw bytes follow it. Keep the suffix only.
-      if (rest.length > 0 && tail.startsWith(rest) && rest.length < tail.length) {
-        const close = confirmedCredentialClose(tail.slice(rest.length));
-        out += `${text.slice(cursor, scanned.nextIndex)}${rest}[redacted]`;
-        cursor = close >= 0 ? scanned.nextIndex + rest.length + close : text.length;
-        index = cursor;
-        continue;
-      }
-      // A prefix whose tail is other saved text (not the rest of `[redacted]`) stays as saved.
-      if (rest.length > 0) {
-        index = scanned.nextIndex;
         continue;
       }
       const marker = text.slice(scanned.fragmentEnd, scanned.nextIndex);
@@ -414,12 +463,21 @@ function sliceTailWellFormed(text: string, maxChars: number): string {
 /** Spans of omission markers. Each character is visited once and each check is bounded. */
 function omissionSpans(text: string): Array<[number, number]> {
   const spans: Array<[number, number]> = [];
-  for (let index = 0; index < text.length; index += 1) {
-    if (text[index] !== "\n") continue;
+  let index = 0;
+  while (index < text.length) {
+    if (text[index] !== "\n") {
+      index += 1;
+      continue;
+    }
     const end = omissionMarkerEnd(text, index);
-    if (end < 0) continue;
+    if (end < 0) {
+      index += 1;
+      continue;
+    }
     spans.push([index, end]);
-    index = end - 1;
+    // The trailing newline can open the next marker. It is strictly after this marker's start.
+    const shared = end - 1;
+    index = shared > index ? shared : index + 1;
   }
   return spans;
 }

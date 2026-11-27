@@ -9,6 +9,7 @@ import { redactBlocks } from "../assembly/run-messages.js";
 import { withReplyToolOutcomes } from "../lifecycle/run-progress.js";
 import { toolCompletionOutcome } from "./tool-completion-audit.js";
 import {
+  bounded,
   historyReplaysOutsideContent,
   keepToolStepResult,
   keptToolArguments,
@@ -16,6 +17,7 @@ import {
   keptTurnTranscript,
   runReplaysToolHistory,
   saveLatestStepScreenshot,
+  TOOL_CALL_SAVED_TEXT_MAX_CHARS,
   TOOL_CALL_TEXT_MAX_CHARS,
   TOOL_REPLY_RESULTS_MAX_CHARS,
 } from "./tool-step-calls.js";
@@ -636,6 +638,18 @@ describe("tool step outcomes", () => {
     expect(withCreds).not.toContain("next-line-colon-pass");
     expect(withCreds).not.toContain("unclosed-eof-line-1");
     expect(withCreds).not.toContain("unclosed-eof-continuation-2");
+
+    const marker = "\n… [8 characters not kept] …\n";
+    const shared = `${marker.slice(0, -1)}${marker}`.repeat(2_000);
+    const escapedKey = `{"token":"[r${marker}${"x".repeat(20_000)}", "status\\u0020message": "Job completed"}`;
+    expectLinearTime(() => {
+      bounded(shared, TOOL_CALL_SAVED_TEXT_MAX_CHARS, [], { replaySaved: true });
+      bounded(escapedKey, TOOL_CALL_SAVED_TEXT_MAX_CHARS, [], { replaySaved: true });
+    });
+    const replayed = bounded(escapedKey, TOOL_CALL_SAVED_TEXT_MAX_CHARS, [], { replaySaved: true });
+    expect(replayed).not.toContain("x".repeat(20));
+    expect(replayed).toContain("Job completed");
+    expect(replayed).toContain('"status\\u0020message": "Job completed"');
 
     const pathological = `"${"token_".repeat(12_000)}tail`;
     const repeated = '"token":'.repeat(10_000);
