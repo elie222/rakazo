@@ -71,21 +71,49 @@ export function providerFailureText(message: unknown): string | undefined {
   return undefined;
 }
 
+function redactJwts(text: string): string {
+  if (!text.includes("eyJ")) return text;
+  // Scan each base64url+dot run once so repeated "eyJ" prefixes stay linear.
+  return text.replace(/[a-zA-Z0-9_.-]+/g, (run) => {
+    if (!run.includes("eyJ") || !run.includes(".")) return run;
+    const parts = run.split(".");
+    const out: string[] = [];
+    let changed = false;
+    for (let index = 0; index < parts.length; index += 1) {
+      const part = parts[index]!;
+      const jwtAt = part.indexOf("eyJ");
+      if (
+        jwtAt !== -1 &&
+        part.length > jwtAt + 3 &&
+        index + 2 < parts.length &&
+        parts[index + 1]!.length > 0 &&
+        parts[index + 2]!.length > 0
+      ) {
+        out.push(`${part.slice(0, jwtAt)}[redacted]`);
+        changed = true;
+        index += 2;
+      } else {
+        out.push(part);
+      }
+    }
+    return changed ? out.join(".") : run;
+  });
+}
+
 export function sanitizeSensitiveText(message: string, options?: { decoded?: boolean }) {
   const assignmentsMasked = message
     .replace(/sk-or-v1-[a-zA-Z0-9]+/g, "[redacted]")
     .replace(/sk-[a-zA-Z0-9-]+/g, "[redacted]")
-    .replace(/eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g, "[redacted]")
     .replace(
-      /COMPOSIO_API_KEY(?:\s*[=:]\s*|\s+)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s=:]+)/gi,
+      /COMPOSIO_API_KEY(?:\s*[=:]\s*|\s+)(?!Bearer\s+\S)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s=:]+)/gi,
       "COMPOSIO_API_KEY=[redacted]",
     )
     .replace(
-      /((?:api[_-]?key|access[_-]?token|password|secret)\s*[=:]\s*)[^\s"',;&]+/gi,
+      /((?:api[_-]?key|access[_-]?token|password|secret)\s*[=:]\s*)(?!Bearer\s+\S)[^\s"',;&]+/gi,
       "$1[redacted]",
     )
-    .replace(/((?:auth|authorization)\s*[=:]\s*)(?!Bearer\b)[^\s"',;&]+/gi, "$1[redacted]");
-  return redactPlainBearerTokens(assignmentsMasked, options);
+    .replace(/((?:auth|authorization)\s*[=:]\s*)(?!Bearer\s+\S)[^\s"',;&]+/gi, "$1[redacted]");
+  return redactJwts(redactPlainBearerTokens(assignmentsMasked, options));
 }
 
 export function sanitizeError(message: string) {

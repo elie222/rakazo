@@ -29,14 +29,14 @@ const BOUNDED_OMISSION_MARKER = /(\n… \[\d+ characters not kept\] …\n)/;
 const RAW_ATOM = /(?:\\(?![nrt"\\])|[^\s"',;&}:\]\\])/;
 const RAW_SUFFIX_ATOM = /(?:(?!Bearer\s)(?:\\(?![nrt"\\])|[^\s"',;&}{[\]:\\]))/;
 const RAW_BEARER = new RegExp(
-  `Bearer\\s+(?!\\[redacted\\](?!${RAW_ATOM.source}))(?:\\\\"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"${RAW_SUFFIX_ATOM.source}*)?|"(?!\\s*[:,}\\]\\r\\n]|$)[^"\\r\\n]+(?:"${RAW_SUFFIX_ATOM.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)[^'\\r\\n]+(?:'${RAW_SUFFIX_ATOM.source}*)?|\\[redacted\\](?:${RAW_ATOM.source})+|(?:${RAW_ATOM.source})+)`,
+  `Bearer\\s+(?!\\[redacted\\](?!${RAW_SUFFIX_ATOM.source}))(?:\\\\"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"${RAW_SUFFIX_ATOM.source}*)?|"(?!\\s*[:,}\\]\\r\\n]|$)[^"\\r\\n]+(?:"${RAW_SUFFIX_ATOM.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)[^'\\r\\n]+(?:'${RAW_SUFFIX_ATOM.source}*)?|\\[redacted\\]${RAW_SUFFIX_ATOM.source}+|(?:${RAW_ATOM.source})+)`,
   "gi",
 );
 
 const DECODED_ATOM = /(?:\\[^\s]|\\(?=\s|$)|[^\s"',;&}:\]\\])/;
 const DECODED_SUFFIX_ATOM = /(?:(?!Bearer\s)(?:\\[^\s]|\\(?=\s|$)|[^\s"',;&}{[\]:\\]))/;
 const DECODED_BEARER = new RegExp(
-  `Bearer\\s+(?!\\[redacted\\](?!${DECODED_ATOM.source}))(?:"(?!\\s*[:,}\\]\\r\\n]|$)[^"\\r\\n]+(?:"${DECODED_SUFFIX_ATOM.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)[^'\\r\\n]+(?:'${DECODED_SUFFIX_ATOM.source}*)?|\\[redacted\\](?:${DECODED_ATOM.source})+|(?:${DECODED_ATOM.source})+)`,
+  `Bearer\\s+(?!\\[redacted\\](?!${DECODED_SUFFIX_ATOM.source}))(?:"(?!\\s*[:,}\\]\\r\\n]|$)[^"\\r\\n]+(?:"${DECODED_SUFFIX_ATOM.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)[^'\\r\\n]+(?:'${DECODED_SUFFIX_ATOM.source}*)?|\\[redacted\\]${DECODED_SUFFIX_ATOM.source}+|(?:${DECODED_ATOM.source})+)`,
   "gi",
 );
 

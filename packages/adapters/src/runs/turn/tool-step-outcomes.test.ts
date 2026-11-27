@@ -914,6 +914,10 @@ describe("tool step outcomes", () => {
     const adjacentBearer = 'Bearer "fixturePrefix"Bearer fixtureSecond';
     const adjacentPassword = 'Bearer "fixturePrefix"password: fixtureSecond';
     const adjacentJson = 'INFO Bearer "fixturePrefix"{"status":"ok"}';
+    const adjacentArray = 'INFO Bearer "fixturePrefix"[1,2]';
+    const bearerAfterKey = "password: Bearer fixtureSecond";
+    const bearerHyphenAfterKey = "password: Bearer-fixtureSecond";
+    const bearerWithJwt = "Bearer prefix.eyJaaa.bbb.ccc.fixtureTail";
     for (const read of [kept, replay]) {
       expect(read(plainTail)).toBe("Bearer [redacted]");
       expect(read(escapedOpen)).toBe("Bearer [redacted]");
@@ -922,6 +926,10 @@ describe("tool step outcomes", () => {
       expect(read(adjacentPassword)).not.toContain("fixtureSecond");
       expect(read(adjacentPassword)).not.toContain("fixturePrefix");
       expect(read(adjacentJson)).toBe('INFO Bearer [redacted]{"status":"ok"}');
+      expect(read(adjacentArray)).toBe("INFO Bearer [redacted][1,2]");
+      expect(read(bearerAfterKey)).toBe("password: Bearer [redacted]");
+      expect(read(bearerHyphenAfterKey)).toBe("password: [redacted]");
+      expect(read(bearerWithJwt)).toBe("Bearer [redacted]");
       expect(read("Bearer fixturePrefix\nNext line")).toBe("Bearer [redacted]\nNext line");
       expect(read('Authorization: "Bearer secret"')).toBe('Authorization: "Bearer [redacted]"');
       expect(JSON.parse(read(escapedOpenJson) ?? "")).toEqual({
@@ -980,6 +988,14 @@ describe("tool step outcomes", () => {
     expect(sanitizeError(adjacentPassword)).not.toContain("fixtureSecond");
     expect(sanitizeError(adjacentPassword)).not.toContain("fixturePrefix");
     expect(sanitizeError(adjacentJson)).toBe('INFO Bearer [redacted]{"status":"ok"}');
+    expect(sanitizeError(adjacentArray)).toBe("INFO Bearer [redacted][1,2]");
+    expect(sanitizeError(bearerAfterKey)).toBe("password: Bearer [redacted]");
+    expect(sanitizeError(bearerHyphenAfterKey)).toBe("password: [redacted]");
+    expect(sanitizeError(bearerWithJwt)).toBe("Bearer [redacted]");
+    // Saved replay of already-sanitized output must preserve adjacent JSON openers and Bearer labels.
+    expect(replay(kept(adjacentJson) ?? "")).toBe('INFO Bearer [redacted]{"status":"ok"}');
+    expect(replay(kept(adjacentArray) ?? "")).toBe("INFO Bearer [redacted][1,2]");
+    expect(replay(kept(adjacentBearer) ?? "")).toBe("Bearer [redacted]Bearer [redacted]");
     expect(sanitizeError('Authorization: "Bearer secret"')).toBe(
       'Authorization: "Bearer [redacted]"',
     );
