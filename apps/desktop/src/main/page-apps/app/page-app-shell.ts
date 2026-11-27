@@ -17,7 +17,8 @@ export type PageAppScreen = { lang: string } & (
 export interface PageAppShell {
   ready: () => Promise<PageAppScreen | null>;
   /** The answer to post back to the frame, if the message has one. */
-  message: (data: unknown) => Promise<unknown>;
+  /** `frame` is the address of the frame that sent it, so a replaced page's messages do nothing. */
+  message: (data: unknown, frame: unknown) => Promise<unknown>;
 }
 
 /** The app window's own shell page; never the page's frame, which has no bridge anyway. */

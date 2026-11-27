@@ -50,6 +50,7 @@ function handlers(): BackgroundJobHandlers {
     "cloud_agent.poll": vi.fn(async () => undefined),
     "meeting.calendar-sync": vi.fn(async () => undefined),
     "page.revise": vi.fn(async () => undefined),
+    "page.app-unused": vi.fn(async () => undefined),
     "meeting.work": vi.fn(async () => undefined),
     "purchase.poll": vi.fn(async () => undefined),
     "media.poll": vi.fn(async () => undefined),

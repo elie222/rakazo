@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import type { JobPublisher } from "@rakazo/adapter-kit";
 import type { Actor, PageAbility, PageAppInstall } from "@rakazo/contracts";
 import {
   knownPageAbilities,
@@ -14,6 +15,7 @@ import { actorFromMembership } from "../auth/request-session.js";
 /** Enough for every device someone keeps; a runaway client stops here. */
 const MAX_APPS_PER_USER = 50;
 const LAST_USED_RESOLUTION_MS = 60 * 60_000;
+const UNUSED_APP_GRACE_MS = 60 * 60_000;
 
 export class TooManyPageAppsError extends ClientError {
   constructor() {
@@ -27,6 +29,7 @@ export function hashPageAppToken(token: string): string {
 
 export async function installPageApp(
   prisma: PrismaClient,
+  jobs: JobPublisher,
   actor: Actor,
   input: { pageId: string; abilities: PageAbility[] },
 ): Promise<PageAppInstall> {
@@ -42,7 +45,7 @@ export async function installPageApp(
       await tx.$queryRaw`SELECT "id" FROM "user" WHERE "id" = ${actor.userId} FOR UPDATE`;
       if ((await tx.pageApp.count({ where: { userId: actor.userId } })) >= MAX_APPS_PER_USER)
         throw new TooManyPageAppsError();
-      return tx.pageApp.create({
+      const created = await tx.pageApp.create({
         data: {
           pageId: page.id,
           userId: actor.userId,
@@ -52,6 +55,14 @@ export async function installPageApp(
         },
         select: { id: true },
       });
+      // An app's first read marks it used; one never read had its install fail on the device.
+      await jobs.enqueueIn(tx, {
+        name: "page.app-unused",
+        payload: { appId: created.id },
+        replaceKey: `page-app-unused:${created.id}`,
+        availableAt: new Date(Date.now() + UNUSED_APP_GRACE_MS),
+      });
+      return created;
     }),
   );
   const color = PageIconColorSchema.safeParse(page.iconColor);
@@ -134,11 +145,22 @@ export async function revokePageAppToken(prisma: PrismaClient, appId: string) {
   await runAsSystem("revoke a page app", () => prisma.pageApp.deleteMany({ where: { id: appId } }));
 }
 
-/** Whether the app's token still opens it, for long-lived streams to notice an uninstall. */
-export async function pageAppStillInstalled(prisma: PrismaClient, appId: string) {
-  return Boolean(
-    await runAsSystem("check a page app", () =>
-      prisma.pageApp.findUnique({ where: { id: appId }, select: { id: true } }),
-    ),
+/** What an app shows of its page, as one value that differs whenever any of it changes. */
+export async function pageAppVersion(
+  prisma: PrismaClient,
+  access: Pick<PageAppAccess, "pageId" | "actor">,
+): Promise<string> {
+  const [page, state] = await runAsSystem("read a page app's version", () =>
+    Promise.all([
+      prisma.page.findUnique({
+        where: { id: access.pageId },
+        select: { currentVersion: true, updatedAt: true, title: true, icon: true, iconColor: true },
+      }),
+      prisma.pageReaderState.findUnique({
+        where: { pageId_userId: { pageId: access.pageId, userId: access.actor.userId } },
+        select: { updatedAt: true },
+      }),
+    ]),
   );
+  return JSON.stringify([page, state?.updatedAt ?? null]);
 }

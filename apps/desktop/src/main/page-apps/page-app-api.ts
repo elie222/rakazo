@@ -7,6 +7,7 @@ import {
   PageImageSourceSchema,
 } from "@rakazo/contracts";
 import { PAGE_RUNTIME_PATH } from "@rakazo/core";
+import { getLogger } from "@rakazo/logging";
 
 /** A refused or failed request; 401 means the app's token no longer works. */
 export class PageAppRequestError extends Error {
@@ -100,3 +101,19 @@ export function createPageAppApi(server: string, token: string, fetcher: Fetch =
 }
 
 export type PageAppApi = ReturnType<typeof createPageAppApi>;
+
+/**
+ * Ends an app's token, true once the server no longer takes it. A failure keeps the token, so
+ * whoever holds it can try again rather than leave it working with nothing to end it.
+ */
+export async function revokePageAppToken(api: PageAppApi): Promise<boolean> {
+  try {
+    await api.revoke();
+    return true;
+  } catch (error) {
+    if (error instanceof PageAppRequestError && (error.status === 401 || error.status === 404))
+      return true;
+    getLogger().warn("page app revoke failed", { error });
+    return false;
+  }
+}

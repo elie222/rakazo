@@ -19,7 +19,7 @@ import {
 } from "./bundle-builder.js";
 import { pageAppBundleId, pageAppName, uniqueBundleName } from "./bundle-name.js";
 import { ICNS_SIZES, isSquarePng, writeIcns } from "./icns.js";
-import { createPageAppApi } from "./page-app-api.js";
+import { createPageAppApi, revokePageAppToken } from "./page-app-api.js";
 import type { PageAppConfig } from "./page-app-files.js";
 import {
   isPageAppIdentity,
@@ -32,6 +32,8 @@ import {
 import type { InstalledPageApp } from "./registry.js";
 
 const MAX_ICON_BASE64 = 4 * 1024 * 1024;
+/** One drawing per size the web app renders, with room to spare; a longer list is refused unread. */
+const MAX_ICON_ENTRIES = 12;
 /** Where bundles are made before they appear in the apps folder, on the same volume. */
 const STAGING = ".staging";
 
@@ -51,14 +53,16 @@ export function pageAppInstallRequest(value: unknown): PageAppInstallRequest | n
     typeof appId !== "string" ||
     typeof token !== "string" ||
     !PAGE_APP_TOKEN.test(token) ||
-    !Array.isArray(icon)
+    !Array.isArray(icon) ||
+    icon.length > MAX_ICON_ENTRIES
   )
     return null;
   if (!isPageAppIdentity(appId, pageId, title)) return null;
   const pngs = new Map<number, Buffer>();
   for (const entry of icon as unknown[]) {
     const { size, png } = (entry ?? {}) as { size?: unknown; png?: unknown };
-    if (typeof size !== "number" || !ICNS_SIZES.includes(size)) continue;
+    if (typeof size !== "number" || pngs.has(size)) return null;
+    if (!ICNS_SIZES.includes(size)) continue;
     if (typeof png !== "string" || png.length > MAX_ICON_BASE64) return null;
     const bytes = Buffer.from(png, "base64");
     if (!isSquarePng(bytes, size)) return null;
@@ -112,13 +116,36 @@ async function staged<T>(
 
 async function stopApp(bundle: string) {
   const pids = await runningAppPids(bundle);
-  for (const pid of pids) process.kill(pid, "SIGTERM");
+  for (const pid of pids) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch (error) {
+      // It quit between the lookup and the signal.
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    }
+  }
   if (pids.length === 0) return;
   await pollUntil(async () => (await runningAppPids(bundle)).length === 0, {
     intervalMs: 200,
     timeoutMs: 10_000,
     waitingFor: "the page app to quit",
   });
+}
+
+/** The apps found in the apps folder by their own config, for a registry that has to be rebuilt. */
+export async function installedBundles(home?: string): Promise<InstalledPageApp[]> {
+  const folder = pageAppsFolder(home);
+  const found = await Promise.all(
+    [...(await bundleNames(folder))]
+      .filter((name) => name.endsWith(".app"))
+      .map(async (name) => {
+        const bundlePath = path.join(folder, name);
+        const built = await bestEffort("read a page app bundle", readBuiltApp(bundlePath));
+        const config = built ? pageAppConfig(built.config) : null;
+        return config ? [{ ...config, bundlePath }] : [];
+      }),
+  );
+  return found.flat();
 }
 
 export function createPageAppInstaller(options: {
@@ -182,6 +209,11 @@ export function createPageAppInstaller(options: {
     } catch (error) {
       if (placed !== null) await removeBundle(placed);
       if (!previous) await removePageAppData(request.appId, home);
+      // Nothing will use the token now, so it ends here rather than waiting for the server.
+      await bestEffort(
+        "revoke an unfinished page app",
+        createPageAppApi(server, request.token).revoke(),
+      );
       throw error;
     }
   }
@@ -192,9 +224,10 @@ export function createPageAppInstaller(options: {
     await options.trash(bundle);
   }
 
+  /** Drops an app whose bundle is gone; until its token is revoked, the next start tries again. */
   async function forget(app: InstalledPageApp) {
     const token = await readPageAppToken(app.appId, home);
-    if (token) await bestEffort("revoke page app", createPageAppApi(app.server, token).revoke());
+    if (token && !(await revokePageAppToken(createPageAppApi(app.server, token)))) return;
     await removePageAppData(app.appId, home);
     await registry.remove(app.appId);
   }
@@ -207,6 +240,43 @@ export function createPageAppInstaller(options: {
     return true;
   }
 
+  async function refreshApp(app: InstalledPageApp) {
+    // An app moved to the Trash from Finder ends with its token, as an uninstall does.
+    if (!existsSync(app.bundlePath)) {
+      const moved = await findBundle(pageAppBundleId(app.appId), home ?? os.homedir());
+      if (moved) await registry.put({ ...app, bundlePath: moved });
+      else await forget(app);
+      return;
+    }
+    if ((await readBundleVersion(app.bundlePath)) === options.version) return;
+    if ((await runningAppPids(app.bundlePath)).length > 0) return;
+    const built = await readBuiltApp(app.bundlePath);
+    const config = pageAppConfig(built.config);
+    if (!config || config.appId !== app.appId) return;
+    await staged(
+      home,
+      (target) =>
+        buildPageAppBundle({
+          source,
+          target,
+          name: pageAppName(config.title),
+          bundleId: pageAppBundleId(app.appId),
+          icon: built.icon,
+          config,
+        }),
+      async (next) => {
+        const old = `${next}.old`;
+        await rename(app.bundlePath, old);
+        try {
+          await rename(next, app.bundlePath);
+        } catch (error) {
+          await rename(old, app.bundlePath);
+          throw error;
+        }
+      },
+    );
+  }
+
   /**
    * Makes each installed app again from this Rakazo when it was made from another version, so
    * apps get Rakazo's fixes. An app that is running is left for the next start.
@@ -214,40 +284,8 @@ export function createPageAppInstaller(options: {
   async function refresh() {
     await removeBundle(path.join(pageAppsFolder(home), STAGING));
     for (const app of await registry.list()) {
-      // An app moved to the Trash from Finder ends with its token, as an uninstall does.
-      if (!existsSync(app.bundlePath)) {
-        const moved = await findBundle(pageAppBundleId(app.appId), home ?? os.homedir());
-        if (moved) await registry.put({ ...app, bundlePath: moved });
-        else await forget(app);
-        continue;
-      }
-      if ((await readBundleVersion(app.bundlePath)) === options.version) continue;
-      if ((await runningAppPids(app.bundlePath)).length > 0) continue;
-      const built = await readBuiltApp(app.bundlePath);
-      const config = pageAppConfig(built.config);
-      if (!config || config.appId !== app.appId) continue;
-      await staged(
-        home,
-        (target) =>
-          buildPageAppBundle({
-            source,
-            target,
-            name: pageAppName(config.title),
-            bundleId: pageAppBundleId(app.appId),
-            icon: built.icon,
-            config,
-          }),
-        async (next) => {
-          const old = `${next}.old`;
-          await rename(app.bundlePath, old);
-          try {
-            await rename(next, app.bundlePath);
-          } catch (error) {
-            await rename(old, app.bundlePath);
-            throw error;
-          }
-        },
-      );
+      // One app that cannot be rebuilt or forgotten leaves the others to go ahead.
+      await bestEffort(`refresh page app ${app.appId}`, refreshApp(app));
     }
   }
 
