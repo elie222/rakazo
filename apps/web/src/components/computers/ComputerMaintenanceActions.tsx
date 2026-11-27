@@ -17,12 +17,15 @@ export function ComputerMaintenanceActions({
   botId,
   computer,
   onChanged,
+  onScreenRestarted,
   allowRestartScreen = false,
   allowReset = true,
 }: {
   botId: string;
   computer: ComputerStatus | null;
   onChanged: () => Promise<void>;
+  /** Optional callback after Restart screen succeeds (e.g. clear screen retry gate and reconnect). */
+  onScreenRestarted?: () => Promise<void>;
   /** Offers a non-destructive single-bot screen restart while the computer is running. */
   allowRestartScreen?: boolean;
   /** Set false on a running computer so screen failures never offer destructive Reset. */
@@ -42,7 +45,8 @@ export function ComputerMaintenanceActions({
   const restartScreen = useSave({
     save: async (_: undefined, rpc) => {
       await rpc.computer.restartScreen({ botId });
-      await onChanged();
+      if (onScreenRestarted) await onScreenRestarted();
+      else await onChanged();
     },
   });
   const pending = repair.pending || restartScreen.pending;

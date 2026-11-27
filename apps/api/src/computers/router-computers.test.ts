@@ -966,13 +966,17 @@ describe("computer restartScreen", () => {
     isDeploymentOwner: true,
   } satisfies Actor;
 
-  function makeFixture(state: "running" | "stopped") {
+  function makeFixture(
+    state: "running" | "stopped",
+    scope: "team" | "dedicated" = "team",
+    activeRunId: string | null = null,
+  ) {
     const computerRow = {
       id: "computer-1",
       spaceId: "workspace-1",
       screenGeneration: 3,
       kind: "e2b",
-      scope: "team",
+      scope,
       state,
       providerRef: state === "running" ? "sandbox-ref-1" : null,
       homeKey: "home-1",
@@ -1025,7 +1029,7 @@ describe("computer restartScreen", () => {
         deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       run: {
-        findFirst: vi.fn().mockResolvedValue(null),
+        findFirst: vi.fn().mockResolvedValue(activeRunId ? { id: activeRunId } : null),
       },
       spaceMember: {
         count: vi.fn().mockResolvedValue(1),
@@ -1078,10 +1082,19 @@ describe("computer restartScreen", () => {
     expect(response.status).toBe(200);
     expect(releaseScreen).toHaveBeenCalledOnce();
     expect(releaseScreen.mock.calls[0]?.[1]).toMatchObject({ keepScreenWarm: false });
+    expect(releaseScreen.mock.calls[0]?.[1]).not.toHaveProperty("screenLeaseId");
     expect(botUpdate).toHaveBeenCalledWith({
       where: { id: "bot-1" },
       data: { screenGeneration: { increment: 1 } },
     });
     expect(enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("refuses to restart a dedicated computer screen while a run is active", async () => {
+    const { call, botUpdate, releaseScreen } = makeFixture("running", "dedicated", "run-active");
+    const response = await call();
+    expect(response.status).toBe(409);
+    expect(releaseScreen).not.toHaveBeenCalled();
+    expect(botUpdate).not.toHaveBeenCalled();
   });
 });

@@ -523,6 +523,16 @@ export function useComputerControls({
           onChanged={async () => {
             await refreshComputerFor(computerBot.id);
           }}
+          onScreenRestarted={async () => {
+            setScreenLoadError(null);
+            setScreenUrlLoadedBotId(null);
+            screenAwaitsRetry.current = false;
+            resetScreenReconnect();
+            setComputerError(null);
+            setComputerErrorFromScreen(false);
+            await refreshComputerFor(computerBot.id);
+            await refreshComputerScreen(computerBot.id);
+          }}
         />
       ) : null}
     </div>

@@ -5,6 +5,7 @@ import { computerControlExpireJobKey, SandboxFileTooLargeError } from "@rakazo/a
 import {
   acquireComputerExecutionLease,
   applyTeachingDesktopInput,
+  ComputerBusyError,
   ComputerScreenUnavailableError,
   checkpointAndStopComputer,
   computerUpdateView,
@@ -309,9 +310,6 @@ export function computerRoutes(ctx: RouterContext) {
         if (computer.state !== "running" || !computer.providerRef) {
           throw new ClientError("CONFLICT", "Start the computer first.");
         }
-        if (holdsComputerControl(computer, bot.id, context.actor)) {
-          await releaseComputerControl(deps, context.actor, computer, bot.id, "released");
-        }
         const manualRunId = `restart-screen:${randomUUID()}`;
         const lease = await acquireComputerExecutionLease(deps.prisma, {
           computerId: computer.id,
@@ -319,15 +317,34 @@ export function computerRoutes(ctx: RouterContext) {
           botId: bot.id,
         });
         try {
+          if (computer.scope !== "team") {
+            const activeRun = await deps.prisma.run.findFirst({
+              where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
+              select: { id: true },
+            });
+            if (activeRun) throw new ComputerBusyError();
+          }
+          // Re-read control ownership under the lease before releasing the screen so a concurrent
+          // takeover by another Space member is never cut off, and only release the caller's own
+          // control once the restart is guaranteed to proceed.
+          const latest = await deps.prisma.computer.findUnique({
+            where: { id: computer.id },
+          });
+          const current = latest ?? computer;
+          assertNotAnotherPersonsControl(current, context.actor);
+          if (holdsComputerControl(current, bot.id, context.actor)) {
+            await releaseComputerControl(deps, context.actor, current, bot.id, "released");
+          }
           if (deps.sandbox.releaseScreen) {
             try {
-              await deps.sandbox.releaseScreen(await wakeableComputerRef(deps.prisma, computer), {
+              // Omit screenLeaseId so lease-aware providers retire an earlier run's stuck screen
+              // now that this manual restart holds the bot's execution lease.
+              await deps.sandbox.releaseScreen(await wakeableComputerRef(deps.prisma, current), {
                 ...computerContext(context.actor, bot.id, "restart-screen"),
-                screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
                 keepScreenWarm: false,
               });
             } catch (error) {
-              await clearGoneSandbox(deps, computer, error);
+              await clearGoneSandbox(deps, current, error);
             }
           }
           await deps.prisma.bot.update({
