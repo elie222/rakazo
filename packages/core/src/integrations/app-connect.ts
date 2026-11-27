@@ -1,4 +1,5 @@
 import type { Connection, ConnectionCatalogItem, MessageBlock } from "@rakazo/contracts";
+import { sliceWellFormed } from "../primitives/utf8.js";
 import { connectionLabelFrom } from "./connection-catalog.js";
 import { featuredConnectorProvidersMatch } from "./featured-connectors.js";
 
@@ -33,11 +34,16 @@ export function matchConnectedAppCatalog(catalog: ConnectionCatalogItem[], app: 
 }
 
 export function appConnectCard(entry: ConnectionCatalogItem): AppConnectBlock {
+  const curatedDescription = Object.entries(APP_DESCRIPTIONS).find(
+    ([slug]) =>
+      entry.slug.toLowerCase() === slug || featuredConnectorProvidersMatch(entry.slug, slug),
+  )?.[1];
+  const catalogDescription = entry.description?.replace(/\s+/g, " ").trim() ?? "";
   const description =
-    Object.entries(APP_DESCRIPTIONS).find(
-      ([slug]) =>
-        entry.slug.toLowerCase() === slug || featuredConnectorProvidersMatch(entry.slug, slug),
-    )?.[1] ?? "";
+    curatedDescription ??
+    (catalogDescription.length > 200
+      ? `${sliceWellFormed(catalogDescription, 199).trimEnd()}…`
+      : catalogDescription);
   return {
     kind: "app_connect",
     connectorId: entry.connectorId,
