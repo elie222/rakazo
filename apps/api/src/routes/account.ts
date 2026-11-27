@@ -281,13 +281,8 @@ export function accountRoutes(ctx: RouterContext) {
                   current.starredModels,
                   starredModelToggle.key,
                   starredModelToggle.starred,
+                  MAX_STARRED_MODELS,
                 );
-                if (nextStarred.length > MAX_STARRED_MODELS) {
-                  throw new ClientError(
-                    "BAD_REQUEST",
-                    `You can favorite up to ${MAX_STARRED_MODELS} models.`,
-                  );
-                }
                 await tx.user.update({
                   where: { id: userId },
                   data: { ...data, starredModels: nextStarred },

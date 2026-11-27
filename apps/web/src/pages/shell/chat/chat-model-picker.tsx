@@ -12,6 +12,7 @@ import {
   withFavoriteModelChoices,
 } from "@rakazo/core";
 import {
+  Button,
   Command,
   CommandEmpty,
   CommandGroup,
@@ -218,7 +219,7 @@ export function ChatModelPicker({
                   heading={
                     section.favorites ? (
                       <span className="flex items-center gap-1.5">
-                        <Star aria-hidden="true" className="size-3 fill-current text-warning" />
+                        <Star aria-hidden="true" className="size-3 fill-current" />
                         {section.heading}
                       </span>
                     ) : section.heading ? (
@@ -265,8 +266,10 @@ export function ChatModelPicker({
                           </span>
                         ) : null}
                         {onToggleStar && canonicalKey ? (
-                          <button
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="icon-xs"
                             tabIndex={-1}
                             aria-label={
                               isStarred
@@ -275,10 +278,10 @@ export function ChatModelPicker({
                             }
                             aria-pressed={isStarred}
                             data-starred={isStarred}
-                            className={`flex size-6 shrink-0 items-center justify-center rounded-sm outline-none transition-opacity ${
+                            className={`shrink-0 ${
                               isStarred
-                                ? "text-warning opacity-100"
-                                : "text-muted-foreground/60 opacity-0 hover:text-foreground group-hover/command-item:opacity-100 group-data-selected/command-item:opacity-100"
+                                ? "text-foreground opacity-100"
+                                : "text-muted-foreground/60 opacity-0 group-hover/command-item:opacity-100 group-data-selected/command-item:opacity-100"
                             }`}
                             onPointerDown={(event) => event.stopPropagation()}
                             onMouseDown={(event) => event.stopPropagation()}
@@ -292,7 +295,7 @@ export function ChatModelPicker({
                               aria-hidden="true"
                               className={`size-3.5 ${isStarred ? "fill-current" : ""}`}
                             />
-                          </button>
+                          </Button>
                         ) : null}
                       </CommandItem>
                     );

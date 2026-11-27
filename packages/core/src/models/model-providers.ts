@@ -226,17 +226,26 @@ export function normalizeStarredModelKeys(keys: readonly string[] | undefined): 
   return normalized;
 }
 
-/** Adds or removes one `provider::modelId` key idempotently, preserving existing order. */
+/**
+ * Adds or removes one `provider::modelId` key idempotently, preserving existing order.
+ * When `max` is set and adding exceeds it, the oldest entries are evicted so hidden or
+ * disconnected favorites cannot permanently exhaust the cap.
+ */
 export function applyStarredModelToggle(
   keys: readonly string[] | undefined,
   key: string,
   starred: boolean,
+  max?: number,
 ): string[] {
   const normalized = normalizeStarredModelKeys(keys);
   const parsed = parseModelOptionKey(key.trim());
   if (!parsed) return normalized;
   const target = modelOptionKey(parsed.provider, parsed.modelId);
-  if (starred) return normalized.includes(target) ? normalized : [...normalized, target];
+  if (starred) {
+    if (normalized.includes(target)) return normalized;
+    const next = [...normalized, target];
+    return max !== undefined && next.length > max ? next.slice(-max) : next;
+  }
   return normalized.filter((entry) => entry !== target);
 }
 

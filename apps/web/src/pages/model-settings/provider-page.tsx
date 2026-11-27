@@ -2,7 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { useListSearch } from "@rakazo/chat-ui/hooks";
 import type { ConnectionModel } from "@rakazo/core";
 import { modelOptionKey, normalizeStarredModelKeys } from "@rakazo/core";
-import { ListSearchInput, SectionHeading } from "@rakazo/ui-web";
+import { Button, ListSearchInput, SectionHeading } from "@rakazo/ui-web";
 import { Star } from "lucide-react";
 import type { ReactNode } from "react";
 import { useMemo } from "react";
@@ -79,8 +79,10 @@ export function ProviderPage({
                     className="min-w-0 flex-1 last:rounded-b-xl"
                   />
                   {starKey && onToggleStar ? (
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="icon-sm"
                       aria-label={
                         isStarred
                           ? t`Remove ${model.label} from favorites`
@@ -88,10 +90,8 @@ export function ProviderPage({
                       }
                       aria-pressed={isStarred}
                       data-starred={isStarred}
-                      className={`me-2 flex size-8 shrink-0 items-center justify-center rounded-md outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring ${
-                        isStarred
-                          ? "text-warning"
-                          : "text-muted-foreground/60 hover:text-foreground"
+                      className={`me-2 shrink-0 ${
+                        isStarred ? "text-foreground" : "text-muted-foreground/60"
                       }`}
                       onClick={() => onToggleStar(starKey)}
                     >
@@ -99,7 +99,7 @@ export function ProviderPage({
                         aria-hidden="true"
                         className={`size-4 ${isStarred ? "fill-current" : ""}`}
                       />
-                    </button>
+                    </Button>
                   ) : null}
                 </li>
               );

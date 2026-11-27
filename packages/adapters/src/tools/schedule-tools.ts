@@ -11,7 +11,6 @@ import {
 } from "@rakazo/contracts";
 import {
   applyStarredModelToggle,
-  ClientError,
   cronFromPreset,
   isOneShotRoutineCron,
   isOneShotRoutineCrons,
@@ -464,18 +463,14 @@ export async function changeUserTimezone(
       const { starredModelToggle, ...restOther } = other ?? {};
       let starredUpdate: { starredModels: string[] } | undefined;
       if (starredModelToggle) {
-        const nextStarred = applyStarredModelToggle(
-          user.starredModels,
-          starredModelToggle.key,
-          starredModelToggle.starred,
-        );
-        if (nextStarred.length > MAX_STARRED_MODELS) {
-          throw new ClientError(
-            "BAD_REQUEST",
-            `You can favorite up to ${MAX_STARRED_MODELS} models.`,
-          );
-        }
-        starredUpdate = { starredModels: nextStarred };
+        starredUpdate = {
+          starredModels: applyStarredModelToggle(
+            user.starredModels,
+            starredModelToggle.key,
+            starredModelToggle.starred,
+            MAX_STARRED_MODELS,
+          ),
+        };
       }
       await tx.user.update({
         where: { id: userId },

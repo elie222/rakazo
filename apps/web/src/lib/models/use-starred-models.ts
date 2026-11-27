@@ -19,8 +19,10 @@ function applyPendingToggles(
   queued: readonly StarredModelToggle[],
 ): string[] {
   let keys = [...saved];
-  if (inFlight) keys = applyStarredModelToggle(keys, inFlight.key, inFlight.starred);
-  for (const item of queued) keys = applyStarredModelToggle(keys, item.key, item.starred);
+  if (inFlight)
+    keys = applyStarredModelToggle(keys, inFlight.key, inFlight.starred, MAX_STARRED_MODELS);
+  for (const item of queued)
+    keys = applyStarredModelToggle(keys, item.key, item.starred, MAX_STARRED_MODELS);
   return keys;
 }
 
@@ -67,10 +69,6 @@ export function useStarredModels() {
     const key = modelOptionKey(parsed.provider, parsed.modelId);
     const current = applyPendingToggles(saved, inFlight, queueRef.current);
     const nextStarred = !current.includes(key);
-    if (nextStarred && current.length >= MAX_STARRED_MODELS) {
-      toast.error(t`You can favorite up to ${MAX_STARRED_MODELS} models.`);
-      return;
-    }
     const nextQueue = [
       ...queueRef.current.filter((entry) => entry.key !== key),
       { key, starred: nextStarred },

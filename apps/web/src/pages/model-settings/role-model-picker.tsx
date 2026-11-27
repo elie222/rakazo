@@ -8,6 +8,7 @@ import {
   normalizeStarredModelKeys,
 } from "@rakazo/core";
 import {
+  Button,
   Command,
   CommandEmpty,
   CommandGroup,
@@ -117,13 +118,16 @@ export function RoleModelPicker({
   const starredSet = useMemo(() => new Set(normalizedStarred), [normalizedStarred]);
   const favoriteOptions = useMemo(() => {
     if (!normalizedStarred.length) return [];
-    const byKey = new Map<string, RoleModelOption[]>();
+    const byKey = new Map<string, RoleModelOption>();
     for (const row of visible) {
       if (!row.option) continue;
       const key = modelOptionKey(row.option.provider, row.option.id);
-      byKey.set(key, [...(byKey.get(key) ?? []), row.option]);
+      if (!byKey.has(key)) byKey.set(key, row.option);
     }
-    return normalizedStarred.flatMap((key) => byKey.get(key) ?? []);
+    return normalizedStarred.flatMap((key) => {
+      const option = byKey.get(key);
+      return option ? [option] : [];
+    });
   }, [visible, normalizedStarred]);
   const groups = useMemo(() => {
     const grouped = new Map<string, RoleModelOption[]>();
@@ -273,7 +277,7 @@ export function RoleModelPicker({
               <CommandGroup
                 heading={
                   <span className="flex items-center gap-1.5">
-                    <Star aria-hidden="true" className="size-3 fill-current text-warning" />
+                    <Star aria-hidden="true" className="size-3 fill-current" />
                     <Trans>Favorites</Trans>
                   </span>
                 }
@@ -300,13 +304,15 @@ export function RoleModelPicker({
                         </span>
                       ) : null}
                       {onToggleStar ? (
-                        <button
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="icon-xs"
                           tabIndex={-1}
                           aria-label={t`Remove ${option.label} from favorites`}
                           aria-pressed
                           data-starred="true"
-                          className="flex size-6 shrink-0 items-center justify-center rounded-sm text-warning outline-none"
+                          className="shrink-0 text-foreground"
                           onPointerDown={(event) => event.stopPropagation()}
                           onMouseDown={(event) => event.stopPropagation()}
                           onClick={(event) => {
@@ -316,7 +322,7 @@ export function RoleModelPicker({
                           }}
                         >
                           <Star aria-hidden="true" className="size-3.5 fill-current" />
-                        </button>
+                        </Button>
                       ) : null}
                     </CommandItem>
                   );
@@ -342,8 +348,10 @@ export function RoleModelPicker({
                     >
                       <span className="min-w-0 flex-1 truncate">{option.label}</span>
                       {onToggleStar ? (
-                        <button
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="icon-xs"
                           tabIndex={-1}
                           aria-label={
                             isStarred
@@ -352,10 +360,10 @@ export function RoleModelPicker({
                           }
                           aria-pressed={isStarred}
                           data-starred={isStarred}
-                          className={`flex size-6 shrink-0 items-center justify-center rounded-sm outline-none transition-opacity ${
+                          className={`shrink-0 ${
                             isStarred
-                              ? "text-warning opacity-100"
-                              : "text-muted-foreground/60 opacity-0 hover:text-foreground group-hover/command-item:opacity-100 group-data-selected/command-item:opacity-100"
+                              ? "text-foreground opacity-100"
+                              : "text-muted-foreground/60 opacity-0 group-hover/command-item:opacity-100 group-data-selected/command-item:opacity-100"
                           }`}
                           onPointerDown={(event) => event.stopPropagation()}
                           onMouseDown={(event) => event.stopPropagation()}
@@ -369,7 +377,7 @@ export function RoleModelPicker({
                             aria-hidden="true"
                             className={`size-3.5 ${isStarred ? "fill-current" : ""}`}
                           />
-                        </button>
+                        </Button>
                       ) : null}
                     </CommandItem>
                   );

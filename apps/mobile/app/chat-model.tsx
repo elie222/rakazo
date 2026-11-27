@@ -58,8 +58,15 @@ export default function ChatModelScreen() {
   const inFlightStar = saveStarred.pending ? saveStarred.input : undefined;
   const applyStars = (queued: readonly StarredModelToggle[]) => {
     let keys = [...savedStarred];
-    if (inFlightStar) keys = applyStarredModelToggle(keys, inFlightStar.key, inFlightStar.starred);
-    for (const item of queued) keys = applyStarredModelToggle(keys, item.key, item.starred);
+    if (inFlightStar)
+      keys = applyStarredModelToggle(
+        keys,
+        inFlightStar.key,
+        inFlightStar.starred,
+        MAX_STARRED_MODELS,
+      );
+    for (const item of queued)
+      keys = applyStarredModelToggle(keys, item.key, item.starred, MAX_STARRED_MODELS);
     return keys;
   };
   const starredKeys = applyStars(starQueue);
@@ -77,10 +84,6 @@ export default function ChatModelScreen() {
     const key = modelOptionKey(parsed.provider, parsed.modelId);
     const current = applyStars(starQueueRef.current);
     const nextStarred = !current.includes(key);
-    if (nextStarred && current.length >= MAX_STARRED_MODELS) {
-      Alert.alert(t`You can favorite up to ${MAX_STARRED_MODELS} models.`);
-      return;
-    }
     const nextQueue = [
       ...starQueueRef.current.filter((entry) => entry.key !== key),
       { key, starred: nextStarred },
