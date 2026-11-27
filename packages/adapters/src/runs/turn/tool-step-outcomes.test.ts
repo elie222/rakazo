@@ -731,6 +731,85 @@ describe("tool step outcomes", () => {
     });
   });
 
+  it("keeps JSON Lines and log text valid when a composio assignment sits in a string", () => {
+    const kept = (text: string, secrets: string[] = []) =>
+      keptToolResult({ ...base, result: { content: [{ type: "text", text }] } }, secrets);
+    const replay = (text: string, secrets: string[] = []) =>
+      bounded(text, 1_000, secrets, { replaySaved: true });
+    const messageJsonl = '{"message":"COMPOSIO_API_KEY: demo123","status":"ok"}\n{"status":"done"}';
+    const messageLog = 'INFO {"message":"COMPOSIO_API_KEY: demo123","status":"ok"}';
+    const escapedJsonl =
+      '{"message":"COMPOSIO_API_KEY: \\"ak_live123\\"","status":"ok"}\n{"status":"done"}';
+    const escapedLog = 'INFO {"message":"COMPOSIO_API_KEY: \\"ak_live123\\"","status":"ok"}';
+    const keyJsonl = '{"COMPOSIO_API_KEY": "ak_live123", "status": "ok"}\n{"status": "done"}';
+    const keyLog = 'INFO {"COMPOSIO_API_KEY": "ak_live123", "status": "ok"}';
+
+    for (const read of [kept, replay]) {
+      const lines = read(messageJsonl)?.split("\n") ?? [];
+      expect(lines[0]).not.toContain("demo123");
+      expect(JSON.parse(lines[0] ?? "")).toEqual({
+        message: "COMPOSIO_API_KEY=[redacted]",
+        status: "ok",
+      });
+      expect(JSON.parse(lines[1] ?? "")).toEqual({ status: "done" });
+
+      const logged = read(messageLog) ?? "";
+      expect(logged.startsWith("INFO ")).toBe(true);
+      expect(JSON.parse(logged.slice("INFO ".length))).toEqual({
+        message: "COMPOSIO_API_KEY=[redacted]",
+        status: "ok",
+      });
+
+      const escapedLines = read(escapedJsonl)?.split("\n") ?? [];
+      expect(escapedLines[0]).not.toContain("ak_live123");
+      expect(JSON.parse(escapedLines[0] ?? "")).toEqual({
+        message: "COMPOSIO_API_KEY=[redacted]",
+        status: "ok",
+      });
+      expect(JSON.parse(escapedLines[1] ?? "")).toEqual({ status: "done" });
+
+      const escapedLogged = read(escapedLog) ?? "";
+      expect(escapedLogged.startsWith("INFO ")).toBe(true);
+      expect(escapedLogged).not.toContain("ak_live123");
+      expect(JSON.parse(escapedLogged.slice("INFO ".length))).toEqual({
+        message: "COMPOSIO_API_KEY=[redacted]",
+        status: "ok",
+      });
+
+      const keyLines = read(keyJsonl)?.split("\n") ?? [];
+      expect(keyLines[0]).not.toContain("ak_live123");
+      expect(JSON.parse(keyLines[0] ?? "")).toEqual({
+        COMPOSIO_API_KEY: "[redacted]",
+        status: "ok",
+      });
+      expect(JSON.parse(keyLines[1] ?? "")).toEqual({ status: "done" });
+
+      const keyLogged = read(keyLog) ?? "";
+      expect(keyLogged).not.toContain("ak_live123");
+      expect(JSON.parse(keyLogged.slice("INFO ".length))).toEqual({
+        COMPOSIO_API_KEY: "[redacted]",
+        status: "ok",
+      });
+
+      expect(read('{"COMPOSIO_API_KEY": "ak_live123')).not.toContain("ak_live123");
+    }
+
+    const prefix = "fixturePrefix";
+    const bearer = `Bearer ${prefix}\\fixtureTail`;
+    expect(kept(bearer, [prefix])).toBe("Bearer [redacted]");
+    expect(replay(bearer, [prefix])).toBe("Bearer [redacted]");
+    const bearerJson = JSON.stringify({ msg: bearer });
+    expect(JSON.parse(kept(bearerJson, [prefix]) ?? "")).toEqual({ msg: "Bearer [redacted]" });
+    expect(JSON.parse(replay(bearerJson, [prefix]) ?? "")).toEqual({ msg: "Bearer [redacted]" });
+
+    const many = `${messageJsonl}\n`.repeat(2_000);
+    expectLinearTime(() => {
+      const redacted = kept(many);
+      expect(redacted).not.toContain("demo123");
+      expect(redacted).toContain('"status":"ok"');
+    });
+  });
+
   it("redacts a raw credential that contains a forged omission marker, including its suffix", () => {
     const forged = "\n… [12 characters not kept] …\n";
     const suffix = "SECRET_SUFFIX_UNLABELED";

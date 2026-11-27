@@ -13,14 +13,16 @@ import { redactToolArgsForReview } from "../../approvals/auto-review.js";
 import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
 import { PICTURE_READING_TOOLS } from "../../media/tool-result-image.js";
 import { READ_MEETING_TRANSCRIPT } from "../../meetings/meeting-chat.tool-definition.js";
-import { sanitizeSensitiveText } from "../../runtime/pi/pi-runtime-errors.js";
 import {
   mapTurnTranscript,
   turnTranscriptResults,
 } from "../../runtime/pi/pi-runtime-transcript.js";
 import { storeStepScreenshot } from "../../storage/thread-artifacts.js";
 import type { ReplyState, RunContext } from "../assembly/run-context.js";
-import { redactComposioApiKeyAssignments } from "./secret-assignment-text.js";
+import {
+  redactComposioApiKeyAssignments,
+  redactDecodedToolText,
+} from "./secret-assignment-text.js";
 import { toolCompletionOutcome } from "./tool-completion-audit.js";
 
 /**
@@ -520,8 +522,8 @@ function cleanToolText(text: string, secrets: string[], honorOmissionMarker = fa
   );
   const cleaned = redactJsonStringsAndPlainText(
     redactComposioApiKeyAssignments(withSecrets),
-    sanitizeSensitiveText,
-    sanitizeSensitiveText,
+    redactDecodedToolText,
+    redactDecodedToolText,
   );
   return redactCredentialJsonFields(cleaned, honorOmissionMarker);
 }

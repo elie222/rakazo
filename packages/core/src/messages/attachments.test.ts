@@ -1186,12 +1186,28 @@ describe("tool step history", () => {
     expect(redactPlainBearerTokens("Bearer [redacted]: detail")).toBe("Bearer [redacted]: detail");
     expect(redactPlainBearerTokens("Bearer [redacted]extra")).toBe("Bearer [redacted]");
     expect(redactPlainBearerTokens("Bearer [redacted]FixtureTail]")).toBe("Bearer [redacted]]");
-    const many = "Bearer abc] Bearer abc: detail Bearer [redacted]extra ".repeat(4_000);
+    expect(redactPlainBearerTokens("Bearer [redacted]\\fixtureTail")).toBe("Bearer [redacted]");
+    expect(redactPlainBearerTokens("Bearer fixturePrefix\\fixtureTail")).toBe("Bearer [redacted]");
+    expect(redactPlainBearerTokens("Bearer [redacted]\nmore")).toBe("Bearer [redacted]\nmore");
+    expect(redactPlainBearerTokens('Bearer [redacted]\\"')).toBe('Bearer [redacted]\\"');
+    const bearerJson = JSON.stringify({ msg: "Bearer fixturePrefix\\fixtureTail" });
+    const bearerRedacted = redactJsonStringsAndPlainText(
+      bearerJson,
+      (value) => redactPlainBearerTokens(redactSecrets(value, ["fixturePrefix"])),
+      (value) => redactPlainBearerTokens(redactSecrets(value, ["fixturePrefix"])),
+      ["fixturePrefix"],
+    );
+    expect(JSON.parse(bearerRedacted)).toEqual({ msg: "Bearer [redacted]" });
+    const many =
+      "Bearer abc] Bearer abc: detail Bearer [redacted]extra Bearer [redacted]\\fixtureTail ".repeat(
+        4_000,
+      );
     expectLinearTime(() => {
       const redacted = redactPlainBearerTokens(many);
       expect(redacted).not.toContain("abc]");
       expect(redacted).not.toContain("abc:");
       expect(redacted).not.toContain("extra");
+      expect(redacted).not.toContain("fixtureTail");
       expect(redacted).toContain("Bearer [redacted]]");
       expect(redacted).toContain("Bearer [redacted]:");
     });
