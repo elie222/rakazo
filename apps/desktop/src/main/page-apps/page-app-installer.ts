@@ -27,6 +27,7 @@ import {
   pageAppConfig,
   pageAppsFolder,
   readPageAppToken,
+  readServerOverride,
   removePageAppData,
   writePageAppToken,
 } from "./page-app-files.js";
@@ -145,7 +146,9 @@ export async function installedBundles(home?: string): Promise<InstalledPageApp[
         const bundlePath = path.join(folder, name);
         const built = await bestEffort("read a page app bundle", readBuiltApp(bundlePath));
         const config = built ? pageAppConfig(built.config) : null;
-        return config ? [{ ...config, bundlePath }] : [];
+        // The server an app was moved to wins over the one in its bundle.
+        const server = config ? (readServerOverride(config.appId, home) ?? config.server) : null;
+        return config && server ? [{ ...config, server, bundlePath }] : [];
       }),
   );
   return found.flat();
