@@ -113,7 +113,7 @@ export function createLauncherInstaller(options: {
     let written: string | null = null;
     try {
       await writePageAppToken(request.appId, request.token, appData);
-      await writeFile(path.join(dataDir, PAGE_APP_CONFIG_FILE), `${JSON.stringify(config)}\n`);
+      await writeConfig(config);
       written = await launcher.write({
         config,
         icon: request.icon,
@@ -163,6 +163,14 @@ export function createLauncherInstaller(options: {
    * Points launchers at Rakazo again if it moved, and clears what removed apps left behind,
    * including an app that uninstalled itself: its launcher and token are gone.
    */
+  async function writeConfig(app: PageAppConfig) {
+    const { appId, pageId, title, server } = app;
+    await writeFile(
+      path.join(pageAppDataDir(appId, appData), PAGE_APP_CONFIG_FILE),
+      `${JSON.stringify({ appId, pageId, title, server })}\n`,
+    );
+  }
+
   async function refresh() {
     // An app whose install was never recorded, or whose record was lost, is taken back.
     const known = new Set((await registry.list()).map((app) => app.appId));
@@ -176,15 +184,19 @@ export function createLauncherInstaller(options: {
       if (moved) await registry.put(app);
       // A launcher whose app has no token and no config left belongs to an app that removed
       // itself, even one a rewrite raced back into place: it goes with its record.
-      if (
-        existsSync(app.bundlePath) &&
-        !existsSync(pageAppTokenFile(app.appId, appData)) &&
-        !(await readLauncherConfig(app.appId, appData))
-      ) {
-        await bestEffort("remove a removed app's launcher", launcher.remove(app.bundlePath));
-        await registry.remove(app.appId);
+      const hasToken = existsSync(pageAppTokenFile(app.appId, appData));
+      const config = await readLauncherConfig(app.appId, appData);
+      if (existsSync(app.bundlePath) && !hasToken && !config) {
+        // The record stays until the launcher is gone, so a later start can try again.
+        const removed = await bestEffort(
+          "remove a removed app's launcher",
+          launcher.remove(app.bundlePath).then(() => true),
+        );
+        if (removed) await registry.remove(app.appId);
         continue;
       }
+      // An app whose token is still there but whose config was lost gets it back from its record.
+      if (hasToken && !config) await bestEffort("restore a page app's config", writeConfig(app));
       if (existsSync(app.bundlePath)) {
         installed.add(app.appId);
         await bestEffort(

@@ -152,6 +152,19 @@ describe("createLauncherInstaller", () => {
     ]);
   });
 
+  it("restores an app's lost config from its record", async () => {
+    const { installer } = setup();
+    await installer.install(request("app1"), SERVER);
+    const config = path.join(pageAppDataDir("app1", appData), "page-app.json");
+    await rm(config);
+    await installer.refresh();
+    expect(JSON.parse(await readFile(config, "utf8"))).toMatchObject({
+      appId: "app1",
+      server: SERVER,
+    });
+    expect(apps.map((app) => app.appId)).toEqual(["app1"]);
+  });
+
   it("drops a launcher left behind by an app that removed itself", async () => {
     const { installer, launcher } = setup();
     await installer.install(request("app1"), SERVER);
