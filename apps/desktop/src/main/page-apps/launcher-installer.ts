@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { deadlineSignal } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import { PAGE_APP_ID } from "./bundle-name.js";
 import { createOneAtATime } from "./one-at-a-time.js";
@@ -37,6 +38,7 @@ export type PageAppLauncher = {
 
 /** More copies than anyone makes by hand; the cap keeps a launcher that cannot be removed from looping. */
 const MAX_COPIES = 20;
+const MARK_USED_DEADLINE_MS = 15_000;
 
 function parsedJson(text: string): unknown {
   try {
@@ -127,7 +129,9 @@ export function createLauncherInstaller(options: {
       // even if its first launch does not get through.
       await bestEffort(
         "mark a page app installed",
-        createPageAppApi(server, request.token, options.fetch).view(),
+        createPageAppApi(server, request.token, options.fetch).view(
+          deadlineSignal(MARK_USED_DEADLINE_MS),
+        ),
       );
     } catch (error) {
       // Nothing will use the token now, so it ends first, before any cleanup that could fail.
