@@ -11,6 +11,7 @@ const { organizations, wrote, toast, copy } = vi.hoisted(() => ({
   organizations: {
     list: vi.fn(),
     rename: vi.fn(),
+    vault: { settings: vi.fn(), revokeSession: vi.fn() },
     members: { list: vi.fn(), setRole: vi.fn(), remove: vi.fn() },
     invitations: { create: vi.fn(), cancel: vi.fn() },
   },
@@ -23,6 +24,10 @@ vi.mock("../../lib/query/rpc", async (original) => {
   const clientFor = (spaceId: string | null) => ({
     organizations: {
       list: organizations.list,
+      vault: {
+        settings: () => organizations.vault.settings(spaceId),
+        revokeSession: (input: unknown) => organizations.vault.revokeSession(spaceId, input),
+      },
       members: organizations.members,
       invitations: organizations.invitations,
       rename: (input: unknown) => {
@@ -59,6 +64,8 @@ vi.mock("@rakazo/ui-web", () => {
     DialogHeader: Box,
     DialogTitle: Box,
     Field: Box,
+    SectionHeading: Box,
+    FieldGroup: Box,
     FieldError: Box,
     FieldLabel: ({ children, htmlFor }: ComponentProps<"label">) => (
       <label htmlFor={htmlFor}>{children}</label>
@@ -84,7 +91,7 @@ vi.mock("@rakazo/ui-web", () => {
 });
 vi.mock("../../lib/auth/auth", () => ({ authClient: { $store: { notify: vi.fn() } } }));
 
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { QueryUserProvider, queryClient } from "../../lib/query/query";
 import { SpaceRpcProvider } from "../../lib/query/space-rpc";
 import { useOrganizations } from "../../lib/spaces/organizations";
@@ -432,4 +439,57 @@ describe("organization members", () => {
     expect(rows()).toEqual(["AAda LovelaceOwnerada@example.test", "BBob Stonebob@example.test"]);
     expect(container.querySelector('input[type="email"]')).toBeNull();
   });
+});
+
+it("reads and revokes shared logins through the displayed organization's Space", async () => {
+  organizations.list.mockResolvedValue({
+    activeOrganizationId: "org-home",
+    organizations: [
+      {
+        id: "org-home",
+        name: "Home",
+        role: "owner",
+        memberCount: 1,
+        defaultSpaceId: "space-home",
+        spaceIds: ["space-home"],
+      },
+    ],
+  });
+  organizations.vault.settings.mockResolvedValue({
+    signInAvailable: true,
+    agents: [],
+    logins: [
+      {
+        id: "login-1",
+        name: "Example",
+        origin: "https://example.test",
+        hasSession: true,
+        botIds: [],
+      },
+    ],
+  });
+  const client = new QueryClient();
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <QueryUserProvider value="vault-owner">
+          <SpaceRpcProvider spaceId="space-guest">
+            <OrganizationSettingsPanel page="vault" onPageChange={() => {}} />
+          </SpaceRpcProvider>
+        </QueryUserProvider>
+      </QueryClientProvider>,
+    ),
+  );
+  const button = (label: string) =>
+    [...container.querySelectorAll("button")].find((entry) => entry.textContent?.trim() === label)!;
+  const login = () => container.querySelector<HTMLButtonElement>('button[aria-expanded="false"]');
+  await vi.waitFor(() => expect(login()?.textContent).toContain("Example"));
+  await act(async () => login()!.click());
+  await act(async () => button("Revoke session").click());
+  await act(async () => button("Revoke session").click());
+  expect(organizations.vault.settings).toHaveBeenCalledWith("space-home");
+  expect(organizations.vault.revokeSession).toHaveBeenCalledWith("space-home", {
+    loginId: "login-1",
+  });
+  client.clear();
 });

@@ -385,6 +385,45 @@ it("opens a mentioned group without running anything", async () => {
   expect(rpc.threads.send).not.toHaveBeenCalled();
 });
 
+it.each(["bot-2", "bot-1"])(
+  "keeps the selected chat %s when a group send finishes late",
+  async (selectedChat) => {
+    const team = { kind: "group" as const, id: "group-2", name: "Team" };
+    const response = deferred<{ runId: string; taskId: string; seq: number }>();
+    rpc.threads.send.mockReturnValueOnce(response.promise);
+    let submitted!: Promise<boolean>;
+    act(() => {
+      submitted = latest.sendMessage("@Team hi all", [team], "nonce-1");
+    });
+    expect(rpc.threads.send).toHaveBeenCalledWith(expect.objectContaining({ groupId: "group-2" }));
+    switchChat("bot-2");
+    if (selectedChat !== "bot-2") switchChat(selectedChat);
+    await act(async () => {
+      response.resolve({ runId: "run-1", taskId: "task-1", seq: 1 });
+      expect(await submitted).toBe(true);
+    });
+    expect(navigate).not.toHaveBeenCalled();
+  },
+);
+
+it("drops a late group-reroute error after leaving and returning to the origin chat", async () => {
+  const team = { kind: "group" as const, id: "group-2", name: "Team" };
+  const response = deferred<never>();
+  rpc.threads.send.mockReturnValueOnce(response.promise);
+  let submitted!: Promise<boolean>;
+  act(() => {
+    submitted = latest.sendMessage("@Team hi all", [team], "nonce-reroute-fail");
+  });
+  switchChat("bot-2");
+  switchChat("bot-1");
+  await act(async () => {
+    response.reject(new Error("offline"));
+    expect(await submitted).toBe(false);
+  });
+  expect(latest.sendError).toBeNull();
+  expect(latest.pendingSends).toEqual([]);
+});
+
 it("asks the chat to follow on submit, before the send lands", async () => {
   let finishSend!: () => void;
   rpc.threads.send.mockReturnValue(

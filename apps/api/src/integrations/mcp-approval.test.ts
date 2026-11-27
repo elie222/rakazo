@@ -1,5 +1,5 @@
 import type * as db from "@rakazo/db";
-import { mcpServerIn } from "@rakazo/db";
+import { personalOrOrganizationItemIn } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   queueMcpConnectedRun,
@@ -255,7 +255,7 @@ describe("resolveMcpApprovalCards", () => {
       threadId: "group-thread",
     });
     expect(deps.prisma.mcpServer.findFirst).toHaveBeenCalledWith({
-      where: { id: "srv-a", ...mcpServerIn(actor) },
+      where: { id: "srv-a", ...personalOrOrganizationItemIn(actor) },
       select: { id: true },
     });
     expect(deps.prisma.thread.findMany).not.toHaveBeenCalled();

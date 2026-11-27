@@ -26,6 +26,9 @@ export * from "./browser/browser-provider-factory.js";
 export * from "./browser/browser-tools.js";
 export * from "./browser/fake-browser.js";
 export * from "./browser/page-browser-session.js";
+export type { ProtectedBrowserLauncher } from "./browser/protected-browser.js";
+export { ProtectedBrowserError } from "./browser/protected-browser.js";
+export { configuredProtectedBrowser } from "./browser/protected-browser-factory.js";
 export type { ApnsVoipConfig } from "./calls/apns-voip.js";
 export {
   apnsVoipConfig,
@@ -79,6 +82,10 @@ export * from "./email/inbound-email.js";
 export * from "./email/lifecycle-email.js";
 export * from "./ingress/ingress-factory.js";
 export * from "./integrations/connection-cleanup.js";
+export {
+  connectedContext,
+  loadOrganizationReconnectCheck,
+} from "./integrations/connection-context.js";
 export * from "./integrations/connector-catalog.js";
 export * from "./integrations/connector-registry.js";
 export * from "./integrations/graphql-connectors.js";

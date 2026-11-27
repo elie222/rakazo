@@ -42,6 +42,8 @@ function handlers(): BackgroundJobHandlers {
     "secret.cleanup": vi.fn(async () => undefined),
     "messaging.credential-cleanup": vi.fn(async () => undefined),
     "connection.cleanup": vi.fn(async () => undefined),
+    "connection.hosted-sign-in-cleanup": vi.fn(async () => undefined),
+    "connection.organization-cleanup": vi.fn(async () => undefined),
     "computer.machine-cleanup": vi.fn(async () => undefined),
     "team_chat.engage": vi.fn(async () => undefined),
     "team_chat.ambient": vi.fn(async () => undefined),

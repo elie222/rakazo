@@ -208,6 +208,21 @@ export function createBackgroundJobHandlers(deps: {
         );
       },
     ),
+    "connection.hosted-sign-in-cleanup": async (payload) => {
+      const connectors = deps.connectors;
+      if (!connectors) throw new Error("connection cleanup has no connector registry");
+      await runAsSystem("remove a cancelled hosted sign-in", () =>
+        retryConnectionCleanup({ prisma: deps.prisma, connectors, jobs: deps.jobs }, payload),
+      );
+    },
+    "connection.organization-cleanup": async (payload) => {
+      const connectors = deps.connectors;
+      if (!connectors) throw new Error("connection cleanup has no connector registry");
+      // The admin or Space that started this authorization can be gone by the time it is retried.
+      await runAsSystem("remove an unused organization authorization", () =>
+        retryConnectionCleanup({ prisma: deps.prisma, connectors, jobs: deps.jobs }, payload),
+      );
+    },
     // The machine belongs to no Space: nothing stores it.
     "computer.machine-cleanup": async (machine, _execution, attempt) => {
       await retryMachineCleanup(deps, machine, attempt);

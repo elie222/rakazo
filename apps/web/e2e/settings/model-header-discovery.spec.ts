@@ -64,7 +64,8 @@ for (const surface of ["settings", "onboarding"] as const) {
       await page.getByLabel("OpenAI-compatible server URL").fill("http://127.0.0.1:8090/v1");
       await page.getByLabel("Model id", { exact: true }).fill("manual-model");
       await page.getByText("Advanced", { exact: true }).click();
-      await page.getByRole("button", { name: "Add header", exact: true }).click();
+      // The section is still unfolding, and a pointer click this early can land behind it.
+      await page.getByRole("button", { name: "Add header", exact: true }).press("Enter");
       await page.getByLabel("Header name", { exact: true }).fill("x-fixture");
       const headerValue = page.getByLabel("Header value", { exact: true });
       await headerValue.fill("fixture-value");

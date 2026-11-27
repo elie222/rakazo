@@ -1,3 +1,4 @@
+import { ObjectStorageUnavailableError } from "@rakazo/adapters";
 import type { AccountExportRecord } from "@rakazo/contracts";
 import {
   ACCOUNT_EXPORT_MAX_HOME_FILE_BYTES,
@@ -14,6 +15,7 @@ import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import type { AccountExportStores } from "./account-export.js";
 import { accountArchiveFiles, mountAccountExportRoute, zipStream } from "./account-export.js";
+import { parseEntryName } from "./account-import.js";
 
 const decoder = new TextDecoder();
 
@@ -192,19 +194,54 @@ describe("account export archive", () => {
     );
   });
 
-  it("leaves out workspace files over the import limit", async () => {
+  it("asks the home store to enforce the import limit before reading workspace files", async () => {
+    const fakes = stores();
+    const exportHome = vi.fn(fakes.home.exportHome);
+    fakes.home.exportHome = exportHome;
+    await unzipStream(zipStream(accountArchiveFiles(source(), fakes)));
+    expect(exportHome).toHaveBeenCalledWith(
+      "home-bot-1",
+      expect.anything(),
+      expect.objectContaining({ maxFileBytes: ACCOUNT_EXPORT_MAX_HOME_FILE_BYTES }),
+    );
+  });
+
+  it("fails the download if artifact storage is temporarily unavailable", async () => {
+    const fakes = stores();
+    fakes.artifacts.get = async () => {
+      throw new ObjectStorageUnavailableError();
+    };
+    await expect(
+      unzipStream(zipStream(accountArchiveFiles(source(), fakes))),
+    ).rejects.toBeInstanceOf(ObjectStorageUnavailableError);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "preserves a literal backslash in a workspace filename",
+    async () => {
+      const fakes = stores();
+      fakes.home.exportHome = async function* () {
+        yield { path: "notes\\draft.txt", content: new Uint8Array(0) };
+      };
+      const entries = await unzipStream(zipStream(accountArchiveFiles(source(), fakes)));
+      const file = entries.find(({ name }) => name.includes("/homes/"));
+      expect(parseEntryName(file!.name, 1)).toMatchObject({
+        kind: "home",
+        path: "notes\\draft.txt",
+      });
+    },
+  );
+
+  it("keeps other workspace files when a filename cannot be safely restored", async () => {
     const fakes = stores();
     fakes.home.exportHome = async function* () {
-      yield { path: "big.bin", content: new Uint8Array(ACCOUNT_EXPORT_MAX_HOME_FILE_BYTES + 1) };
-      yield { path: "small.txt", content: new TextEncoder().encode("kept") };
+      yield { path: "C:report.txt", content: new Uint8Array(0), executable: true };
+      yield { path: "notes.txt", content: new Uint8Array(0) };
     };
     const entries = await unzipStream(zipStream(accountArchiveFiles(source(), fakes)));
-    expect(entries.map((entry) => entry.name)).toContain(
-      accountExportPaths.homeFile("space-a", "bot-1", "small.txt"),
-    );
-    expect(entries.map((entry) => entry.name)).not.toContain(
-      accountExportPaths.homeFile("space-a", "bot-1", "big.bin"),
-    );
+    expect(entries.map(({ name }) => name).filter((name) => name.includes("/homes/"))).toEqual([
+      accountExportPaths.homeFile("space-a", "bot-1", "notes.txt"),
+    ]);
   });
 
   it("lists executable workspace files after them", async () => {

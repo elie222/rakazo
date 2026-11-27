@@ -42,6 +42,8 @@ const KUBERNETES_SANDBOX =
 
 /** Read by code but never passed to the api or worker containers, with the reason. */
 const LOCAL_VM = "Mac VM computers, which only the desktop app's native stack runs";
+const PROTECTED_BROWSER_HOST =
+  "the protected sign-in launcher uses host paths and runs on the container engine host";
 const NOT_PASSED: Record<string, string> = {
   VITEST: "set by the test runner",
   OWNER_EMAIL: "bootstrap-owner CLI input, passed on its own command line",
@@ -73,6 +75,8 @@ const NOT_PASSED: Record<string, string> = {
   RAKAZO_IMAGE_TAG_PREVIOUS: "read by the updater sidecar, which has its own environment",
   RAKAZO_DB_PACKAGE_DIR: "passed only to the migration CLI by the desktop app's native stack",
   RAKAZO_ENV_FILE: "set by the desktop app's native stack so no stray .env is read",
+  PROTECTED_BROWSER_IMAGE: PROTECTED_BROWSER_HOST,
+  PROTECTED_BROWSER_SECCOMP_PROFILE: PROTECTED_BROWSER_HOST,
   LOCAL_VM_CLI: LOCAL_VM,
   LOCAL_VM_COMPUTER_IMAGE: LOCAL_VM,
   LOCAL_VM_CPUS: LOCAL_VM,

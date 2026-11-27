@@ -9,3 +9,5 @@ export const MCP_OAUTH_REDIRECT_MISMATCH = "MCP_OAUTH_REDIRECT_MISMATCH";
 
 /** The organization already shares an MCP server at this address, so adding it again is refused. */
 export const MCP_SERVER_IN_ORGANIZATION = "MCP_SERVER_IN_ORGANIZATION";
+
+export const ORGANIZATION_CONNECTION_NAME_TAKEN = "ORGANIZATION_CONNECTION_NAME_TAKEN";

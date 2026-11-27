@@ -1,5 +1,5 @@
 import { modelRoleConnectionId } from "@rakazo/contracts";
-import { mcpServerIn } from "@rakazo/db";
+import { personalOrOrganizationItemIn } from "@rakazo/db";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 import type { RunHold } from "../lifecycle/run-attempt.js";
 import type { RunCapabilities, StartedTurnModel } from "./run-assembly-capabilities.js";
@@ -15,7 +15,7 @@ async function verbatimMcpServersForRun(
     where: {
       verbatimResults: true,
       enabled: true,
-      ...mcpServerIn(scope),
+      ...personalOrOrganizationItemIn(scope),
       AND: [{ OR: [{ allBots: true }, { assignments: { some: { botId: scope.botId } } }] }],
     },
     select: { id: true, slug: true },

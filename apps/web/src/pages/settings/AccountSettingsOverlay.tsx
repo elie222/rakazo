@@ -64,6 +64,7 @@ import { getUiAppearancePreference, setUiAppearance } from "../../lib/preference
 import { useQueryUserId, useSave, useSpaceQueries } from "../../lib/query/query";
 import type { RpcClient } from "../../lib/query/rpc";
 import { authErrorText } from "../../lib/query/user-error";
+import { AppIconPicker } from "./AppIconPicker";
 
 export type SettingsGeneralProps = {
   email?: string | null;
@@ -343,18 +344,13 @@ export function GeneralSettingsPanels({
                     );
                   }}
                   spacing={1}
-                  className="grid min-w-0 grid-cols-2 rounded-lg bg-muted p-1"
+                  variant="segmented"
+                  className="grid min-w-0 grid-cols-2"
                 >
-                  <ToggleGroupItem
-                    value="organic"
-                    className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
-                  >
+                  <ToggleGroupItem value="organic">
                     <Trans>Original</Trans>
                   </ToggleGroupItem>
-                  <ToggleGroupItem
-                    value="rakazo"
-                    className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
-                  >
+                  <ToggleGroupItem value="rakazo">
                     <Trans>Rakazo</Trans>
                   </ToggleGroupItem>
                 </ToggleGroup>
@@ -367,6 +363,7 @@ export function GeneralSettingsPanels({
             }
           />
         ) : null}
+        <AppIconPicker />
         <SettingsRow
           label={
             <span id={sidebarDensityLabelId}>
@@ -382,20 +379,13 @@ export function GeneralSettingsPanels({
                 if (next) botsSidebarDensityPreference.set(next as BotsSidebarDensity);
               }}
               spacing={1}
-              className="grid min-w-0 grid-cols-2 rounded-lg bg-muted p-1"
+              variant="segmented"
+              className="grid min-w-0 grid-cols-2"
             >
-              <ToggleGroupItem
-                value="comfortable"
-                data-testid="bots-sidebar-density-comfortable"
-                className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
-              >
+              <ToggleGroupItem value="comfortable" data-testid="bots-sidebar-density-comfortable">
                 <Trans>Comfortable</Trans>
               </ToggleGroupItem>
-              <ToggleGroupItem
-                value="compact"
-                data-testid="bots-sidebar-density-compact"
-                className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
-              >
+              <ToggleGroupItem value="compact" data-testid="bots-sidebar-density-compact">
                 <Trans>Compact</Trans>
               </ToggleGroupItem>
             </ToggleGroup>
@@ -828,14 +818,14 @@ function AppearancePicker({
         if (next) onChange(next as AppearancePreference);
       }}
       spacing={1}
-      className="grid min-w-0 grid-cols-3 rounded-lg bg-muted p-1"
+      variant="segmented"
+      className="grid min-w-0 grid-cols-3"
     >
       {options.map((option) => (
         <ToggleGroupItem
           key={option.value}
           value={option.value}
           data-testid={`ui-appearance-${option.value}`}
-          className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
         >
           {option.label}
         </ToggleGroupItem>

@@ -138,6 +138,13 @@ export function useComposerActions({
     if (draftKey) clearAcceptedComposerDraft(draftKey, retry.submittedDraft);
   }, []);
   const activeThreadKey = inGroup ? groupId : activeId;
+  // Reselecting the same chat starts a new selection.
+  const chatSelection = useRef({ threadKey: activeThreadKey, inGroup });
+  if (
+    chatSelection.current.threadKey !== activeThreadKey ||
+    chatSelection.current.inGroup !== inGroup
+  )
+    chatSelection.current = { threadKey: activeThreadKey, inGroup };
   const {
     failedSendScopeRef,
     storeSourceRef,
@@ -456,6 +463,8 @@ export function useComposerActions({
       const initialBotTarget = activeBotId.current;
       const initialGroupTarget = activeGroupId.current;
       if ((!initialBotTarget && !initialGroupTarget) || sending) return false;
+      const selectionAtSend = chatSelection.current;
+      const originStillOpen = () => chatSelection.current === selectionAtSend;
       // The reply this send carries, read from the ref so a callback that outlived
       // a re-pick of the same message still carries the armed one; a reply picked
       // after this point is for the next message.
@@ -578,7 +587,7 @@ export function useComposerActions({
           );
           setAttachmentNotice(null);
           if (reroutedToGroup && groupTarget) {
-            navigate(`/app/g/${groupTarget}`);
+            if (originStillOpen()) navigate(`/app/g/${groupTarget}`);
             return true;
           }
           // The routine is saved; live events reconcile a failed refresh.
@@ -676,7 +685,7 @@ export function useComposerActions({
         // Refresh sidebar status even when a bot→group reroute navigates away below.
         void refreshBots().catch(() => undefined);
         if (reroutedToGroup && groupTarget) {
-          navigate(`/app/g/${groupTarget}`);
+          if (originStillOpen()) navigate(`/app/g/${groupTarget}`);
           return true;
         }
         if (groupTarget && activeGroupId.current === groupTarget) setAttachmentNotice(null);
@@ -725,12 +734,7 @@ export function useComposerActions({
           settlePendingSend();
         }
         if (!writeValid) return isConfirmation ? false : accepted;
-        if (
-          reroutedToGroup &&
-          groupTarget &&
-          activeBotId.current === initialBotTarget &&
-          activeGroupId.current === initialGroupTarget
-        ) {
+        if (reroutedToGroup && originStillOpen()) {
           setSendFailure(failure);
         } else if (groupTarget && activeGroupId.current === groupTarget) {
           setSendFailure(failure);

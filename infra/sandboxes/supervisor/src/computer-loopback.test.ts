@@ -225,7 +225,7 @@ describe("computer loopback provision lifecycle", () => {
 
   it("stops a discarded computer while a stuck screen command holds its screen lock", async () => {
     const { supervisorApp } = await import("./index.js");
-    const { withComputerScreenLock } = await import("./locks.js");
+    const { withComputerScreenLock } = await import("./screens.js");
     const container = {
       inspect: vi.fn(async () => ({
         Config: {

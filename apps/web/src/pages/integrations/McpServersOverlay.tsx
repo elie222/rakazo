@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { BotMcpServer, McpServer } from "@rakazo/contracts";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
-import { canManageOrganizationMembers, isRetryableError, sameMcpServerAccess } from "@rakazo/core";
+import { connectionSharingOrganization, isRetryableError, sameMcpServerAccess } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
   Button,
@@ -111,11 +111,7 @@ export function McpServersOverlay({
   const spaceCount = useOwnSpaces().length;
   const { organizations, activeOrganizationId } = useOrganizations();
   const organization = organizations.find((candidate) => candidate.id === activeOrganizationId);
-  // Alone in it, sharing with the organization would reach nobody else.
-  const organizationName =
-    organization && organization.memberCount > 1 && canManageOrganizationMembers(organization)
-      ? organization.name
-      : null;
+  const organizationName = connectionSharingOrganization(organization);
   const bots = useMemo(
     () => (botsQuery.data ?? []).filter((bot) => !bot.archivedAt),
     [botsQuery.data],

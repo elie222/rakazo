@@ -733,11 +733,27 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     if (!query) return { ok: true, value: "" };
     const connection = await this.connectionForRequest(context.signal);
     if (!connection.ok) return connection;
-    return reflectHindsight(
-      connection.value,
-      ownBank(context.spaceId, request.botId),
-      { query: truncateChars(query, MAX_QUERY_CHARS), budget: this.options.recallBudget },
-      context.signal,
+    const banks = writeBanks(context.spaceId, request.botId, request.scope);
+    const body = {
+      query: truncateChars(query, MAX_QUERY_CHARS),
+      budget: this.options.recallBudget,
+    };
+    const answers = await Promise.all(
+      banks.map((bank) => reflectHindsight(connection.value, bank, body, context.signal)),
     );
+    const texts: string[] = [];
+    for (const [index, answer] of answers.entries()) {
+      if (answer.ok && answer.value) {
+        texts.push(answer.value);
+      } else if (!answer.ok && banks.length > 1 && !context.signal.aborted) {
+        getLogger().warn("Hindsight reflect failed for a Space memory bank", {
+          bank: banks[index],
+          error: answer.error,
+        });
+      }
+    }
+    const own = answers[0];
+    if (!texts.length && own && !own.ok) return own;
+    return { ok: true, value: texts.join("\n\n") };
   }
 }

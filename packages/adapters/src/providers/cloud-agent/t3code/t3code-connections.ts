@@ -1,7 +1,7 @@
 import type { AdapterContext, ConnectorTool } from "@rakazo/adapter-kit";
 import { CloudAgentRequestRejected } from "@rakazo/adapter-kit";
 import type { McpServer, PrismaClient } from "@rakazo/db";
-import { mcpServerIn } from "@rakazo/db";
+import { personalOrOrganizationItemIn } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type {
   CloudAgentActor,
@@ -248,7 +248,7 @@ function sameUrl(a: string | undefined, b: string | null) {
 }
 
 function usable(actor: CloudAgentActor) {
-  return { enabled: true, endpoint: { not: null }, ...mcpServerIn(actor) };
+  return { enabled: true, endpoint: { not: null }, ...personalOrOrganizationItemIn(actor) };
 }
 
 // Representative calls cover both launch paths and the model-selection retry. This is

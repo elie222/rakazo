@@ -53,6 +53,8 @@ export const en = {
   photos: { one: "{count} photo", other: "{count} photos" },
   slideOf: "{n} of {total}",
   showPhoto: "Show photo {n}",
+  previousPhoto: "Previous photo",
+  nextPhoto: "Next photo",
   view: "View",
   viewTitle: "View {title}",
   rated: "Rated {rating} out of 5",

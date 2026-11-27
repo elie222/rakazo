@@ -6,6 +6,7 @@ import {
   GenerateSecretInput,
   LOGIN_FIELD_LIMIT,
   MEMORY_INDEX_PATH,
+  PAGE_LIST_MAX_LIMIT,
   SecretAskPurpose,
   SecretHttpRequest,
 } from "@rakazo/contracts";
@@ -244,6 +245,20 @@ export const conversationTools: ConnectorTool[] = [
       type: "object",
       properties: {
         help: { type: "boolean", description: "Return the page kit guide instead of saving." },
+        list: {
+          type: "boolean",
+          description: `List up to ${PAGE_LIST_MAX_LIMIT} matching pages with their pageIds, newest first.`,
+        },
+        query: {
+          type: "string",
+          description: "When listing pages, search by part of the title.",
+        },
+        cursor: {
+          type: "object",
+          description: "Pass nextCursor from the previous page list with the same query.",
+          properties: { pageId: { type: "string" }, updatedAt: { type: "string" } },
+          required: ["pageId", "updatedAt"],
+        },
         pageId: { type: "string", description: "The page to read or update." },
         title: { type: "string", description: "Page title; required for a new page." },
         source: { type: "string", description: "The whole page as JSX." },

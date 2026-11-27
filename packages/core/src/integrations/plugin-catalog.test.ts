@@ -1,4 +1,4 @@
-import type { PluginMarketplaceEntry } from "@rakazo/contracts";
+import type { CapabilityInstall, PluginMarketplaceEntry } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   browsablePlugins,
@@ -14,6 +14,7 @@ import {
   pluginCategories,
   pluginCategory,
   pluginSite,
+  selectPluginInstall,
 } from "./plugin-catalog.js";
 
 function entry(
@@ -217,4 +218,23 @@ describe("pluginSite", () => {
     );
     expect(pluginSite(entry({ name: "a", homepage: "not a url" }))).toBeNull();
   });
+});
+
+it("finds a reinstalled plugin in its original scope when the old ID is gone", () => {
+  const replacement: CapabilityInstall = {
+    id: "replacement",
+    kind: "plugin",
+    name: "Example",
+    source: "https://example.com/plugin",
+    version: null,
+    digest: null,
+    secretConfigured: false,
+    config: {},
+    organization: true,
+    createdAt: "2026-01-01",
+  };
+  const personal = { ...replacement, id: "personal", organization: false };
+  expect(selectPluginInstall([personal, replacement], [replacement.source], "removed", true)).toBe(
+    replacement,
+  );
 });

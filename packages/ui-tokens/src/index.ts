@@ -202,7 +202,7 @@ export const webDarkOverrides = {
   primaryHover: "#DBDBDB",
   primaryDisabled: "#F5F5F521",
   primaryForeground: "#121212",
-  secondary: "#F5F5F50A",
+  secondary: "#F5F5F514",
   secondaryForeground: "#F5F5F5",
   chatUser: "#3E3E3E",
   chatUserForeground: "#F5F5F5",
