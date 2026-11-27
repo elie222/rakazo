@@ -38,6 +38,8 @@ export const VoiceInfoSchema = z.object({
   id: z.string(),
   label: z.string(),
   description: z.string().optional(),
+  /** Lowercase language codes the voice speaks, such as "en" or "de", when the provider says. */
+  languages: z.array(z.string()).optional(),
 });
 export type VoiceInfo = z.infer<typeof VoiceInfoSchema>;
 

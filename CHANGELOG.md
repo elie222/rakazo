@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Long voice lists in Settings > Voice, such as Fish Audio's, open a searchable picker. Type part of a voice name to narrow the list, or tap a language code like `de` or `en` to keep only the voices that speak it.
+
 ## [0.16.0] - 2026-11-24
 
 ### Security

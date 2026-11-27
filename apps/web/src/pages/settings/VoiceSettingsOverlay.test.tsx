@@ -52,7 +52,21 @@ vi.mock("@lingui/react/macro", () => {
   };
 });
 vi.mock("@rakazo/ui-web", async (importOriginal) => {
-  const { Disclosure, OptionSelect, Switch, useCopyText } = await importOriginal<typeof UiWeb>();
+  const {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandItem,
+    CommandList,
+    Disclosure,
+    ListSearchInput,
+    OptionSelect,
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+    Switch,
+    useCopyText,
+  } = await importOriginal<typeof UiWeb>();
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
     Spinner: (props: ComponentProps<"svg">) => <svg role="status" {...props} />,
@@ -65,7 +79,16 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     DialogClose: Container,
     DialogContent: Container,
     DialogTitle: Container,
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandItem,
+    CommandList,
     Disclosure,
+    ListSearchInput,
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
     Field: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
     FieldLabel: ({ children, htmlFor }: { children?: ReactNode; htmlFor?: string }) => (
       <label htmlFor={htmlFor}>{children}</label>
@@ -1117,6 +1140,73 @@ it("picks a Space's own voice from the account's connections without managing th
     await choose(selects(container)[1], "Bo");
     expect(voice.setVoice).toHaveBeenCalledWith({
       scope: "space",
+      voiceId: "voice-2",
+      provider: "fish-audio",
+    });
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("offers a searchable voice picker once a provider lists many voices", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  Element.prototype.scrollIntoView = () => undefined;
+  voice.catalog
+    .mockReset()
+    .mockResolvedValue([
+      { id: "fish-audio", name: "Fish Audio", description: "", transcribe: true, languages: true },
+    ]);
+  voice.credentials.mockReset().mockResolvedValue([fish]);
+  voice.status.mockReset().mockResolvedValue({ ready: true, provider: "fish-audio" });
+  voice.voices.mockReset().mockResolvedValue(
+    Array.from({ length: 12 }, (_, index) => ({
+      id: `voice-${index + 1}`,
+      label: `Voice ${index + 1}`,
+      languages: index % 2 ? ["de"] : ["en"],
+    })),
+  );
+  voice.setVoice.mockReset().mockResolvedValue({ ready: true, provider: "fish-audio" });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(
+        withQueries(<VoiceSettingsOverlay embedded scope="account" onClose={() => undefined} />),
+      );
+    });
+    await vi.waitFor(() =>
+      expect(container.querySelector('[aria-label="Hear a sample"]')).not.toBeNull(),
+    );
+    const voiceLabel = [...container.querySelectorAll("label")].find(
+      (label) => label.textContent === "Voice",
+    );
+    const trigger = container.querySelector<HTMLButtonElement>(
+      `button[id="${voiceLabel?.htmlFor}"]`,
+    );
+    expect(trigger).not.toBeNull();
+    await act(async () => trigger?.click());
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Search voices"]');
+    expect(input).not.toBeNull();
+    const german = [...document.querySelectorAll<HTMLButtonElement>("fieldset button")].find(
+      (button) => button.textContent === "de",
+    );
+    await act(async () => german?.click());
+    const options = () => [...document.querySelectorAll('[role="option"]')];
+    expect(options()).toHaveLength(6);
+    await act(async () => (options()[0] as HTMLElement).click());
+    expect(voice.setVoice).toHaveBeenCalledWith({
+      scope: "account",
       voiceId: "voice-2",
       provider: "fish-audio",
     });

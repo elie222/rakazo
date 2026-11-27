@@ -375,7 +375,8 @@ function modelToVoice(model: Record<string, unknown>): VoiceInfo | null {
   const description =
     [asText(model.description), languageLabel(model.languages)].filter(Boolean).join(" · ") ||
     undefined;
-  return { id, label, description };
+  const languages = languageCodes(model.languages);
+  return { id, label, description, ...(languages.length ? { languages } : {}) };
 }
 
 function asText(value: unknown): string {
@@ -387,6 +388,16 @@ function languageLabel(value: unknown): string {
   return value
     .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
     .join(", ");
+}
+
+/** Lowercase primary language codes ("de-DE" → "de"), without repeats. */
+function languageCodes(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const codes = value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim().split(/[-_]/)[0]?.toLowerCase() ?? "")
+    .filter(Boolean);
+  return [...new Set(codes)];
 }
 
 export const fishAudioVoice: VoiceProviderDefinition = {
