@@ -66,6 +66,7 @@ import {
   isTurnEndingAfterToolBatch,
   serializeCapturedTurnCheckpoint,
   shouldRecordFinishedToolCall,
+  upgradeCheckpointHistory,
 } from "./pi-runtime-checkpoint.js";
 import {
   assistantText,
@@ -360,7 +361,7 @@ export class PiAgentRuntime implements AgentRuntime {
         if (restored?.foundConnectorTools)
           host.foundConnectorTools = new Map(restored.foundConnectorTools);
         const history =
-          restored?.messages ??
+          (restored && upgradeCheckpointHistory(restored).messages) ??
           toHistory(
             withoutSteeringMessages(request.history, initialSteering),
             request.prompt,

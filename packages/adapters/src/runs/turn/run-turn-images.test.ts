@@ -1,12 +1,12 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import sharp from "sharp";
 import { expect, it, vi } from "vitest";
-import { toHistory } from "../../runtime/pi/pi-runtime-history.js";
 import {
   MODEL_IMAGE_MAX_BASE64_BYTES,
   MODEL_IMAGE_MAX_RAW_BYTES,
   TOOL_IMAGE_MAX_EDGE,
 } from "../../media/tool-result-image.js";
+import { toHistory } from "../../runtime/pi/pi-runtime-history.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 import {
   loadCurrentTurnImages,
