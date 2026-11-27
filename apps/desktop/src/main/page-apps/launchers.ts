@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { getLogger } from "@rakazo/logging";
 import { app, shell } from "electron";
 import { pageAppBundleId, pageAppName, uniqueBundleName } from "./bundle-name.js";
 import { applicationsDir, desktopEntry, desktopFileName } from "./desktop-entry.js";
@@ -112,7 +113,8 @@ export function launcherIcon(appId: string, appData: string): string {
 function ownShortcut(shortcut: string, argument: string): boolean {
   try {
     return shell.readShortcutLink(shortcut).args === argument;
-  } catch {
+  } catch (error) {
+    getLogger().warn("page app skipped a shortcut it could not read", { error });
     return false;
   }
 }
@@ -127,7 +129,7 @@ export async function removeOwnLauncher(appId: string, appData: string) {
   if (!existsSync(folder)) return;
   const argument = pageAppArgument(appId);
   for (const name of await readdir(folder)) {
-    if (!name.endsWith(".lnk")) continue;
+    if (!name.toLowerCase().endsWith(".lnk")) continue;
     const shortcut = path.join(folder, name);
     if (ownShortcut(shortcut, argument)) await rm(shortcut, { force: true });
   }
