@@ -194,10 +194,9 @@ export async function findTools(
   unavailableToolReasons?: Readonly<Record<string, string>>,
 ) {
   const { names, query } = findArguments(args);
-  const local = [
-    ...findBuiltinTools(tools.deferred, args),
-    ...findListedTools(tools.listed ?? [], args),
-  ];
+  const builtinHits = findBuiltinTools(tools.deferred, args);
+  const fromBuiltins = new Set<ToolSearchHit>(builtinHits);
+  const local = [...builtinHits, ...findListedTools(tools.listed ?? [], args)];
   const localIds = new Set(local.map((hit) => hit.id));
   const missing = names.filter((name) => !localIds.has(name));
   const hits = names.length
@@ -238,7 +237,9 @@ export async function findTools(
   return {
     hits,
     result: {
-      tools: hits.map(shownFindTool),
+      tools: hits.map((hit) =>
+        fromBuiltins.has(hit) ? shownBuiltinTool(hit) : shownToolSearchHit(hit),
+      ),
       ...(unavailable ? { unavailable } : {}),
       ...(unknown.length ? { unknown } : {}),
       ...(hits.length || (unavailable && !unknown.length)
@@ -249,10 +250,11 @@ export async function findTools(
 }
 
 /**
- * The schema find_tool shows. A root union is flattened here because this result never passes
- * through the model request normalizer. The hit keeps the original schema for execution.
+ * The schema find_tool shows for a deferred built-in. A root union is flattened here because
+ * this result never passes through the model request normalizer. Connector hits stay unchanged:
+ * flattening drops a field that only one branch requires, and execution still checks the original.
  */
-function shownFindTool(hit: ToolSearchHit) {
+function shownBuiltinTool(hit: ToolSearchHit) {
   const shown = shownToolSearchHit(hit);
   if (!shown.inputSchema || !openAiToolParametersNeedNormalization(shown.inputSchema)) return shown;
   return { ...shown, inputSchema: normalizeOpenAiToolParameters(shown.inputSchema) };

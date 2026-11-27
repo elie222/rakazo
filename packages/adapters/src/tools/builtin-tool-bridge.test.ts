@@ -1,6 +1,6 @@
 import type { Api, Context, Model } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import type { ConnectorTool } from "@rakazo/adapter-kit";
+import type { ConnectorTool, ToolSearchHit } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import {
   BUILTIN_AGENT_TOOL_NAMES,
@@ -17,6 +17,27 @@ const find = async (
   args: Record<string, unknown>,
   reasons?: Record<string, string>,
 ) => (await findTools({ deferred }, args, reasons)).result;
+
+/** by_id requires item_id; list does not. Flattening this root union drops that requirement. */
+const branchRequiredUnion = {
+  oneOf: [
+    {
+      type: "object",
+      properties: {
+        mode: { const: "by_id" },
+        item_id: { type: "string" },
+      },
+      required: ["mode", "item_id"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: { mode: { const: "list" } },
+      required: ["mode"],
+      additionalProperties: false,
+    },
+  ],
+};
 
 const ownerChat = selectBuiltinToolsForRun({
   graphicalToolsAllowed: false,
@@ -215,6 +236,53 @@ describe("built-in tool bridge", () => {
     }
     const bytes = Buffer.byteLength(JSON.stringify(found));
     expect(bytes, `create_child_routine find_tool result=${bytes}B`).toBeLessThanOrEqual(3_511);
+  });
+
+  it("keeps a listed connector tool's root union, including a branch-only required field", async () => {
+    const tool: ConnectorTool = {
+      name: "lookup_item",
+      description: "Look up an item.",
+      inputSchema: branchRequiredUnion,
+      route: { connectorId: "shop", toolName: "lookup_item" },
+    };
+    const { result } = await findTools(
+      { deferred: [], listed: [tool] },
+      { names: ["lookup_item"] },
+    );
+    expect(result.tools).toEqual([
+      {
+        next: "use_tool",
+        name: "lookup_item",
+        description: "Look up an item.",
+        inputSchema: branchRequiredUnion,
+      },
+    ]);
+  });
+
+  it("keeps a catalog-discovered connector tool's root union, including a branch-only required field", async () => {
+    const hit: ToolSearchHit = {
+      id: "catalog_lookup",
+      name: "catalog_lookup",
+      description: "Look up an item.",
+      inputSchema: branchRequiredUnion,
+      next: "use_tool",
+      connectorId: "shop",
+    };
+    const { result } = await findTools(
+      {
+        deferred: [],
+        search: async (request) => ("ids" in request && request.ids.includes(hit.id) ? [hit] : []),
+      },
+      { names: [hit.id] },
+    );
+    expect(result.tools).toEqual([
+      {
+        next: "use_tool",
+        name: "catalog_lookup",
+        description: "Look up an item.",
+        inputSchema: branchRequiredUnion,
+      },
+    ]);
   });
 
   it("never finds a tool the bot turned off", async () => {
