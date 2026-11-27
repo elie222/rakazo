@@ -1,0 +1,1 @@
+ALTER TABLE "user" ADD COLUMN "starredModels" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];

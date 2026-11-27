@@ -27,6 +27,7 @@ import { ComputerHomeVersions } from "../../../components/computers/ComputerHome
 import { ErrorBoundary, SectionLoadFailed } from "../../../components/ErrorBoundary";
 import { PagesList } from "../../../components/pages/PagesList";
 import { botProfilePatch } from "../../../lib/bots/bot-profile-patch";
+import { useStarredModels } from "../../../lib/models/use-starred-models";
 import { lazyComponent } from "../../../lib/platform/preload-recovery";
 import { useSpaceQueries } from "../../../lib/query/query";
 import { errorText } from "../../../lib/query/user-error";
@@ -277,6 +278,7 @@ export function BotSettings({
     setSavedAdvanced(JSON.stringify(next));
   }, [bot]);
 
+  const { starredKeys, toggleStar } = useStarredModels();
   const {
     selectedModel,
     shownKey,
@@ -671,6 +673,8 @@ export function BotSettings({
                 onThinkingLevelChange={(level) =>
                   setThinkingLevel(savedThinkingLevel(level as ThinkingLevel) ?? "")
                 }
+                starredKeys={starredKeys}
+                onToggleStar={toggleStar}
               />
               <SwitchRow
                 id={`${ids}-notify-finish`}

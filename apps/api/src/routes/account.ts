@@ -25,6 +25,7 @@ import {
   approvalPreferenceFromMode,
   ClientError,
   callRequestClientNonce,
+  normalizeStarredModelKeys,
 } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
 import {
@@ -241,11 +242,18 @@ export function accountRoutes(ctx: RouterContext) {
           input.labs === undefined
             ? undefined
             : parseLabs(input.labs).filter((feature) => !deploymentLabs.includes(feature));
+        const chatPreferences =
+          input.chatPreferences?.starredModels === undefined
+            ? input.chatPreferences
+            : {
+                ...input.chatPreferences,
+                starredModels: normalizeStarredModelKeys(input.chatPreferences.starredModels),
+              };
         const data = {
           ...(input.locale === undefined ? {} : { locale: input.locale }),
           ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
           ...(labs === undefined ? {} : { labs }),
-          ...input.chatPreferences,
+          ...chatPreferences,
         };
         if (input.timezone !== undefined) {
           // The routines that took the account zone keep their local schedule in the new

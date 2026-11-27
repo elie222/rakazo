@@ -103,6 +103,8 @@ export function ModelRow({
   thinkingOptions,
   thinkingLevel,
   onThinkingLevelChange,
+  starredKeys,
+  onToggleStar,
 }: {
   ids: string;
   containerRef: RefObject<HTMLDivElement | null>;
@@ -113,6 +115,8 @@ export function ModelRow({
   /** The level in use, the model's default while none is saved. */
   thinkingLevel: ThinkingLevel;
   onThinkingLevelChange: (level: string) => void;
+  starredKeys?: readonly string[];
+  onToggleStar?: (key: string) => void;
 }) {
   const { t } = useLingui();
   return (
@@ -123,6 +127,8 @@ export function ModelRow({
           choices={choices}
           value={value}
           onChange={onModelChange}
+          starredKeys={starredKeys}
+          onToggleStar={onToggleStar}
         />
       </div>
       {thinkingOptions.length ? (

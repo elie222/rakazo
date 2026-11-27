@@ -1,8 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { useListSearch } from "@rakazo/chat-ui/hooks";
 import type { ConnectionModel } from "@rakazo/core";
+import { modelOptionKey, normalizeStarredModelKeys } from "@rakazo/core";
 import { ListSearchInput, SectionHeading } from "@rakazo/ui-web";
+import { Star } from "lucide-react";
 import type { ReactNode } from "react";
+import { useMemo } from "react";
 import { SettingsPageHeader } from "../../components/settings/SettingsPageHeader";
 import { SettingsListRow } from "./providers-section";
 
@@ -11,22 +14,29 @@ type ProviderModel = ConnectionModel;
 /** One connection: its own settings, then the models that have settings of their own. */
 export function ProviderPage({
   title,
+  provider,
   connection,
   footer,
   models,
+  starredKeys,
+  onToggleStar,
   onBack,
   onOpenModel,
 }: {
   title: string;
+  provider?: string;
   /** The connection's sign-in or key controls. */
   connection: ReactNode;
   /** Rename and disconnect, after everything else. */
   footer: ReactNode;
   models: ProviderModel[];
+  starredKeys?: readonly string[];
+  onToggleStar?: (key: string) => void;
   onBack: () => void;
   onOpenModel: (modelId: string) => void;
 }) {
   const { t } = useLingui();
+  const starredSet = useMemo(() => new Set(normalizeStarredModelKeys(starredKeys)), [starredKeys]);
   const {
     query,
     setQuery,
@@ -58,15 +68,42 @@ export function ProviderPage({
             </div>
           ) : null}
           <ul className="divide-y divide-border rounded-xl border border-border">
-            {matching.map((model) => (
-              <li key={model.id}>
-                <SettingsListRow
-                  onClick={() => onOpenModel(model.id)}
-                  label={model.label}
-                  className="last:rounded-b-xl"
-                />
-              </li>
-            ))}
+            {matching.map((model) => {
+              const starKey = provider ? modelOptionKey(provider, model.id) : null;
+              const isStarred = starKey ? starredSet.has(starKey) : false;
+              return (
+                <li key={model.id} className="flex items-center">
+                  <SettingsListRow
+                    onClick={() => onOpenModel(model.id)}
+                    label={model.label}
+                    className="min-w-0 flex-1 last:rounded-b-xl"
+                  />
+                  {starKey && onToggleStar ? (
+                    <button
+                      type="button"
+                      aria-label={
+                        isStarred
+                          ? t`Remove ${model.label} from favorites`
+                          : t`Add ${model.label} to favorites`
+                      }
+                      aria-pressed={isStarred}
+                      data-starred={isStarred}
+                      className={`me-2 flex size-8 shrink-0 items-center justify-center rounded-md outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring ${
+                        isStarred
+                          ? "text-warning"
+                          : "text-muted-foreground/60 hover:text-foreground"
+                      }`}
+                      onClick={() => onToggleStar(starKey)}
+                    >
+                      <Star
+                        aria-hidden="true"
+                        className={`size-4 ${isStarred ? "fill-current" : ""}`}
+                      />
+                    </button>
+                  ) : null}
+                </li>
+              );
+            })}
             {matching.length ? null : (
               <li className="px-3 py-3 text-body text-muted-foreground">
                 <Trans>No matching models</Trans>

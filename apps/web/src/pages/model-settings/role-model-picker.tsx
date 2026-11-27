@@ -1,7 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { useListSearch } from "@rakazo/chat-ui/hooks";
 import { canonicalPiProviderId } from "@rakazo/contracts";
-import { modelCatalogSearchText, newestModelsFirst } from "@rakazo/core";
+import {
+  modelCatalogSearchText,
+  modelOptionKey,
+  newestModelsFirst,
+  normalizeStarredModelKeys,
+} from "@rakazo/core";
 import {
   Command,
   CommandEmpty,
@@ -15,6 +20,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@rakazo/ui-web";
+import { Star } from "lucide-react";
 import type { ReactElement } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ModelCatalogEntry } from "../../lib/models/model-auth";
@@ -60,6 +66,8 @@ export function RoleModelPicker({
   onConnect,
   reopen,
   onReopened,
+  starredKeys,
+  onToggleStar,
 }: {
   trigger: ReactElement;
   label: string;
@@ -79,6 +87,10 @@ export function RoleModelPicker({
    * that is replaced while its picker is open (a reload settling) reopens in its new row.
    */
   onReopened?: () => void;
+  /** Starred `provider::modelId` keys pinned at the top when available. */
+  starredKeys?: readonly string[];
+  /** Toggles a model's favorite state without closing the picker. */
+  onToggleStar?: (key: string) => void;
 }) {
   const { t } = useLingui();
   const searchRef = useRef<HTMLInputElement>(null);
@@ -101,6 +113,18 @@ export function RoleModelPicker({
     searched.current = true;
     setSearch(next);
   };
+  const normalizedStarred = useMemo(() => normalizeStarredModelKeys(starredKeys), [starredKeys]);
+  const starredSet = useMemo(() => new Set(normalizedStarred), [normalizedStarred]);
+  const favoriteOptions = useMemo(() => {
+    if (!normalizedStarred.length) return [];
+    const byKey = new Map<string, RoleModelOption[]>();
+    for (const row of visible) {
+      if (!row.option) continue;
+      const key = modelOptionKey(row.option.provider, row.option.id);
+      byKey.set(key, [...(byKey.get(key) ?? []), row.option]);
+    }
+    return normalizedStarred.flatMap((key) => byKey.get(key) ?? []);
+  }, [visible, normalizedStarred]);
   const groups = useMemo(() => {
     const grouped = new Map<string, RoleModelOption[]>();
     for (const row of visible) {
@@ -115,6 +139,7 @@ export function RoleModelPicker({
   const matchingProviders = visible.flatMap((row) => (row.provider ? [row.provider] : []));
   const values = [
     ...(defaultOption && !needle ? ["default"] : []),
+    ...favoriteOptions.map((option) => `fav:${optionValue(option)}`),
     ...groups.flatMap(([, entries]) => entries.map(optionValue)),
     ...matchingProviders.map((provider) => `connect:${provider.id}:${provider.baseUrl ?? ""}`),
   ];
@@ -230,22 +255,109 @@ export function RoleModelPicker({
                 </CommandItem>
               </CommandGroup>
             ) : null}
+            {favoriteOptions.length ? (
+              <CommandGroup
+                heading={
+                  <span className="flex items-center gap-1.5">
+                    <Star aria-hidden="true" className="size-3 fill-current text-warning" />
+                    <Trans>Favorites</Trans>
+                  </span>
+                }
+              >
+                {favoriteOptions.map((option) => {
+                  const starKey = modelOptionKey(option.provider, option.id);
+                  const providerLabel = option.providerName ?? option.provider;
+                  const itemValue = `fav:${optionValue(option)}`;
+                  return (
+                    <CommandItem
+                      key={itemValue}
+                      value={itemValue}
+                      data-checked={optionValue(option) === currentValue}
+                      onSelect={() => {
+                        if (optionValue(option) !== currentValue) onPick(option);
+                        close();
+                      }}
+                    >
+                      <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                      {providerLabel ? (
+                        <span className="max-w-28 shrink-0 truncate text-body-sm text-muted-foreground">
+                          {providerLabel}
+                        </span>
+                      ) : null}
+                      {onToggleStar ? (
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          aria-label={t`Remove ${option.label} from favorites`}
+                          aria-pressed
+                          data-starred="true"
+                          className="flex size-6 shrink-0 items-center justify-center rounded-sm text-warning outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onMouseDown={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onToggleStar(starKey);
+                          }}
+                        >
+                          <Star aria-hidden="true" className="size-3.5 fill-current" />
+                        </button>
+                      ) : null}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            ) : null}
             {groups.map(([name, entries]) => (
               <CommandGroup key={name} heading={name}>
-                {entries.map((option) => (
-                  <CommandItem
-                    key={optionValue(option)}
-                    value={optionValue(option)}
-                    data-checked={optionValue(option) === currentValue}
-                    onSelect={() => {
-                      // The model in use is already saved; picking it again changes nothing.
-                      if (optionValue(option) !== currentValue) onPick(option);
-                      close();
-                    }}
-                  >
-                    <span className="min-w-0 truncate">{option.label}</span>
-                  </CommandItem>
-                ))}
+                {entries.map((option) => {
+                  const starKey = modelOptionKey(option.provider, option.id);
+                  const isStarred = starredSet.has(starKey);
+                  return (
+                    <CommandItem
+                      key={optionValue(option)}
+                      value={optionValue(option)}
+                      data-checked={optionValue(option) === currentValue}
+                      onSelect={() => {
+                        // The model in use is already saved; picking it again changes nothing.
+                        if (optionValue(option) !== currentValue) onPick(option);
+                        close();
+                      }}
+                    >
+                      <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                      {onToggleStar ? (
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          aria-label={
+                            isStarred
+                              ? t`Remove ${option.label} from favorites`
+                              : t`Add ${option.label} to favorites`
+                          }
+                          aria-pressed={isStarred}
+                          data-starred={isStarred}
+                          className={`flex size-6 shrink-0 items-center justify-center rounded-sm outline-none transition-opacity focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring ${
+                            isStarred
+                              ? "text-warning opacity-100"
+                              : "text-muted-foreground/60 opacity-0 hover:text-foreground group-hover/command-item:opacity-100 group-data-selected/command-item:opacity-100"
+                          }`}
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onMouseDown={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onToggleStar(starKey);
+                          }}
+                        >
+                          <Star
+                            aria-hidden="true"
+                            className={`size-3.5 ${isStarred ? "fill-current" : ""}`}
+                          />
+                        </button>
+                      ) : null}
+                    </CommandItem>
+                  );
+                })}
               </CommandGroup>
             ))}
             {matchingProviders.length && groups.length ? <CommandSeparator /> : null}

@@ -226,4 +226,95 @@ describe("ChatModelPicker", () => {
       collisionAvoidance: { side: "flip", align: "shift", fallbackAxisSide: "none" },
     });
   });
+
+  it("pins starred multi-provider models in a Favorites section, filters them, and toggles stars without selecting", () => {
+    const onToggleStar = vi.fn();
+    const multiProvider: ChatModelChoice[] = [
+      {
+        key: "anthropic::claude-sonnet-4-5",
+        label: "Claude Sonnet 4.5 (Anthropic)",
+        provider: "anthropic",
+        providerLabel: "Anthropic",
+        modelLabel: "Claude Sonnet 4.5",
+        modelId: "claude-sonnet-4-5",
+      },
+      {
+        key: "openrouter::claude-sonnet-4-5",
+        label: "Claude Sonnet 4.5 (OpenRouter)",
+        provider: "openrouter",
+        providerLabel: "OpenRouter",
+        modelLabel: "Claude Sonnet 4.5",
+        modelId: "claude-sonnet-4-5",
+      },
+      {
+        key: "openai::gpt-5",
+        label: "GPT-5 (OpenAI)",
+        provider: "openai",
+        providerLabel: "OpenAI",
+        modelLabel: "GPT-5",
+        modelId: "gpt-5",
+      },
+    ];
+    act(() =>
+      root.render(
+        <ChatModelPicker
+          id="model"
+          choices={multiProvider}
+          value="anthropic::claude-sonnet-4-5"
+          onChange={onChange}
+          starredKeys={[
+            "openai::gpt-5",
+            "disconnected::retired-model",
+            "openrouter::claude-sonnet-4-5",
+          ]}
+          onToggleStar={onToggleStar}
+        />,
+      ),
+    );
+    act(() => container.querySelector<HTMLButtonElement>("button#model")!.click());
+
+    const headings = [...document.querySelectorAll("[cmdk-group-heading]")].map(
+      (heading) => heading.textContent,
+    );
+    expect(headings).toEqual(["Favorites", "Anthropic", "OpenRouter", "OpenAI"]);
+
+    const favoritesGroup = document.querySelector("[cmdk-group]")!;
+    const favoriteOptions = [...favoritesGroup.querySelectorAll('[role="option"]')];
+    expect(favoriteOptions.map((option) => option.getAttribute("aria-label"))).toEqual([
+      "GPT-5 (OpenAI)",
+      "Claude Sonnet 4.5 (OpenRouter)",
+    ]);
+    // Favorite rows show the provider name to disambiguate across connected providers.
+    expect(favoriteOptions[0]?.textContent).toContain("OpenAI");
+    expect(favoriteOptions[1]?.textContent).toContain("OpenRouter");
+
+    // Clicking the star button unstarring directly does not select the model or close the picker.
+    const unstar = favoriteOptions[1]!.querySelector<HTMLButtonElement>(
+      'button[aria-label="Remove Claude Sonnet 4.5 (OpenRouter) from favorites"]',
+    )!;
+    act(() => unstar.click());
+    expect(onToggleStar).toHaveBeenCalledExactlyOnceWith("openrouter::claude-sonnet-4-5");
+    expect(onChange).not.toHaveBeenCalled();
+    expect(options().length).toBeGreaterThan(0);
+  });
+
+  it("hides the Favorites section when no starred models are connected", () => {
+    act(() =>
+      root.render(
+        <ChatModelPicker
+          id="model"
+          choices={choices(2)}
+          value=""
+          onChange={onChange}
+          starredKeys={["disconnected::retired-model"]}
+          onToggleStar={vi.fn()}
+        />,
+      ),
+    );
+    act(() => container.querySelector<HTMLButtonElement>("button#model")!.click());
+    const headings = [...document.querySelectorAll("[cmdk-group-heading]")].map(
+      (heading) => heading.textContent,
+    );
+    expect(headings).toEqual(["OpenRouter"]);
+  });
 });

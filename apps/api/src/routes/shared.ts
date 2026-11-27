@@ -47,6 +47,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
         botAvatarSet: true,
         ...chatPreferencesSelect,
         notificationSounds: true,
+        starredModels: true,
         labs: true,
         signupSurvey: { select: { userId: true } },
       },

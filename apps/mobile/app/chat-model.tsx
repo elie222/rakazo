@@ -1,6 +1,13 @@
 import { useLingui } from "@lingui/react/macro";
 import type { ThinkingLevel } from "@rakazo/contracts";
-import { botModelPick, botModelState, modelOptionKey } from "@rakazo/core";
+import { MAX_STARRED_MODELS } from "@rakazo/contracts";
+import {
+  botModelPick,
+  botModelState,
+  modelOptionKey,
+  normalizeStarredModelKeys,
+  toggleStarredModelKey,
+} from "@rakazo/core";
 import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -19,7 +26,8 @@ export default function ChatModelScreen() {
   const { botId } = useLocalSearchParams<{ botId: string }>();
   const botRead = rpcQuery("bots/get", { botId });
   const bot = useScreenQuery(botRead);
-  const me = useScreenQuery(rpcQuery("me"));
+  const meRead = rpcQuery("me");
+  const me = useScreenQuery(meRead);
   const catalog = useScreenQuery(rpcQuery("models/list"));
   const credentials = useScreenQuery(rpcQuery("models/credentials"));
   const save = useSave({
@@ -35,6 +43,22 @@ export default function ChatModelScreen() {
     stale: [botRead.queryKey],
     onFailed: (error) => Alert.alert(errorText(error, t`Could not change the model`)),
   });
+  const saveStarred = useSave({
+    save: (starredModels: string[], send) =>
+      send("preferences/update", { chatPreferences: { starredModels } }),
+    stale: [meRead.queryKey],
+    onFailed: (error) => Alert.alert(errorText(error, t`Could not update favorite models`)),
+  });
+  const savedStarred = normalizeStarredModelKeys(me.data?.chatPreferences?.starredModels);
+  const starredKeys = saveStarred.pending && saveStarred.input ? saveStarred.input : savedStarred;
+  const toggleStar = (key: string) => {
+    const next = toggleStarredModelKey(starredKeys, key);
+    if (next.length > MAX_STARRED_MODELS) {
+      Alert.alert(t`You can favorite up to ${MAX_STARRED_MODELS} models.`);
+      return;
+    }
+    saveStarred.run(next);
+  };
 
   const ready = bot.data && me.data && catalog.data && credentials.data;
   const savedKey =
@@ -64,6 +88,8 @@ export default function ChatModelScreen() {
       latestOnly
       choices={choices}
       selectedKey={state?.shownKey ?? ""}
+      starredKeys={starredKeys}
+      onToggleStar={toggleStar}
       error={failure && !choices ? errorText(failure, t`Could not load model settings`) : null}
       onSelect={(choice) => {
         const modelKey = state?.savedModelKey(choice.key);

@@ -6,6 +6,7 @@ import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import { Command, CommandGroup, CommandItem, CommandList, Kbd, toast } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
+import { useStarredModels } from "../../../lib/models/use-starred-models";
 import { useSave, useSpaceQueries } from "../../../lib/query/query";
 import { errorText } from "../../../lib/query/user-error";
 import { ChatModelPicker } from "../chat/chat-model-picker";
@@ -49,6 +50,7 @@ export function ComposerModelPicker({
   const credentials = useQuery(queries.models.credentials.queryOptions()).data;
   const catalog = useQuery(queries.models.list.queryOptions()).data;
   const me = useQuery(queries.me.queryOptions()).data;
+  const { starredKeys, toggleStar } = useStarredModels();
   const onFailed = (error: Error) => toast.error(errorText(error, t`Could not change the model`));
   const saveModel = useSave({
     save: (key: string, client) => client.bots.update({ botId: bot.id, ...botModelPick(key) }),
@@ -144,6 +146,8 @@ export function ComposerModelPicker({
       disabled={busy}
       open={open}
       onOpenChange={onOpenChange}
+      starredKeys={starredKeys}
+      onToggleStar={toggleStar}
       keyShortcuts={apple ? "Meta+Shift+M" : "Control+Shift+M"}
       hint={
         <>
