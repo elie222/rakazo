@@ -85,6 +85,13 @@ EOF
 # (control endpoint, published screen port) keep working while the computer can
 # no longer open connections to the host.
 #
+# In DOCKER-USER, replies on connections that were opened from outside the
+# bridge are returned before the destination drops too. When a screen session
+# joins the web container to a computer's bridge, Docker DNATs the published web
+# port to that container's address on the bridge, so its replies to a LAN client
+# leave via rakazo-c* and would otherwise hit the private-range drops. Computers
+# still cannot open new connections to those destinations.
+#
 # INPUT is listed first so it is inserted last (rules go in by a reverse pass).
 # The supervisor's start-up probe detects the INPUT drop, so its presence must
 # mean the DOCKER-USER destination drops of the same run are already in place.
@@ -93,6 +100,7 @@ egress_rules_v4() {
   printf 'INPUT -i %s+ -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n' "$BRIDGE_PREFIX"
   printf 'INPUT -i %s+ -j DROP\n' "$BRIDGE_PREFIX"
   printf 'DOCKER-USER -i %s+ -o %s+ -j RETURN\n' "$BRIDGE_PREFIX" "$BRIDGE_PREFIX"
+  printf 'DOCKER-USER -i %s+ -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN\n' "$BRIDGE_PREFIX"
   while IFS= read -r cidr; do
     printf 'DOCKER-USER -i %s+ -d %s -j DROP\n' "$BRIDGE_PREFIX" "$cidr"
   done < <(blocked_destinations_v4)
@@ -103,6 +111,7 @@ egress_rules_v6() {
   printf 'INPUT -i %s+ -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n' "$BRIDGE_PREFIX"
   printf 'INPUT -i %s+ -j DROP\n' "$BRIDGE_PREFIX"
   printf 'DOCKER-USER -i %s+ -o %s+ -j RETURN\n' "$BRIDGE_PREFIX" "$BRIDGE_PREFIX"
+  printf 'DOCKER-USER -i %s+ -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN\n' "$BRIDGE_PREFIX"
   while IFS= read -r cidr; do
     printf 'DOCKER-USER -i %s+ -d %s -j DROP\n' "$BRIDGE_PREFIX" "$cidr"
   done < <(blocked_destinations_v6)
