@@ -29,6 +29,7 @@ const host = vi.hoisted(() => ({
     code: "",
     botId: "bot-1" as string | null,
     groupId: null as string | null,
+    abilities: ["ask"],
   },
 }));
 

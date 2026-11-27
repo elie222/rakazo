@@ -73,14 +73,17 @@ function OpenPage({
   const savedState = pageId === null ? undefined : page.data?.readerState;
   const content = useReviewedPageContent(shownId, page.data);
   const rpc = useSpaceRpc();
-  // Questions still waiting end when the page closes.
+  // Questions still waiting end when the page closes, which happens before it animates out.
   const asking = useRef<AbortController | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     asking.current = controller;
     return () => controller.abort();
-  }, []);
-  const askChat = page.data ? pageAskChat(page.data) !== null : false;
+  }, [pageId]);
+  const askChat =
+    pageId !== null &&
+    page.data?.abilities.includes("ask") === true &&
+    pageAskChat(page.data) !== null;
   const viewer = usePageDocument(
     content,
     sheet ? "background" : "card",

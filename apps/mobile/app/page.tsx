@@ -78,7 +78,7 @@ export default function PageScreen() {
           t`This page couldn't be shown.`,
           {
             reply: pageChat(page) !== null,
-            ask: pageChat(page) !== null,
+            ask: pageAsks(page),
             state: page.readerState,
           },
         );
@@ -123,7 +123,7 @@ export default function PageScreen() {
       const ask = pageAskRequest(message);
       if (ask) {
         // A page waits on every question, so one it may not send is answered at once.
-        if (!allowed || !page || !pageChat(page)) {
+        if (!allowed || !page || !pageAsks(page)) {
           answer(pageAskAnswer(ask.id, null));
           return;
         }
@@ -247,6 +247,11 @@ export default function PageScreen() {
       </View>
     </View>
   );
+}
+
+/** A page that uses askBot and has a chat to ask in; an older server may not say what it uses. */
+function pageAsks(page: PageDetail): boolean {
+  return pageChat(page) !== null && page.abilities?.includes("ask") === true;
 }
 
 const styles = StyleSheet.create({
