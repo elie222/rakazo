@@ -180,8 +180,17 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
     if (first.kind === "page")
       return <PageCard key={`page-${index}`} block={first} messageId={message.id} />;
     if (first.kind === "result_cards")
-      return <ResultCards key={`result-cards-${index}`} block={first} />;
-    if (first.kind === "card") return <StatusCard key={`card-${index}`} block={first} />;
+      return (
+        <View key={`result-cards-${index}`} {...props.actionProps}>
+          <ResultCards block={first} />
+        </View>
+      );
+    if (first.kind === "card")
+      return (
+        <View key={`card-${index}`} {...props.actionProps}>
+          <StatusCard block={first} />
+        </View>
+      );
     if (first.kind === "tool_question")
       return (
         <ToolQuestionCard

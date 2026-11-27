@@ -23,7 +23,7 @@ import { AskCard } from "../../../components/messages/AskCard";
 import { CloudAgentCard } from "../../../components/messages/CloudAgentCard";
 import { McpAppCard } from "../../../components/messages/McpAppCard";
 import { OutgoingDraftCard } from "../../../components/messages/OutgoingDraftCard";
-import { ResultCards } from "../../../components/messages/ResultCards";
+import { ResultCards, StatusCard } from "../../../components/messages/ResultCards";
 import { SubagentCard } from "../../../components/messages/SubagentCard";
 import {
   LIVE_TOOL_STEP_WINDOW,
@@ -87,19 +87,16 @@ function BotTextBubble({
       className="max-w-full rounded-2xl bg-muted px-4 py-2.5 text-body-lg text-foreground"
       dir="auto"
     >
-      <div
-        data-quote-message-id={quoteMessageId}
-        className={collapsed ? "relative max-h-60 overflow-hidden" : undefined}
-      >
-        <ChatMarkdown renderMention={renderMention} onOpenPage={openPage}>
-          {text}
-        </ChatMarkdown>
+      <div data-quote-message-id={quoteMessageId}>
         {collapsed ? (
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-muted to-transparent"
-          />
-        ) : null}
+          <p className="line-clamp-5 whitespace-pre-wrap break-words text-body-lg text-foreground/90">
+            {text.slice(0, 600)}
+          </p>
+        ) : (
+          <ChatMarkdown renderMention={renderMention} onOpenPage={openPage}>
+            {text}
+          </ChatMarkdown>
+        )}
       </div>
       {isLong ? (
         <div className="mt-2 flex justify-end border-t border-border/50 pt-1.5">
@@ -703,16 +700,7 @@ export const MessageView = memo(function MessageView({
           if (block.kind === "card") {
             return (
               <div key={i} className="relative flex w-fit max-w-full justify-start">
-                <div className="flex flex-col gap-2 rounded-2xl bg-muted px-5 py-4">
-                  {block.lines.map((line) => (
-                    <div key={line.k} className="flex items-baseline gap-2.5 text-body-lg">
-                      <span className="text-success">✓</span>
-                      <span className="font-semibold text-foreground">{line.k}</span>
-                      <span className="text-muted-foreground">→</span>
-                      <span>{line.v}</span>
-                    </div>
-                  ))}
-                </div>
+                <StatusCard block={block} />
                 {i === hoverAnchorIndex ? hoverActions : null}
               </div>
             );

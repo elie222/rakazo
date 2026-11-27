@@ -912,6 +912,7 @@ export {
   markRemoteImageLoaded,
   RemoteImagesContext,
   remoteImageRenders,
+  safeExternalHttpUrl,
   useLinkFavicon,
   withBlockMentions,
 } from "./markdown";

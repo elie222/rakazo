@@ -29,6 +29,19 @@ export function isPeerReplyBlock(block: MessageBlock) {
   );
 }
 
+/** Single source of truth for block kinds visible in peer-triggered runs (history and realtime). */
+export function isPeerVisibleBlock(block: unknown): boolean {
+  if (!block || typeof block !== "object" || !("kind" in block)) return false;
+  const candidate = block as MessageBlock;
+  return (
+    candidate.kind === "bot_message_sent" ||
+    candidate.kind === "bot_message_received" ||
+    candidate.kind === "ask" ||
+    candidate.kind === "app" ||
+    isPeerReplyBlock(candidate)
+  );
+}
+
 function peerReceipt(blocks: readonly MessageBlock[]) {
   const block = blocks.find(
     (block) => block.kind === "bot_message_sent" || block.kind === "bot_message_received",

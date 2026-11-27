@@ -290,7 +290,9 @@ export function selectBuiltinToolsForRun(options: {
             "board_tickets",
           ].includes(tool.name) &&
           !tool.name.startsWith("scratchpad_") &&
-          !tool.name.startsWith("ticket_"))),
+          !tool.name.startsWith("ticket_"))) &&
+      ((options.trigger !== "routine" && options.trigger !== "webhook") ||
+        !["react", "show_status", "show_cards"].includes(tool.name)),
   );
   return withShellScreenTool(offered);
 }

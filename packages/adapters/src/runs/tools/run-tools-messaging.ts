@@ -5,6 +5,7 @@ import {
   BOT_MESSAGE_MAX_LENGTH,
   BOT_MESSAGE_TOO_LONG,
   isBackgroundRunTrigger,
+  messageReaction,
   redactSecrets,
   resolveBotAddress,
 } from "@rakazo/core";
@@ -341,12 +342,32 @@ export const messagingTools: ToolHandlers = {
     if (requestedId) {
       const target = await deps.prisma.message.findFirst({
         where: { id: requestedId, threadId: thread.id },
-        select: { id: true },
+        select: { id: true, role: true, blocks: true, replyToMessageId: true },
       });
       if (!target) return call.finish({ error: "Message not found in this thread" });
-      targetId = target.id;
+      targetId = messageReaction({
+        role: target.role as "user" | "bot",
+        blocks: Array.isArray(target.blocks) ? (target.blocks as never) : [],
+        replyToMessageId: target.replyToMessageId,
+      })
+        ? (target.replyToMessageId ?? undefined)
+        : target.id;
     } else if (run.sourceMessageId) {
-      targetId = run.sourceMessageId;
+      const source = await deps.prisma.message.findFirst({
+        where: { id: run.sourceMessageId, threadId: thread.id },
+        select: { id: true, role: true, blocks: true, replyToMessageId: true },
+      });
+      if (source) {
+        targetId = messageReaction({
+          role: source.role as "user" | "bot",
+          blocks: Array.isArray(source.blocks) ? (source.blocks as never) : [],
+          replyToMessageId: source.replyToMessageId,
+        })
+          ? (source.replyToMessageId ?? undefined)
+          : source.id;
+      } else {
+        targetId = run.sourceMessageId;
+      }
     } else {
       const latest = await deps.prisma.message.findFirst({
         where: { threadId: thread.id, role: "user" },

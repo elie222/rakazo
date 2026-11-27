@@ -3,21 +3,28 @@ import {
   markRemoteImageLoaded,
   RemoteImagesContext,
   remoteImageRenders,
+  safeExternalHttpUrl,
 } from "@rakazo/chat-ui/web";
 import type { MessageBlock } from "@rakazo/contracts";
 import { ExternalLink, ImageIcon } from "lucide-react";
 import { useContext, useState } from "react";
 
 type ResultCardsBlock = Extract<MessageBlock, { kind: "result_cards" }>;
+type StatusCardBlock = Extract<MessageBlock, { kind: "card" }>;
 
-function safeExternalUrl(raw: string | undefined): string | undefined {
-  if (!raw) return undefined;
-  try {
-    const parsed = new URL(raw);
-    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : undefined;
-  } catch {
-    return undefined;
-  }
+export function StatusCard({ block }: { block: StatusCardBlock }) {
+  return (
+    <div className="flex flex-col gap-2 rounded-2xl bg-muted px-5 py-4">
+      {block.lines.map((line) => (
+        <div key={line.k} className="flex items-baseline gap-2.5 text-body-lg">
+          <span className="text-success">✓</span>
+          <span className="font-semibold text-foreground">{line.k}</span>
+          <span className="text-muted-foreground">→</span>
+          <span>{line.v}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function CardThumbnail({ src, alt }: { src: string; alt: string }) {
@@ -71,8 +78,8 @@ export function ResultCards({ block }: { block: ResultCardsBlock }) {
         className="m-0 flex list-none snap-x snap-mandatory gap-3 overflow-x-auto p-0 pb-1"
       >
         {block.items.map((item, index) => {
-          const href = safeExternalUrl(item.url);
-          const imageSrc = safeExternalUrl(item.imageUrl);
+          const href = safeExternalHttpUrl(item.url);
+          const imageSrc = safeExternalHttpUrl(item.imageUrl);
           const inner = (
             <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-card text-foreground transition-colors hover:border-foreground/20">
               {imageSrc ? <CardThumbnail src={imageSrc} alt={item.title} /> : null}

@@ -2,6 +2,7 @@ import {
   markRemoteImageLoaded,
   RemoteImagesContext,
   remoteImageRenders,
+  safeExternalHttpUrl,
 } from "@rakazo/chat-ui/native";
 import type { MessageBlock } from "@rakazo/contracts";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
@@ -37,16 +38,6 @@ export function StatusCard({ block }: { block: StatusCardBlock }) {
   );
 }
 
-function safeExternalUrl(raw: string | undefined): string | undefined {
-  if (!raw) return undefined;
-  try {
-    const parsed = new URL(raw);
-    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 export function ResultCards({ block }: { block: ResultCardsBlock }) {
   const tokens = mobileTokens();
   const loadRemote = useContext(RemoteImagesContext);
@@ -71,8 +62,8 @@ export function ResultCards({ block }: { block: ResultCardsBlock }) {
         contentContainerStyle={{ gap: 10, paddingVertical: 2 }}
       >
         {block.items.map((item, index) => {
-          const href = safeExternalUrl(item.url);
-          const imageSrc = safeExternalUrl(item.imageUrl);
+          const href = safeExternalHttpUrl(item.url);
+          const imageSrc = safeExternalHttpUrl(item.imageUrl);
           return (
             <Pressable
               key={`${item.title}-${index}`}

@@ -71,6 +71,7 @@ export {
   plainTextLinkParts,
   RemoteImagesContext,
   remoteImageRenders,
+  safeExternalHttpUrl,
   useLinkFavicon,
   withBlockMentions,
 } from "./markdown";

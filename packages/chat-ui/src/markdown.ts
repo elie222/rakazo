@@ -450,6 +450,12 @@ export function linkFaviconOrigin(href: string): string | undefined {
   return httpUrl(href)?.origin;
 }
 
+/** Normalizes an external http(s) URL for card links and thumbnails, rejecting other schemes. */
+export function safeExternalHttpUrl(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  return httpUrl(raw)?.href;
+}
+
 /**
  * Where link icons come from. Apps load them through the Rakazo API, which fetches and caches
  * them, so a device never contacts the linked site or an icon service. `globe` is the native

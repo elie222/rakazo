@@ -27,9 +27,22 @@ function makeContext(overrides?: { sourceMessageId?: string; secrets?: string[] 
     deps: {
       prisma: {
         message: {
-          findFirst: vi.fn(async ({ where }: { where: { id?: string } }) =>
-            where.id === "msg-custom" ? { id: "msg-custom" } : { id: "msg-latest" },
-          ),
+          findFirst: vi.fn(async ({ where }: { where: { id?: string } }) => {
+            if (where.id === "msg-reaction") {
+              return {
+                id: "msg-reaction",
+                role: "user",
+                blocks: [{ kind: "text", text: "❤️" }],
+                replyToMessageId: "msg-parent",
+              };
+            }
+            return {
+              id: where.id ?? "msg-latest",
+              role: "user",
+              blocks: [{ kind: "text", text: "Thanks!" }],
+              replyToMessageId: null,
+            };
+          }),
         },
         $transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
           fn({
@@ -200,5 +213,12 @@ describe("bot react, show_status, and show_cards tools", () => {
       kind: "result_cards",
       items: [{ title: "Safe item" }, { title: "Long link" }],
     });
+  });
+
+  it("retargets react to the parent message when the target is itself a reaction", async () => {
+    const { ctx, createdMessages } = makeContext({ sourceMessageId: "msg-reaction" });
+    const result = await messagingTools.react!(ctx, makeCall({ emoji: "👍" }));
+    expect(result).toEqual({ ok: true, emoji: "👍", messageId: "msg-parent" });
+    expect(createdMessages[0]?.replyToMessageId).toBe("msg-parent");
   });
 });
