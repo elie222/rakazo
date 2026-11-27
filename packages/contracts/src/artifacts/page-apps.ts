@@ -36,3 +36,41 @@ export const PageAppInstallSchema = z.strictObject({
   iconColor: PageIconColorSchema.nullable(),
 });
 export type PageAppInstall = z.infer<typeof PageAppInstallSchema>;
+
+/** Where a page opens on its own in a browser, which a browser can install as an app. */
+export function pageWebAppPath(pageId: string): string {
+  return `/page/${encodeURIComponent(pageId)}`;
+}
+
+/** The Space a page web app reads from, carried on its links since an installed app has no picker. */
+export const PAGE_WEB_APP_SPACE_PARAM = "space";
+
+function inSpace(path: string, spaceId: string | null): string {
+  return spaceId ? `${path}?${PAGE_WEB_APP_SPACE_PARAM}=${encodeURIComponent(spaceId)}` : path;
+}
+
+export function pageWebAppUrl(pageId: string, spaceId: string | null): string {
+  return inSpace(pageWebAppPath(pageId), spaceId);
+}
+
+export function pageWebAppManifestUrl(pageId: string, spaceId: string | null): string {
+  return inSpace(`/api/v1/pages/${encodeURIComponent(pageId)}/app.webmanifest`, spaceId);
+}
+
+/** Icon files a page web app has: a touch icon at 180, and launcher icons with and without a mask. */
+export const PAGE_WEB_APP_ICONS = {
+  "180": { size: 180, maskable: true },
+  "192": { size: 192, maskable: false },
+  "512": { size: 512, maskable: false },
+  "maskable-192": { size: 192, maskable: true },
+  "maskable-512": { size: 512, maskable: true },
+} as const;
+export type PageWebAppIcon = keyof typeof PAGE_WEB_APP_ICONS;
+
+export function pageWebAppIconUrl(
+  pageId: string,
+  icon: PageWebAppIcon,
+  spaceId: string | null,
+): string {
+  return inSpace(`/api/v1/pages/${encodeURIComponent(pageId)}/app-icon/${icon}.png`, spaceId);
+}

@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/server";
-import type { PageAppView, PageAskEvent } from "@rakazo/contracts";
+import type { Actor, PageAppView, PageAskEvent } from "@rakazo/contracts";
 import {
   PAGE_APP_API_PATH,
   PAGE_STATE_MAX_BYTES,
@@ -24,6 +24,7 @@ import {
 } from "./page-apps.js";
 import { askFromPage } from "./page-ask.js";
 import { getPageImage, savePageReaderState } from "./page-collaboration.js";
+import { mountPageWebApp, PAGE_APP_HEADERS } from "./page-web-app.js";
 import { getPage } from "./pages.js";
 
 const MINUTE_MS = 60_000;
@@ -34,17 +35,21 @@ const HEARTBEAT_MS = 25_000;
 const SMALL_BODY_BYTES = 4 * 1024;
 const PAGE_ASK_BODY_BYTES = 16 * 1024;
 
-const HEADERS = { "cache-control": "no-store", "referrer-policy": "no-referrer" };
+export type PageAppRouteDeps = RouterDeps & {
+  sessionActor: (request: Request, spaceId?: string | null) => Promise<Actor | null>;
+};
 
 /**
  * What an installed page app reads and writes, with its own token and nothing else: its page,
  * that page's pictures, its owner's saved values on it, and which abilities the owner approved.
+ * Also what a browser reads to install a page, with the owner's session.
  */
 export function mountPageAppRoutes(
   app: Hono,
-  deps: RouterDeps,
+  deps: PageAppRouteDeps,
   clientIp: (c: Context) => string | undefined,
 ) {
+  mountPageWebApp(app, deps);
   const requests = windowCounter(MINUTE_MS);
   const addresses = windowCounter(MINUTE_MS);
 
@@ -53,29 +58,40 @@ export function mountPageAppRoutes(
     handle: (access: PageAppAccess, stillAuthorized: () => Promise<boolean>) => Promise<Response>,
   ): Promise<Response> {
     if (addresses(throttleKey(clientIp(c))) > REQUESTS_PER_IP_PER_MINUTE)
-      return c.json({ error: "Too many requests" }, 429, { ...HEADERS, "retry-after": "60" });
+      return c.json({ error: "Too many requests" }, 429, {
+        ...PAGE_APP_HEADERS,
+        "retry-after": "60",
+      });
     const authorization = c.req.header("authorization");
     const access = await pageAppFromToken(deps.prisma, authorization);
-    if (!access) return c.json({ error: "Unauthorized" }, 401, HEADERS);
+    if (!access) return c.json({ error: "Unauthorized" }, 401, PAGE_APP_HEADERS);
     if (requests(access.appId) > REQUESTS_PER_APP_PER_MINUTE)
-      return c.json({ error: "Too many requests" }, 429, { ...HEADERS, "retry-after": "60" });
+      return c.json({ error: "Too many requests" }, 429, {
+        ...PAGE_APP_HEADERS,
+        "retry-after": "60",
+      });
     try {
       // A long-lived response asks again, so a revoked token or a removed owner ends it.
       const stillAuthorized = async () =>
         (await pageAppFromToken(deps.prisma, authorization))?.appId === access.appId;
       return await runAsTenant(access.actor, () => handle(access, stillAuthorized));
     } catch (error) {
-      if (error instanceof IsolationError) return c.json({ error: "Not found" }, 404, HEADERS);
+      if (error instanceof IsolationError)
+        return c.json({ error: "Not found" }, 404, PAGE_APP_HEADERS);
       if (error instanceof ClientError)
         return c.json(
           { error: error.message, code: error.code },
           clientErrorStatus(error.kind),
-          HEADERS,
+          PAGE_APP_HEADERS,
         );
       // The send path the RPC routes share refuses with an RPC error (no usable model, say);
       // its status is the answer here too, not a server error.
       if (error instanceof ORPCError && error.status < 500)
-        return c.json({ error: error.message, code: error.code }, error.status as 400, HEADERS);
+        return c.json(
+          { error: error.message, code: error.code },
+          error.status as 400,
+          PAGE_APP_HEADERS,
+        );
       throw error;
     }
   }
@@ -96,7 +112,7 @@ export function mountPageAppRoutes(
         pageId: access.pageId,
       });
       const view: PageAppView = { appId: access.appId, page, approved: access.abilities };
-      return c.json(view, 200, HEADERS);
+      return c.json(view, 200, PAGE_APP_HEADERS);
     }),
   );
 
@@ -118,7 +134,7 @@ export function mountPageAppRoutes(
         version,
         imageId: c.req.param("imageId"),
       });
-      return c.json(image, 200, HEADERS);
+      return c.json(image, 200, PAGE_APP_HEADERS);
     }),
   );
 
@@ -127,11 +143,11 @@ export function mountPageAppRoutes(
       const body = PageAppStateBodySchema.safeParse(
         await jsonBody(c, PAGE_STATE_MAX_BYTES + SMALL_BODY_BYTES),
       );
-      if (!body.success) return c.json({ error: "Invalid values" }, 400, HEADERS);
+      if (!body.success) return c.json({ error: "Invalid values" }, 400, PAGE_APP_HEADERS);
       return c.json(
         await savePageReaderState(deps.prisma, access.actor, access.pageId, body.data.values),
         200,
-        HEADERS,
+        PAGE_APP_HEADERS,
       );
     }),
   );
@@ -139,18 +155,18 @@ export function mountPageAppRoutes(
   app.put(`${PAGE_APP_API_PATH}/abilities`, (c) =>
     withApp(c, async (access) => {
       const body = PageAppAbilitiesBodySchema.safeParse(await jsonBody(c, SMALL_BODY_BYTES));
-      if (!body.success) return c.json({ error: "Invalid abilities" }, 400, HEADERS);
+      if (!body.success) return c.json({ error: "Invalid abilities" }, 400, PAGE_APP_HEADERS);
       const approved = await setPageAppAbilities(deps.prisma, access.appId, body.data.abilities);
-      return c.json({ approved }, 200, HEADERS);
+      return c.json({ approved }, 200, PAGE_APP_HEADERS);
     }),
   );
 
   app.post(`${PAGE_APP_API_PATH}/ask`, (c) =>
     withApp(c, async (access, stillAuthorized) => {
       const body = PageAskInputSchema.safeParse(await jsonBody(c, PAGE_ASK_BODY_BYTES));
-      if (!body.success) return c.json({ error: "Invalid question" }, 400, HEADERS);
+      if (!body.success) return c.json({ error: "Invalid question" }, 400, PAGE_APP_HEADERS);
       if (!access.abilities.includes("ask"))
-        return c.json({ error: "Asking is not allowed for this app" }, 403, HEADERS);
+        return c.json({ error: "Asking is not allowed for this app" }, 403, PAGE_APP_HEADERS);
       // Read before the response starts, so a refusal is still an HTTP error.
       const events = askFromPage(
         deps,
@@ -179,7 +195,7 @@ export function mountPageAppRoutes(
         },
       });
       return new Response(stream, {
-        headers: { ...HEADERS, "content-type": "application/x-ndjson; charset=utf-8" },
+        headers: { ...PAGE_APP_HEADERS, "content-type": "application/x-ndjson; charset=utf-8" },
       });
     }),
   );
@@ -187,14 +203,14 @@ export function mountPageAppRoutes(
   app.delete(PAGE_APP_API_PATH, (c) =>
     withApp(c, async (access) => {
       await revokePageAppToken(deps.prisma, access.appId);
-      return c.json({ ok: true }, 200, HEADERS);
+      return c.json({ ok: true }, 200, PAGE_APP_HEADERS);
     }),
   );
 
   app.get(`${PAGE_APP_API_PATH}/changes`, (c) =>
     withApp(c, async (access, stillAuthorized) => {
       const follow = deps.events.followSpaceChanges;
-      if (!follow) return c.json({ error: "Not found" }, 404, HEADERS);
+      if (!follow) return c.json({ error: "Not found" }, 404, PAGE_APP_HEADERS);
       const stop = new AbortController();
       const ended = c.req.raw.signal;
       ended.addEventListener("abort", () => stop.abort(), { once: true });
@@ -253,7 +269,7 @@ export function mountPageAppRoutes(
       });
       return new Response(body, {
         headers: {
-          ...HEADERS,
+          ...PAGE_APP_HEADERS,
           "content-type": "text/event-stream; charset=utf-8",
           connection: "keep-alive",
         },

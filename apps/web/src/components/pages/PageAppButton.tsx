@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { PageAbility, PageIconColor } from "@rakazo/contracts";
+import { pageWebAppUrl } from "@rakazo/contracts";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -17,6 +18,9 @@ import { useState } from "react";
 import { pageAppIconPngs, pageAppIconSvg, svgDataUrl } from "../../lib/pages/page-app-icon";
 import { desktopBridge } from "../../lib/platform/desktop";
 import { useSave } from "../../lib/query/query";
+import { selectedSpaceId } from "../../lib/query/rpc";
+import { useBoundSpaceId } from "../../lib/query/space-rpc";
+import { isStandalone } from "../../pwa/standalone";
 
 const INSTALLED_KEY = ["desktop", "page-apps"] as const;
 
@@ -28,8 +32,36 @@ type InstallablePage = {
   abilities: PageAbility[];
 };
 
-/** Installs the page as its own app where the desktop can, or opens the app already installed. */
+/**
+ * Installs the page as its own app where the desktop can, or opens the app already installed. A
+ * browser installs it from the page opened on its own, which this opens in a new window. Rakazo
+ * installed as an app keeps that window as one of its own, where the browser offers no install.
+ */
 export function PageAppButton({ page, className }: { page: InstallablePage; className?: string }) {
+  if (desktopBridge()) return <DesktopPageAppButton page={page} className={className} />;
+  return isStandalone() ? null : <BrowserPageAppButton pageId={page.id} className={className} />;
+}
+
+function BrowserPageAppButton({ pageId, className }: { pageId: string; className?: string }) {
+  const { t } = useLingui();
+  const boundSpaceId = useBoundSpaceId();
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className={className}
+      aria-label={t`Install app`}
+      onClick={() => {
+        const spaceId = boundSpaceId === undefined ? selectedSpaceId() : boundSpaceId;
+        window.open(pageWebAppUrl(pageId, spaceId), "_blank", "noopener");
+      }}
+    >
+      <MonitorDown strokeWidth={1.5} />
+    </Button>
+  );
+}
+
+function DesktopPageAppButton({ page, className }: { page: InstallablePage; className?: string }) {
   const { t } = useLingui();
   const bridge = desktopBridge()?.pageApps;
   const [confirming, setConfirming] = useState(false);

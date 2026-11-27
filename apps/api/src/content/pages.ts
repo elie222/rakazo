@@ -109,6 +109,15 @@ async function requirePage(prisma: PrismaClient, actor: Actor, pageId: string) {
   return row;
 }
 
+/** Title, icon and color of the actor's own page, without its code. */
+export async function getPageSummary(
+  prisma: PrismaClient,
+  actor: Actor,
+  pageId: string,
+): Promise<PageSummary> {
+  return pageSummary(await requirePage(prisma, actor, pageId));
+}
+
 export class PageListCursorError extends ClientError {
   constructor() {
     super("BAD_REQUEST", "Invalid page list cursor");

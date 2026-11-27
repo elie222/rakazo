@@ -806,7 +806,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   mountScreenTarget(app, prisma, env.screenProxySecret);
   mountScriptAssets(app);
   mountSharedPages(app, { prisma, artifacts }, requestClientIp);
-  mountPageAppRoutes(app, routerDeps, requestClientIp);
+  mountPageAppRoutes(app, { ...routerDeps, sessionActor }, requestClientIp);
   const auditAuthResponse = createAuthResponseAudit();
   for (const [path, reason] of SYSTEM_CONTEXT_PATHS) {
     app.use(path, (_c, next) => runAsSystem(reason, next));
