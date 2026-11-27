@@ -57,6 +57,9 @@ import { SharedPagePage } from "./pages/SharedPage";
 import { ShellPage } from "./pages/Shell";
 import { AppRailLayout } from "./pages/shell/app-rail";
 
+const PageAppPage = lazyComponent(() =>
+  import("./pages/PageAppPage").then((module) => module.default),
+);
 const PageReviewHost = lazyComponent(() =>
   import("./components/pages/PageReviewHost").then((module) => module.default),
 );
@@ -243,6 +246,19 @@ function SessionApp() {
               />
               <Route path="/reset-password" element={<PasswordResetPage />} />
               <Route path="/p/:slugToken" element={<SharedPagePage />} />
+              <Route
+                path="/page/:pageId"
+                element={
+                  user ? (
+                    <PageAppPage />
+                  ) : (
+                    <Navigate
+                      to={`/sign-in?next=${encodeURIComponent(pathname + search)}`}
+                      replace
+                    />
+                  )
+                }
+              />
               <Route
                 path="/review/:pageId?"
                 element={

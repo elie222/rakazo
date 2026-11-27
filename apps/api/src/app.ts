@@ -126,6 +126,7 @@ import { localSignupAdmitter, mountLocalComputerHost } from "./computers/local-s
 import { mountScreenTarget } from "./computers/screen-proxy.js";
 import { storeInboundAttachment } from "./content/artifacts.js";
 import { mountPageAppRoutes } from "./content/page-app-routes.js";
+import { mountPageWebApp } from "./content/page-web-app.js";
 import { mountSharedPages } from "./content/shared-pages.js";
 import { apiEmail, emailErrorLogger } from "./email/email.js";
 import { mountEmailInboundRoute } from "./email/email-inbound.js";
@@ -805,6 +806,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   mountScriptAssets(app);
   mountSharedPages(app, { prisma, artifacts }, requestClientIp);
   mountPageAppRoutes(app, { prisma, secrets, artifacts, webOrigin: env.webOrigin, events });
+  mountPageWebApp(app, { prisma, sessionActor });
   const auditAuthResponse = createAuthResponseAudit();
   for (const [path, reason] of SYSTEM_CONTEXT_PATHS) {
     app.use(path, (_c, next) => runAsSystem(reason, next));
