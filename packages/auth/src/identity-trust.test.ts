@@ -139,7 +139,10 @@ function fixture({
     member: { findMany: vi.fn(async () => []) },
     messagingIdentity: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     messagingLinkCode: { deleteMany: vi.fn(async () => ({ count: 0 })) },
-    pageApp: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    pageApp: {
+      deleteMany: vi.fn(async () => ({ count: 0 })),
+      updateMany: vi.fn(async () => ({ count: 0 })),
+    },
     account: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     userDevice: { updateMany: vi.fn(async () => ({ count: 0 })) },
     passkey: {
