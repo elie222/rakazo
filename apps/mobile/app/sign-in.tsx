@@ -80,10 +80,17 @@ export default function SignIn() {
   const [codeSent, setCodeSent] = useState(false);
   const [emailStep, setEmailStep] = useState(false);
   const [passkeys, setPasskeys] = useState(false);
+  // A server with closed signups keeps its people on sign-in; older servers omit the flag.
+  const signupsClosed = reset !== null && reset.registrationOpen === false;
 
   useEffect(() => {
     setPasswordVisible(false);
   }, [mode, apiBase]);
+
+  useEffect(() => {
+    if (!signupsClosed) return;
+    setMode((current) => (current === "up" ? "in" : current));
+  }, [signupsClosed]);
 
   useEffect(() => {
     setEmailStep(false);
@@ -645,41 +652,47 @@ export default function SignIn() {
                             </Text>
                           </Pressable>
                         ) : null}
-                        <View
-                          style={{
-                            flexDirection: "row",
-                            justifyContent: "center",
-                            alignItems: "center",
-                            marginTop: 24,
-                          }}
-                        >
-                          <Text style={{ color: tokens.mutedForeground, fontSize: 15 }}>
-                            {mode === "in"
-                              ? t`Don’t have an account?`
-                              : mode === "up"
-                                ? t`Already have an account?`
-                                : ""}
-                          </Text>
-                          <Pressable
-                            accessibilityRole="button"
-                            hitSlop={8}
-                            onPress={() => {
-                              setMode((current) => (current === "in" ? "up" : "in"));
-                              setError(null);
+                        {signupsClosed && mode !== "forgot" ? null : (
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              justifyContent: "center",
+                              alignItems: "center",
+                              marginTop: 24,
                             }}
-                            style={{ marginLeft: 5 }}
                           >
-                            <Text
-                              style={{ color: tokens.foreground, fontSize: 15, fontWeight: "600" }}
-                            >
+                            <Text style={{ color: tokens.mutedForeground, fontSize: 15 }}>
                               {mode === "in"
-                                ? t`Sign up`
+                                ? t`Don’t have an account?`
                                 : mode === "up"
-                                  ? t`Sign in`
-                                  : t`Back to sign in`}
+                                  ? t`Already have an account?`
+                                  : ""}
                             </Text>
-                          </Pressable>
-                        </View>
+                            <Pressable
+                              accessibilityRole="button"
+                              hitSlop={8}
+                              onPress={() => {
+                                setMode((current) => (current === "in" ? "up" : "in"));
+                                setError(null);
+                              }}
+                              style={{ marginLeft: 5 }}
+                            >
+                              <Text
+                                style={{
+                                  color: tokens.foreground,
+                                  fontSize: 15,
+                                  fontWeight: "600",
+                                }}
+                              >
+                                {mode === "in"
+                                  ? t`Sign up`
+                                  : mode === "up"
+                                    ? t`Sign in`
+                                    : t`Back to sign in`}
+                              </Text>
+                            </Pressable>
+                          </View>
+                        )}
                       </>
                     ) : null}
                   </>

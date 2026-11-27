@@ -392,6 +392,24 @@ it("signs in with an emailed code when the password is blank", async () => {
   expect(button("Working…").disabled).toBe(true);
 });
 
+it("hides the password on sign-in from an invite link", async () => {
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue(codeCapabilities);
+  vi.mocked(authClient.emailOtp.sendVerificationOtp).mockResolvedValue({
+    data: { success: true },
+    error: null,
+  } as never);
+  await render("in", `/?next=${encodeURIComponent("/join/invitation-1")}`);
+  expect(host.querySelector('input[type="password"]')).toBeNull();
+  expect(host.textContent).not.toContain("Forgot password?");
+  await enter(host.querySelector('input[name="email"]'), "person@example.com");
+  await submit();
+  expect(authClient.emailOtp.sendVerificationOtp).toHaveBeenCalledWith({
+    email: "person@example.com",
+    type: "sign-in",
+  });
+  expect(host.querySelector("h1")!.textContent).toBe("Check your email");
+});
+
 it("keeps an invite as the destination when switching to sign-in", async () => {
   vi.mocked(fetchAuthCapabilities).mockResolvedValue(codeCapabilities);
   await render("up", `/?next=${encodeURIComponent("/invite/token-1")}`);

@@ -54,7 +54,11 @@ export const authCapabilitiesSchema = z.object({
   resetUrl: z.string().url().nullable(),
   // Older servers omit this field; clients treat omission as unavailable.
   emailCode: z.boolean().optional(),
-  /** Whether this request may create an account on the app-managed local stack. Omitted by other servers. */
+  /**
+   * Whether this request may create an account. The app-managed local stack answers
+   * per-request; other deployments set it from their signup policy. Older servers
+   * omit it, and clients treat omission as open.
+   */
   registrationOpen: z.boolean().optional(),
   billing: z.boolean().optional(),
   /** WebAuthn relying party ID; null or omitted when this server does not offer passkeys. */
