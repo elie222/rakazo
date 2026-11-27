@@ -94,6 +94,7 @@ function OwnerPages({
   );
   const actions = pageMutationOptions(queries, queryClient);
   const pin = useMutation(actions.pin);
+  const chatUpdates = useMutation(actions.setChatUpdates);
   const remove = useMutation(actions.remove);
   const rename = useMutation(actions.rename);
   const [deleting, setDeleting] = useState<PageSummary | null>(null);
@@ -209,7 +210,7 @@ function OwnerPages({
         >
           <MoreHorizontal className="size-4" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuItem onClick={() => openPage(page.id)}>
             <Trans>Open</Trans>
           </DropdownMenuItem>
@@ -227,6 +228,16 @@ function OwnerPages({
             }}
           >
             {page.pinned ? <Trans>Unpin</Trans> : <Trans>Pin</Trans>}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={chatUpdates.isPending}
+            onClick={() => chatUpdates.mutate({ pageId: page.id, chatUpdates: !page.chatUpdates })}
+          >
+            {page.chatUpdates ? (
+              <Trans>Mute updates in chat</Trans>
+            ) : (
+              <Trans>Show updates in chat</Trans>
+            )}
           </DropdownMenuItem>
           <DropdownMenuItem variant="destructive" onClick={() => setDeleting(page)}>
             <Trans>Delete</Trans>
@@ -255,6 +266,10 @@ function OwnerPages({
   const actionError = rename.isError ? (
     <p role="alert" className="px-2 text-label text-destructive">
       <Trans>Could not rename this page. Try again.</Trans>
+    </p>
+  ) : chatUpdates.isError ? (
+    <p role="alert" className="px-2 text-label text-destructive">
+      <Trans>Could not change this page's chat updates. Try again.</Trans>
     </p>
   ) : pin.isError ? (
     <p role="alert" className="px-2 text-label text-destructive">

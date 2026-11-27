@@ -53,6 +53,8 @@ export const PageSummarySchema = z.strictObject({
   visibility: PageVisibilitySchema,
   currentVersion: z.number().int().positive(),
   pinned: z.boolean(),
+  /** Whether the bot's later saves of this page post a card in the chat. */
+  chatUpdates: z.boolean(),
   createdAt: IsoDate,
   updatedAt: IsoDate,
 });

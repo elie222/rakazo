@@ -55,6 +55,16 @@ export function pageMutationOptions(queries: SpaceQueries, queryClient: QueryCli
       },
       onError: reconcile,
     },
+    setChatUpdates: {
+      mutationFn: (input: Parameters<typeof queries.pages.setChatUpdates.call>[0]) =>
+        queries.pages.setChatUpdates.call(input),
+      onSuccess: (summary: PageSummary, input: { pageId: string }) => {
+        patch(input.pageId, { chatUpdates: summary.chatUpdates });
+        // The menu reads the list row, so it stays disabled until the row shows the change.
+        return relist();
+      },
+      onError: reconcile,
+    },
     remove: {
       // NOT_FOUND: another tab deleted it first, which is the outcome asked for.
       mutationFn: (input: Parameters<typeof queries.pages.remove.call>[0]) =>

@@ -131,6 +131,8 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     groupId: Id.nullable(),
     title: PageTitleSchema,
     pinnedAt: IsoDate.nullable(),
+    /** Absent in archives from before pages could be muted, which posted every update. */
+    chatUpdates: z.boolean().optional(),
     currentVersion: PageVersionNumber,
     createdAt: IsoDate,
     updatedAt: IsoDate,

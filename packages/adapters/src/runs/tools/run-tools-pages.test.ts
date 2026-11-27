@@ -17,7 +17,7 @@ const source = (heading: string) =>
 
 function context(
   tx: Record<string, unknown>,
-  existing?: { currentVersion: number; visibility?: PageVisibility },
+  existing?: { currentVersion: number; visibility?: PageVisibility; chatUpdates?: boolean },
   secrets: string[] = [],
   skipApprovals = false,
 ) {
@@ -30,6 +30,7 @@ function context(
               title: "Plan",
               visibility: existing.visibility ?? "private",
               currentVersion: existing.currentVersion,
+              chatUpdates: existing.chatUpdates ?? true,
               versions: [{ source: source("Plan") }],
             }
           : null,
@@ -194,6 +195,27 @@ describe("save_page", () => {
     expect(JSON.stringify(tx.pageVersion.create.mock.calls)).not.toContain(secret);
     expect(JSON.stringify(publishMessage.mock.calls)).not.toContain(secret);
   });
+
+  it.each([true, false])(
+    "posts an update's card only while chat updates are on (%s)",
+    async (on) => {
+      const tx = {
+        page: {
+          updateMany: vi.fn(async () => ({ count: 1 })),
+          findUniqueOrThrow: vi.fn(async () => ({ title: "Plan" })),
+        },
+        pageVersion: { create: vi.fn() },
+      };
+      const result = (await pageTools.save_page!(
+        context(tx, { currentVersion: 1, chatUpdates: on }),
+        call({ pageId: "page-1", edits: [{ find: "Hi", replace: "Hello" }] }),
+      )) as Record<string, unknown>;
+      expect(result).toMatchObject({ pageId: "page-1", version: 2 });
+      expect(publishMessage).toHaveBeenCalledTimes(on ? 1 : 0);
+      expect("mention" in result).toBe(on);
+      expect("chatUpdatesOff" in result).toBe(!on);
+    },
+  );
 });
 
 describe("saving a shared page", () => {

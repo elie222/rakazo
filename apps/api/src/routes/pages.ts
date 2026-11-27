@@ -20,6 +20,7 @@ import {
   pinPage,
   removePage,
   renamePage,
+  setPageChatUpdates,
   setPageVisibility,
 } from "../content/pages.js";
 import type { RouterContext } from "./context.js";
@@ -100,6 +101,9 @@ export function pagesRoutes(ctx: RouterContext) {
       ),
       pin: authed.pages.pin.handler(({ context, input }) =>
         pinPage(deps.prisma, context.actor, input.pageId, input.pinned),
+      ),
+      setChatUpdates: authed.pages.setChatUpdates.handler(({ context, input }) =>
+        setPageChatUpdates(deps.prisma, context.actor, input.pageId, input.chatUpdates),
       ),
       remove: authed.pages.remove.handler(({ context, input }) =>
         removePage(pageDeps(), context.actor, input.pageId),

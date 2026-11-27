@@ -53,6 +53,7 @@ const summarySelect = {
   visibility: true,
   currentVersion: true,
   pinnedAt: true,
+  chatUpdates: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.PageSelect;
@@ -69,6 +70,7 @@ function pageSummary(row: SummaryRow): PageSummary {
       row.visibility === "link" || row.visibility === "people" ? row.visibility : "private",
     currentVersion: row.currentVersion,
     pinned: row.pinnedAt !== null,
+    chatUpdates: row.chatUpdates,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -258,6 +260,21 @@ export async function pinPage(prisma: PrismaClient, actor: Actor, pageId: string
         data: { pinnedAt: pinned ? new Date() : null },
         select: summarySelect,
       }),
+    ),
+  );
+}
+
+export async function setPageChatUpdates(
+  prisma: PrismaClient,
+  actor: Actor,
+  pageId: string,
+  chatUpdates: boolean,
+) {
+  const row = await requirePage(prisma, actor, pageId);
+  if (row.chatUpdates === chatUpdates) return pageSummary(row);
+  return pageSummary(
+    await stillThere(
+      prisma.page.update({ where: { id: pageId }, data: { chatUpdates }, select: summarySelect }),
     ),
   );
 }

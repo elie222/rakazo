@@ -691,6 +691,7 @@ class AccountImporter implements ArchiveSink {
             groupId: space.optional(record.groupId),
             title: record.title,
             pinnedAt: date(record.pinnedAt),
+            chatUpdates: record.chatUpdates ?? true,
             currentVersion: record.currentVersion,
             createdAt: new Date(record.createdAt),
             updatedAt: new Date(record.updatedAt),

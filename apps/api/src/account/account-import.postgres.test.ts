@@ -698,8 +698,14 @@ describePostgres("account import (PostgreSQL)", () => {
     {
       currentVersion = 1,
       title = "Plan",
+      chatUpdates,
       source = (version: number) => `export default () => <Page title="Draft ${version}" />;`,
-    }: { currentVersion?: number; title?: string; source?: (version: number) => string } = {},
+    }: {
+      currentVersion?: number;
+      title?: string;
+      chatUpdates?: boolean;
+      source?: (version: number) => string;
+    } = {},
   ): AccountExportRecord[] => [
     ...sourceRecords(),
     {
@@ -709,6 +715,7 @@ describePostgres("account import (PostgreSQL)", () => {
       groupId: null,
       title,
       pinnedAt: null,
+      ...(chatUpdates === undefined ? {} : { chatUpdates }),
       currentVersion,
       createdAt: at,
       updatedAt: at,
@@ -729,6 +736,7 @@ describePostgres("account import (PostgreSQL)", () => {
       where: { spaceId: result.spaces[0]!.id },
       select: {
         title: true,
+        chatUpdates: true,
         currentVersion: true,
         versions: { orderBy: { version: "asc" }, select: { version: true, title: true } },
       },
@@ -746,6 +754,13 @@ describePostgres("account import (PostgreSQL)", () => {
       currentVersion: 1,
       versions: [{ version: 1 }],
     });
+  });
+
+  it("keeps a muted page muted, and shows updates of a page from an older archive", async () => {
+    expect(await importedPage(pageRecords([1], { chatUpdates: false }))).toMatchObject({
+      chatUpdates: false,
+    });
+    expect(await importedPage(pageRecords([1]))).toMatchObject({ chatUpdates: true });
   });
 
   it("imports a version today's check refuses, so it opens on its own error", async () => {
