@@ -1943,6 +1943,20 @@ describe("tool step outcomes", () => {
         sibling: 7,
       });
     }
+    for (const msg of [
+      "Bearer foo\\Bearer\nopaque-123",
+      "Bearer\nfoo\\Bearer\nopaque-123",
+      "Bearer foo\\xBearer\nopaque-123",
+      "Bearer\nfoo\\xBearer\nopaque-123",
+      "Bearer foo\\xsecret: opaque-123",
+    ]) {
+      const payload = JSON.stringify({ msg, sibling: 7 });
+      for (const read of [kept, replay, failed, sanitizeError, sanitizeSensitiveText]) {
+        const parsed = JSON.parse(read(payload) ?? "");
+        expect(parsed.sibling).toBe(7);
+        expect(parsed.msg).not.toContain("opaque-123");
+      }
+    }
     expect(sanitizeConnectorError(new Error(String.raw`Bearer\n[redacted]\TokenTail`))).toBe(
       "Bearer [redacted]",
     );
