@@ -37,9 +37,9 @@ export function mountPageWebApp(
     c: Context,
     handle: (page: PageSummary, actor: Actor) => Promise<Response>,
   ): Promise<Response> {
-    const actor = await deps.sessionActor(c.req.raw, c.req.query(PAGE_WEB_APP_SPACE_PARAM));
-    if (!actor) return c.json({ error: "Not found" }, 404, PAGE_APP_HEADERS);
     try {
+      const actor = await deps.sessionActor(c.req.raw, c.req.query(PAGE_WEB_APP_SPACE_PARAM));
+      if (!actor) return c.json({ error: "Not found" }, 404, PAGE_APP_HEADERS);
       const page = await runAsTenant(actor, () =>
         getPageSummary(deps.prisma, actor, c.req.param("pageId") ?? ""),
       );

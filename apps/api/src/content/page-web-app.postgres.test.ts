@@ -1,6 +1,6 @@
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { asSystem, createDb } from "@rakazo/db";
+import { asSystem, createDb, IsolationError } from "@rakazo/db";
 import { Hono } from "hono";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mountPageWebApp } from "./page-web-app.js";
@@ -53,6 +53,7 @@ describePostgres("page web app manifest and icons (PostgreSQL)", () => {
       prisma,
       sessionActor: async (request, requested) => {
         const userId = request.headers.get("x-test-user");
+        if (userId === `removed-${suffix}`) throw new IsolationError();
         return userId && requested === spaceId ? actorFor(userId) : null;
       },
     });
@@ -104,5 +105,13 @@ describePostgres("page web app manifest and icons (PostgreSQL)", () => {
       get(`/api/v1/pages/missing-${suffix}/app.webmanifest?space=${spaceId}`),
     ]).then((responses) => responses.map((response) => response.status));
     expect(statuses).toEqual([404, 404, 404, 404]);
+  });
+
+  it("answers someone removed from the page's Space with 404", async () => {
+    const response = await get(
+      `/api/v1/pages/${pageId}/app.webmanifest?space=${spaceId}`,
+      `removed-${suffix}`,
+    );
+    expect(response.status).toBe(404);
   });
 });
