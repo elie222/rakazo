@@ -1,3 +1,5 @@
+import type { AppIcon } from "./app-icons.js";
+
 /**
  * `unsupported` covers an unpackaged build and a repository with no published releases, which is
  * the normal state for a fork. It is not an error the user needs to act on. Automatic checks stay
@@ -94,6 +96,12 @@ export interface RakazoDesktop {
   /** Optional for older desktop releases. Returns false when the native write is refused. */
   clipboard?: {
     writeText: (text: string) => Promise<boolean>;
+  };
+  /** Absent on older desktop releases. */
+  appIcon?: {
+    get: () => Promise<AppIcon>;
+    /** False when the icon could not be applied or saved. */
+    set: (icon: AppIcon) => Promise<boolean>;
   };
   /** Optional for compatibility with older desktop releases. */
   badge?: {

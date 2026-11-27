@@ -152,16 +152,8 @@ describeWithDatabase("Composio catalog reconciliation", () => {
 
   it("keeps a second connected account for the same provider and renames it", async () => {
     const cookie = await signup(app, `multi-account-${stamp}@rakazo.test`, "Multi Account");
-    const first = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
-      connectorId: "composio",
-      provider: "GMAIL",
-      displayName: "Personal",
-    });
-    const second = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
-      connectorId: "composio",
-      provider: "GMAIL",
-      displayName: "Work",
-    });
+    const first = await linkGmail(cookie, "Personal");
+    const second = await linkGmail(cookie, "Work");
     await expect(
       rpc<Array<{ id: string; displayName: string; status: string }>>(
         app,
@@ -414,11 +406,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
   async function connectedGmail(label: string) {
     const cookie = await signup(app, `${label}-${stamp}@rakazo.test`, label);
     const actor = await rpc<Actor>(app, cookie, "me");
-    const { connectionId } = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
-      connectorId: "composio",
-      provider: "GMAIL",
-      displayName: "Gmail",
-    });
+    const { connectionId } = await linkGmail(cookie, "Gmail");
     const row = await asSystem(handles.prisma).connection.findUniqueOrThrow({
       where: { id: connectionId },
       select: { providerRef: true },
@@ -762,16 +750,8 @@ describeWithDatabase("Composio catalog reconciliation", () => {
 
   it("marks a connected account Composio reports dead as needing reconnect", async () => {
     const cookie = await signup(app, `reconnect-${stamp}@rakazo.test`, "Reconnect");
-    const work = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
-      connectorId: "composio",
-      provider: "GMAIL",
-      displayName: "Work",
-    });
-    const personal = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
-      connectorId: "composio",
-      provider: "GMAIL",
-      displayName: "Personal",
-    });
+    const work = await linkGmail(cookie, "Work");
+    const personal = await linkGmail(cookie, "Personal");
     const row = await asSystem(handles.prisma).connection.findUniqueOrThrow({
       where: { id: work.connectionId },
     });
@@ -853,31 +833,33 @@ describeWithDatabase("Composio catalog reconciliation", () => {
         },
       ],
     };
-    const tools = (await handles.connectors.discoverTools(context)).filter(
-      (candidate) => candidate.route?.connectorId === "composio",
-    );
-    expect(tools.map((tool) => tool.name)).toEqual([
-      "GMAIL_FETCH_EMAILS",
-      "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID",
-      "GMAIL_FETCH_MESSAGE_BY_THREAD_ID",
-      "GMAIL_SEND_EMAIL",
-      "GMAIL_CREATE_EMAIL_DRAFT",
-      "GMAIL_LIST_LABELS",
-    ]);
-    const fetchTool = tools.find((tool) => tool.name === "GMAIL_FETCH_EMAILS");
-    expect(fetchTool).toBeDefined();
-    const events = [];
-    for await (const event of handles.connectors.execute(
-      {
-        tool: fetchTool!.name,
-        args: { query: "from:teammate", max_results: 5 },
-        executionId: "composio-product-execution",
-        route: fetchTool!.route,
-      },
-      context,
-    )) {
-      events.push(event);
-    }
+    const events: unknown[] = [];
+    await runAsSystem("background job run.continue", async () => {
+      const tools = (await handles.connectors.discoverTools(context)).filter(
+        (candidate) => candidate.route?.connectorId === "composio",
+      );
+      expect(tools.map((tool) => tool.name)).toEqual([
+        "GMAIL_FETCH_EMAILS",
+        "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID",
+        "GMAIL_FETCH_MESSAGE_BY_THREAD_ID",
+        "GMAIL_SEND_EMAIL",
+        "GMAIL_CREATE_EMAIL_DRAFT",
+        "GMAIL_LIST_LABELS",
+      ]);
+      const fetchTool = tools.find((tool) => tool.name === "GMAIL_FETCH_EMAILS");
+      expect(fetchTool).toBeDefined();
+      for await (const event of handles.connectors.execute(
+        {
+          tool: fetchTool!.name,
+          args: { query: "from:teammate", max_results: 5 },
+          executionId: "composio-product-execution",
+          route: fetchTool!.route,
+        },
+        context,
+      )) {
+        events.push(event);
+      }
+    });
     expect(events).toContainEqual(
       expect.objectContaining({
         type: "result",
@@ -949,29 +931,31 @@ describeWithDatabase("Composio catalog reconciliation", () => {
         },
       ],
     };
-    const tool = (await handles.connectors.discoverTools(context)).find(
-      (candidate) => candidate.route?.connectorId === "pipedream",
-    );
-    expect(tool).toMatchObject({
-      name: expect.stringMatching(/^notes.write__/),
-      route: {
-        connectionId: started.connectionId,
-        resourceRevision: stored.providerRef,
-        toolName: "notes.write",
-      },
+    const events: unknown[] = [];
+    await runAsSystem("background job run.continue", async () => {
+      const tool = (await handles.connectors.discoverTools(context)).find(
+        (candidate) => candidate.route?.connectorId === "pipedream",
+      );
+      expect(tool).toMatchObject({
+        name: expect.stringMatching(/^notes.write__/),
+        route: {
+          connectionId: started.connectionId,
+          resourceRevision: stored.providerRef,
+          toolName: "notes.write",
+        },
+      });
+      for await (const event of handles.connectors.execute(
+        {
+          tool: tool!.name,
+          args: { text: "product-pipedream-ok" },
+          executionId: "pipedream-product-execution",
+          route: tool!.route,
+        },
+        context,
+      )) {
+        events.push(event);
+      }
     });
-    const events = [];
-    for await (const event of handles.connectors.execute(
-      {
-        tool: tool!.name,
-        args: { text: "product-pipedream-ok" },
-        executionId: "pipedream-product-execution",
-        route: tool!.route,
-      },
-      context,
-    )) {
-      events.push(event);
-    }
     expect(events).toContainEqual(expect.objectContaining({ type: "result" }));
 
     await rpc(app, cookie, "connections/revoke", { connectionId: started.connectionId });
@@ -1189,25 +1173,26 @@ describeWithDatabase("Composio catalog reconciliation", () => {
       userId: actor.userId,
       signal: new AbortController().signal,
     };
-    const tools = await provider.discoverTools(adapterContext);
-    const tool = tools.find((candidate) => candidate.route?.toolName === "query_hero");
-    expect(tool).toMatchObject({
-      name: "hero",
-      readOnly: true,
+    const events: unknown[] = [];
+    await runAsSystem("background job run.continue", async () => {
+      const tools = await provider.discoverTools(adapterContext);
+      const tool = tools.find((candidate) => candidate.route?.toolName === "query_hero");
+      expect(tool).toMatchObject({
+        name: "hero",
+        readOnly: true,
+      });
+      for await (const event of provider.execute(
+        {
+          tool: tool!.name,
+          args: { episode: "EMPIRE" },
+          executionId: "graphql-call-1",
+          route: tool!.route,
+        },
+        adapterContext,
+      )) {
+        events.push(event);
+      }
     });
-
-    const events = [];
-    for await (const event of provider.execute(
-      {
-        tool: tool!.name,
-        args: { episode: "EMPIRE" },
-        executionId: "graphql-call-1",
-        route: tool!.route,
-      },
-      adapterContext,
-    )) {
-      events.push(event);
-    }
     expect(JSON.stringify(events)).toContain("ok");
     expect(thirdParties.records).toContainEqual(
       expect.objectContaining({
@@ -1218,6 +1203,18 @@ describeWithDatabase("Composio catalog reconciliation", () => {
 
     await rpc(app, cookie, "capabilities/remove", { id: install.id });
   });
+
+  async function linkGmail(cookie: string, displayName: string) {
+    const connection = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
+      connectorId: "composio",
+      provider: "GMAIL",
+      displayName,
+    });
+    await expect(rpc(app, cookie, "connections/complete", connection)).resolves.toMatchObject({
+      status: "connected",
+    });
+    return connection;
+  }
 
   async function createConnection(owner: Actor, provider: string) {
     return asSystem(handles.prisma).connection.create({

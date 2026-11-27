@@ -61,6 +61,10 @@
         "to": "web"
       },
       {
+        "from": "assets/app-icons",
+        "to": "app-icons"
+      },
+      {
         "from": "../../infra/compose/docker-compose.images.yml",
         "to": "stack/docker-compose.images.yml"
       },

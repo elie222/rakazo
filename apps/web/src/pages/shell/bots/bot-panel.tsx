@@ -279,16 +279,17 @@ export function BotSettings({
 
   const {
     selectedModel,
-    selectedModelKey,
+    shownKey,
     choices: modelChoices,
     thinkingLevels: thinkingOptions,
     defaultThinkingLevel,
+    savedModelKey,
+    savedThinkingLevel,
   } = botModelState({
     credentials,
     catalog: catalog.map(localizeModelEntry),
     me,
     modelKey,
-    spaceDefaultLabel: t`Space default`,
   });
 
   async function executeSave(
@@ -660,15 +661,16 @@ export function BotSettings({
                 ids={ids}
                 containerRef={modelRef}
                 choices={modelChoices}
-                value={selectedModelKey}
+                value={shownKey}
                 onModelChange={(key) => {
-                  setModelKey(key);
+                  setModelKey(savedModelKey(key));
                   setThinkingLevel("");
                 }}
                 thinkingOptions={thinkingOptions}
-                thinkingLevel={thinkingLevel}
-                defaultThinkingLevel={defaultThinkingLevel}
-                onThinkingLevelChange={setThinkingLevel}
+                thinkingLevel={(thinkingLevel || defaultThinkingLevel) as ThinkingLevel}
+                onThinkingLevelChange={(level) =>
+                  setThinkingLevel(savedThinkingLevel(level as ThinkingLevel) ?? "")
+                }
               />
               <SwitchRow
                 id={`${ids}-notify-finish`}

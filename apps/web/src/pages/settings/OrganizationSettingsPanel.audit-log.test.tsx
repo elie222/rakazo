@@ -209,6 +209,7 @@ it("keeps the log off the organization page until Activity log is chosen, and Ba
   expect(body.querySelector('button[aria-label="Organization options"]')).toBeNull();
   expect([...body.querySelectorAll("button")].map((each) => each.textContent)).toEqual([
     "Members3",
+    "Shared logins",
   ]);
   expect(container.querySelector('[data-testid="audit-log"]')).toBeNull();
   expect(api.events).not.toHaveBeenCalled();

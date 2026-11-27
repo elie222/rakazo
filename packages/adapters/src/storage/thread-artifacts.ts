@@ -457,7 +457,10 @@ async function storeHiddenArtifact(
       },
     })
     .catch(async (error) => {
-      await deps.artifacts.remove(stored.id, context).catch(() => undefined);
+      await bestEffort(
+        "remove a hidden artifact after its row could not be saved",
+        deps.artifacts.remove(stored.id, context),
+      );
       throw error;
     });
   return row.id;

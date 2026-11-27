@@ -212,13 +212,26 @@ export type PluginTextReader = (
   maxBytes: number,
   signal?: AbortSignal,
 ) => Promise<string>;
-const readPublicText: PluginTextReader = async (url, maxBytes, signal) =>
-  (await fetchSafeWebText(url, { maxBytes, signal })).body;
+/**
+ * Anonymous calls to the GitHub API share a small hourly quota per address, so an operator can
+ * set a token for them. It goes to that API only, and the fetch drops it on a redirect elsewhere.
+ */
+export function pluginSourceHeaders(
+  url: string,
+  token = process.env.PLUGIN_GITHUB_TOKEN?.trim(),
+): Record<string, string> | undefined {
+  return token && new URL(url).origin === "https://api.github.com"
+    ? { authorization: `Bearer ${token}` }
+    : undefined;
+}
+
+export const readPublicPluginText: PluginTextReader = async (url, maxBytes, signal) =>
+  (await fetchSafeWebText(url, { maxBytes, signal, headers: pluginSourceHeaders(url) })).body;
 
 export async function fetchGitHubRepo(
   ref: PluginSourceRef,
   signal?: AbortSignal,
-  read: PluginTextReader = readPublicText,
+  read: PluginTextReader = readPublicPluginText,
 ): ReturnType<PluginRepoFetcher> {
   const url = new URL(ref.gitUrl);
   if (url.hostname !== "github.com")

@@ -14,7 +14,7 @@ import { configureProviderTransactionPool, runProviderTransaction } from "@rakaz
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
-import { createRouter, handle } from "../router-test-support.js";
+import { appHandler, createRouter, handle } from "../router-test-support.js";
 
 describe("connections.complete", () => {
   it.each([
@@ -100,19 +100,17 @@ describe("connections.complete", () => {
       const connector = settings
         .providers()
         .find((provider) => provider.describe().id === "composio");
-      const handler = new RPCHandler(
-        createRouter({
-          prisma,
-          connectors: { managed: () => connector },
-          env: {
-            defaultProvider: "fake",
-            defaultModel: "fake-model",
-            webOrigin: "http://127.0.0.1:5173",
-            screenProxySecret: "fake-test-secret",
-            sandboxProvider: "fake",
-          },
-        } as unknown as RouterDeps),
-      );
+      const handler = appHandler({
+        prisma,
+        connectors: { managed: () => connector },
+        env: {
+          defaultProvider: "fake",
+          defaultModel: "fake-model",
+          webOrigin: "http://127.0.0.1:5173",
+          screenProxySecret: "fake-test-secret",
+          sandboxProvider: "fake",
+        },
+      } as unknown as RouterDeps);
       const response = await handle(
         handler,
         new Request(`http://127.0.0.1/rpc/connections/${operation}`, {
@@ -705,7 +703,9 @@ describe("connections.complete", () => {
 
   it("keeps the app-only ref while a sibling authorization for the same app is unresolved", async () => {
     const { complete, connector, connection, row } = pollFixture("connected");
-    connection.findMany.mockResolvedValue([{ providerRef: "gmail", status: "pending" }] as never);
+    connection.findMany.mockResolvedValue([
+      { provider: "gmail", providerRef: "gmail", status: "pending" },
+    ] as never);
     Object.assign(connector, { resolveConnectedAccountId: vi.fn(async () => "account-2") });
 
     await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
@@ -714,11 +714,27 @@ describe("connections.complete", () => {
 
   it("stores the account id beside an abandoned sibling attempt", async () => {
     const { complete, connector, connection, row } = pollFixture("connected");
-    connection.findMany.mockResolvedValue([{ providerRef: null, status: "error" }] as never);
+    connection.findMany.mockResolvedValue([
+      { provider: "gmail", providerRef: null, status: "error" },
+    ] as never);
     Object.assign(connector, { resolveConnectedAccountId: vi.fn(async () => "account-1") });
 
     await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
     expect(row.providerRef).toBe("account-1");
+  });
+
+  it("keeps a second personal account pending when its account reference is ambiguous", async () => {
+    const { complete, connector, connection, row } = pollFixture("pending");
+    connection.findMany.mockResolvedValue([
+      { provider: "gmail", providerRef: "existing-account", status: "connected" },
+    ] as never);
+    Object.assign(connector, {
+      resolveConnectedAccountId: async (_user: string, _app: string, ref: string) =>
+        ref === "existing-account" ? ref : undefined,
+    });
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "pending" } } });
+    expect(row.providerRef).toBe("gmail");
   });
 
   it("stores the connected account a request id resolves to", async () => {
@@ -738,6 +754,19 @@ describe("connections.complete", () => {
 
     await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
     expect(row.providerRef).toBe("account-1");
+  });
+
+  it("retries an identity lookup failure before connecting the account", async () => {
+    const { complete, connector, row } = pollFixture("pending");
+    row.providerRef = "request-1";
+    Object.assign(connector, {
+      resolveConnectedAccountId: async () => "account-1",
+      connectedAccountIdentity: vi
+        .fn(async () => "fixture@example.test")
+        .mockRejectedValueOnce(new Error("identity unavailable")),
+    });
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "pending" } } });
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
   });
 
   it("leaves the row for the next poll when the provider cannot be asked for the account", async () => {
@@ -847,7 +876,7 @@ describe("connections.complete", () => {
     const revokeUnreferencedAccounts = vi.fn(async () => undefined);
     Object.assign(connector, { revokeUnreferencedAccounts });
     // A sibling is still connecting and has only the app's name for a reference.
-    connection.findMany.mockResolvedValue([{ providerRef: "gmail" }] as never);
+    connection.findMany.mockResolvedValue([{ provider: "gmail", providerRef: "gmail" }] as never);
 
     await expect(complete()).resolves.toMatchObject({ body: { json: { status: "revoked" } } });
     expect(revokeUnreferencedAccounts).not.toHaveBeenCalled();
@@ -867,7 +896,9 @@ describe("connections.complete", () => {
 
     // With every sibling's account known, the poll removes the rest itself and records nothing.
     jobs.enqueueIn.mockClear();
-    connection.findMany.mockResolvedValue([{ providerRef: "account-1" }] as never);
+    connection.findMany.mockResolvedValue([
+      { provider: "gmail", providerRef: "account-1" },
+    ] as never);
     await complete();
     expect(revokeUnreferencedAccounts).toHaveBeenCalledWith(
       "gmail",

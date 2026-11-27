@@ -26,6 +26,9 @@ export * from "./browser/browser-provider-factory.js";
 export * from "./browser/browser-tools.js";
 export * from "./browser/fake-browser.js";
 export * from "./browser/page-browser-session.js";
+export type { ProtectedBrowserLauncher } from "./browser/protected-browser.js";
+export { ProtectedBrowserError } from "./browser/protected-browser.js";
+export { configuredProtectedBrowser } from "./browser/protected-browser-factory.js";
 export type { ApnsVoipConfig } from "./calls/apns-voip.js";
 export {
   apnsVoipConfig,
@@ -79,6 +82,10 @@ export * from "./email/inbound-email.js";
 export * from "./email/lifecycle-email.js";
 export * from "./ingress/ingress-factory.js";
 export * from "./integrations/connection-cleanup.js";
+export {
+  connectedContext,
+  loadOrganizationReconnectCheck,
+} from "./integrations/connection-context.js";
 export * from "./integrations/connector-catalog.js";
 export * from "./integrations/connector-registry.js";
 export * from "./integrations/graphql-connectors.js";
@@ -314,8 +321,11 @@ export * from "./storage/home-object-store.js";
 export { ObjectStorageUnavailableError } from "./storage/object-storage-common.js";
 export * from "./storage/storage-migration.js";
 export { workspaceSaveLimits } from "./storage/workspace-save-policy.js";
+export * from "./tasks/api-key-access.js";
 export { returnHelperOutcome, startBackgroundHelper } from "./tasks/background-helpers.js";
+export * from "./tasks/public-task.js";
 export * from "./tasks/scratchpad-tools.js";
+export * from "./tasks/task-callbacks.js";
 export * from "./tasks/task-catalog.js";
 export { TASK_CATALOG_GUIDANCE } from "./tasks/task-catalog.prompt.js";
 export * from "./tasks/ticket-changes.js";

@@ -1,8 +1,9 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { useLinkPrompt } from "@rakazo/chat-ui/web";
 import type { MessageBlock } from "@rakazo/contracts";
-import { appConnectedInput, appConnectLabel, waitForSignIn } from "@rakazo/core";
+import { appConnectedInput, appConnectRequest, appConnectState, waitForSignIn } from "@rakazo/core";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
+import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { BuiCard, SuccessPop } from "../../../components/ai/primitives";
@@ -13,7 +14,7 @@ import type { ArtifactTarget } from "../../../lib/pages/artifact-open";
 import { chartViewport } from "../../../lib/pages/chart-viewport";
 import { useArtifactImage } from "../../../lib/pages/use-artifact-image";
 import { importChunk } from "../../../lib/platform/preload-recovery";
-import { useSave } from "../../../lib/query/query";
+import { queryClient, useSave, useSpaceQueries } from "../../../lib/query/query";
 import { rpc } from "../../../lib/query/rpc";
 import type { ErrorDetails } from "../../../lib/query/user-error";
 import { errorDetails, errorText } from "../../../lib/query/user-error";
@@ -153,22 +154,28 @@ export function AppConnectCard({
   const [error, setError] = useState<string | null>(null);
   const connectionAttempt = useRef<AbortController | null>(null);
   const readOnReturn = useRef<(() => void) | null>(null);
-  const status = block.status === "connected" ? "connected" : localStatus;
+  const queries = useSpaceQueries();
+  const connections = useQuery(
+    queries.connections.list.queryOptions({ enabled: Boolean(block.organizationConnectionId) }),
+    queryClient,
+  ).data;
+  const { canAuthorize, status } = appConnectState(block, connections, localStatus);
   useEffect(() => () => connectionAttempt.current?.abort(), []);
   useEventListener(window, "focus", () => readOnReturn.current?.());
 
   async function authorize() {
+    if (!canAuthorize) return;
     connectionAttempt.current?.abort();
     const controller = new AbortController();
     connectionAttempt.current = controller;
     setBusy(true);
     setError(null);
     try {
-      const started = await rpc.connections.begin({
-        connectorId: block.connectorId,
-        provider: block.provider,
-        displayName: appConnectLabel(block),
-      });
+      const request = appConnectRequest(block);
+      const started =
+        request.procedure === "connections/reconnectOrganization"
+          ? await rpc.connections.reconnectOrganization(request.input)
+          : await rpc.connections.begin(request.input);
       if (started.authorizationUrl) {
         window.open(started.authorizationUrl, "rakazo-app-connect", "popup,width=560,height=720");
       }
@@ -224,15 +231,19 @@ export function AppConnectCard({
         <span className="min-w-0 flex-1">
           <span className="block text-body-lg font-medium text-foreground">{block.name}</span>
           <span className="block truncate text-body-sm text-muted-foreground">
-            {block.description}
+            {block.organizationConnectionId ? <Trans>Organization</Trans> : block.description}
           </span>
         </span>
         {status === "connected" ? (
           <SuccessPop label={t`Connected`} />
-        ) : (
+        ) : canAuthorize ? (
           <Button disabled={busy} onClick={() => void authorize()}>
-            {busy ? t`Waiting…` : t`Connect`}
+            {busy ? t`Waiting…` : block.organizationConnectionId ? t`Reconnect` : t`Connect`}
           </Button>
+        ) : (
+          <span className="text-body-sm text-muted-foreground">
+            <Trans>Needs sign-in</Trans>
+          </span>
         )}
       </div>
       {error ? <p className="mt-2 text-label text-destructive">{error}</p> : null}

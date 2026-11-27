@@ -5,29 +5,37 @@ import type { AgentImportPlan, Bot } from "@rakazo/contracts";
 import type * as Core from "@rakazo/core";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
+import { QueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
-import type { Root } from "react-dom/client";
-import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { AGENT_DOCUMENT_MAX_BYTES } from "../../../lib/bots/agent-document";
+import { createQueryRoot } from "../../../lib/query/query-root.test-support";
 
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
     parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
-  return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
+  return {
+    useLingui: () => ({ t }),
+    Trans: ({ children }: { children: ReactNode }) => children,
+    Plural: ({ value, one, other }: { value: number; one: string; other: string }) =>
+      (value === 1 ? one : other).replace("#", String(value)),
+  };
 });
 
 const importPreview = vi.fn();
 const importCreate = vi.fn();
-vi.mock("../../../lib/query/rpc", () => ({
-  rpc: {
+const importMany = vi.fn();
+vi.mock("../../../lib/query/rpc", () => {
+  const rpc = {
     bots: {
       importPreview: (input: unknown) => importPreview(input),
       importCreate: (input: unknown) => importCreate(input),
+      importMany: (input: unknown) => importMany(input),
     },
-  },
-}));
+  };
+  return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
+});
 
 vi.mock("@rakazo/core", async (importOriginal) => ({
   ...(await importOriginal<typeof Core>()),
@@ -43,7 +51,7 @@ vi.mock("@rakazo/core", async (importOriginal) => ({
 
 import { AgentImportForm } from "./agent-import";
 
-let root: Root | null = null;
+let root: ReturnType<typeof createQueryRoot> | null = null;
 let container: HTMLDivElement | null = null;
 
 function press(label: string) {
@@ -64,7 +72,7 @@ function press(label: string) {
 async function open(origin: string, form = <AgentImportForm onClose={noop} onCreated={noop} />) {
   container = document.createElement("div");
   document.body.append(container);
-  root = createRoot(container);
+  root = createQueryRoot(container, new QueryClient());
   await act(async () => {
     root!.render(form);
   });
@@ -80,6 +88,7 @@ function field<T extends Element>(selector: string) {
 beforeEach(() => {
   importPreview.mockReset();
   importCreate.mockReset();
+  importMany.mockReset();
   i18n.load("en", {});
   i18n.activate("en");
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -499,8 +508,11 @@ describe("a plain-HTTP LAN server, where crypto.randomUUID is missing", () => {
 });
 
 describe("a Grok Bot reply with several Bots", () => {
-  it("asks which Bot, and forgets the choice on Back", async () => {
-    await open("Grok Bot");
+  async function paste() {
+    await open(
+      "Grok Bot",
+      <AgentImportForm onClose={noop} onCreated={(bot) => created.push(bot.name)} />,
+    );
     const grok = container!.querySelector('[data-testid="agent-import-grok"]')!;
     const reply = grok.querySelector<HTMLTextAreaElement>("textarea")!;
     await act(async () => {
@@ -510,20 +522,111 @@ describe("a Grok Bot reply with several Bots", () => {
           bots: [
             { name: "Bramble", memories: ["A"] },
             { name: "Wren", memories: ["B"] },
+            { name: "Finch", memories: ["C"] },
           ],
         }),
       );
       reply.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    await act(async () =>
-      [...grok.querySelectorAll("button")].find((item) => item.textContent === "Continue")!.click(),
+    await press("Continue");
+    return grok;
+  }
+  const created: string[] = [];
+  beforeEach(() => {
+    created.length = 0;
+  });
+  const boxes = () => [
+    ...container!.querySelectorAll('[data-testid="agent-import-grok-bots"] [role="checkbox"]'),
+  ];
+  const sent = () =>
+    (importMany.mock.calls.at(-1)![0] as { agents: { files: { content: string }[] }[] }).agents.map(
+      (agent) =>
+        (JSON.parse(agent.files[0]!.content) as { bots: { name: string }[] }).bots[0]!.name,
     );
-    expect(grok.textContent).toContain("Which Bot?");
+  const bot = (name: string) => ({ bot: { id: name, name } as Bot });
+
+  it("imports only the ticked Bots in one request, then opens the first", async () => {
+    await paste();
+    expect(boxes()).toHaveLength(3);
     expect(importPreview).not.toHaveBeenCalled();
+    await act(async () => (boxes()[1] as HTMLElement).click());
+    importMany.mockResolvedValue([bot("Bramble"), bot("Finch")]);
+    await press("Import 2 Bots");
+    expect(sent()).toEqual(["Bramble", "Finch"]);
+    expect(created).toEqual(["Bramble"]);
+  });
+
+  it("keeps the list after a refusal, and imports again only what is left", async () => {
+    await paste();
+    importMany.mockResolvedValue([bot("Bramble"), { error: "Too long" }, bot("Finch")]);
+    await press("Import 3 Bots");
+    expect(created).toEqual([]);
+    expect(container!.textContent).toContain("Too long");
+    expect(boxes()).toHaveLength(1);
+
+    importMany.mockResolvedValue([bot("Wren")]);
+    await press("Import 1 Bot");
+    expect(sent()).toEqual(["Wren"]);
+    expect(created).toEqual(["Bramble"]);
+  });
+
+  it("finishes with what was imported once the refused Bots are unticked", async () => {
+    await paste();
+    importMany.mockResolvedValue([
+      bot("Bramble"),
+      { error: "Server text", data: { reason: "instructions_too_long" } },
+      { error: "Busy" },
+    ]);
+    await press("Import 3 Bots");
+    // The refusal reads as it does for one Bot's import.
+    expect(container!.textContent).toContain("Instructions are too long. Untick some files.");
+    await act(async () => (boxes()[0] as HTMLElement).click());
+    importMany.mockResolvedValue([bot("Finch")]);
+    await press("Import 1 Bot");
+    // The unticked Bot still says why it was not imported.
+    expect(container!.textContent).toContain("Instructions are too long. Untick some files.");
+    await press("Done");
+    expect(created).toEqual(["Bramble"]);
+  });
+
+  it("reviews one Bot on its own, and comes back to the list keeping what was imported", async () => {
+    importPreview.mockResolvedValue(plan);
+    await paste();
+    importMany.mockResolvedValue([bot("Bramble"), { error: "Too long" }, bot("Finch")]);
+    await press("Import 3 Bots");
+    const key = (importMany.mock.calls[0]![0] as { agents: { importKey: string }[] }).agents[1]!
+      .importKey;
+    await press("Review Wren");
+    expect(importPreview).toHaveBeenCalledTimes(1);
+    expect(container!.querySelector('[data-testid="agent-import-preview"]')).not.toBeNull();
 
     await press("Back");
+    expect(boxes()).toHaveLength(1);
+    importMany.mockResolvedValue([bot("Wren")]);
+    await press("Import 1 Bot");
+    expect(
+      (importMany.mock.calls[1]![0] as { agents: { importKey: string }[] }).agents[0]!.importKey,
+    ).toBe(key);
+  });
+
+  it("creates a reviewed Bot under the key its batch used", async () => {
+    importPreview.mockResolvedValue(plan);
+    await paste();
+    importMany.mockRejectedValue(new Error("server down"));
+    await press("Import 3 Bots");
+    const key = (importMany.mock.calls[0]![0] as { agents: { importKey: string }[] }).agents[1]!
+      .importKey;
+    await press("Review Wren");
+    importCreate.mockResolvedValue({ id: "wren", name: "Wren" });
+    await press("Create");
+    expect((importCreate.mock.calls[0]![0] as { importKey: string }).importKey).toBe(key);
+  });
+
+  it("forgets the Bots on Back", async () => {
+    await paste();
+    await press("Back");
     await press("Grok Bot");
-    expect(container!.textContent).not.toContain("Which Bot?");
+    expect(boxes()).toHaveLength(0);
   });
 });
 

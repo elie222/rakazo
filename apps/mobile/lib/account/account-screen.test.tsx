@@ -316,6 +316,9 @@ vi.mock("../platform/store-update", () => ({
   openStoreListing: storeUpdate.open,
   useStoreUpdateAvailable: () => storeUpdate.available,
 }));
+vi.mock("../appearance/app-icon", () => ({
+  appIconRead: { queryKey: ["device", "app-icon"], queryFn: async () => ({ supported: false }) },
+}));
 vi.mock("../appearance/appearance", () => ({
   getCachedAppearancePreference: () => "system",
   mobileTokens: () => ({}),

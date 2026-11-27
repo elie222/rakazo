@@ -78,14 +78,11 @@ export function VaultItemAccess({
           }}
           disabled={disabled}
           spacing={1}
-          className="rounded-lg bg-muted p-1"
+          variant="segmented"
+          size="sm"
         >
           {controls.policies.map((option) => (
-            <ToggleGroupItem
-              key={option}
-              value={option}
-              className="h-7 px-3 text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
-            >
+            <ToggleGroupItem key={option} value={option}>
               {labels[option]}
             </ToggleGroupItem>
           ))}

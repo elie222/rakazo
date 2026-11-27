@@ -1,6 +1,7 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
 import { Id } from "../ids.js";
+import { organizationVaultRpc } from "../integrations/organization-vault.js";
 import { groupId } from "../rpc/inputs.js";
 import { SpaceSettingSchema } from "../settings-scope.js";
 import { CreateGroupInput, GroupDetailSchema, GroupSchema, UpdateGroupInput } from "./groups.js";
@@ -65,6 +66,7 @@ export const spacesRpc = {
     },
   },
   organizations: {
+    vault: organizationVaultRpc,
     list: oc.output(OrganizationListSchema),
     create: oc
       .input(z.object({ name: organizationName }))

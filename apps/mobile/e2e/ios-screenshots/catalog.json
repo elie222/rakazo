@@ -66,6 +66,7 @@
       "models",
       "integrations",
       "mcp-server",
+      "tool-source",
       "voice",
       "ai-data-sharing",
       "labs",
@@ -75,6 +76,7 @@
       "group-settings",
       "computer",
       "language",
+      "app-icon",
       "artifacts"
     ]
   },

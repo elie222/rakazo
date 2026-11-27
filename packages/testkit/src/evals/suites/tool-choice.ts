@@ -4,7 +4,7 @@ import { readCasesFile } from "../cases.js";
 import type { JudgeInput } from "../judge.js";
 import { SourcesSchema, sourcesCase } from "./tool-choice-sources.js";
 
-export const TOOL_CHOICE_FIXTURE_VERSION = "tool-choice-v5";
+export const TOOL_CHOICE_FIXTURE_VERSION = "tool-choice-v6";
 export const TOOL_CHOICE_JUDGE_VERSION = "tool-choice-meaning-v5";
 
 /** Settings the bot writes in its own words; the judge grades them, never a substring. */

@@ -1,9 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
+import { botModelState } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo } from "react";
 import { ModelPickerList } from "../components/models/model-picker-list";
 import { errorText } from "../lib/api/user-error";
-import { chatModelPickerChoices } from "../lib/models/chat-model";
 import { rpcQuery } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
 
@@ -11,24 +11,30 @@ export default function BotModelScreen() {
   const { t } = useLingui();
   const router = useRouter();
   const { botId, value = "" } = useLocalSearchParams<{ botId: string; value?: string }>();
-  // The "Space default" row names the selected Space's model, so this read is the Space's.
+  // A model missing from the connections is named from the selected Space's default.
   const me = useScreenQuery(rpcQuery("me"));
   const catalog = useScreenQuery(rpcQuery("models/list"));
   const credentials = useScreenQuery(rpcQuery("models/credentials"));
-  const choices = useMemo(
-    () =>
-      me.data && catalog.data && credentials.data
-        ? chatModelPickerChoices(me.data, catalog.data, credentials.data, value)
-        : null,
-    [me.data, catalog.data, credentials.data, value],
-  );
+  // Read each render, so model names follow a change of language.
+  const state =
+    me.data && catalog.data && credentials.data
+      ? botModelState({
+          credentials: credentials.data,
+          catalog: catalog.data.map(localizeModelEntry),
+          me: me.data,
+          modelKey: value,
+        })
+      : null;
+  const choices = state?.choices ?? null;
   const failure = me.error ?? catalog.error ?? credentials.error;
   const error = failure && !choices ? errorText(failure, t`Could not load model settings`) : null;
 
   return (
     <ModelPickerList
+      latestOnly
       choices={choices}
-      selectedKey={value}
+      // A bot that follows the Space default shows the default's model checked.
+      selectedKey={state?.shownKey ?? value}
       error={error}
       onSelect={(item) =>
         router.dismissTo({ pathname: "/bot-settings", params: { botId, model: item.key } })

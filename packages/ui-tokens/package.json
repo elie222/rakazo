@@ -11,7 +11,8 @@
     "check": "tsrs --noEmit -p tsconfig.json && tsrs --noEmit -p scripts/tsconfig.json",
     "test": "vitest run --root ../.. packages/ui-tokens/src",
     "generate": "tsx src/generate-css.ts",
-    "export:brand": "node scripts/export-brand.ts"
+    "export:brand": "node scripts/export-brand.ts",
+    "export:app-icons": "node scripts/export-app-icons.ts"
   },
   "devDependencies": {
     "sharp": "0.35.5",

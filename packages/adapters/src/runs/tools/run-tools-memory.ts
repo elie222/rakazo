@@ -193,7 +193,7 @@ export const memoryTools: ToolHandlers = {
       return { error: "This memory provider cannot answer questions from memory." };
     }
     const response = await ctx.memory.semantic.reflect(
-      { query: String(args.query ?? ""), botId: bot.id },
+      { query: String(args.query ?? ""), botId: bot.id, scope: ctx.memory.scope! },
       context,
     );
     if (!response.ok) return response;
