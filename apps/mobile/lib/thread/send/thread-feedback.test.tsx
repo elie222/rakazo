@@ -1174,6 +1174,33 @@ describe("scoped mobile outbox", () => {
     expect(request).toHaveBeenCalledOnce();
     expect(notDelivered).not.toHaveBeenCalled();
   });
+  it("resumes the ordered outbox after Retry-After without another user action", async () => {
+    vi.useFakeTimers();
+    try {
+      request.mockRejectedValueOnce(
+        new AiConsentBlocked(
+          "Consent check",
+          Object.assign(new Error("Slow down"), { status: 429, retryAfterMs: 2_000 }),
+        ),
+      );
+      const attempt = feedback.sendAttempt({ ...payload("First"), attachments: [] });
+      await act(async () => {
+        await feedback.send(attempt);
+        await feedback.send(feedback.sendAttempt({ ...payload("Second"), attachments: [] }), true);
+        await vi.advanceTimersByTimeAsync(1_999);
+      });
+      expect(request).toHaveBeenCalledOnce();
+      await act(async () => void (await vi.advanceTimersByTimeAsync(1)));
+      expect(request.mock.calls.map(([, body]) => body)).toMatchObject([
+        { text: "First" },
+        { text: "First" },
+        { text: "Second" },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   describe("a send in flight while a password change replaces the session", () => {
     let current: typeof scope | null;
     let refuse: (() => void) | undefined;
