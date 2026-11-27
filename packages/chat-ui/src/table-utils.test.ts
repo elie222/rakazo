@@ -323,6 +323,12 @@ describe("sortRows", () => {
   it("sorts text columns with locale compare", () => {
     expect(sortRows(rows, 0, "asc").map((r) => r[0])).toEqual(["Alpha", "Beta", "Delta", "Gamma"]);
   });
+
+  it("keeps case and accent variants stable when text compares equal", () => {
+    const rows = [["résumé"], ["RESUME"], ["Resume"]];
+    expect(sortRows(rows, 0, "asc")).toEqual(rows);
+    expect(sortRows(rows, 0, "desc")).toEqual(rows);
+  });
 });
 
 describe("nextSort", () => {

@@ -162,13 +162,15 @@ export function columnSortLabel(
   return label;
 }
 
+const tableCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
 /** Compare non-empty cells with numbers before text in ascending order. */
 export function compareCellText(a: string, b: string): number {
   const an = parseNumericText(a);
   const bn = parseNumericText(b);
   if (an !== null) return bn !== null ? an - bn : -1;
   if (bn !== null) return 1;
-  return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+  return tableCollator.compare(a, b);
 }
 
 /** Stable sort on one column; empty cells always sink to the bottom. */
