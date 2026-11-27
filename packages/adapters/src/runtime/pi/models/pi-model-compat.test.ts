@@ -49,6 +49,17 @@ describe("provider compatibility boundaries", () => {
     expect(openai).toBeDefined();
     expect(applyPiModelCompatibility(original).getProvider("openai")).toBe(openai);
   });
+
+  it("resolves unlisted cross-region Bedrock model IDs with catalog pricing", () => {
+    const models = applyPiModelCompatibility(builtinModels());
+    const base = models.getModel("amazon-bedrock", "us.anthropic.claude-sonnet-5-5");
+    expect(base).toBeDefined();
+    const regional = models.getModel("amazon-bedrock", "ap.anthropic.claude-sonnet-5-5-v1:0");
+    expect(regional).toBeDefined();
+    expect(regional?.id).toBe("ap.anthropic.claude-sonnet-5-5-v1:0");
+    expect(regional?.cost).toEqual(base?.cost);
+    expect(regional?.cost.input).toBeGreaterThan(0);
+  });
 });
 
 // Observed: "Unsupported Google thinking level mapping for google/gemini-4-neon: xhigh -> xhigh".

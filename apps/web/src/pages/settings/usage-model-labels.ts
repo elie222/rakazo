@@ -7,27 +7,59 @@ type CatalogName = Pick<ModelCatalogEntry, "provider" | "id" | "label" | "provid
 export const usageModelKey = ({ provider, model }: ModelIdentity) =>
   JSON.stringify([provider, model]);
 
+const REGIONAL_MODEL_PREFIX = /^(?:global|us|eu|ap|au|in|jp|ca|sa)\./;
+
+function normalizedModelSlug(id: string): string {
+  return id
+    .trim()
+    .toLowerCase()
+    .replace(REGIONAL_MODEL_PREFIX, "")
+    .replace(/^[a-z0-9-]+[./]/, "")
+    .replace(/(?:-v\d+)?(?::\d+)?$/, "");
+}
+
 export function usageModelLabels(
   models: ModelIdentity[],
   catalog: readonly CatalogName[],
   fallbackLabel: string,
 ) {
   const catalogModels = new Map<string, CatalogName>();
+  const providerSlugs = new Map<string, CatalogName>();
+  const globalSlugs = new Map<string, CatalogName>();
   const providerNames = new Map<string, string>();
   for (const entry of catalog) {
     const provider = canonicalPiProviderId(entry.provider);
     const key = usageModelKey({ provider, model: entry.id });
     if (!catalogModels.has(key)) catalogModels.set(key, entry);
+    const slug = normalizedModelSlug(entry.id);
+    if (slug) {
+      const providerSlugKey = `${provider}\0${slug}`;
+      if (!providerSlugs.has(providerSlugKey)) providerSlugs.set(providerSlugKey, entry);
+      if (!globalSlugs.has(slug)) globalSlugs.set(slug, entry);
+    }
     if (entry.providerName && !providerNames.has(provider)) {
       providerNames.set(provider, entry.providerName);
     }
   }
   const labelsFor = ({ provider, model }: ModelIdentity) => {
     const canonical = canonicalPiProviderId(provider);
-    const entry = catalogModels.get(usageModelKey({ provider: canonical, model }));
+    let entry = catalogModels.get(usageModelKey({ provider: canonical, model }));
+    let matchedCrossProvider = false;
+    if (!entry) {
+      const slug = normalizedModelSlug(model);
+      if (slug && slug !== model.trim().toLowerCase()) {
+        entry = providerSlugs.get(`${canonical}\0${slug}`);
+        if (!entry) {
+          entry = globalSlugs.get(slug);
+          matchedCrossProvider = Boolean(entry);
+        }
+      }
+    }
     return {
       modelLabel: entry?.label ?? fallbackLabel,
-      providerLabel: entry?.providerName ?? providerNames.get(canonical),
+      providerLabel: matchedCrossProvider
+        ? providerNames.get(canonical)
+        : (entry?.providerName ?? providerNames.get(canonical)),
     };
   };
   const names = models.map((model) => ({ key: usageModelKey(model), ...labelsFor(model) }));
