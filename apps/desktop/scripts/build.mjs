@@ -4,6 +4,17 @@ import { desktopLocaleCatalogFiles, emitDesktopLocaleCatalogs } from "./locale-c
 
 const root = path.resolve(import.meta.dirname, "..");
 
+// Zod's main barrel re-exports all validation locales; the desktop main process only uses English.
+const zodEnglishLocaleOnly = {
+  name: "zod-english-locale-only",
+  setup(pluginBuild) {
+    pluginBuild.onLoad({ filter: /[\\/]zod[\\/]v4[\\/]locales[\\/]index\.(?:js|cjs)$/ }, () => ({
+      contents: 'export { default as en } from "./en.js";\n',
+      loader: "js",
+    }));
+  },
+};
+
 const localeTags = await emitDesktopLocaleCatalogs(path.join(root, "dist", "locales"));
 
 const result = await build({
@@ -11,12 +22,13 @@ const result = await build({
   entryPoints: ["src/main/main.ts"],
   outfile: path.join(root, "dist", "main.js"),
   bundle: true,
+  charset: "utf8",
   platform: "node",
   format: "esm",
   target: "node24",
   sourcemap: true,
   metafile: true,
-  plugins: [desktopLocaleCatalogFiles(localeTags)],
+  plugins: [zodEnglishLocaleOnly, desktopLocaleCatalogFiles(localeTags)],
   banner: {
     js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);',
   },
