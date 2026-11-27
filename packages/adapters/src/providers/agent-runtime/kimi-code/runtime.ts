@@ -4,6 +4,7 @@ import type {
   AgentRuntime,
   AgentRuntimeEvent,
 } from "@rakazo/adapter-kit";
+import { deadlineSignal } from "@rakazo/core";
 import { createTextTurn } from "./acp-text.js";
 
 /** A fresh, disposable process boundary. A real launcher must own the process tree,
@@ -69,11 +70,10 @@ export function createKimiCodeRuntime(options: KimiRuntimeOptions): AgentRuntime
         throw new Error("Kimi Code requires an eligible personal, interactive text-only turn.");
       }
       const controller = new AbortController();
-      const signal = AbortSignal.any([
-        controller.signal,
-        AbortSignal.timeout(90_000),
-        ...(context?.signal ? [context.signal] : []),
-      ]);
+      const parent = context?.signal
+        ? AbortSignal.any([controller.signal, context.signal])
+        : controller.signal;
+      const signal = deadlineSignal(90_000, parent);
       active.set(runId, controller);
       let close: (() => void) | undefined;
       let result: string | undefined;
