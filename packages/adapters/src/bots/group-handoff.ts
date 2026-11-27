@@ -27,12 +27,11 @@ import {
 } from "../runs/turn/primary-outbound-handoff.js";
 import {
   groupHandoffNonce,
-  groupPilotEnrolled,
-  groupPilotRuntimeForBot,
-  handoffPilotRuntimeForBot,
   pilotHandoffSourceWhere,
   pilotLauncher,
   pilotRunModel,
+  resolvePrimaryGroupRuntime,
+  resolvePrimaryHandoffRuntime,
 } from "../runs/turn/primary-runtime-pilot.js";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
 
@@ -51,7 +50,8 @@ export async function handoffToGroupBot(
     confirm_name?: string;
     message: string;
     deliveryKey?: string;
-    fromPrimaryPilot?: true;
+    /** Worker-only preflight pin, never part of the model-facing tool input. */
+    fromPrimaryPilot?: { recipientRuntimeRevision: number };
     /** Saved attachments, shown on the handoff and copied to the next bot's computer. */
     files?: Array<Extract<MessageBlock, { kind: "image" | "file" }>>;
   },
@@ -75,7 +75,7 @@ export async function handoffToGroupBot(
         thread: { select: { id: true } },
         members: {
           where: { bot: { archivedAt: null } },
-          include: { bot: { select: { id: true, name: true } } },
+          include: { bot: { select: { id: true, name: true, userId: true } } },
           orderBy: { createdAt: "asc" },
         },
       },
@@ -98,6 +98,7 @@ export async function handoffToGroupBot(
       select: {
         id: true,
         primaryRuntime: true,
+        primaryRuntimeRevision: true,
         thread: { select: { groupId: true } },
         sourceMessage: { select: { blocks: true } },
       },
@@ -123,11 +124,11 @@ export async function handoffToGroupBot(
           : undefined;
       if (
         !sourceRuntime ||
-        sourceRuntime !== groupPilotRuntimeForBot(run.botId) ||
-        !outboundPilotEnrolled(run.botId) ||
         !inGroup ||
         input.files?.length ||
         !sender ||
+        sender.userId !== run.userId ||
+        bots.find((bot) => bot.id === input.bot_id)?.userId !== run.userId ||
         resolveBotAddress(bots, { name: sender.name })?.id !== run.botId ||
         !authorized ||
         authorized.recipient !== input.confirm_name ||
@@ -203,12 +204,42 @@ export async function handoffToGroupBot(
       } as const;
     }
 
-    let pilotPin: ReturnType<typeof pilotRunModel>;
-    if (input.fromPrimaryPilot && !outboundPilotEnrolled(targetId))
+    // After group and thread locks, serialize the admission snapshot with bot profile writes.
+    // Both rows are acquired in one stable order; ordinary Pi delivery only needs its target.
+    const sourceProfileId = input.fromPrimaryPilot ? run.botId : targetId;
+    await tx.$queryRaw`
+      SELECT id FROM bots
+      WHERE "spaceId" = ${run.spaceId} AND id IN (${sourceProfileId}, ${targetId})
+      ORDER BY id FOR SHARE`;
+    const recipient = await tx.bot.findFirst({
+      where: { id: targetId, spaceId: run.spaceId, archivedAt: null },
+      select: {
+        id: true,
+        userId: true,
+        primaryRuntimePreference: true,
+        primaryRuntimeRevision: true,
+        modelProvider: true,
+        modelId: true,
+        modelCredentialId: true,
+      },
+    });
+    if (!recipient) return { error: "handoff target is not a group member" } as const;
+    const selection = resolvePrimaryHandoffRuntime(recipient);
+    if (
+      selection.kind === "unavailable" ||
+      (input.fromPrimaryPilot &&
+        (selection.kind !== "native" ||
+          !outboundPilotEnrolled(run.botId) ||
+          !outboundPilotEnrolled(targetId) ||
+          recipient.primaryRuntimeRevision !== input.fromPrimaryPilot.recipientRuntimeRevision))
+    )
       return { error: "the selected bot is not available for this pilot handoff" } as const;
-    if (input.fromPrimaryPilot || groupPilotEnrolled(targetId)) {
-      const runtime = handoffPilotRuntimeForBot(targetId);
-      if (!runtime || !pilotLauncher()) {
+
+    let pilotPin:
+      | (NonNullable<ReturnType<typeof pilotRunModel>> & { primaryRuntimeRevision: number })
+      | undefined;
+    if (selection.kind === "native") {
+      if (!pilotLauncher()) {
         return { error: "the receiving bot is not available for pilot handoffs" } as const;
       }
       if (!inGroup || hop !== 1 || input.files?.length) {
@@ -222,21 +253,30 @@ export async function handoffToGroupBot(
           id: run.id,
           status: "running",
         },
-        select: { id: true },
+        select: {
+          id: true,
+          bot: { select: { primaryRuntimePreference: true, primaryRuntimeRevision: true } },
+        },
       });
-      const recipient = await tx.bot.findFirst({
-        where: { id: targetId, spaceId: run.spaceId, userId: run.userId, archivedAt: null },
-        select: { modelProvider: true, modelId: true, modelCredentialId: true },
-      });
-      if (!source || !recipient) {
+      if (!source || recipient.userId !== run.userId) {
         return {
           error: "pilot handoffs require a human-started group run and bots with the same owner",
         } as const;
       }
-      pilotPin = pilotRunModel(runtime, recipient);
-      if (!pilotPin) {
+      if (input.fromPrimaryPilot) {
+        const senderSelection = resolvePrimaryGroupRuntime({ id: run.botId, ...source.bot });
+        if (
+          senderSelection.kind !== "native" ||
+          senderSelection.id !== sourceRuntime ||
+          source.bot.primaryRuntimeRevision !== activeSource.primaryRuntimeRevision
+        )
+          return { error: "the source bot runtime changed before delivery" } as const;
+      }
+      const pin = pilotRunModel(selection.id, recipient);
+      if (!pin) {
         return { error: "the receiving pilot bot needs an explicit API-key connection" } as const;
       }
+      pilotPin = { ...pin, primaryRuntimeRevision: recipient.primaryRuntimeRevision };
       const activeTarget = await tx.run.findFirst({
         where: {
           threadId: targetThreadId,

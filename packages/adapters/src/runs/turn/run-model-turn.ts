@@ -127,7 +127,7 @@ export async function runModelTurn(
             secrets: request.secrets,
           }
         : undefined;
-    if (run.primaryRuntime && (dmRequest || (groupRequest && run.trigger === "user"))) {
+    if (run.primaryRuntime && (dmRequest || groupRequest)) {
       const bot = await deps.prisma.bot.findFirst({
         where: { id: run.botId, spaceId: run.spaceId, userId: run.userId, archivedAt: null },
         select: { primaryRuntimePreference: true, primaryRuntimeRevision: true },
@@ -135,7 +135,7 @@ export async function runModelTurn(
       assertPrimaryChatRuntimePin(
         { ...run, primaryRuntime: run.primaryRuntime },
         bot,
-        groupRequest ? "group" : "dm",
+        groupRequest ? (run.trigger === "follow_up" ? "handoff" : "group") : "dm",
       );
     }
     const configuredGrant = dmRequest ? pilotDmResumeGrant(run.botId) : undefined;
@@ -206,7 +206,7 @@ export async function runModelTurn(
         bot_id: recipient.id,
         confirm_name: recipient.name,
         message: draft.result(),
-        fromPrimaryPilot: true,
+        fromPrimaryPilot: { recipientRuntimeRevision: recipient.primaryRuntimeRevision },
       });
       if ("error" in outcome) throw new Error(outcome.error);
       state.handedOff = true;

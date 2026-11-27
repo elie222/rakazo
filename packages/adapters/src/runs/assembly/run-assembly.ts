@@ -28,13 +28,13 @@ export async function assembleRunTurn(services: RunExecutorServices, hold: RunHo
   const { run } = hold;
   if (
     run.primaryRuntime &&
-    run.trigger === "user" &&
-    (records.thread.botId === run.botId || records.thread.groupId)
+    ((run.trigger === "user" && (records.thread.botId === run.botId || records.thread.groupId)) ||
+      (run.trigger === "follow_up" && records.thread.groupId))
   )
     assertPrimaryChatRuntimePin(
       { ...run, primaryRuntime: run.primaryRuntime },
       records.bot,
-      records.thread.groupId ? "group" : "dm",
+      records.thread.groupId ? (run.trigger === "follow_up" ? "handoff" : "group") : "dm",
     );
   const connected = await connectRun(services, hold, { records });
   const thread = await readThreadHistory(hold, { records });

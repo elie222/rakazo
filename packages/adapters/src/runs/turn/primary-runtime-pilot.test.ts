@@ -283,6 +283,11 @@ it("projects only a genuine first handoff after rechecking the live sender and o
     message: { findFirst: vi.fn().mockResolvedValue(source) },
     run: { findFirst: vi.fn().mockResolvedValue({ id: "source-run" }) },
   };
+  const originSelect = {
+    primaryRuntime: true,
+    primaryRuntimeRevision: true,
+    bot: { select: { primaryRuntimePreference: true, primaryRuntimeRevision: true } },
+  };
   await expect(pilotGroupRequest(prisma as never, input)).resolves.toEqual({
     botId: "bot",
     threadId: "thread",
@@ -307,11 +312,17 @@ it("projects only a genuine first handoff after rechecking the live sender and o
       primaryRuntime: null,
       sourceMessage: { role: "user", threadId: "thread", authorUserId: "owner" },
     }),
-    select: { id: true },
+    select: originSelect,
   });
   vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", "bot,sender");
   vi.stubEnv("PRIMARY_RUNTIME_PILOT_GROUP_BOT_IDS", "bot,sender");
   vi.stubEnv("PRIMARY_RUNTIME_PILOT_OUTBOUND_BOT_IDS", "bot,sender");
+  const nativeOrigin = {
+    primaryRuntime: id,
+    primaryRuntimeRevision: 2,
+    bot: { primaryRuntimePreference: null, primaryRuntimeRevision: 2 },
+  };
+  prisma.run.findFirst.mockResolvedValueOnce(nativeOrigin);
   await expect(pilotGroupRequest(prisma as never, input)).resolves.toMatchObject({
     prompt: "Next stage",
     history: [],
@@ -323,14 +334,19 @@ it("projects only a genuine first handoff after rechecking the live sender and o
       trigger: "user",
       OR: [{ primaryRuntime: null }, { primaryRuntime: id }],
     }),
-    select: { id: true },
+    select: originSelect,
   });
+  prisma.run.findFirst.mockResolvedValueOnce({
+    ...nativeOrigin,
+    bot: { ...nativeOrigin.bot, primaryRuntimeRevision: 4 },
+  });
+  await expect(pilotGroupRequest(prisma as never, input)).rejects.toThrow("has changed");
   vi.stubEnv("PRIMARY_RUNTIME_PILOT_OUTBOUND_BOT_IDS", "bot");
   prisma.run.findFirst.mockResolvedValueOnce(null);
   await expect(pilotGroupRequest(prisma as never, input)).rejects.toThrow("verified handoff");
   prisma.message.findFirst.mockResolvedValueOnce({ ...source, clientNonce: "different-source" });
   await expect(pilotGroupRequest(prisma as never, input)).rejects.toThrow("verified handoff");
-  expect(prisma.run.findFirst).toHaveBeenCalledTimes(3);
+  expect(prisma.run.findFirst).toHaveBeenCalledTimes(4);
 });
 
 it("uses the owner directive once without forwarding the directive, history or tools", async () => {
@@ -344,7 +360,15 @@ it("uses the owner directive once without forwarding the directive, history or t
       findFirst: vi.fn().mockResolvedValue({
         members: [
           { bot: { id: "bot", name: "Source Bot", userId: "owner" } },
-          { bot: { id: "review", name: "Review Bot", userId: "owner" } },
+          {
+            bot: {
+              id: "review",
+              name: "Review Bot",
+              userId: "owner",
+              primaryRuntimePreference: null,
+              primaryRuntimeRevision: 2,
+            },
+          },
         ],
       }),
     },
@@ -378,7 +402,7 @@ it("uses the owner directive once without forwarding the directive, history or t
   });
   expect(outcome.prompt).not.toContain("synthetic-hidden-key");
   expect(outcome).toMatchObject({
-    outboundRecipient: { id: "review", name: "Review Bot" },
+    outboundRecipient: { id: "review", name: "Review Bot", primaryRuntimeRevision: 2 },
     prompt: expect.stringMatching(/^Draft a task brief with /),
     history: [],
     tools: [],

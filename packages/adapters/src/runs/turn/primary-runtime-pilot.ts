@@ -17,7 +17,7 @@ export function pilotRuntimeForBot(botId: string, environment = process.env): st
   return allowed?.includes(botId) ? nativeTextRuntime.id : undefined;
 }
 
-type DmRuntimePreference = {
+type PrimaryRuntimePreference = {
   primaryRuntimePreference: string | null;
   primaryRuntimeRevision: number;
 };
@@ -42,10 +42,15 @@ export class PrimaryChatRuntimeChangedError extends Error {
 
 export function assertPrimaryChatRuntimePin(
   run: { botId: string; primaryRuntime: string; primaryRuntimeRevision: number },
-  bot: DmRuntimePreference | null,
-  scope: "dm" | "group",
+  bot: PrimaryRuntimePreference | null,
+  scope: "dm" | "group" | "handoff",
 ) {
-  const resolve = scope === "group" ? resolvePrimaryGroupRuntime : resolvePrimaryDmRuntime;
+  const resolve =
+    scope === "handoff"
+      ? resolvePrimaryHandoffRuntime
+      : scope === "group"
+        ? resolvePrimaryGroupRuntime
+        : resolvePrimaryDmRuntime;
   const selection = bot && resolve({ ...bot, id: run.botId });
   if (
     selection?.kind !== "native" ||
@@ -103,6 +108,20 @@ export function handoffPilotRuntimeForBot(botId: string, environment = process.e
     (id) => id.trim() === botId,
   );
   return allowed ? groupPilotRuntimeForBot(botId, environment) : undefined;
+}
+
+/** A stored Pi choice stays Pi, but a native choice also needs independent handoff enrolment. */
+export function resolvePrimaryHandoffRuntime(
+  bot: { id: string; primaryRuntimePreference: string | null },
+  environment = process.env,
+) {
+  const selection = resolvePrimaryGroupRuntime(bot, environment);
+  if (
+    selection.kind === "native" &&
+    handoffPilotRuntimeForBot(bot.id, environment) !== selection.id
+  )
+    return { kind: "unavailable" } as const;
+  return selection;
 }
 
 export function groupHandoffNonce(sourceRunId: string) {
@@ -282,6 +301,8 @@ export function pilotConversation(
   return { prompt, history };
 }
 
+type OutboundRecipient = { id: string; name: string; primaryRuntimeRevision: number };
+
 /** No ambient group history or instructions; only independently opted-in owner mentions can replay. */
 export async function pilotGroupRequest(
   prisma: Pick<PrismaClient, "chatGroup" | "message" | "run">,
@@ -312,7 +333,7 @@ export async function pilotGroupRequest(
     redactions: readonly string[];
     senderName?: string;
   },
-): Promise<AgentRunRequest & { outboundRecipient?: { id: string; name: string } }> {
+): Promise<AgentRunRequest & { outboundRecipient?: OutboundRecipient }> {
   const { run, thread, model, onUsage, redactions, senderName } = input;
   const handoff = run.trigger === "follow_up";
   const error = () =>
@@ -367,7 +388,7 @@ export async function pilotGroupRequest(
   const [block] = blocks;
   if (!intact || blocks.length !== 1 || !block) throw error();
   let prompt: string;
-  let outboundRecipient: { id: string; name: string } | undefined;
+  let outboundRecipient: OutboundRecipient | undefined;
   if (handoff) {
     if (
       block.kind !== "handoff" ||
@@ -397,9 +418,19 @@ export async function pilotGroupRequest(
         id: source.runId,
         status: { in: ["running", "completed"] },
       },
-      select: { id: true },
+      select: {
+        primaryRuntime: true,
+        primaryRuntimeRevision: true,
+        bot: { select: { primaryRuntimePreference: true, primaryRuntimeRevision: true } },
+      },
     });
     if (!origin) throw error();
+    if (origin.primaryRuntime)
+      assertPrimaryChatRuntimePin(
+        { ...origin, botId: source.botId, primaryRuntime: origin.primaryRuntime },
+        origin.bot,
+        "group",
+      );
     prompt = block.text;
   } else {
     if (block.kind !== "text") throw error();
@@ -423,7 +454,17 @@ export async function pilotGroupRequest(
         select: {
           members: {
             where: { bot: { spaceId: run.spaceId, archivedAt: null } },
-            select: { bot: { select: { id: true, name: true, userId: true } } },
+            select: {
+              bot: {
+                select: {
+                  id: true,
+                  name: true,
+                  userId: true,
+                  primaryRuntimePreference: true,
+                  primaryRuntimeRevision: true,
+                },
+              },
+            },
           },
         },
       });
@@ -436,10 +477,14 @@ export async function pilotGroupRequest(
         recipient.id === run.botId ||
         recipient.userId !== run.userId ||
         !outboundPilotEnrolled(recipient.id) ||
-        !handoffPilotRuntimeForBot(recipient.id)
+        resolvePrimaryHandoffRuntime(recipient).kind !== "native"
       )
         throw new Error("The selected bot is not available for this pilot handoff.");
-      outboundRecipient = { id: recipient.id, name: outbound.recipient };
+      outboundRecipient = {
+        id: recipient.id,
+        name: outbound.recipient,
+        primaryRuntimeRevision: recipient.primaryRuntimeRevision,
+      };
     }
     prompt = outbound?.prompt ?? block.text;
   }

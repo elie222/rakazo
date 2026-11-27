@@ -31,13 +31,17 @@ function harness(
         name: "Project",
         thread: { id: run.threadId },
         members: ["bot-a", "bot-b", "bot-c"].map((id) => ({
-          bot: { id, name: id.toUpperCase() },
+          bot: { id, name: id.toUpperCase(), userId: run.userId },
         })),
       })),
       update: vi.fn(async () => ({ id: "group-1" })),
     },
     bot: {
       findFirst: vi.fn(async () => ({
+        id: "bot-b",
+        userId: run.userId,
+        primaryRuntimePreference: null as string | null,
+        primaryRuntimeRevision: 2,
         modelProvider: "anthropic",
         modelId: "claude-sonnet-4-6",
         modelCredentialId: "recipient-key",
@@ -196,8 +200,8 @@ describe("group handoff ownership", () => {
       expect(deps.events.notify).toHaveBeenCalledExactlyOnceWith(run.threadId, 1);
       expect(deps.jobs.enqueue).toHaveBeenCalledExactlyOnceWith(runContinueJob("run-b"));
       expect(tx.bot.findFirst).toHaveBeenCalledWith({
-        where: { id: "bot-b", spaceId: run.spaceId, userId: run.userId, archivedAt: null },
-        select: { modelProvider: true, modelId: true, modelCredentialId: true },
+        where: { id: "bot-b", spaceId: run.spaceId, archivedAt: null },
+        select: expect.objectContaining({ modelCredentialId: true, primaryRuntimeRevision: true }),
       });
       expect(runCreate).toHaveBeenCalledWith({
         data: {
@@ -210,6 +214,7 @@ describe("group handoff ownership", () => {
           trigger: "follow_up",
           sourceMessageId: "message-1",
           primaryRuntime: expect.any(String),
+          primaryRuntimeRevision: 2,
           modelPinned: true,
           modelProvider: "anthropic",
           modelId: "claude-sonnet-4-6",
@@ -219,16 +224,19 @@ describe("group handoff ownership", () => {
     },
   );
 
-  function outbound() {
+  const senderProfile = { primaryRuntimePreference: null, primaryRuntimeRevision: 3 };
+
+  function outbound(existing?: Parameters<typeof harness>[1]) {
     enrolRecipient(true);
     vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", "bot-a,bot-b");
     vi.stubEnv("PRIMARY_RUNTIME_PILOT_GROUP_BOT_IDS", "bot-a,bot-b");
     vi.stubEnv("PRIMARY_RUNTIME_PILOT_OUTBOUND_BOT_IDS", "bot-a,bot-b");
     const sourceBlocks = [{ kind: "text", text: "@BOT-A /handoff BOT-B\nPrepare the report" }];
-    const fixture = harness(sourceBlocks);
+    const fixture = harness(sourceBlocks, existing);
     const source = {
       id: run.id,
       primaryRuntime: pilotRuntimeForBot(run.botId),
+      primaryRuntimeRevision: 3,
       thread: { groupId: "group-1" },
       sourceMessage: { blocks: sourceBlocks },
     };
@@ -237,7 +245,7 @@ describe("group handoff ownership", () => {
   }
 
   const outboundDraft = {
-    fromPrimaryPilot: true as const,
+    fromPrimaryPilot: { recipientRuntimeRevision: 2 },
     confirm_name: "BOT-B",
     bot_id: "bot-b",
     message: "One brief",
@@ -248,7 +256,7 @@ describe("group handoff ownership", () => {
     async () => {
       const { deps, tx, source, runCreate, messageCreate } = outbound();
       tx.run.findFirst
-        .mockResolvedValueOnce({ id: run.id } as never)
+        .mockResolvedValueOnce({ id: run.id, bot: senderProfile } as never)
         .mockResolvedValueOnce(null as never);
       await expect(
         handoffToGroupBot(deps as never, run, "group-1", outboundDraft),
@@ -260,7 +268,7 @@ describe("group handoff ownership", () => {
           status: "running",
           sourceMessage: { threadId: run.threadId, role: "user", authorUserId: run.userId },
         }),
-        select: { id: true },
+        select: expect.objectContaining({ bot: expect.any(Object) }),
       });
       expect(messageCreate).toHaveBeenCalledWith({
         data: expect.objectContaining({
@@ -307,7 +315,9 @@ describe("group handoff ownership", () => {
       for (const mode of ["source", "recipient", "busy"] as const) {
         const { deps, tx, runCreate } = outbound();
         tx.run.findFirst
-          .mockResolvedValueOnce((mode === "source" ? null : { id: run.id }) as never)
+          .mockResolvedValueOnce(
+            (mode === "source" ? null : { id: run.id, bot: senderProfile }) as never,
+          )
           .mockResolvedValueOnce((mode === "busy" ? { id: "busy" } : null) as never);
         if (mode === "recipient") tx.bot.findFirst.mockResolvedValueOnce(null as never);
         await expect(
@@ -317,6 +327,82 @@ describe("group handoff ownership", () => {
       }
     },
   );
+
+  it("routes an enrolled recipient set to Pi through the ordinary handoff even without native opt-in", async () => {
+    enrolRecipient(false);
+    const { deps, tx, runCreate } = harness([]);
+    tx.bot.findFirst.mockResolvedValueOnce({
+      ...(await tx.bot.findFirst()),
+      primaryRuntimePreference: "pi",
+    });
+    await expect(
+      handoffToGroupBot(deps as never, run, "group-1", pilotHandoff),
+    ).resolves.toHaveProperty("ok", true);
+    expect(runCreate).toHaveBeenCalledExactlyOnceWith({
+      data: expect.objectContaining({ trigger: "follow_up" }),
+    });
+    expect(runCreate).not.toHaveBeenCalledWith({
+      data: expect.objectContaining({ primaryRuntime: expect.any(String) }),
+    });
+  });
+
+  it("refuses explicit native without group enrolment rather than creating an ordinary child", async () => {
+    const { deps, tx, runCreate } = harness([]);
+    vi.stubEnv("PRIMARY_RUNTIME_PILOT_GROUP_BOT_IDS", "");
+    tx.bot.findFirst.mockResolvedValueOnce({
+      ...(await tx.bot.findFirst()),
+      primaryRuntimePreference: "unknown-native",
+    });
+    await expect(
+      handoffToGroupBot(deps as never, run, "group-1", pilotHandoff),
+    ).resolves.toHaveProperty("error");
+    expect(runCreate).not.toHaveBeenCalled();
+    expect(deps.jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("does not create a native child after the recipient switches away and back", async () => {
+    const { deps, tx, runCreate, messageCreate } = outbound();
+    tx.bot.findFirst.mockResolvedValueOnce({
+      ...(await tx.bot.findFirst()),
+      primaryRuntimeRevision: 4,
+    });
+    await expect(
+      handoffToGroupBot(deps as never, run, "group-1", outboundDraft),
+    ).resolves.toHaveProperty("error");
+    expect(messageCreate).not.toHaveBeenCalled();
+    expect(runCreate).not.toHaveBeenCalled();
+    expect(deps.jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it.skipIf(process.platform !== "linux")(
+    "rejects a stale native origin before writing the handoff",
+    async () => {
+      const { deps, tx, runCreate, messageCreate } = outbound();
+      tx.run.findFirst.mockResolvedValueOnce({
+        id: run.id,
+        bot: { ...senderProfile, primaryRuntimeRevision: 5 },
+      } as never);
+      await expect(
+        handoffToGroupBot(deps as never, run, "group-1", outboundDraft),
+      ).resolves.toHaveProperty("error", "the source bot runtime changed before delivery");
+      expect(messageCreate).not.toHaveBeenCalled();
+      expect(runCreate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("reuses the original native receipt instead of admitting a second child after configuration changes", async () => {
+    const { deps, tx, runCreate, messageCreate } = outbound({
+      id: "message-1",
+      sourceRuns: [{ id: "original-child", botId: "bot-b" }],
+    });
+    vi.stubEnv("PRIMARY_RUNTIME_PILOT_OUTBOUND_BOT_IDS", "");
+    await expect(
+      handoffToGroupBot(deps as never, run, "group-1", outboundDraft),
+    ).resolves.toMatchObject({ ok: true, runId: "original-child" });
+    expect(tx.bot.findFirst).not.toHaveBeenCalled();
+    expect(messageCreate).not.toHaveBeenCalled();
+    expect(runCreate).not.toHaveBeenCalled();
+  });
 
   it("does not silently route an opted-in group bot through Pi without handoff opt-in", async () => {
     enrolRecipient(false);
@@ -524,7 +610,7 @@ describe("explicit group destinations", () => {
       id: "group-1",
       name: "Project",
       thread: { id: "group-thread" },
-      members: ["bot-a", "bot-b"].map((id) => ({ bot: { id, name: id } })),
+      members: ["bot-a", "bot-b"].map((id) => ({ bot: { id, name: id, userId: run.userId } })),
     });
     h.tx.run.findFirst.mockResolvedValue({
       id: run.id,
@@ -763,7 +849,7 @@ describe("explicit group destinations", () => {
         id: "group-1",
         name: "Project",
         thread: { id: "group-thread" },
-        members: memberIds.map((id) => ({ bot: { id, name: id } })),
+        members: memberIds.map((id) => ({ bot: { id, name: id, userId: run.userId } })),
       });
       await expect(
         handoffToGroupBot(h.deps as never, run, "group-1", {
