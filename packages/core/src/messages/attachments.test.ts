@@ -1181,12 +1181,17 @@ describe("tool step history", () => {
     expect(redactPlainBearerTokens("Authorization: Bearer [redacted]")).toBe(
       "Authorization: Bearer [redacted]",
     );
+    expect(redactPlainBearerTokens("Bearer [redacted]")).toBe("Bearer [redacted]");
     expect(redactPlainBearerTokens("Bearer [redacted]]")).toBe("Bearer [redacted]]");
-    const many = "Bearer abc] Bearer abc: detail ".repeat(4_000);
+    expect(redactPlainBearerTokens("Bearer [redacted]: detail")).toBe("Bearer [redacted]: detail");
+    expect(redactPlainBearerTokens("Bearer [redacted]extra")).toBe("Bearer [redacted]");
+    expect(redactPlainBearerTokens("Bearer [redacted]FixtureTail]")).toBe("Bearer [redacted]]");
+    const many = "Bearer abc] Bearer abc: detail Bearer [redacted]extra ".repeat(4_000);
     expectLinearTime(() => {
       const redacted = redactPlainBearerTokens(many);
       expect(redacted).not.toContain("abc]");
       expect(redacted).not.toContain("abc:");
+      expect(redacted).not.toContain("extra");
       expect(redacted).toContain("Bearer [redacted]]");
       expect(redacted).toContain("Bearer [redacted]:");
     });

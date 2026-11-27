@@ -1,4 +1,18 @@
 const COMPOSIO_API_KEY_LABEL = "composio_api_key";
+const REDACTED_ASSIGNMENT = "COMPOSIO_API_KEY=[redacted]";
+
+function isWhitespace(ch: string | undefined): boolean {
+  return ch === " " || ch === "\t" || ch === "\n" || ch === "\r" || ch === "\f" || ch === "\v";
+}
+
+function isIdentifierCode(code: number): boolean {
+  return (
+    (code >= 48 && code <= 57) ||
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122) ||
+    code === 95
+  );
+}
 
 function startsWithIgnoreCase(text: string, needle: string, index: number): boolean {
   if (index + needle.length > text.length) return false;
@@ -10,28 +24,50 @@ function startsWithIgnoreCase(text: string, needle: string, index: number): bool
   return true;
 }
 
-/** End of a quoted assignment value, or -1 when the quote never closes. */
-function quotedAssignmentEnd(text: string, open: number): number {
-  const quote = text[open]!;
-  let index = open + 1;
-  while (index < text.length) {
-    const ch = text[index]!;
-    if (ch === "\\") {
-      index += 2;
-      continue;
+/** End of an assignment value, or -1 when the separator has nothing after it. */
+function assignmentValueEnd(text: string, open: number): number {
+  const quote = text[open];
+  if (quote === '"' || quote === "'") {
+    let index = open + 1;
+    while (index < text.length) {
+      const ch = text[index]!;
+      if (ch === "\\") {
+        const next = index + 1;
+        if (next >= text.length || text[next] === "\n" || text[next] === "\r") break;
+        index += 2;
+        continue;
+      }
+      if (ch === quote) return index + 1;
+      if (ch === "\n" || ch === "\r") break;
+      index += 1;
     }
-    if (ch === quote) return index + 1;
-    if (quote === '"' && (ch === "\n" || ch === "\r")) return -1;
-    index += 1;
+    let end = open;
+    while (end < text.length && !isWhitespace(text[end])) end += 1;
+    return end > open ? end : -1;
   }
-  return -1;
+  let end = open;
+  while (end < text.length && !isWhitespace(text[end])) end += 1;
+  return end > open ? end : -1;
+}
+
+/** A complete JSON value. Pattern replacement must not reopen its quotes. */
+function isJsonDocument(text: string): boolean {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch (error) {
+    if (error instanceof SyntaxError) return false;
+    throw error;
+  }
 }
 
 /**
- * Redact a COMPOSIO_API_KEY assignment before JSON-like quotes are split from the label.
- * Quoted values keep their quotes, so a real JSON field stays valid.
+ * Redact a COMPOSIO_API_KEY assignment in text that is not a JSON document.
+ * A JSON document is left unchanged so a value inside a string, and the fields beside it, stay valid.
+ * Whitespace may surround `:` or `=`, including a newline before a quoted value.
  */
 export function redactComposioApiKeyAssignments(text: string): string {
+  if (isJsonDocument(text)) return text;
   let out = "";
   let cursor = 0;
   let index = 0;
@@ -46,51 +82,24 @@ export function redactComposioApiKeyAssignments(text: string): string {
       continue;
     }
     const before = index > 0 ? text.charCodeAt(index - 1) : 0;
-    const identifier =
-      (before >= 48 && before <= 57) ||
-      (before >= 65 && before <= 90) ||
-      (before >= 97 && before <= 122) ||
-      before === 95;
-    if (identifier) {
+    if (isIdentifierCode(before)) {
       index += COMPOSIO_API_KEY_LABEL.length;
       continue;
     }
     let pos = index + COMPOSIO_API_KEY_LABEL.length;
-    let sawSeparator = false;
-    if (text[pos] === "=" || text[pos] === ":") {
-      sawSeparator = true;
-      pos += 1;
-    }
-    const afterSeparator = pos;
-    while (pos < text.length && (text[pos] === " " || text[pos] === "\t")) pos += 1;
-    if (pos !== afterSeparator) sawSeparator = true;
-    if (!sawSeparator) {
+    while (isWhitespace(text[pos])) pos += 1;
+    if (text[pos] !== "=" && text[pos] !== ":") {
       index += COMPOSIO_API_KEY_LABEL.length;
       continue;
     }
-    const quote = text[pos];
-    if (quote === '"' || quote === "'") {
-      const end = quotedAssignmentEnd(text, pos);
-      if (end < 0) {
-        index += COMPOSIO_API_KEY_LABEL.length;
-        continue;
-      }
-      out += `${text.slice(cursor, pos + 1)}[redacted]${quote}`;
-      cursor = end;
-      index = end;
-      continue;
-    }
-    let end = pos;
-    while (end < text.length) {
-      const ch = text[end]!;
-      if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") break;
-      end += 1;
-    }
-    if (end === pos) {
+    pos += 1;
+    while (isWhitespace(text[pos])) pos += 1;
+    const end = assignmentValueEnd(text, pos);
+    if (end < 0) {
       index += COMPOSIO_API_KEY_LABEL.length;
       continue;
     }
-    out += `${text.slice(cursor, pos)}[redacted]`;
+    out += `${text.slice(cursor, index)}${REDACTED_ASSIGNMENT}`;
     cursor = end;
     index = end;
   }

@@ -19,11 +19,12 @@ const BOUNDED_OMISSION_MARKER = /(\n… \[\d+ characters not kept\] …\n)/;
 /**
  * Redact Bearer tokens in plain or raw JSON-like text, handling quoted, escaped-quote, and
  * newline-wrapped values without consuming JSON structural delimiters (`:`, `,`, `}`, `]`).
- * A value that is already `[redacted]` stays whole, so a later pass does not grow another `]`.
+ * `[redacted]` stays in place only when it is the whole token. Characters after it, as in
+ * `[redacted]FixtureTail`, are still masked, and a later pass does not grow another `]`.
  */
 export function redactPlainBearerTokens(text: string): string {
   return text.replace(
-    /Bearer\s+(?!\[redacted\])(?:\\"(?!\s*[:,}\]\r\n]|$)(?:\\[^"\r\n]|[^"\\\r\n])+(?:\\")?|"(?!\s*[:,}\]\r\n]|$)[^"\r\n]+"?|'(?!\s*[:,}\]\r\n]|$)[^'\r\n]+'?|(?:\\(?!")|[^\s"',;&}:\]\\])+)/gi,
+    /Bearer\s+(?!\[redacted\](?=$|[\s"'\\,;&}:\]]))(?:\\"(?!\s*[:,}\]\r\n]|$)(?:\\[^"\r\n]|[^"\\\r\n])+(?:\\")?|"(?!\s*[:,}\]\r\n]|$)[^"\r\n]+"?|'(?!\s*[:,}\]\r\n]|$)[^'\r\n]+'?|\[redacted\](?:\\(?!")|[^\s"',;&}:\]\\])+|(?:\\(?!")|[^\s"',;&}:\]\\])+)/gi,
     "Bearer [redacted]",
   );
 }

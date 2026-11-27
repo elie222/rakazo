@@ -511,10 +511,18 @@ function cleanToolText(text: string, secrets: string[], honorOmissionMarker = fa
     const encoded = JSON.stringify(value).slice(1, -1);
     return [value, encoded, encoded.replaceAll("<", "\\u003c").replaceAll(">", "\\u003e")];
   });
-  const sanitizeDecoded = (value: string) => sanitizeSensitiveText(redactSecrets(value, secrets));
-  const sanitizePlain = (value: string) => sanitizeSensitiveText(redactSecrets(value, secretForms));
-  const prepared = redactComposioApiKeyAssignments(text);
-  const cleaned = redactJsonStringsAndPlainText(prepared, sanitizeDecoded, sanitizePlain, secrets);
+  // Exact secrets first. A later pattern must not change the text a registered secret matches.
+  const withSecrets = redactJsonStringsAndPlainText(
+    text,
+    (value) => redactSecrets(value, secrets),
+    (value) => redactSecrets(value, secretForms),
+    secrets,
+  );
+  const cleaned = redactJsonStringsAndPlainText(
+    redactComposioApiKeyAssignments(withSecrets),
+    sanitizeSensitiveText,
+    sanitizeSensitiveText,
+  );
   return redactCredentialJsonFields(cleaned, honorOmissionMarker);
 }
 

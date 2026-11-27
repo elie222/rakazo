@@ -3,6 +3,7 @@ import { RUN_TRIGGERS } from "@rakazo/contracts";
 import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { appendToolCallSegment } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
+import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
 import { sanitizeSensitiveText } from "../../runtime/pi/pi-runtime-errors.js";
 import type { ReplyState, RunContext } from "../assembly/run-context.js";
 import { redactBlocks } from "../assembly/run-messages.js";
@@ -688,6 +689,46 @@ describe("tool step outcomes", () => {
         [],
       ),
     ).toBe("Bearer [redacted]: detail");
+  });
+
+  it("keeps a bearer suffix and a composio assignment inside the redaction", () => {
+    const prefix = "fixturePrefix";
+    const bearer = `Bearer ${prefix}FixtureTail`;
+    expect(
+      keptToolResult({ ...base, result: { content: [{ type: "text", text: bearer }] } }, [prefix]),
+    ).toBe("Bearer [redacted]");
+    expect(sanitizeConnectorError(new Error(bearer), [prefix])).toBe("Bearer [redacted]");
+    expect(sanitizeSensitiveText("Bearer [redacted]extra")).toBe("Bearer [redacted]");
+    expect(sanitizeSensitiveText("Bearer [redacted]")).toBe("Bearer [redacted]");
+
+    const kept = (text: string, secrets: string[] = []) =>
+      keptToolResult({ ...base, result: { content: [{ type: "text", text }] } }, secrets);
+    const replay = (text: string, secrets: string[] = []) =>
+      bounded(text, 1_000, secrets, { replaySaved: true });
+    for (const read of [kept, replay]) {
+      expect(read('COMPOSIO_API_KEY : "demo123"')).not.toContain("demo123");
+      expect(read('COMPOSIO_API_KEY:\n"demo123"')).not.toContain("demo123");
+      expect(read('COMPOSIO_API_KEY: "demo123')).not.toContain("demo123");
+      const inside = read('{"message":"COMPOSIO_API_KEY: demo123","status":"ok"}');
+      expect(inside).not.toContain("demo123");
+      expect(JSON.parse(inside ?? "")).toEqual({
+        message: "COMPOSIO_API_KEY=[redacted]",
+        status: "ok",
+      });
+      const escaped = read('{"message":"COMPOSIO_API_KEY: \\"demo123\\"","status":"ok"}');
+      expect(escaped).not.toContain("demo123");
+      expect(JSON.parse(escaped ?? "")).toEqual({
+        message: "COMPOSIO_API_KEY=[redacted]",
+        status: "ok",
+      });
+      const registered = "OTHER_TOKEN=demo-other COMPOSIO_API_KEY=demo-composio";
+      expect(read(registered, [registered])).toBe("[redacted]");
+    }
+    const many = 'COMPOSIO_API_KEY : "demo123" COMPOSIO_API_KEY:\n"demo123" '.repeat(2_000);
+    expectLinearTime(() => {
+      const redacted = kept(many);
+      expect(redacted).not.toContain("demo123");
+    });
   });
 
   it("redacts a raw credential that contains a forged omission marker, including its suffix", () => {
