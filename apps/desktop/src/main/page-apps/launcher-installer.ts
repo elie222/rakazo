@@ -3,6 +3,7 @@ import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { bestEffort } from "@rakazo/logging";
 import { PAGE_APP_ID } from "./bundle-name.js";
+import { createOneAtATime } from "./one-at-a-time.js";
 import { createPageAppApi, revokePageAppToken } from "./page-app-api.js";
 import type { PageAppConfig } from "./page-app-files.js";
 import {
@@ -201,10 +202,14 @@ export function createLauncherInstaller(options: {
     }
   }
 
+  // An install writes its token and config before its launcher and record, so a refresh, or
+  // another install choosing a shortcut name, never runs in between.
+  const exclusive = createOneAtATime();
   return {
-    install,
-    uninstall,
-    refresh,
+    install: (request: PageAppInstallRequest, server: string) =>
+      exclusive(() => install(request, server)),
+    uninstall: (appId: string) => exclusive(() => uninstall(appId)),
+    refresh: () => exclusive(refresh),
     /** A launcher never moves while its app could open, so there is nothing to wait for. */
     idle: async () => undefined,
   };

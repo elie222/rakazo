@@ -20,6 +20,7 @@ import {
 import { pageAppBundleId, pageAppName, uniqueBundleName } from "./bundle-name.js";
 import { ICNS_SIZES, isSquarePng, writeIcns } from "./icns.js";
 import { ICO_SIZES } from "./ico.js";
+import { createOneAtATime } from "./one-at-a-time.js";
 import { createPageAppApi, revokePageAppToken } from "./page-app-api.js";
 import type { PageAppConfig } from "./page-app-files.js";
 import {
@@ -171,14 +172,7 @@ export function createPageAppInstaller(options: {
 }) {
   const { registry, home, appData } = options;
   const source = options.source ?? runningBundle();
-  // Installs, removals and refreshes share the registry, token files and staging folder.
-  let queue: Promise<unknown> = Promise.resolve();
-  const exclusive = <T>(work: () => Promise<T>): Promise<T> => {
-    const next = queue.then(work, work);
-    // The caller gets the failure; the next one waits only for this one to settle.
-    queue = Promise.allSettled([next]);
-    return next;
-  };
+  const exclusive = createOneAtATime();
 
   async function install(request: PageAppInstallRequest, server: string): Promise<boolean> {
     const config: PageAppConfig = {
