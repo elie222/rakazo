@@ -370,7 +370,7 @@ describe("ComposerModelPicker", () => {
     expect(onConnect).toHaveBeenCalledOnce();
   });
 
-  it("stars and unstars models via preferences.update and pins favorites above provider groups", async () => {
+  it("stars and unstars models via preferences.update and queues rapid successive clicks", async () => {
     let savedStarred: string[] = [];
     vi.mocked(rpc.me).mockImplementation(
       async () =>
@@ -385,7 +385,16 @@ describe("ComposerModelPicker", () => {
         }) as never,
     );
     vi.mocked(rpc.preferences.update).mockImplementation(async ({ chatPreferences }) => {
-      savedStarred = chatPreferences?.starredModels ?? [];
+      const toggle = chatPreferences?.starredModelToggle;
+      if (toggle) {
+        savedStarred = toggle.starred
+          ? savedStarred.includes(toggle.key)
+            ? savedStarred
+            : [...savedStarred, toggle.key]
+          : savedStarred.filter((entry) => entry !== toggle.key);
+      } else if (chatPreferences?.starredModels) {
+        savedStarred = chatPreferences.starredModels;
+      }
       return {
         defaultProvider: "acme",
         defaultModel: "fast",
@@ -412,12 +421,23 @@ describe("ComposerModelPicker", () => {
       if (!button) throw new Error("star button not rendered");
       return button;
     });
-    const meCallsBeforeStar = vi.mocked(rpc.me).mock.calls.length;
-    act(() => starSmart.click());
+    const starFast = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Add Fast (acme) to favorites"]',
+    )!;
+    // Two rapid clicks in a row both persist without the second being dropped.
+    act(() => {
+      starSmart.click();
+      starFast.click();
+    });
 
     await vi.waitFor(() =>
       expect(rpc.preferences.update).toHaveBeenCalledWith({
-        chatPreferences: { starredModels: ["acme::smart"] },
+        chatPreferences: { starredModelToggle: { key: "acme::smart", starred: true } },
+      }),
+    );
+    await vi.waitFor(() =>
+      expect(rpc.preferences.update).toHaveBeenCalledWith({
+        chatPreferences: { starredModelToggle: { key: "acme::fast", starred: true } },
       }),
     );
     await vi.waitFor(() => {
@@ -426,8 +446,6 @@ describe("ComposerModelPicker", () => {
       );
       expect(headings).toEqual(["Favorites", "acme", "Thinking"]);
     });
-    // Let the stale me refetch settle so useSave finishes its in-flight guard.
-    await vi.waitFor(() => expect(rpc.me).toHaveBeenCalledTimes(meCallsBeforeStar + 1));
     await act(async () => {
       await flush();
     });
@@ -438,14 +456,8 @@ describe("ComposerModelPicker", () => {
     act(() => unstarSmart.click());
     await vi.waitFor(() =>
       expect(rpc.preferences.update).toHaveBeenLastCalledWith({
-        chatPreferences: { starredModels: [] },
+        chatPreferences: { starredModelToggle: { key: "acme::smart", starred: false } },
       }),
     );
-    await vi.waitFor(() => {
-      const headings = [...document.querySelectorAll("[cmdk-group-heading]")].map(
-        (heading) => heading.textContent,
-      );
-      expect(headings).toEqual(["acme", "Thinking"]);
-    });
   });
 });

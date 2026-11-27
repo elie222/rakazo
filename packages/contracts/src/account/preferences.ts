@@ -27,6 +27,12 @@ export const StarredModelKeySchema = z
     { message: "Invalid model key" },
   );
 
+export const StarredModelToggleSchema = z.strictObject({
+  key: StarredModelKeySchema,
+  starred: z.boolean(),
+});
+export type StarredModelToggle = z.infer<typeof StarredModelToggleSchema>;
+
 export const AccountChatPreferencesSchema = ChatPreferencesSchema.extend({
   // Older servers omit these fields, so clients handle their absence.
   notificationSounds: z.boolean().optional(),
@@ -36,6 +42,7 @@ export const AccountChatPreferencesSchema = ChatPreferencesSchema.extend({
 export const AccountChatPreferencesPatchSchema = ChatPreferencesPatchSchema.extend({
   notificationSounds: z.boolean().optional(),
   starredModels: z.array(StarredModelKeySchema).max(MAX_STARRED_MODELS).optional(),
+  starredModelToggle: StarredModelToggleSchema.optional(),
 });
 export type AccountChatPreferencesPatch = z.infer<typeof AccountChatPreferencesPatchSchema>;
 

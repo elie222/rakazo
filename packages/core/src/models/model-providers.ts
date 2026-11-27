@@ -226,15 +226,27 @@ export function normalizeStarredModelKeys(keys: readonly string[] | undefined): 
   return normalized;
 }
 
+/** Adds or removes one `provider::modelId` key idempotently, preserving existing order. */
+export function applyStarredModelToggle(
+  keys: readonly string[] | undefined,
+  key: string,
+  starred: boolean,
+): string[] {
+  const normalized = normalizeStarredModelKeys(keys);
+  const parsed = parseModelOptionKey(key.trim());
+  if (!parsed) return normalized;
+  const target = modelOptionKey(parsed.provider, parsed.modelId);
+  if (starred) return normalized.includes(target) ? normalized : [...normalized, target];
+  return normalized.filter((entry) => entry !== target);
+}
+
 /** Toggles one `provider::modelId` key in the starred list, appending newly starred models. */
 export function toggleStarredModelKey(keys: readonly string[] | undefined, key: string): string[] {
   const normalized = normalizeStarredModelKeys(keys);
   const parsed = parseModelOptionKey(key.trim());
   if (!parsed) return normalized;
   const target = modelOptionKey(parsed.provider, parsed.modelId);
-  return normalized.includes(target)
-    ? normalized.filter((entry) => entry !== target)
-    : [...normalized, target];
+  return applyStarredModelToggle(normalized, target, !normalized.includes(target));
 }
 
 export type ModelChoiceSection = {

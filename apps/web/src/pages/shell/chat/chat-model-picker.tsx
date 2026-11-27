@@ -179,6 +179,22 @@ export function ChatModelPicker({
         >
           <Command
             shouldFilter={false}
+            onKeyDown={(event) => {
+              if (
+                !onToggleStar ||
+                !(event.metaKey || event.ctrlKey) ||
+                event.altKey ||
+                event.key.toLowerCase() !== "s"
+              )
+                return;
+              const selectedItem = event.currentTarget.querySelector<HTMLElement>(
+                '[cmdk-item][data-selected="true"]',
+              );
+              const starKey = selectedItem?.dataset.starKey;
+              if (!starKey) return;
+              event.preventDefault();
+              onToggleStar(starKey);
+            }}
             className={`h-auto min-h-0 max-h-(--available-height) rounded-none bg-popover *:data-[slot=command-input-wrapper]:shrink-0 ${sidePanel ? "sm:flex-1" : ""}`}
           >
             {showSearch ? (
@@ -228,6 +244,7 @@ export function ChatModelPicker({
                         aria-label={choice.label}
                         value={itemValue}
                         data-checked={choice.key === value}
+                        data-star-key={canonicalKey ?? undefined}
                         aria-describedby={choice.images === false ? imagesHintId : undefined}
                         onSelect={() => {
                           onChange(choice.key);
@@ -258,7 +275,7 @@ export function ChatModelPicker({
                             }
                             aria-pressed={isStarred}
                             data-starred={isStarred}
-                            className={`flex size-6 shrink-0 items-center justify-center rounded-sm outline-none transition-opacity focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring ${
+                            className={`flex size-6 shrink-0 items-center justify-center rounded-sm outline-none transition-opacity ${
                               isStarred
                                 ? "text-warning opacity-100"
                                 : "text-muted-foreground/60 opacity-0 hover:text-foreground group-hover/command-item:opacity-100 group-data-selected/command-item:opacity-100"

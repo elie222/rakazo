@@ -214,8 +214,22 @@ export function RoleModelPicker({
           shouldFilter={false}
           loop
           value={activeValue}
-          onKeyDown={() => {
+          onKeyDown={(event) => {
             searched.current = false;
+            if (
+              !onToggleStar ||
+              !(event.metaKey || event.ctrlKey) ||
+              event.altKey ||
+              event.key.toLowerCase() !== "s"
+            )
+              return;
+            const selectedItem = event.currentTarget.querySelector<HTMLElement>(
+              '[cmdk-item][data-selected="true"]',
+            );
+            const starKey = selectedItem?.dataset.starKey;
+            if (!starKey) return;
+            event.preventDefault();
+            onToggleStar(starKey);
           }}
           onValueChange={(value) => {
             // cmdk moves the active row to its first row after a search changes, which would
@@ -273,6 +287,7 @@ export function RoleModelPicker({
                       key={itemValue}
                       value={itemValue}
                       data-checked={optionValue(option) === currentValue}
+                      data-star-key={starKey}
                       onSelect={() => {
                         if (optionValue(option) !== currentValue) onPick(option);
                         close();
@@ -291,7 +306,7 @@ export function RoleModelPicker({
                           aria-label={t`Remove ${option.label} from favorites`}
                           aria-pressed
                           data-starred="true"
-                          className="flex size-6 shrink-0 items-center justify-center rounded-sm text-warning outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="flex size-6 shrink-0 items-center justify-center rounded-sm text-warning outline-none"
                           onPointerDown={(event) => event.stopPropagation()}
                           onMouseDown={(event) => event.stopPropagation()}
                           onClick={(event) => {
@@ -318,6 +333,7 @@ export function RoleModelPicker({
                       key={optionValue(option)}
                       value={optionValue(option)}
                       data-checked={optionValue(option) === currentValue}
+                      data-star-key={starKey}
                       onSelect={() => {
                         // The model in use is already saved; picking it again changes nothing.
                         if (optionValue(option) !== currentValue) onPick(option);
@@ -336,7 +352,7 @@ export function RoleModelPicker({
                           }
                           aria-pressed={isStarred}
                           data-starred={isStarred}
-                          className={`flex size-6 shrink-0 items-center justify-center rounded-sm outline-none transition-opacity focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring ${
+                          className={`flex size-6 shrink-0 items-center justify-center rounded-sm outline-none transition-opacity ${
                             isStarred
                               ? "text-warning opacity-100"
                               : "text-muted-foreground/60 opacity-0 hover:text-foreground group-hover/command-item:opacity-100 group-data-selected/command-item:opacity-100"

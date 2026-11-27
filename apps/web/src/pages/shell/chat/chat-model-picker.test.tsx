@@ -296,6 +296,17 @@ describe("ChatModelPicker", () => {
     expect(onToggleStar).toHaveBeenCalledExactlyOnceWith("openrouter::claude-sonnet-4-5");
     expect(onChange).not.toHaveBeenCalled();
     expect(options().length).toBeGreaterThan(0);
+
+    // Pressing Ctrl+S toggles the currently highlighted option's star without selecting it.
+    onToggleStar.mockClear();
+    const command = document.querySelector<HTMLElement>('[data-slot="command"]')!;
+    act(() => {
+      command.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true }),
+      );
+    });
+    expect(onToggleStar).toHaveBeenCalledExactlyOnceWith("openai::gpt-5");
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("hides the Favorites section when no starred models are connected", () => {

@@ -18,9 +18,10 @@ import type {
   SettingsScope,
   SpaceChangeKind,
 } from "@rakazo/contracts";
-import { parseLabs } from "@rakazo/contracts";
+import { MAX_STARRED_MODELS, parseLabs } from "@rakazo/contracts";
 import {
   abortableDelay,
+  applyStarredModelToggle,
   approvalModeFromPreference,
   approvalPreferenceFromMode,
   ClientError,
@@ -242,20 +243,55 @@ export function accountRoutes(ctx: RouterContext) {
           input.labs === undefined
             ? undefined
             : parseLabs(input.labs).filter((feature) => !deploymentLabs.includes(feature));
+        const { starredModelToggle, ...restChatPreferences } = input.chatPreferences ?? {};
         const chatPreferences =
-          input.chatPreferences?.starredModels === undefined
-            ? input.chatPreferences
-            : {
-                ...input.chatPreferences,
-                starredModels: normalizeStarredModelKeys(input.chatPreferences.starredModels),
-              };
+          input.chatPreferences === undefined
+            ? undefined
+            : restChatPreferences.starredModels === undefined
+              ? restChatPreferences
+              : {
+                  ...restChatPreferences,
+                  starredModels: normalizeStarredModelKeys(restChatPreferences.starredModels),
+                };
         const data = {
           ...(input.locale === undefined ? {} : { locale: input.locale }),
           ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
           ...(labs === undefined ? {} : { labs }),
           ...chatPreferences,
         };
-        if (input.timezone !== undefined) {
+        if (starredModelToggle !== undefined) {
+          // Apply the toggle against the current row in a serializable transaction so concurrent
+          // stars from different tabs or devices never overwrite each other.
+          await withTransactionRetry(() =>
+            deps.prisma.$transaction(
+              async (tx) => {
+                const current = await tx.user.findUniqueOrThrow({
+                  where: { id: userId },
+                  select: { starredModels: true },
+                });
+                const nextStarred = applyStarredModelToggle(
+                  current.starredModels,
+                  starredModelToggle.key,
+                  starredModelToggle.starred,
+                );
+                if (nextStarred.length > MAX_STARRED_MODELS) {
+                  throw new ClientError(
+                    "BAD_REQUEST",
+                    `You can favorite up to ${MAX_STARRED_MODELS} models.`,
+                  );
+                }
+                await tx.user.update({
+                  where: { id: userId },
+                  data: { ...data, starredModels: nextStarred },
+                });
+              },
+              { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+            ),
+          );
+          if (input.timezone !== undefined) {
+            await changeUserTimezone(deps, userId, input.timezone);
+          }
+        } else if (input.timezone !== undefined) {
           // The routines that took the account zone keep their local schedule in the new
           // one, and the other fields commit in the same save. The move's row lock still
           // waits for any bot creation holding the user row, so no new bot is missed below.

@@ -463,6 +463,38 @@ describe("account preferences", () => {
     });
   });
 
+  it("atomically adds and removes one starred model without overwriting concurrent favorites", async () => {
+    const { deps, actor } = preferencesDeps("organic");
+    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+    await expect(
+      client.preferences.update({
+        chatPreferences: {
+          starredModelToggle: { key: "anthropic::claude-sonnet-4-5", starred: true },
+        },
+      }),
+    ).resolves.toMatchObject({
+      chatPreferences: { starredModels: ["anthropic::claude-sonnet-4-5"] },
+    });
+    await expect(
+      client.preferences.update({
+        chatPreferences: {
+          starredModelToggle: { key: "openai::gpt-5", starred: true },
+        },
+      }),
+    ).resolves.toMatchObject({
+      chatPreferences: { starredModels: ["anthropic::claude-sonnet-4-5", "openai::gpt-5"] },
+    });
+    await expect(
+      client.preferences.update({
+        chatPreferences: {
+          starredModelToggle: { key: "anthropic::claude-sonnet-4-5", starred: false },
+        },
+      }),
+    ).resolves.toMatchObject({
+      chatPreferences: { starredModels: ["openai::gpt-5"] },
+    });
+  });
+
   it("saves the timezone and the language preference in one write", async () => {
     const setup = preferencesDeps("organic", "Africa/Cairo");
 
