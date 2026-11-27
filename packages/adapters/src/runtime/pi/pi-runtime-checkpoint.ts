@@ -394,6 +394,10 @@ export function buildTurnCheckpoint(input: {
     }
   }
   const acceptedWatch: string[] = [];
+  // Deliveries from before the restored prefix are already in the saved tail. Re-appending
+  // them has no later read to anchor, so they land at the end and evict newer pages.
+  const outsideFreshPrefix = restoredStatePrefix(input.stateMessages, input.restoredMessages);
+  const acceptedFreshWatch: string[] = [];
   const coveredWatch = new Set<AgentMessage>();
   if (input.watchDeliveries) {
     const slices: Array<{
@@ -449,7 +453,11 @@ export function buildTurnCheckpoint(input: {
             },
             content: [{ type: "text" as const, text: EMPTY_WATCH_DELIVERY }],
           };
-      acceptedWatch.push(...watchTextValues(synthetic, input.contextStrategy));
+      const extracted = watchTextValues(synthetic, input.contextStrategy);
+      acceptedWatch.push(...extracted);
+      if (slice.entry.sourceIndex !== undefined && slice.entry.sourceIndex >= outsideFreshPrefix) {
+        acceptedFreshWatch.push(...extracted);
+      }
     }
   }
   const unseenWatch: string[] = [];
@@ -481,7 +489,7 @@ export function buildTurnCheckpoint(input: {
     restoredMessages: input.restoredMessages,
     watchOutsideText,
     priorOutsideText: input.priorOutsideText,
-    freshWatch: [...acceptedWatch, ...unseenWatch],
+    freshWatch: [...acceptedFreshWatch, ...unseenWatch],
     contextStrategy: input.contextStrategy,
   });
   const assistant = messages.findLast((message) => message.role === "assistant");
@@ -541,7 +549,8 @@ function checkpointOutsideText(input: {
   const prior = input.priorOutsideText?.trim() ? input.priorOutsideText : undefined;
   if (prior) {
     const prefix = restoredStatePrefix(input.stateMessages, input.restoredMessages);
-    // A new read after the restored prefix stays, even when its text matches an older check.
+    // A new read at or after the restored prefix stays, even when its text matches an older check.
+    // Deliveries from inside the prefix are left out before this list is built.
     const freshWatch = input.freshWatch.filter((entry) => entry.trim());
     const addition = chronologicalOutsideText(
       input.stateMessages.slice(prefix),
@@ -619,8 +628,9 @@ function persistsCheckpointOutside(
  * When the checkpoint already lists watch checks, restore will not read routine results again,
  * so the sibling's checks have to be on that list. A checkpoint with no list keeps message
  * extraction, unless the sibling is the first watch evidence, in which case the list must also
- * hold the checks already stored on retained results. A page sibling on a watch-only checkpoint
- * starts the outside-text tail from the saved watch list, then appends the sibling in order.
+ * hold the checks already stored on retained results. A page or routine sibling on a checkpoint
+ * with no tail starts one from the saved watch list and the pages already in the transcript,
+ * then appends the sibling in order.
  */
 function checkpointWithSiblingWatchResults(
   checkpoint: TurnCheckpoint,
@@ -636,10 +646,15 @@ function checkpointWithSiblingWatchResults(
       : []);
   let outsideText = checkpoint.outsideText;
   const outsideSibling = siblings.some((message) => persistsCheckpointOutside(message, wrapped));
-  if (!outsideText && outsideSibling && (retainedWatch.length > 0 || additions.length > 0)) {
-    outsideText = retainedWatch.reduce((kept, entry) => appendOutsideText(kept, entry), "");
+  // A watch-only or page-only checkpoint has no tail yet. Start from the outside results already
+  // in the transcript, including retained pages, then append the sibling in order.
+  if (!outsideText && (additions.length > 0 || (outsideSibling && retainedWatch.length > 0))) {
+    outsideText = chronologicalOutsideText(checkpoint.messages, retainedWatch);
   }
-  if (outsideText !== undefined && (checkpoint.outsideText || outsideSibling)) {
+  if (
+    outsideText !== undefined &&
+    (checkpoint.outsideText || outsideSibling || additions.length > 0)
+  ) {
     for (const message of siblings)
       outsideText = appendMessageOutside(outsideText, message, wrapped);
   }
