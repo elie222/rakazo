@@ -12,7 +12,7 @@ import { IsolationError, pageChangesScope, runAsTenant } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import type { Context, Hono } from "hono";
 import { readBoundedBody } from "../http/http-body.js";
-import { windowCounter } from "../http/window-counter.js";
+import { throttleKey, windowCounter } from "../http/window-counter.js";
 import type { PageAppAccess } from "./page-apps.js";
 import {
   pageAppFromToken,
@@ -25,6 +25,8 @@ import { getPage } from "./pages.js";
 
 const MINUTE_MS = 60_000;
 const REQUESTS_PER_APP_PER_MINUTE = 600;
+/** A token is 32 random bytes; this only keeps guesses from loading the database. */
+const REQUESTS_PER_IP_PER_MINUTE = 1_200;
 const HEARTBEAT_MS = 25_000;
 const SMALL_BODY_BYTES = 4 * 1024;
 
@@ -42,13 +44,20 @@ export type PageAppRouteDeps = {
  * What an installed page app reads and writes, with its own token and nothing else: its page,
  * that page's pictures, its owner's saved values on it, and which abilities the owner approved.
  */
-export function mountPageAppRoutes(app: Hono, deps: PageAppRouteDeps) {
+export function mountPageAppRoutes(
+  app: Hono,
+  deps: PageAppRouteDeps,
+  clientIp: (c: Context) => string | undefined,
+) {
   const requests = windowCounter(MINUTE_MS);
+  const addresses = windowCounter(MINUTE_MS);
 
   async function withApp(
     c: Context,
     handle: (access: PageAppAccess) => Promise<Response>,
   ): Promise<Response> {
+    if (addresses(throttleKey(clientIp(c))) > REQUESTS_PER_IP_PER_MINUTE)
+      return c.json({ error: "Too many requests" }, 429, { ...HEADERS, "retry-after": "60" });
     const access = await pageAppFromToken(deps.prisma, c.req.header("authorization"));
     if (!access) return c.json({ error: "Unauthorized" }, 401, HEADERS);
     if (requests(access.appId) > REQUESTS_PER_APP_PER_MINUTE)
