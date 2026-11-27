@@ -377,6 +377,19 @@ describe("readInboundEmail", () => {
     expect(email.text).toBe(`${"a".repeat(INBOUND_EMAIL_TEXT_MAX_CHARS - 1)}\n[…]`);
   });
 
+  it("reads a long body whole for the inbox, beside the cut text that keys it", async () => {
+    const body = "word ".repeat(INBOUND_EMAIL_TEXT_MAX_CHARS).trim();
+    const email = await readInboundEmail(bytes(message(plain, `${body}\r\n`)), { resolver });
+    const short = await readInboundEmail(
+      bytes(message(plain, `${body.slice(0, INBOUND_EMAIL_TEXT_MAX_CHARS)} other end\r\n`)),
+      { resolver },
+    );
+
+    expect(email.wholeText).toBe(body);
+    expect(email.text).toHaveLength(INBOUND_EMAIL_TEXT_MAX_CHARS + "\n[…]".length);
+    expect(email.key).toBe(short.key);
+  });
+
   it("refuses mail with more parts than real mail has", async () => {
     const boundary = "b2";
     const parts = Array.from(

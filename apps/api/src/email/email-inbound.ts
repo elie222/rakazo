@@ -322,7 +322,8 @@ async function saveToInbox(
         to: email.to.slice(0, LIST_STORED_MAX),
         cc: email.cc.slice(0, LIST_STORED_MAX),
         subject: email.subject.slice(0, HEADER_MAX_CHARS),
-        text: email.text,
+        // A long body costs the owner storage as files do, so the same senders get it kept whole.
+        text: options.keepFiles ? email.wholeText : email.text,
         attachments: files,
       },
       select,
