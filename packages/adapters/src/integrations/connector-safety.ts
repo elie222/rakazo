@@ -10,20 +10,20 @@ const CONNECTOR_JSON_CONTAINER_START =
 const CONNECTOR_RAW_JSON_CONTAINER_START =
   /(?:\{(?:\s|\\[nrt])*(?:\\*"|\}|$)|\[(?:\s|\\[nrt])*(?:\\*"|[{[\]]|(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)(?=\s|\\[nrt]|[,\]$])))/;
 const CONNECTOR_DECODED_NEXT_BEARER = new RegExp(
-  `${BEARER_CI}(?:[^\\S\\r\\n]+(?!(?:\\s))\\S|\\s+(?!(?:\\s|${CONNECTOR_JSON_CONTAINER_START.source}))\\S)`,
+  `${BEARER_CI}\\s+(?!(?:\\s|${CONNECTOR_JSON_CONTAINER_START.source}))\\S`,
 );
 const CONNECTOR_DECODED_DEFERRED_BEARER_FOLLOWS = new RegExp(
-  `${BEARER_CI}(?:[^\\S\\r\\n]+(?!(?:\\s|\\S*${BEARER_CI}\\s+\\S))\\S|\\s+(?!(?:\\s|${CONNECTOR_JSON_CONTAINER_START.source}|\\S*${BEARER_CI}\\s+\\S))\\S)`,
+  `${BEARER_CI}\\s+(?!(?:\\s|${CONNECTOR_JSON_CONTAINER_START.source}|\\S*${BEARER_CI}\\s+\\S))\\S`,
 );
 const CONNECTOR_DECODED_BEARER_RE = new RegExp(
   `${BEARER_CI}\\s+(?!${CONNECTOR_DECODED_DEFERRED_BEARER_FOLLOWS.source})(?!:${CONNECTOR_DECODED_NEXT_BEARER.source})\\S(?:(?!:?${CONNECTOR_DECODED_NEXT_BEARER.source})\\S)*`,
   "g",
 );
 const CONNECTOR_PLAIN_NEXT_BEARER = new RegExp(
-  `${BEARER_CI}(?:[^\\S\\r\\n]+(?!(?:\\s|\\\\[nrt]))\\S|\\s+(?!(?:\\s|\\\\[nrt]|${CONNECTOR_JSON_CONTAINER_START.source}))\\S|\\s*\\\\[nrt](?:\\s|\\\\[nrt])*(?!(?:\\s|\\\\[nrt]|${CONNECTOR_RAW_JSON_CONTAINER_START.source}))(?:\\\\"|["']|\\\\(?![nrt"\\\\])|[^\\s"',;&}:\\]\\\\]))`,
+  `${BEARER_CI}(?:\\s+(?!(?:\\s|\\\\[nrt]|${CONNECTOR_JSON_CONTAINER_START.source}))\\S|\\s*\\\\[nrt](?:\\s|\\\\[nrt])*(?!(?:\\s|\\\\[nrt]|${CONNECTOR_RAW_JSON_CONTAINER_START.source}))(?:\\\\"|["']|\\\\(?![nrt"\\\\])|[^\\s"',;&}:\\]\\\\]))`,
 );
 const CONNECTOR_PLAIN_DEFERRED_BEARER_FOLLOWS = new RegExp(
-  `${BEARER_CI}(?:[^\\S\\r\\n]+(?!(?:\\s|\\\\[nrt]|\\S*${BEARER_CI}(?:\\s|\\\\[nrt])+\\S))\\S|\\s+(?!(?:\\s|\\\\[nrt]|${CONNECTOR_JSON_CONTAINER_START.source}|\\S*${BEARER_CI}(?:\\s|\\\\[nrt])+\\S))\\S|\\s*\\\\[nrt](?:\\s|\\\\[nrt])*(?!(?:\\s|\\\\[nrt]|${CONNECTOR_RAW_JSON_CONTAINER_START.source}|\\S*${BEARER_CI}(?:\\s|\\\\[nrt])+\\S))(?:\\\\"|["']|\\\\(?![nrt"\\\\])|[^\\s"',;&}:\\]\\\\]))`,
+  `${BEARER_CI}(?:\\s+(?!(?:\\s|\\\\[nrt]|${CONNECTOR_JSON_CONTAINER_START.source}|\\S*${BEARER_CI}(?:\\s|\\\\[nrt])+\\S))\\S|\\s*\\\\[nrt](?:\\s|\\\\[nrt])*(?!(?:\\s|\\\\[nrt]|${CONNECTOR_RAW_JSON_CONTAINER_START.source}|\\S*${BEARER_CI}(?:\\s|\\\\[nrt])+\\S))(?:\\\\"|["']|\\\\(?![nrt"\\\\])|[^\\s"',;&}:\\]\\\\]))`,
 );
 const CONNECTOR_ESCAPED_WS_BOUNDARY = new RegExp(
   `(?:\\\\[nrt])+(?=(?:$|\\s|["',;&}\\]]|:?${BEARER_CI}(?:\\s|\\\\[nrt])|:?${CONNECTOR_RAW_JSON_CONTAINER_START.source}))`,

@@ -1911,10 +1911,35 @@ describe("tool step outcomes", () => {
       msg: "Bearer [redacted]\n[12,34]",
       sibling: 7,
     });
+    for (const sep of ["\t", " "]) {
+      expect(
+        JSON.parse(
+          sanitizeConnectorError(
+            new Error(JSON.stringify({ msg: `Bearer [redacted]:bearer${sep}[12,34]`, sibling: 7 })),
+          ),
+        ),
+      ).toEqual({
+        msg: `Bearer [redacted]${sep}[12,34]`,
+        sibling: 7,
+      });
+    }
     expect(
       JSON.parse(
         sanitizeError(
           JSON.stringify({ msg: String.raw`Bearer [redacted]Bearer\nopaque-123`, sibling: 7 }),
+        ),
+      ),
+    ).toEqual({
+      msg: "Bearer [redacted]",
+      sibling: 7,
+    });
+    expect(
+      JSON.parse(
+        sanitizeError(
+          JSON.stringify({
+            msg: String.raw`Bearer [redacted]Bearer\n[redacted]opaque-123`,
+            sibling: 7,
+          }),
         ),
       ),
     ).toEqual({
