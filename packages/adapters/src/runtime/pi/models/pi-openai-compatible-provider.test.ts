@@ -3088,10 +3088,10 @@ describe("compatible gateway connection reuse", () => {
       HTTPS_PROXY: process.env.HTTPS_PROXY,
       no_proxy: process.env.no_proxy,
       NO_PROXY: process.env.NO_PROXY,
-      MODEL_CONNECT_TIMEOUT_MS: process.env.MODEL_CONNECT_TIMEOUT_MS,
     };
     let target: Server | undefined;
     let proxy: Server | undefined;
+    let connectSpy: ReturnType<typeof vi.spyOn> | undefined;
     try {
       execFileSync(
         "openssl",
@@ -3159,17 +3159,55 @@ describe("compatible gateway connection reuse", () => {
       process.env.HTTPS_PROXY = "";
       process.env.no_proxy = "models.example.com";
       process.env.NO_PROXY = "models.example.com";
-      process.env.MODEL_CONNECT_TIMEOUT_MS = "1000";
+      const directDialSentinel = "direct-dial-bypass-sentinel";
+      let directDials = 0;
+      const originalConnect = Socket.prototype.connect;
+      connectSpy = vi.spyOn(Socket.prototype, "connect").mockImplementation(function (
+        this: Socket,
+        ...args: unknown[]
+      ) {
+        const firstArg = args[0];
+        const connectOptions = Array.isArray(firstArg) ? firstArg[0] : firstArg;
+        const host =
+          typeof connectOptions === "object" && connectOptions !== null && "host" in connectOptions
+            ? (connectOptions as { host?: unknown }).host
+            : typeof args[1] === "string"
+              ? args[1]
+              : undefined;
+        if (host === "models.example.com" || host === "203.0.113.10") {
+          directDials += 1;
+          queueMicrotask(() => {
+            this.destroy(new Error(directDialSentinel));
+          });
+          return this;
+        }
+        return Reflect.apply(originalConnect, this, args) as Socket;
+      });
       const safeFetch = createOpenAiCompatibleFetch(
         undefined,
         async () => [{ address: "203.0.113.10", family: 4 }],
         { allowPublic: true },
       );
+      const readDirectError = async (pending: Promise<unknown>): Promise<string> => {
+        try {
+          await pending;
+          throw new Error("Expected direct dial sentinel rejection");
+        } catch (error) {
+          const messages: string[] = [];
+          let current: unknown = error;
+          while (current instanceof Error) {
+            messages.push(current.message);
+            current = current.cause;
+          }
+          return messages.join(": ");
+        }
+      };
       // The pool key sees the bypass. Clear it before dispatch so a live read would tunnel.
       const first = readModels(safeFetch, "http://models.example.com/v1/models");
       process.env.no_proxy = "";
       process.env.NO_PROXY = "";
-      await expect(first).rejects.toThrow();
+      expect(await readDirectError(first)).toContain(directDialSentinel);
+      expect(directDials).toBe(1);
       expect(connections).toBe(0);
       process.env.no_proxy = "models.example.com";
       process.env.NO_PROXY = "models.example.com";
@@ -3177,9 +3215,11 @@ describe("compatible gateway connection reuse", () => {
       const second = readModels(safeFetch, "http://models.example.com/v1/models");
       process.env.no_proxy = "";
       process.env.NO_PROXY = "";
-      await expect(second).rejects.toThrow();
+      expect(await readDirectError(second)).toContain(directDialSentinel);
+      expect(directDials).toBe(2);
       expect(connections).toBe(0);
     } finally {
+      connectSpy?.mockRestore();
       setDefaultCACertificates(previous);
       for (const [name, value] of Object.entries(previousEnv)) {
         if (value === undefined) delete process.env[name];
