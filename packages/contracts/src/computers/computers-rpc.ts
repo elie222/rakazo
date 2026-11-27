@@ -40,6 +40,8 @@ export const computersRpc = {
     stop: oc.input(botId).output(ComputerStatusSchema),
     recover: oc.input(botId).output(ComputerUpdateSchema),
     reset: oc.input(botId).output(ComputerStatusSchema),
+    /** Restart only this bot's display session without resetting a shared Team computer. */
+    restartScreen: oc.input(botId).output(ComputerStatusSchema),
     update: oc.input(botId).output(ComputerUpdateSchema),
     updates: oc.output(z.array(ComputerUpdateSchema)),
     releaseInterrupted: oc

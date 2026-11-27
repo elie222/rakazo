@@ -3,6 +3,7 @@ import { ORPCError } from "@orpc/server";
 import type { AgentHomeStore, SandboxProvider } from "@rakazo/adapter-kit";
 import { computerControlExpireJobKey, SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import {
+  acquireComputerExecutionLease,
   applyTeachingDesktopInput,
   ComputerScreenUnavailableError,
   checkpointAndStopComputer,
@@ -299,6 +300,45 @@ export function computerRoutes(ctx: RouterContext) {
           action: "reset",
         });
         return status;
+      }),
+      restartScreen: authed.computer.restartScreen.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        const computer = bot.computer;
+        if (!computer) throw new IsolationError();
+        assertNotAnotherPersonsControl(computer, context.actor);
+        if (computer.state !== "running" || !computer.providerRef) {
+          throw new ClientError("CONFLICT", "Start the computer first.");
+        }
+        if (holdsComputerControl(computer, bot.id, context.actor)) {
+          await releaseComputerControl(deps, context.actor, computer, bot.id, "released");
+        }
+        const manualRunId = `restart-screen:${randomUUID()}`;
+        const lease = await acquireComputerExecutionLease(deps.prisma, {
+          computerId: computer.id,
+          runId: manualRunId,
+          botId: bot.id,
+        });
+        try {
+          if (deps.sandbox.releaseScreen) {
+            try {
+              await deps.sandbox.releaseScreen(await wakeableComputerRef(deps.prisma, computer), {
+                ...computerContext(context.actor, bot.id, "restart-screen"),
+                screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
+                keepScreenWarm: false,
+              });
+            } catch (error) {
+              await clearGoneSandbox(deps, computer, error);
+            }
+          }
+          await deps.prisma.bot.update({
+            where: { id: bot.id },
+            data: { screenGeneration: { increment: 1 } },
+          });
+          scheduleComputerSleep(deps.jobs, computer.id);
+        } finally {
+          await releaseComputerExecutionLease(deps.prisma, lease);
+        }
+        return computerStatus(deps, context.actor, input.botId);
       }),
       update: authed.computer.update.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);

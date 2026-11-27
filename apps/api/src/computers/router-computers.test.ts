@@ -957,3 +957,131 @@ describe("bot restore computer quota", () => {
     expect(prisma.bot.update).toHaveBeenCalledOnce();
   });
 });
+
+describe("computer restartScreen", () => {
+  const actor = {
+    spaceId: "workspace-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+
+  function makeFixture(state: "running" | "stopped") {
+    const computerRow = {
+      id: "computer-1",
+      spaceId: "workspace-1",
+      screenGeneration: 3,
+      kind: "e2b",
+      scope: "team",
+      state,
+      providerRef: state === "running" ? "sandbox-ref-1" : null,
+      homeKey: "home-1",
+      homeRevision: "rev-1",
+      maintenanceId: null,
+      updatedAt: new Date(),
+      controlHolder: "none",
+      controlLeaseId: null,
+      controlLeaseExpiresAt: null,
+      controlBotId: null,
+      ownerUserId: null,
+      restorePending: false,
+      imageDigest: null,
+      desiredImageDigest: null,
+      lastActiveAt: null,
+      lastError: null,
+    };
+    const botUpdate = vi.fn().mockResolvedValue({ id: "bot-1", screenGeneration: 3 });
+    const releaseScreen = vi.fn().mockResolvedValue(undefined);
+    const enqueue = vi.fn().mockResolvedValue(undefined);
+    const txComputerExecutionLease = {
+      updateManyAndReturn: vi.fn().mockResolvedValue([]),
+      create: vi.fn().mockResolvedValue({ fence: 1 }),
+    };
+    const tx = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue(computerRow),
+      },
+      computerExecutionLease: txComputerExecutionLease,
+    };
+    const prisma = {
+      bot: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "bot-1",
+          name: "Chief",
+          screenGeneration: 2,
+          thread: { id: "thread-1" },
+          computer: computerRow,
+        }),
+        update: botUpdate,
+      },
+      computer: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        findUniqueOrThrow: vi.fn().mockResolvedValue(computerRow),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      computerExecutionLease: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      run: {
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+      spaceMember: {
+        count: vi.fn().mockResolvedValue(1),
+      },
+      space: {
+        findUnique: vi.fn().mockResolvedValue({ organizationId: null }),
+      },
+      $transaction: vi.fn(async (cb: (client: unknown) => Promise<unknown>) => cb(tx)),
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      $executeRaw: vi.fn().mockResolvedValue(1),
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      sandbox: { releaseScreen },
+      jobs: { enqueue },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "e2b",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const handler = appHandler(deps);
+    const call = () =>
+      handle(
+        handler,
+        new Request("http://127.0.0.1/rpc/computer/restartScreen", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: { botId: "bot-1" } }),
+        }),
+        { prefix: "/rpc", context: { actor } },
+      );
+    return { call, botUpdate, releaseScreen, enqueue };
+  }
+
+  it("rejects with 409 when the computer is not running", async () => {
+    const { call, botUpdate, releaseScreen } = makeFixture("stopped");
+    const response = await call();
+    expect(response.status).toBe(409);
+    expect(releaseScreen).not.toHaveBeenCalled();
+    expect(botUpdate).not.toHaveBeenCalled();
+  });
+
+  it("releases only this bot's screen cold and bumps its screenGeneration", async () => {
+    const { call, botUpdate, releaseScreen, enqueue } = makeFixture("running");
+    const response = await call();
+    expect(response.status).toBe(200);
+    expect(releaseScreen).toHaveBeenCalledOnce();
+    expect(releaseScreen.mock.calls[0]?.[1]).toMatchObject({ keepScreenWarm: false });
+    expect(botUpdate).toHaveBeenCalledWith({
+      where: { id: "bot-1" },
+      data: { screenGeneration: { increment: 1 } },
+    });
+    expect(enqueue).toHaveBeenCalledOnce();
+  });
+});

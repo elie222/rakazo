@@ -511,13 +511,15 @@ export function useComputerControls({
         </Button>
       )}
       {computerBot &&
-      // A screen that will not load on a running computer offers Recover, never a Reset that
-      // wipes unsaved work; a failed computer offers whichever repair it has.
-      ((screenFailure && computer?.state === "running" && computer.canUpdate) ||
+      // A screen that will not load on a running computer offers single-bot screen restart and
+      // Recover; a failed computer offers whichever repair it has.
+      ((screenFailure && computer?.state === "running") ||
         (computer?.state === "error" && !allowanceUsed)) ? (
         <ComputerMaintenanceActions
           botId={computerBot.id}
           computer={computer}
+          allowRestartScreen={screenFailure && computer?.state === "running"}
+          allowReset={computer?.state === "error"}
           onChanged={async () => {
             await refreshComputerFor(computerBot.id);
           }}
