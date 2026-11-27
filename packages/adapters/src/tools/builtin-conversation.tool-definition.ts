@@ -251,7 +251,8 @@ export const conversationTools: ConnectorTool[] = [
         },
         query: {
           type: "string",
-          description: "When listing pages, search by part of the title. Use it if hasMore is true.",
+          description:
+            "When listing pages, search by part of the title. Use it if hasMore is true.",
         },
         pageId: { type: "string", description: "The page to read or update." },
         title: { type: "string", description: "Page title; required for a new page." },
