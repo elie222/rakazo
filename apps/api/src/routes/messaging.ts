@@ -156,6 +156,22 @@ export function messagingRoutes(ctx: RouterContext) {
             throw error;
           }
         }),
+        setMirror: authed.messaging.identities.setMirror.handler(async ({ context, input }) => {
+          const identity = await acrossChatIdentities(() =>
+            deps.prisma.messagingIdentity.findFirst({
+              where: { id: input.identityId, userId: context.actor.userId },
+              select: { id: true },
+            }),
+          );
+          if (!identity) throw new ORPCError("NOT_FOUND");
+          const updated = await acrossChatIdentities(() =>
+            deps.prisma.messagingIdentity.update({
+              where: { id: identity.id },
+              data: { mirrorAppChat: input.enabled },
+            }),
+          );
+          return messagingIdentityDto(deps.prisma, updated);
+        }),
         unlink: authed.messaging.identities.unlink.handler(async ({ context, input }) => {
           const { count } = await acrossChatIdentities(() =>
             deps.prisma.messagingIdentity.deleteMany({
@@ -393,7 +409,13 @@ function acrossChatIdentities<T>(fn: () => Promise<T>): Promise<T> {
 
 async function messagingIdentityDto(
   prisma: PrismaClient,
-  identity: { id: string; provider: string; address: string; botId: string },
+  identity: {
+    id: string;
+    provider: string;
+    address: string;
+    botId: string;
+    mirrorAppChat: boolean;
+  },
 ) {
   const bot = await acrossChatIdentities(() =>
     prisma.bot.findUnique({
@@ -407,6 +429,7 @@ async function messagingIdentityDto(
     address: identity.address,
     botId: identity.botId,
     botName: bot?.name ?? "",
+    mirrorAppChat: identity.mirrorAppChat,
   };
 }
 

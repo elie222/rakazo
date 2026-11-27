@@ -286,6 +286,9 @@ export const integrationsRpc = {
       setBot: oc
         .input(z.object({ identityId: Id, botId: Id }))
         .output(MessagingLinkedIdentitySchema),
+      setMirror: oc
+        .input(z.object({ identityId: Id, enabled: z.boolean() }))
+        .output(MessagingLinkedIdentitySchema),
       unlink: oc.input(z.object({ identityId: Id })).output(z.object({ ok: z.literal(true) })),
     },
     channels: {

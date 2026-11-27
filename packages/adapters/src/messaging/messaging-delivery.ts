@@ -112,6 +112,8 @@ const SWEEP_BATCH = 100;
 /** Statuses of a message waiting for a send. */
 const WAITING = ["pending", "retry"];
 const TERMINAL_RUN = ["completed", "failed", "cancelled"];
+/** Marks what the owner typed in the app, so it reads differently from the bot's replies. */
+const APP_CHAT_PREFIX = "You in the app: ";
 
 /**
  * The send order every sender agrees on: rows carry explicit per-part createdAt values, and id
@@ -401,6 +403,9 @@ export class MessagingDelivery {
           const lane = await this.recordDirectRun(run, options.progress ?? false);
           if (lane) lanes.push(lane);
         }
+      } else if (run.trigger === "user") {
+        const lane = await this.recordAppRun(run, options.progress ?? false);
+        if (lane) lanes.push(lane);
       } else if (run.trigger === "bot_message" && !options.progress) {
         // A delegated run answers its owner's 1:1 chat, and once it ends, the team-chat thread
         // the delegation started in. Only a run in that conversation's own thread, by its bot,
@@ -1006,6 +1011,54 @@ export class MessagingDelivery {
     const lane = { identityId: identity.id };
     await this.recordReplies(lane, replies);
     return lane;
+  }
+
+  /**
+   * A chat the owner started in the app goes to the linked chat too when the link asks for it:
+   * first what the owner typed, so the chat app shows both sides, then the bot's reply.
+   */
+  private async recordAppRun(
+    run: {
+      id: string;
+      botId: string;
+      userId: string;
+      status: string;
+      sourceMessage: { id: string; blocks: unknown } | null;
+    },
+    progress: boolean,
+  ): Promise<OutboundLane | undefined> {
+    const identity = await this.deps.prisma.messagingIdentity.findUnique({
+      where: { botId: run.botId },
+    });
+    if (!identity?.mirrorAppChat || identity.userId !== run.userId) return undefined;
+    const typed = run.sourceMessage
+      ? extractText(readMessageBlocks(run.sourceMessage).blocks, new Set())
+      : "";
+    if (typed && run.sourceMessage) {
+      const parts = splitOutboundBody(
+        this.platformFor(identity.provider)?.outbound,
+        `${APP_CHAT_PREFIX}${typed}`,
+      );
+      await this.recordReplies({ identityId: identity.id }, [
+        {
+          parts: parts.map((part, index) => ({
+            idempotencyKey:
+              index === 0
+                ? `msg:${run.sourceMessage!.id}`
+                : `msg:${run.sourceMessage!.id}:${index + 1}`,
+            kind: "dm",
+            identityId: identity.id,
+            body: part,
+            sourceMessageId: run.sourceMessage!.id,
+          })),
+          files: [],
+        },
+      ]);
+    }
+    return (
+      (await this.recordDirectRun(run, progress)) ??
+      (typed ? { identityId: identity.id } : undefined)
+    );
   }
 
   /**

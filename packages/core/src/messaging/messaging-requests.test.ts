@@ -6,7 +6,14 @@ const status = {
   providers: ["sendblue"],
   openSignup: false,
   identities: [
-    { id: "mi-1", provider: "sendblue", address: "+15550000001", botId: "bot-1", botName: "Chief" },
+    {
+      id: "mi-1",
+      provider: "sendblue",
+      address: "+15550000001",
+      botId: "bot-1",
+      botName: "Chief",
+      mirrorAppChat: false,
+    },
   ],
 };
 const channels = [
@@ -71,7 +78,11 @@ it("still lists requests when the agent names could not be read", () => {
 it("treats an agent with no name as unknown", () => {
   const unnamed = {
     ...status,
-    identities: status.identities.map((identity) => ({ ...identity, botName: "" })),
+    identities: status.identities.map((identity) => ({
+      ...identity,
+      botName: "",
+      mirrorAppChat: false,
+    })),
   };
   const requests = messagingRequests({ status: unnamed, channels, connections });
   expect(requests.invites[0]?.agent).toBeUndefined();

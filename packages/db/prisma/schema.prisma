@@ -2549,6 +2549,8 @@ model MessagingIdentity {
   verifiedAt           DateTime?
   lastInboundAt        DateTime?
   outboundSinceInbound Int       @default(0)
+  /// Send this bot's replies, and the owner's own messages, from the app to the linked chat.
+  mirrorAppChat        Boolean   @default(false)
   /// Provider handle of the reply that last released messages held behind the outbound cap.
   /// A redelivery of that reply answers no request: it was sent before they went out.
   capReleaseHandle     String?

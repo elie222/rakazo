@@ -695,6 +695,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["messaging/status"],
       ["messaging/link/start"],
       ["messaging/identities/setBot"],
+      ["messaging/identities/setMirror"],
       ["messaging/identities/unlink"],
       ["messaging/channels/list"],
       ["messaging/channels/respond"],

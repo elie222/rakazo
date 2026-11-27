@@ -17,6 +17,7 @@ const identity = {
   spaceId: "ws-1",
   botId: "bot-1",
   outboundSinceInbound: 0,
+  mirrorAppChat: false,
 };
 
 function messagingDeps(
@@ -357,6 +358,7 @@ describe("messaging.status", () => {
             address: "+15551111111",
             botId: "bot-1",
             botName: "Assistant",
+            mirrorAppChat: false,
           },
         ],
       },
@@ -456,8 +458,21 @@ describe("messaging.identities", () => {
         address: "+15551111111",
         botId: "bot-2",
         botName: "Assistant",
+        mirrorAppChat: false,
       },
     });
+  });
+
+  it("turns sending app chats to the linked chat on for the owner's identity", async () => {
+    const { handler, actor, prisma } = messagingDeps();
+    const response = await call(handler, actor, "messaging/identities/setMirror", {
+      identityId: "mi-1",
+      enabled: true,
+    });
+    expect(response.status).toBe(200);
+    expect(prisma.messagingIdentity.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { mirrorAppChat: true } }),
+    );
   });
 
   it("keeps a workspace-installed identity in its installation's space", async () => {

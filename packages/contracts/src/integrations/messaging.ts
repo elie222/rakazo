@@ -7,6 +7,8 @@ export const MessagingLinkedIdentitySchema = z.object({
   address: z.string(),
   botId: Id,
   botName: z.string(),
+  /** Whether chats started in the app also go to the linked chat app. */
+  mirrorAppChat: z.boolean(),
 });
 
 export const MessagingInstallationSummarySchema = z.object({

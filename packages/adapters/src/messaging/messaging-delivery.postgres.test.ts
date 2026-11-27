@@ -529,6 +529,34 @@ describePostgres("chat delivery with Graphile backup jobs (PostgreSQL)", () => {
     ).not.toBeNull();
   });
 
+  async function appRun(typed: string, reply: string) {
+    const run = await dmRun("completed", reply);
+    await system.message.update({
+      where: { id: run.sourceMessageId! },
+      data: { blocks: [{ kind: "text", text: typed }] },
+    });
+    return system.run.update({ where: { id: run.id }, data: { trigger: "user" } });
+  }
+
+  it("keeps a chat started in the app out of the linked chat app unless the link asks for it", async () => {
+    const run = await appRun("typed in the app", "app answer");
+    const { messaging, sent } = surface();
+    await delivery(messaging).deliverRun(run.id);
+    expect(sent).toEqual([]);
+  });
+
+  it("sends a chat started in the app to the linked chat app, what the owner typed first", async () => {
+    await system.messagingIdentity.update({
+      where: { id: identityId },
+      data: { mirrorAppChat: true },
+    });
+    const run = await appRun("typed in the app", "app answer");
+    const { messaging, sent } = surface();
+    await delivery(messaging).deliverRun(run.id);
+    await delivery(messaging).deliverRun(run.id);
+    expect(sent).toEqual(["You in the app: typed in the app", "app answer"]);
+  });
+
   it("records a run's reply once when the reply job and the finishing process both deliver it", async () => {
     const run = await dmRun("completed", "only once");
     const { messaging, sent } = surface();
