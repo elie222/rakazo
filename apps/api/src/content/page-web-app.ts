@@ -16,9 +16,9 @@ import { getPageSummary } from "./pages.js";
 
 const MINUTE_MS = 60_000;
 const ICONS_PER_USER_PER_MINUTE = 120;
-const HEADERS = { "cache-control": "no-store", "referrer-policy": "no-referrer" };
+export const PAGE_APP_HEADERS = { "cache-control": "no-store", "referrer-policy": "no-referrer" };
 /** Only an answer the owner was given is kept, briefly, in their own browser. */
-const SERVED = { ...HEADERS, "cache-control": "private, max-age=300" };
+const SERVED = { ...PAGE_APP_HEADERS, "cache-control": "private, max-age=300" };
 
 /**
  * What a browser needs to install a page as its own app: a manifest and its icons. Only the
@@ -38,14 +38,15 @@ export function mountPageWebApp(
     handle: (page: PageSummary, actor: Actor) => Promise<Response>,
   ): Promise<Response> {
     const actor = await deps.sessionActor(c.req.raw, c.req.query(PAGE_WEB_APP_SPACE_PARAM));
-    if (!actor) return c.json({ error: "Not found" }, 404, HEADERS);
+    if (!actor) return c.json({ error: "Not found" }, 404, PAGE_APP_HEADERS);
     try {
       const page = await runAsTenant(actor, () =>
         getPageSummary(deps.prisma, actor, c.req.param("pageId") ?? ""),
       );
       return await handle(page, actor);
     } catch (error) {
-      if (error instanceof IsolationError) return c.json({ error: "Not found" }, 404, HEADERS);
+      if (error instanceof IsolationError)
+        return c.json({ error: "Not found" }, 404, PAGE_APP_HEADERS);
       throw error;
     }
   }
@@ -84,11 +85,14 @@ export function mountPageWebApp(
   app.get("/api/v1/pages/:pageId/app-icon/:file", async (c) => {
     const name = c.req.param("file").replace(/\.png$/, "");
     if (!c.req.param("file").endsWith(".png") || !Object.hasOwn(PAGE_WEB_APP_ICONS, name))
-      return c.json({ error: "Not found" }, 404, HEADERS);
+      return c.json({ error: "Not found" }, 404, PAGE_APP_HEADERS);
     const { size, maskable } = PAGE_WEB_APP_ICONS[name as PageWebAppIcon];
     return withPage(c, async (page, actor) => {
       if (iconReads(actor.userId) > ICONS_PER_USER_PER_MINUTE)
-        return c.json({ error: "Too many requests" }, 429, { ...HEADERS, "retry-after": "60" });
+        return c.json({ error: "Too many requests" }, 429, {
+          ...PAGE_APP_HEADERS,
+          "retry-after": "60",
+        });
       const png = await renderPageAppIconPng(page, size, maskable ? "full" : "plate");
       return c.body(png, 200, { ...SERVED, "content-type": "image/png" });
     });
