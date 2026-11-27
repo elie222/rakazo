@@ -25,7 +25,10 @@ type ZipFile = {
 };
 
 /** A minimal zip writer, so tests can craft entries real tools would never produce. */
-function zip(files: ZipFile[], options: { zip64?: boolean } = {}): Uint8Array {
+function zip(
+  files: ZipFile[],
+  options: { zip64?: boolean; comment?: Uint8Array } = {},
+): Uint8Array {
   const locals: Uint8Array[] = [];
   const centrals: Uint8Array[] = [];
   let offset = 0;
@@ -62,13 +65,16 @@ function zip(files: ZipFile[], options: { zip64?: boolean } = {}): Uint8Array {
     offset += local.length;
   }
   const directory = centrals.reduce((sum, part) => sum + part.length, 0);
-  const end = new Uint8Array(22);
+  const comment = options.comment ?? new Uint8Array(0);
+  const end = new Uint8Array(22 + comment.length);
   const ev = new DataView(end.buffer);
   ev.setUint32(0, 0x06054b50, true);
   ev.setUint16(8, files.length, true);
   ev.setUint16(10, options.zip64 ? 0xffff : files.length, true);
   ev.setUint32(12, directory, true);
   ev.setUint32(16, offset, true);
+  ev.setUint16(20, comment.length, true);
+  end.set(comment, 22);
   return join([...locals, ...centrals, end]);
 }
 
@@ -500,6 +506,17 @@ describe("malformed archives", () => {
 
     const raw = gunzipSync(tarGz([entry]));
     await fails(() => read(gzipSync(raw.subarray(0, raw.length - 1024))), "unreadable");
+  });
+
+  it("validates the ZIP EOCD comment length against EOF", async () => {
+    const commentWithEocdBytes = new Uint8Array([0x50, 0x4b, 0x05, 0x06, ...new Uint8Array(22)]);
+    const { files } = await read(zip([entry], { comment: commentWithEocdBytes }));
+    expect(files.get(".hermes/SOUL.md")).toBe("Direct.\n");
+
+    await fails(
+      async () => openAgentImportArchive(join([zip([entry]), text("extra")])),
+      "unreadable",
+    );
   });
 });
 
