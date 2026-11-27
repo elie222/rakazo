@@ -10,6 +10,8 @@ import { getLogger } from "@rakazo/logging";
 import { ModelProviderNotAllowedError } from "../../../models/model-provider-allowlist.js";
 import type { ModelProviderDefinition } from "../../../models/model-provider-registry.js";
 import { modelProviders } from "../../../models/model-provider-registry.js";
+import { createAntigravityCliLogin } from "../../../providers/agent-cli/antigravity/antigravity-login.js";
+import { ANTIGRAVITY_CLI_PROVIDER_ID } from "../../../providers/agent-cli/antigravity/provider-id.js";
 import { logModelSignIn } from "./model-sign-in-log.js";
 import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
 import { createChatGptDeviceCodeLogin } from "./pi-chatgpt-device-code.js";
@@ -218,9 +220,12 @@ export class PiOAuthLogins<T = unknown> {
 
   async begin(input: BeginInput<T>): Promise<PiOAuthBegin> {
     // The pasted code can reach another API process (a deploy replaces this one), which
-    // then needs this verifier to exchange it.
+    // then needs this verifier to exchange it. Local CLI sign-ins keep their PKCE verifier
+    // inside the spawned CLI process and finish on the same process.
     const verifier =
-      this.handoff && SUBSCRIPTION_SIGN_IN_PROVIDERS[input.provider]?.mode === "auth-url"
+      this.handoff &&
+      input.provider !== ANTIGRAVITY_CLI_PROVIDER_ID &&
+      SUBSCRIPTION_SIGN_IN_PROVIDERS[input.provider]?.mode === "auth-url"
         ? randomBytes(32).toString("base64url")
         : undefined;
     const started = await this.start(input, randomUUID(), verifier);
@@ -1223,6 +1228,7 @@ function defaultLogin(
     })(interaction);
   }
   if (providerId === CHATGPT_OAUTH_PROVIDER) return createChatGptDeviceCodeLogin()(interaction);
+  if (providerId === ANTIGRAVITY_CLI_PROVIDER_ID) return createAntigravityCliLogin()(interaction);
   return builtinModels().login(providerId, type, interaction);
 }
 

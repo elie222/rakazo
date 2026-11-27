@@ -21,7 +21,7 @@ export function agentCliModel(descriptor: AcpAgentDescriptor, id: string): Model
     api: "acp",
     provider: descriptor.id,
     baseUrl: "",
-    reasoning: false,
+    reasoning: Boolean(descriptor.supportsThinking),
     input: descriptor.acceptsImages ? ["text", "image"] : ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 0,

@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { privateFolder } from "../../../cli-models/cli-process.js";
 import type { AcpAgentDescriptor } from "../../../runtime/acp/acp-agent.js";
+import { ensureAntigravityProfileDir, isAntigravityProfileId } from "./antigravity-profiles.js";
 import { ANTIGRAVITY_CLI_PROVIDER_ID } from "./provider-id.js";
 
 /** The CLI's own folder inside its home, which holds its sessions and, off macOS, its sign-in. */
@@ -62,10 +63,16 @@ export const antigravityAgent: AcpAgentDescriptor = {
   label: "Antigravity",
   command: "agy",
   acceptsImages: true,
+  supportsThinking: true,
   notInstalled:
     "The Antigravity CLI is not installed on this server. Install it for the user that runs the Rakazo worker.",
-  signIn: "Run `agy acp --login` in a terminal as the user that runs the Rakazo worker.",
-  async launch({ env }) {
+  signIn:
+    "Sign in with Google under Settings → Models → Antigravity, or run `agy acp --login` as the worker user.",
+  async launch({ env, profileId }) {
+    if (isAntigravityProfileId(profileId)) {
+      const home = await ensureAntigravityProfileDir(profileId, env);
+      return { args: ["acp"], env: { ...env, GEMINI_HOME: home } };
+    }
     const home = botHome();
     await linkSignIn(home, join(homedir(), ".gemini"));
     return { args: ["acp"], env: { ...env, GEMINI_HOME: home } };

@@ -184,7 +184,12 @@ async function runAcpTurn(
   const oneShot =
     request.tools.length === 0 ||
     (request.usageOperationKind !== "answer" && request.usageOperationKind !== "subagent");
-  const key = sessionKey(descriptor.id, request.botId, request.threadId);
+  const profileId =
+    typeof request.model.oauth?.credential?.accountId === "string" &&
+    request.model.oauth.credential.accountId.trim()
+      ? request.model.oauth.credential.accountId.trim()
+      : undefined;
+  const key = sessionKey(descriptor.id, request.botId, request.threadId, profileId);
   const cwd = join(
     agentFolder(),
     createHash("sha256").update(`${descriptor.id}\0${request.botId}`).digest("hex").slice(0, 24),
@@ -366,6 +371,7 @@ async function runAcpTurn(
       instructions: request.instructions || fallbackSystemPrompt(false),
       toolServer: ACP_TOOL_SERVER,
       env: cliEnv(process.env),
+      ...(profileId ? { profileId } : {}),
     });
     signal.throwIfAborted();
     const agent = startAcpAgent(
@@ -465,7 +471,21 @@ async function runAcpTurn(
       createdSession = true;
     }
     const activeSessionId = sessionId!;
-    await selectModel(agent, activeSessionId, opened, request.model.id, descriptor, step);
+    const selectedModel = await selectModel(
+      agent,
+      activeSessionId,
+      opened,
+      request.model.id,
+      descriptor,
+      step,
+    );
+    await selectThoughtLevel(
+      agent,
+      activeSessionId,
+      selectedModel.configOptions,
+      request.model.thinkingLevel ?? selectedModel.inferredEffort,
+      step,
+    );
 
     const fresh = !session;
     const current: AgentSession = session ?? {
@@ -703,6 +723,8 @@ async function awaitStep<T>(
   }
 }
 
+const EFFORT_SUFFIXES = ["low", "medium", "high", "xhigh"] as const;
+
 /** Chooses the deployment model when the CLI offers a model choice for the session. */
 async function selectModel(
   agent: AcpConnection,
@@ -711,23 +733,82 @@ async function selectModel(
   modelId: string,
   descriptor: AcpAgentDescriptor,
   step: <T>(work: Promise<T>) => Promise<T>,
-): Promise<void> {
+): Promise<{ inferredEffort?: string; configOptions: unknown }> {
   const options = Array.isArray(opened?.configOptions) ? (opened.configOptions as Update[]) : [];
   const choice = options.find((option) => option.category === "model" || option.id === "model");
   // Running on whatever the CLI defaults to would spend the plan on a model nobody chose.
   if (!choice) throw new Error(`${descriptor.label} offers no model choice for its sessions.`);
-  if (choice.currentValue === modelId) return;
   const values = flattenValues(choice.options);
+  let targetModelId = modelId;
+  let inferredEffort: string | undefined;
   if (values.length && !values.includes(modelId)) {
-    throw new Error(
-      `${descriptor.label} on this server has no model "${modelId}". Set PI_DEFAULT_MODEL to one of: ${values.slice(0, 20).join(", ")}${values.length > 20 ? `, and ${values.length - 20} more the CLI lists` : ""}.`,
+    // Support legacy suffixed model ids such as `gemini-4-neon-high` when the ACP server exposes
+    // base models paired with a separate `thought_level` option.
+    const matchedSuffix = EFFORT_SUFFIXES.find(
+      (suffix) =>
+        modelId.endsWith(`-${suffix}`) && values.includes(modelId.slice(0, -(suffix.length + 1))),
     );
+    if (matchedSuffix) {
+      targetModelId = modelId.slice(0, -(matchedSuffix.length + 1));
+      inferredEffort = matchedSuffix;
+    } else {
+      throw new Error(
+        `${descriptor.label} on this server has no model "${modelId}". Set PI_DEFAULT_MODEL to one of: ${values.slice(0, 20).join(", ")}${values.length > 20 ? `, and ${values.length - 20} more the CLI lists` : ""}.`,
+      );
+    }
   }
+  if (choice.currentValue === targetModelId) {
+    return { inferredEffort, configOptions: opened?.configOptions };
+  }
+  const updated = await step(
+    agent.request<Update>("session/set_config_option", {
+      sessionId,
+      configId: choice.id,
+      value: targetModelId,
+    }),
+  );
+  return {
+    inferredEffort,
+    configOptions: Array.isArray(updated?.configOptions)
+      ? updated.configOptions
+      : opened?.configOptions,
+  };
+}
+
+const THINKING_TO_ACP_CANDIDATES: Record<string, readonly string[]> = {
+  minimal: ["minimal", "low"],
+  low: ["low", "minimal", "medium"],
+  medium: ["medium", "low", "high"],
+  high: ["high", "medium", "xhigh"],
+  xhigh: ["xhigh", "high", "max"],
+  max: ["max", "xhigh", "high"],
+};
+
+/** Applies the requested thinking level when the ACP server exposes a `thought_level` option. */
+async function selectThoughtLevel(
+  agent: AcpConnection,
+  sessionId: string,
+  rawConfigOptions: unknown,
+  requestedLevel: string | null | undefined,
+  step: <T>(work: Promise<T>) => Promise<T>,
+): Promise<void> {
+  if (!requestedLevel || requestedLevel === "off") return;
+  const options = Array.isArray(rawConfigOptions) ? (rawConfigOptions as Update[]) : [];
+  const choice = options.find(
+    (option) => option.category === "thought_level" || option.id === "thought_level",
+  );
+  if (!choice) return;
+  const values = flattenValues(choice.options);
+  const candidates = THINKING_TO_ACP_CANDIDATES[requestedLevel] ?? [requestedLevel];
+  const resolved = values.length
+    ? candidates.find((candidate) => values.includes(candidate))
+    : requestedLevel;
+  if (!resolved || choice.currentValue === resolved) return;
   await step(
     agent.request("session/set_config_option", {
       sessionId,
       configId: choice.id,
-      value: modelId,
+      value: resolved,
     }),
   );
 }
@@ -799,7 +880,7 @@ function toolHost(
     api: "acp",
     provider: request.model.provider,
     baseUrl: "",
-    reasoning: false,
+    reasoning: Boolean(request.model.reasoning || request.model.thinkingLevel),
     input: ["text", "image"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 0,

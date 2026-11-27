@@ -29,6 +29,11 @@ import {
   modelProviderAllowlist,
 } from "../../../models/model-provider-allowlist.js";
 import { modelProviderDefinition } from "../../../models/model-provider-registry.js";
+import {
+  ANTIGRAVITY_CATALOG_MODELS,
+  antigravityCliEnabled,
+} from "../../../providers/agent-cli/antigravity/antigravity-profiles.js";
+import { ANTIGRAVITY_CLI_PROVIDER_ID } from "../../../providers/agent-cli/antigravity/provider-id.js";
 import { MODEL_CONNECT_TIMEOUT_MS } from "../pi-runtime-limits.js";
 import { maximumModelCallCost } from "../usage/pi-usage.js";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
@@ -223,14 +228,42 @@ function pinnedCatalogProbeBaseUrl(
   return [...urls][0] ?? null;
 }
 
+function antigravityCatalogEntries(): PiCatalogEntry[] {
+  if (!antigravityCliEnabled()) return [];
+  const definition = modelProviderDefinition(ANTIGRAVITY_CLI_PROVIDER_ID);
+  const signIn = definition?.signIn;
+  return ANTIGRAVITY_CATALOG_MODELS.map((model) => ({
+    provider: ANTIGRAVITY_CLI_PROVIDER_ID,
+    providerName: definition?.displayName ?? "Antigravity",
+    subscriptionName: definition?.subscriptionName,
+    id: model.id,
+    recommended: isRecommendedCatalogModel(ANTIGRAVITY_CLI_PROVIDER_ID, model.id),
+    label: model.label,
+    billing:
+      signIn?.billing ??
+      "Sign in with Google through the local Antigravity CLI (agy acp). Uses your Google subscription.",
+    auth: "oauth" as const,
+    oauthLabel: signIn?.loginLabel ?? "Sign in with Google (Antigravity CLI)",
+    authHint: signIn?.hint ?? "Google AI Pro/Ultra",
+    subscription: true,
+    signIn: signIn?.mode ?? "auth-url",
+    reasoning: model.reasoning,
+    ...(model.thinkingLevels ? { thinkingLevels: model.thinkingLevels } : {}),
+    images: model.images,
+  }));
+}
+
 export function listPiCatalog(): PiCatalogEntry[] {
   cachedCatalog ??= buildPiCatalog();
+  const baseCatalog = antigravityCliEnabled()
+    ? [...cachedCatalog, ...antigravityCatalogEntries()]
+    : cachedCatalog;
   const allowlist = modelProviderAllowlist();
-  if (allowlist === null) return cachedCatalog;
+  if (allowlist === null) return baseCatalog;
   // Built once per distinct list, not once per call: the catalog filters run per entry.
-  const key = process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST?.trim() ?? "";
-  if (filteredCatalogKey === key) return filteredCatalogEntries ?? cachedCatalog;
-  const entries = cachedCatalog.flatMap((entry) => {
+  const key = `${process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST?.trim() ?? ""}|${antigravityCliEnabled() ? "1" : "0"}`;
+  if (filteredCatalogKey === key) return filteredCatalogEntries ?? baseCatalog;
+  const entries = baseCatalog.flatMap((entry) => {
     if (!modelProviderAllowed(allowlist, entry.provider)) return [];
     return entry.endpointPresets
       ? [{ ...entry, endpointPresets: compatibleEndpointPresetsFor(allowlist) }]

@@ -36,6 +36,7 @@ export {
   createApnsVoipProvider,
 } from "./calls/apns-voip-config.js";
 export { loadUserIncomingCalls, settleCallRequest } from "./calls/call-request.js";
+export { personalCliAccessCheck } from "./cli-models/personal-access.js";
 export * from "./cloud-agents/cloud-agent-emulator.js";
 export * from "./cloud-agents/cloud-agent-factory.js";
 export * from "./cloud-agents/cloud-agent-poll.js";
@@ -166,6 +167,12 @@ export * from "./payments/payment-wallets.js";
 export * from "./payments/purchase-poll.js";
 export * from "./payments/purchase-service.js";
 export * from "./personal-calendar/native-calendar.js";
+export {
+  antigravityCliEnabled,
+  isAntigravityProfileId,
+  removeAntigravityProfileDir,
+} from "./providers/agent-cli/antigravity/antigravity-profiles.js";
+export { ANTIGRAVITY_CLI_PROVIDER_ID } from "./providers/agent-cli/antigravity/provider-id.js";
 export * from "./providers/billing/stripe/stripe-billing.js";
 export * from "./providers/cloud-agent/cursor/cursor-cloud-agent.js";
 export { T3CodeConnections } from "./providers/cloud-agent/t3code/t3code-connections.js";

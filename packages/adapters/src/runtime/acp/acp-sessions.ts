@@ -53,8 +53,15 @@ export function takeReplyElsewhere(key: string): boolean {
   return repliedElsewhere.delete(key);
 }
 
-export function sessionKey(agent: string, botId: string, threadId: string): string {
-  return JSON.stringify([agent, botId, threadId]);
+export function sessionKey(
+  agent: string,
+  botId: string,
+  threadId: string,
+  profileId?: string,
+): string {
+  return profileId
+    ? JSON.stringify([agent, botId, threadId, profileId])
+    : JSON.stringify([agent, botId, threadId]);
 }
 
 /** The session this bot's chat continues, if this process still has one. */

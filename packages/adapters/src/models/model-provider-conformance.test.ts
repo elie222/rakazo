@@ -42,8 +42,22 @@ const rejections = {
 const entries = Object.entries(modelProviders) as [ProviderId, ModelProviderDefinition][];
 const catalog = listPiCatalog();
 
+function catalogFor(provider: string) {
+  if (provider !== ANTIGRAVITY_CLI_PROVIDER_ID) return catalog;
+  const previous = process.env.RAKAZO_ANTIGRAVITY_CLI;
+  process.env.RAKAZO_ANTIGRAVITY_CLI = "true";
+  try {
+    return listPiCatalog();
+  } finally {
+    if (previous === undefined) delete process.env.RAKAZO_ANTIGRAVITY_CLI;
+    else process.env.RAKAZO_ANTIGRAVITY_CLI = previous;
+  }
+}
+
 function catalogIds(provider: string) {
-  return catalog.filter((entry) => entry.provider === provider).map((entry) => entry.id);
+  return catalogFor(provider)
+    .filter((entry) => entry.provider === provider)
+    .map((entry) => entry.id);
 }
 
 /** Hosts the bundled model registry sends this provider's requests to, read apart from Rakazo's own entry. */
@@ -65,7 +79,9 @@ describe.each(entries)("%s model provider", (id, definition) => {
   if (definition.displayName) {
     it("keeps its display name in the catalog", () => {
       const names = new Set(
-        catalog.filter((entry) => entry.provider === id).map((entry) => entry.providerName),
+        catalogFor(id)
+          .filter((entry) => entry.provider === id)
+          .map((entry) => entry.providerName),
       );
       expect([...names]).toEqual([definition.displayName]);
     });
@@ -77,7 +93,9 @@ describe.each(entries)("%s model provider", (id, definition) => {
       expect(catalogIds(id)).toContain(recommended);
       expect(catalogModelServesAgents({ provider: id, id: recommended })).toBe(true);
       expect(
-        catalog.filter((entry) => entry.provider === id && entry.recommended).map((e) => e.id),
+        catalogFor(id)
+          .filter((entry) => entry.provider === id && entry.recommended)
+          .map((e) => e.id),
       ).toEqual([recommended]);
       expect(isRecommendedCatalogModel(id, recommended)).toBe(true);
     });

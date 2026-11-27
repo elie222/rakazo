@@ -795,6 +795,126 @@ describe("acpAgentRuntime", () => {
     expect(prompt.prompt.map((block) => block.type)).toEqual(["text"]);
   });
 
+  it("applies thought_level config options for thinkingLevel choices", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor({ supportsThinking: true }), {
+      accessCheck: allowed,
+    });
+
+    await collect(
+      runtime,
+      request({
+        model: { provider: "fake-agent", id: "fake/large", thinkingLevel: "high" },
+      }),
+    );
+
+    expect(requests("session/set_config_option").map((event) => event.params)).toEqual([
+      expect.objectContaining({ configId: "model", value: "fake/large" }),
+      expect.objectContaining({ configId: "thought_level", value: "high" }),
+    ]);
+  });
+
+  it("clamps minimal and max thinking levels to the closest available thought_level option", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor({ supportsThinking: true }), {
+      accessCheck: allowed,
+    });
+
+    await collect(
+      runtime,
+      request({
+        model: { provider: "fake-agent", id: "fake/default", thinkingLevel: "minimal" },
+      }),
+    );
+    await collect(
+      runtime,
+      request({
+        model: { provider: "fake-agent", id: "fake/default", thinkingLevel: "max" },
+      }),
+    );
+
+    const thoughtCalls = requests("session/set_config_option")
+      .map((event) => event.params as { configId: string; value: string })
+      .filter((params) => params.configId === "thought_level");
+    expect(thoughtCalls.map((params) => params.value)).toEqual(["low", "xhigh"]);
+  });
+
+  it("maps legacy suffixed model ids to base model plus thought_level", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor({ supportsThinking: true }), {
+      accessCheck: allowed,
+    });
+
+    await collect(
+      runtime,
+      request({
+        model: { provider: "fake-agent", id: "fake/large-low" },
+      }),
+    );
+
+    expect(requests("session/set_config_option").map((event) => event.params)).toEqual([
+      expect.objectContaining({ configId: "model", value: "fake/large" }),
+      expect.objectContaining({ configId: "thought_level", value: "low" }),
+    ]);
+  });
+
+  it("passes accountId as profileId to launch and isolates cached sessions per account", async () => {
+    const launchedProfiles: Array<string | undefined> = [];
+    const runtime = acpAgentRuntime(
+      fallback,
+      descriptor({
+        async launch({ files, instructions, toolServer, env, profileId }) {
+          launchedProfiles.push(profileId);
+          return { args: [FAKE_AGENT, recordFile, files, instructions, toolServer], env };
+        },
+      }),
+      { accessCheck: allowed },
+    );
+    const threadId = `thread-${randomUUID()}`;
+    const accountA = randomUUID();
+    const accountB = randomUUID();
+
+    await collect(
+      runtime,
+      request({
+        threadId,
+        model: {
+          provider: "fake-agent",
+          id: "fake/large",
+          oauth: {
+            credential: {
+              type: "oauth",
+              access: `fake-agent:${accountA}`,
+              refresh: `fake-agent:${accountA}`,
+              expires: Number.MAX_SAFE_INTEGER,
+              accountId: accountA,
+            },
+          },
+        },
+      }),
+    );
+    await collect(
+      runtime,
+      request({
+        threadId,
+        model: {
+          provider: "fake-agent",
+          id: "fake/large",
+          oauth: {
+            credential: {
+              type: "oauth",
+              access: `fake-agent:${accountB}`,
+              refresh: `fake-agent:${accountB}`,
+              expires: Number.MAX_SAFE_INTEGER,
+              accountId: accountB,
+            },
+          },
+        },
+      }),
+    );
+
+    expect(launchedProfiles).toEqual([accountA, accountB]);
+    expect(requests("session/new")).toHaveLength(2);
+    expect(requests("session/resume")).toHaveLength(0);
+  });
+
   it("leaves every other model to the runtime it wraps", async () => {
     const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
 

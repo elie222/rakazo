@@ -6,17 +6,23 @@ import {
 } from "@rakazo/adapter-kit";
 import type { CatalogReads, PiOAuthPersist } from "@rakazo/adapters";
 import {
+  ANTIGRAVITY_CLI_PROVIDER_ID,
+  antigravityCliEnabled,
   assertModelProviderAllowed,
   compatibleEndpointPreset,
+  isAntigravityProfileId,
   listModelCredentials,
   listPiCatalog,
   ModelSignInError,
   mediaModelsView,
   oauthCredentialEmail,
+  parseModelSecret,
+  personalCliAccessCheck,
   prepareStoredModelAuth,
   probeCatalogProviderModels,
   probeOpenAiCompatibleModels,
   providerCatalogCache,
+  removeAntigravityProfileDir,
   selectDefaultCredentialId,
   serializeModelSecret,
   setMediaModel,
@@ -123,6 +129,27 @@ export function modelsRoutes(ctx: RouterContext) {
         const record = signInRecorder(deps.analytics, actor.userId, login.measure);
         const target = await modelConnectionTarget(deps, actor, login.provider, login.credentialId);
         const retained = await prepareModelReconnectSettings(deps, actor, target);
+        const isAntigravity = canonicalPiProviderId(login.provider) === ANTIGRAVITY_CLI_PROVIDER_ID;
+        let previousProfileId: string | undefined;
+        if (isAntigravity && retained.expectedSecret?.ciphertext) {
+          try {
+            const previousSecret = parseModelSecret(
+              await deps.secrets.load(
+                retained.expectedSecret.ciphertext,
+                retained.expectedSecret.id,
+              ),
+            );
+            if (
+              previousSecret.kind === "oauth" &&
+              "credential" in previousSecret &&
+              isAntigravityProfileId(previousSecret.credential.accountId)
+            ) {
+              previousProfileId = previousSecret.credential.accountId;
+            }
+          } catch {
+            // An unreadable prior secret must not block reconnecting.
+          }
+        }
         const choice = target
           ? { modelId: login.modelId, thinkingLevel: login.thinkingLevel }
           : subscriptionSignInChoice(login.provider, login.modelId, login.thinkingLevel);
@@ -151,6 +178,9 @@ export function modelsRoutes(ctx: RouterContext) {
           },
           codexCatalog,
         );
+        if (previousProfileId && previousProfileId !== login.credential.accountId) {
+          await removeAntigravityProfileDir(previousProfileId).catch(() => undefined);
+        }
         record(login.provider, {
           name: "model_connected",
           ...(login.mode ? { flow: signInFlow(login.mode) } : {}),
@@ -158,6 +188,12 @@ export function modelsRoutes(ctx: RouterContext) {
         });
         return saved;
       } catch (error) {
+        if (
+          canonicalPiProviderId(login.provider) === ANTIGRAVITY_CLI_PROVIDER_ID &&
+          isAntigravityProfileId(login.credential.accountId)
+        ) {
+          await removeAntigravityProfileDir(login.credential.accountId).catch(() => undefined);
+        }
         // The member is told why a save was refused; anything else is reported generically.
         if (error instanceof ORPCError) throw new ModelSignInError(error.message);
         throw error;
@@ -367,6 +403,17 @@ export function modelsRoutes(ctx: RouterContext) {
       }),
       beginOAuth: authed.models.beginOAuth.handler(async ({ context, input }) => {
         assertModelProviderAllowed(input.provider);
+        if (canonicalPiProviderId(input.provider) === ANTIGRAVITY_CLI_PROVIDER_ID) {
+          if (!antigravityCliEnabled()) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: "Antigravity CLI sign-in is not enabled on this server.",
+            });
+          }
+          const refusal = await personalCliAccessCheck({ prisma: deps.prisma })();
+          if (refusal) {
+            throw new ORPCError("FORBIDDEN", { message: refusal });
+          }
+        }
         // An older app's sign-in renews the provider's newest connection, bound now so a
         // disconnect of that connection retires it and it never lands on another one.
         const target = await modelConnectionTarget(
@@ -666,9 +713,12 @@ export function modelsRoutes(ctx: RouterContext) {
           provider: input.provider,
           credentialId: input.credentialId,
         });
+        const isAntigravity = canonicalPiProviderId(input.provider) === ANTIGRAVITY_CLI_PROVIDER_ID;
+        let removedSecrets: Array<{ id: string; ciphertext: string }> = [];
         await withTransactionRetry(() =>
           deps.prisma.$transaction(
             async (tx) => {
+              removedSecrets = [];
               const provider = modelCredentialProviderFilter(input.provider);
               const connections = await tx.userModelCredential.findMany({
                 where: { userId: context.actor.userId, provider },
@@ -698,6 +748,16 @@ export function modelsRoutes(ctx: RouterContext) {
                 },
               );
               if (existing.length === 0) return;
+              if (isAntigravity) {
+                removedSecrets = await tx.secret.findMany({
+                  where: {
+                    id: { in: existing.map((row) => row.secretId) },
+                    userId: context.actor.userId,
+                    spaceId: null,
+                  },
+                  select: { id: true, ciphertext: true },
+                });
+              }
               await tx.userModelCredential.deleteMany({
                 where: { userId: context.actor.userId, id: { in: ids } },
               });
@@ -712,6 +772,22 @@ export function modelsRoutes(ctx: RouterContext) {
             { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
           ),
         );
+        if (isAntigravity && removedSecrets.length > 0) {
+          for (const row of removedSecrets) {
+            try {
+              const parsed = parseModelSecret(await deps.secrets.load(row.ciphertext, row.id));
+              if (
+                parsed.kind === "oauth" &&
+                "credential" in parsed &&
+                isAntigravityProfileId(parsed.credential.accountId)
+              ) {
+                await removeAntigravityProfileDir(parsed.credential.accountId);
+              }
+            } catch {
+              // Best-effort cleanup; an unreadable secret must not fail disconnect.
+            }
+          }
+        }
         (deps.providerCatalog ?? providerCatalogCache).invalidate(
           canonicalPiProviderId(input.provider),
         );

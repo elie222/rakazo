@@ -174,6 +174,20 @@ const modelOption = (value) => ({
   ],
 });
 
+const thoughtOption = (value) => ({
+  id: "thought_level",
+  name: "Thought Level",
+  category: "thought_level",
+  type: "select",
+  currentValue: value,
+  options: [
+    { value: "low", name: "Low" },
+    { value: "medium", name: "Medium" },
+    { value: "high", name: "High" },
+    { value: "xhigh", name: "Extra High" },
+  ],
+});
+
 async function handle(message) {
   const { method, params } = message;
   record({ type: "request", method, params });
@@ -194,14 +208,17 @@ async function handle(message) {
       const sessionId = `ses-${randomUUID()}`;
       servers.set(sessionId, params.mcpServers[0]);
       appendFileSync(sessionsFile, `${sessionId}\n`);
-      return { sessionId, configOptions: [modelOption("fake/default")] };
+      return {
+        sessionId,
+        configOptions: [modelOption("fake/default"), thoughtOption("medium")],
+      };
     }
     case "session/resume":
       if (!known().has(params.sessionId)) {
         throw Object.assign(new Error("Session not found"), { code: -32602 });
       }
       servers.set(params.sessionId, params.mcpServers[0]);
-      return { configOptions: [modelOption("fake/large")] };
+      return { configOptions: [modelOption("fake/large"), thoughtOption("medium")] };
     case "session/set_config_option":
     case "session/delete":
       return {};

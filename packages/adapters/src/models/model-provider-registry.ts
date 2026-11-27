@@ -236,7 +236,18 @@ export const modelProviders = {
     hostCredentials: { source: OPENCODE_CLI_CREDENTIAL_SOURCE, resolvedAtRequest: true },
   },
   [ANTIGRAVITY_CLI_PROVIDER_ID]: {
+    displayName: "Antigravity",
+    subscriptionName: "Antigravity (Google)",
+    recommendedModel: "gemini-4-neon",
+    subscriptionModel: { id: "gemini-4-neon", thinkingLevel: "high" },
     hostCredentials: { source: ANTIGRAVITY_CLI_CREDENTIAL_SOURCE, resolvedAtRequest: true },
+    signIn: {
+      mode: "auth-url",
+      loginLabel: "Sign in with Google (Antigravity CLI)",
+      hint: "Google AI Pro/Ultra",
+      billing:
+        "Sign in with Google through the local Antigravity CLI (agy acp). Uses your Google subscription. Rakazo does not pay or read your Google tokens.",
+    },
   },
 } satisfies Record<string, ModelProviderDefinition>;
 
