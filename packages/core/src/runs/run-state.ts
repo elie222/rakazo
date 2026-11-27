@@ -1,4 +1,4 @@
-import type { RunStatus } from "@rakazo/contracts";
+import type { RunStatus, RunTrigger } from "@rakazo/contracts";
 
 /** Runs the bot is working on, which the chat shows as working. */
 export const WORKING_RUN_STATUSES = [
@@ -47,6 +47,14 @@ const BACKGROUND_RUN_TRIGGER_SET = new Set<string>(BACKGROUND_RUN_TRIGGERS);
 export function isBackgroundRunTrigger(trigger: string | null | undefined): boolean {
   return BACKGROUND_RUN_TRIGGER_SET.has(trigger ?? "");
 }
+
+/** Turns started by a person talking to the bot right now, who is waiting for its answer. */
+export const PERSON_RUN_TRIGGERS = [
+  "user",
+  "follow_up",
+  "reaction",
+  "messaging",
+] as const satisfies readonly RunTrigger[];
 
 const allowed: Record<RunStatus, RunStatus[]> = {
   queued: ["leased", "cancelled"],
@@ -100,6 +108,23 @@ export function isRunWaitingOnUser(status: string | null | undefined): boolean {
 
 export function isTerminal(status: string): boolean {
   return TERMINAL.includes(status as RunStatus);
+}
+
+/** A failed reply to a typed message, which its sender can run again. */
+export function canRetryRun(
+  run:
+    | { status: string; trigger?: string | null; userId?: string | null; retryable?: boolean }
+    | null
+    | undefined,
+  userId: string | null | undefined,
+): boolean {
+  return (
+    run?.status === "failed" &&
+    run.trigger === "user" &&
+    run.retryable === true &&
+    Boolean(userId) &&
+    run.userId === userId
+  );
 }
 
 /**

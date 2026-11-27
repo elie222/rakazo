@@ -248,13 +248,11 @@ export const DEMO_TEXT_KEYS = [
 ] as const;
 
 export type DemoTextKey = (typeof DEMO_TEXT_KEYS)[number];
-/** One locale's translation of every demo key. */
 export type DemoTranslations = Readonly<Record<DemoTextKey, string>>;
 /** What the client island receives: empty for English, which renders the keys as written. */
 export type DemoMessages = Readonly<Partial<Record<string, string>>>;
 export type DemoValues = Record<string, string | number>;
 
-/** Translates a known demo key. */
 export function fillDemoText(
   messages: DemoMessages,
   source: DemoTextKey,

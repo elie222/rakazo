@@ -31,7 +31,10 @@ import { teamWorkspaceInstruction } from "../../computers/screens/computer-suppo
 import type { RunMediaSources } from "../../media/media-sources.js";
 import { approvedModelCreditOffering } from "../../model-credits/offerings.js";
 import { resolveDeploymentModel } from "../../models/deployment-model.js";
-import { selectConfiguredModel } from "../../models/model-roles.js";
+import {
+  ORGANIZATION_MODEL_CONNECTION_PREFIX,
+  selectConfiguredModel,
+} from "../../models/model-roles.js";
 import {
   findConnectedModelCredential,
   PINNED_PROVIDER_NOT_CONNECTED,
@@ -39,7 +42,6 @@ import {
 } from "../../models/model-selection.js";
 import { modelAcceptsImageInput } from "../../models/model-vision.js";
 import { paymentWalletConnected } from "../../payments/payment-wallets.js";
-import { desktopGuardApplies } from "../../providers/computer/desktop/desktop-command-guard.js";
 import { backOffRoutineAfterAccountError } from "../../routines/routine-backoff.js";
 import { pauseRoutineAfterRepeatedFailures } from "../../routines/routine-failure-pause.js";
 import { filterStrategicInitiativeTools } from "../../routines/strategic-initiative.js";
@@ -85,7 +87,6 @@ import { lazyRunComputer } from "./run-computer.js";
 import {
   BOT_DIRECTORY_LIMIT,
   COMPUTER_USE_INSTRUCTION,
-  desktopGuardShellInstruction,
   dockerComputerToolInstruction,
   hostComputerInstruction,
   PRIVATE_WORKSPACE_INSTRUCTION,
@@ -192,7 +193,12 @@ export async function startTurnModel(
     { settings, deployment: runDeployment },
     scripted,
     registerRunSecrets,
-    Boolean(credentialPin),
+    Boolean(
+      credentialPin ||
+        (pinnedComputerModels?.main.connectionId ?? selected.connectionId)?.startsWith(
+          ORGANIZATION_MODEL_CONNECTION_PREFIX,
+        ),
+    ),
   );
   const started = await startRunModel(
     deps,
@@ -902,14 +908,6 @@ export async function loadComputerInstructions(
     disabledBuiltinTools,
     offeredToolNames,
   );
-  const guardInstruction = desktopGuardApplies({
-    graphical,
-    stored: storedComputer,
-    kind: computerKind,
-    lazy: runComputer,
-  })
-    ? desktopGuardShellInstruction(offeredToolNames)
-    : undefined;
   const hostEnvironment = sandboxKindCapabilities(computerKind).nativeShell
     ? await deps.sandbox
         .environment?.(
@@ -936,7 +934,6 @@ export async function loadComputerInstructions(
       : dockerToolInstruction
         ? `${baseComputerInstruction} ${dockerToolInstruction}`
         : baseComputerInstruction,
-    guardInstruction,
     diskNoteInstruction(storedComputer),
   ]
     .filter(Boolean)

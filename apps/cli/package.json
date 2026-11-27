@@ -1,0 +1,28 @@
+{
+  "name": "@rakazo/cli",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "Hand work to your Rakazo bots from a terminal or script.",
+  "bin": {
+    "rakazo": "./dist/rakazo.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node24 --banner:js='#!/usr/bin/env node' --outfile=dist/rakazo.js",
+    "check": "tsrs --noEmit -p tsconfig.json",
+    "test": "vitest run --root ../.. apps/cli/src"
+  },
+  "dependencies": {
+    "@rakazo/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  }
+}

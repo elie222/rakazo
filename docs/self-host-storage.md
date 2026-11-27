@@ -232,6 +232,7 @@ before upload using the space's content key and authenticated segments bound to 
 artifact identity. This applies even with `CONTENT_ENCRYPTION=off`. Metadata and access
 checks remain in Postgres; clients and sandboxes receive neither bucket credentials nor
 public object URLs. Without object storage, artifacts continue using the local volume.
+Pictures shown on pages are stored, encrypted and migrated the same way as other artifacts.
 
 Existing artifact rows continue reading their local files until migrated. Before spreading
 API or worker replicas across machines, migrate files from every original application
@@ -286,7 +287,7 @@ Files sent in direct messages from chat apps download in the background, up to
 `MAX_UPLOAD_SIZE_MB`, with retries. The sender is told when a file can't be received.
 
 `MAX_ATTACHMENTS_PER_MESSAGE` sets the chat attachment count per message. It defaults
-to `4` and accepts integers from `1` to `100`. Set it in `.env` and restart the API.
-Web, desktop, and mobile use the advertised count; older clients and clients connected
-to older servers keep the default of four. Chat bridges retain their existing safe
-platform limits, and model image budgets still apply.
+to `10` and accepts integers from `1` to `100`. Set the same value for the API and
+worker, then restart both. Web, desktop, and mobile use the server's advertised
+count when both sides support it and fall back to four otherwise. Chat bridges
+retain their platform limits, and model image budgets still apply.

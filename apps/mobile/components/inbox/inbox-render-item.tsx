@@ -192,7 +192,15 @@ function SpaceHeading({
                 color={native.secondaryLabel}
               />
             ) : null}
-            <Text style={styles.spaceTitle}>{title}</Text>
+            <Text style={styles.spaceTitle} numberOfLines={1}>
+              {title}
+            </Text>
+            <NativeSymbol
+              ios="chevron.down"
+              android="chevron-down"
+              size={11}
+              color={native.tertiaryLabel}
+            />
           </View>
         </DragSafePressable>
       )}
@@ -320,10 +328,14 @@ export function useInboxRenderItem({
             chats={item.chats}
             onOpenBot={openBot}
             onOpenGroup={openGroup}
-            onLongPressBot={organizeBot}
-            onLongPressGroup={organizeGroup}
+            onLongPressBot={SWIPE_ROWS ? undefined : organizeBot}
+            onLongPressGroup={SWIPE_ROWS ? undefined : organizeGroup}
             onBotAction={botAction}
             onGroupAction={groupAction}
+            sectionsOf={sectionsOf}
+            onOrganize={organizeFromMenu}
+            onEditSection={editSectionFromMenu}
+            onSnooze={snoozeChat}
           />
         </AvatarRow>
       ) : item.type === "heading" ? (

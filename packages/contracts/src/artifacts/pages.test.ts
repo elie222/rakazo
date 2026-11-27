@@ -39,7 +39,7 @@ it("bounds the titles pages send out by the cap a saved title has", () => {
       updatedAt: at,
     }).success;
   const shared = (title: string) =>
-    SharedPageSchema.safeParse({ title, code: "", version: 1, updatedAt: at }).success;
+    SharedPageSchema.safeParse({ title, code: "", images: {}, version: 1, updatedAt: at }).success;
   const longest = "x".repeat(PAGE_TITLE_MAX_LENGTH);
   expect([summary(longest), shared(longest)]).toEqual([true, true]);
   expect([summary(`${longest}x`), shared(`${longest}x`)]).toEqual([false, false]);

@@ -8,7 +8,6 @@ import {
 } from "@rakazo/contracts";
 import { APP_URL, SELF_HOST_GUIDE_PATH } from "./site";
 
-/** Whole dollars when the amount is round ("$15"), otherwise cents ("$12.50"). */
 function dollars(cents: number) {
   const rounded = Math.round(cents);
   return new Intl.NumberFormat("en-US", {
@@ -19,11 +18,14 @@ function dollars(cents: number) {
 }
 
 const STANDARD = BYOK_TIERS.standard;
+const STANDARD_ANNUAL_CENTS = byokTierPriceCents("standard", "year");
 
 export type PricingPlan = {
   name: string;
   price: string;
   note?: string;
+  /** The same plan billed yearly, for the billing toggle. */
+  yearly?: { price: string; note: string };
   features: string[];
   action: { label: string; href: string };
 };
@@ -32,7 +34,19 @@ export type PricingPlan = {
 const COMPUTER_TIME_NOTE =
   "Counts only while your bot uses its computer, which most work doesn't need. It pauses when idle.";
 
-/** Display names for every sandbox a self-hosted deployment can use. */
+function yearlyPrice(annualCents: number) {
+  return {
+    price: `${dollars(annualCents / 12)}/mo`,
+    note: `${dollars(annualCents)} billed yearly`,
+  };
+}
+
+/** How much less paying yearly costs than twelve monthly payments, in whole percent. */
+export const YEARLY_SAVING_PERCENT =
+  STANDARD.monthlyPriceCents === null || STANDARD.annualPriceCents === null
+    ? null
+    : Math.round((1 - STANDARD.annualPriceCents / (STANDARD.monthlyPriceCents * 12)) * 100);
+
 const SANDBOX_PROVIDERS = [
   "Docker",
   "Kubernetes",
@@ -63,13 +77,14 @@ const SELF_HOSTED_PLAN: PricingPlan = {
   action: { label: "Self-hosting guide", href: SELF_HOST_GUIDE_PATH },
 };
 
+const STANDARD_YEARLY =
+  STANDARD_ANNUAL_CENTS === null ? undefined : yearlyPrice(STANDARD_ANNUAL_CENTS);
+
 const OWN_MODEL_PLAN: PricingPlan = {
   name: "Your model",
   price: STANDARD.monthlyPriceCents === null ? "Free" : `${dollars(STANDARD.monthlyPriceCents)}/mo`,
-  note:
-    STANDARD.annualPriceCents === null
-      ? undefined
-      : `${dollars(STANDARD.annualPriceCents / 12)}/mo billed yearly`,
+  note: STANDARD_YEARLY && `${STANDARD_YEARLY.price} billed yearly`,
+  yearly: STANDARD_YEARLY,
   features: [
     "Hosted by us",
     "Claude, ChatGPT, or any API key",
@@ -79,7 +94,6 @@ const OWN_MODEL_PLAN: PricingPlan = {
   action: { label: "Start free trial", href: APP_URL },
 };
 
-/** Prices come from the same constants the app bills with. */
 export const PRICING_PLANS: PricingPlan[] = [SELF_HOSTED_PLAN, OWN_MODEL_PLAN];
 
 /** The less common hosted option, shown below the main plans. */
@@ -100,17 +114,17 @@ export const CREDITS_PLAN: PricingPlan = {
 /** A comparison cell: included, not included, or a short value with optional detail on hover. */
 export type PricingCell = boolean | string | { label: string; detail: string };
 
-/** Own-model tiers on offer, from the terms the app bills with. */
 const TIERS = (Object.keys(BYOK_TIERS) as ByokTier[]).flatMap((tier) => {
   const monthly = byokTierPriceCents(tier, "month");
-  // A null Standard price makes the own-model plan free and hides the other tiers.
   if (monthly === null && tier !== "standard") return [];
+  const annual = byokTierPriceCents(tier, "year");
   const terms = BYOK_TIERS[tier];
   return [
     {
       name: terms.name,
       monthlyCents: monthly ?? 0,
       price: monthly === null ? "Free" : `${dollars(monthly)}/mo`,
+      yearlyPrice: annual === null ? undefined : yearlyPrice(annual).price,
       computerAllowanceCents: terms.computerAllowanceCents,
     },
   ];
@@ -139,6 +153,7 @@ export const PRICING_COMPARISON = {
     ...TIERS.map((tier) => ({
       name: tier.name,
       price: tier.price,
+      yearlyPrice: tier.yearlyPrice,
       action: {
         ...OWN_MODEL_PLAN.action,
         label: "Start trial",
@@ -204,7 +219,6 @@ export const PRICING_COMPARISON = {
   ] satisfies { feature: string; hint?: string; cells: PricingCell[] }[],
 };
 
-/** Every plan's price, for structured data. */
 export const PRICE_OFFERS: readonly (
   | { name: string; monthlyCents: number }
   | { name: string; fromMonthlyCents: number; description: string }

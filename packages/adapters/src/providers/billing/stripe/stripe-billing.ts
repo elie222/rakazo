@@ -756,7 +756,28 @@ export class StripeBillingProvider implements BillingProvider {
 
   async getCustomerSubscription(customerId: string): Promise<BillingSubscriptionSnapshot | null> {
     const chosen = pickStripeSubscription(await this.listLiveSubscriptions(customerId));
-    return chosen ? toSnapshot(chosen.subscription, chosen.status) : null;
+    if (!chosen) return null;
+    const snapshot = toSnapshot(chosen.subscription, chosen.status);
+    if (snapshot.paidAt || grantsAccess(chosen.status)) return snapshot;
+    // One that stopped billing may have paid for earlier periods before its latest charge failed.
+    const paidAt = await this.firstPaymentAt(chosen.subscription.id);
+    return paidAt ? { ...snapshot, paidAt } : snapshot;
+  }
+
+  private async firstPaymentAt(subscriptionId: string) {
+    const invoices = await this.listPages(
+      `/v1/invoices?subscription=${encodeURIComponent(subscriptionId)}&status=paid`,
+      z.object({
+        total: z.number().int().nullish(),
+        status_transitions: z.object({ paid_at: z.number().int().nullish() }).nullish(),
+      }),
+    );
+    const paid = invoices.flatMap((invoice) =>
+      (invoice.total ?? 0) > 0 && invoice.status_transitions?.paid_at
+        ? [invoice.status_transitions.paid_at]
+        : [],
+    );
+    return paid.length ? fromSeconds(Math.min(...paid)) : null;
   }
 
   async updateSeats(customerId: string, seats: number) {

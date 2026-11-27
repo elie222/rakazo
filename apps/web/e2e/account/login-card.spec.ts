@@ -45,7 +45,6 @@ test("saves a website login from a username and password card without echoing ei
   const usernameField = form.getByLabel("Username", { exact: true });
   // Exact: the password reveal button is labelled "Show password".
   const passwordField = form.getByLabel("Password", { exact: true });
-  // The default card starts as logins always have: Username visible, Password hidden.
   await expect(usernameField).toHaveAttribute("type", "text");
   await expect(passwordField).toHaveAttribute("type", "password");
   const hiddenToggle = (label: string) =>

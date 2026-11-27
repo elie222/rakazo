@@ -1,5 +1,4 @@
 import { useLingui } from "@lingui/react/macro";
-import { useEffect, useState } from "react";
 import type { PressableProps } from "react-native";
 import {
   ActivityIndicator,
@@ -12,9 +11,8 @@ import {
 } from "react-native";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifacts/artifact-open";
-import { imageArtifactPreview } from "../../lib/artifacts/artifact-open";
-import type { ImageSize } from "../../lib/messages/inline-image";
 import { fitImageSize } from "../../lib/messages/inline-image";
+import { useImagePreview } from "./use-image-preview";
 
 const MAX_INLINE_HEIGHT = 360;
 
@@ -44,28 +42,7 @@ export function InlineImageAttachment({
   const tokens = mobileTokens();
   const { width: windowWidth } = useWindowDimensions();
   const maxWidth = Math.min(Math.round(windowWidth * 0.68), 400);
-  const [state, setState] = useState<
-    { status: "loading" } | { status: "ready"; uri: string; size: ImageSize } | { status: "error" }
-  >({ status: "loading" });
-  const targetBotId = "botId" in threadTarget ? threadTarget.botId : undefined;
-  const targetGroupId = "groupId" in threadTarget ? threadTarget.groupId : undefined;
-
-  useEffect(() => {
-    let cancelled = false;
-    setState({ status: "loading" });
-    const target: MobileArtifactTarget =
-      targetBotId !== undefined ? { botId: targetBotId } : { groupId: targetGroupId! };
-    imageArtifactPreview(target, artifactId, mimeType)
-      .then((loaded) => {
-        if (!cancelled) setState({ status: "ready", ...loaded });
-      })
-      .catch(() => {
-        if (!cancelled) setState({ status: "error" });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [targetBotId, targetGroupId, artifactId, mimeType]);
+  const { preview: state } = useImagePreview(threadTarget, artifactId, mimeType);
 
   const canOpen = state.status !== "loading";
   const openLabel = canOpen ? t`Open image ${name}` : undefined;

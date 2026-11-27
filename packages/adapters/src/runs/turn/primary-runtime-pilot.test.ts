@@ -38,6 +38,21 @@ it("rejects changed credentials rather than resolving another account", async ()
   );
 });
 
+it.skipIf(process.platform !== "linux")(
+  "does not launch a queued native handoff on a different connection after the pin is lost",
+  async () => {
+    vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", run.botId);
+    vi.stubEnv("PRIMARY_RUNTIME_PILOT_GROUP_BOT_IDS", run.botId);
+    vi.stubEnv("PRIMARY_RUNTIME_PILOT_HANDOFF_BOT_IDS", run.botId);
+    vi.stubEnv("PRIMARY_RUNTIME_PILOT_LAUNCHER", process.execPath);
+    const queuedHandoff = { ...run, trigger: "follow_up" };
+    await expect(loadPilotRuntime(queuedHandoff, model, true)).resolves.toHaveProperty("run");
+    await expect(
+      loadPilotRuntime(queuedHandoff, { ...model, connectionId: "unrelated-key" }, true),
+    ).rejects.toThrow("exact API-key connection");
+  },
+);
+
 it("rejects a queued pilot turn after operator enrolment was removed", async () => {
   vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", "");
   vi.stubEnv("PRIMARY_RUNTIME_PILOT_LAUNCHER", process.execPath);

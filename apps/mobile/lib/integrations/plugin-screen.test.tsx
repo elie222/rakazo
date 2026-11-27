@@ -9,6 +9,15 @@ import PluginRoute from "../../app/(settings)/plugin";
 import { queryClient } from "../query/query";
 
 const SOURCE = "https://plugins.example.test/notes";
+vi.mock("../spaces/organizations", () => ({
+  useOrganizations: () => ({}),
+  activeOrganization: () => undefined,
+}));
+vi.mock("../../components/settings/settings-group", () => ({
+  SettingsGroup: () => null,
+  SettingsSwitch: () => null,
+}));
+
 const state = vi.hoisted(() => ({
   rpc: vi.fn(),
   params: {} as Record<string, string>,
@@ -27,6 +36,10 @@ vi.mock("../api/api", () => ({
   rpc: (...call: unknown[]) => state.rpc(...call),
 }));
 vi.mock("../api/session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("../spaces/organizations", () => ({
+  useOrganizations: () => ({ data: undefined }),
+  activeOrganization: () => undefined,
+}));
 vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("../inbox/last-bot", () => ({ loadLastBotId: async () => state.botId }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
@@ -38,7 +51,9 @@ vi.mock("../native/native", () => ({
   useThemedStyles: (create: () => unknown) => create(),
 }));
 vi.mock("../native/native-controls", () => ({ iosAtLeast: () => false }));
+vi.mock("../api/roster-signals", () => ({ useLiveStream: () => {} }));
 vi.mock("expo-router", () => ({
+  useIsFocused: () => state.focused,
   Redirect: () => null,
   useRouter: () => ({ navigate: vi.fn() }),
   useLocalSearchParams: () => state.params,

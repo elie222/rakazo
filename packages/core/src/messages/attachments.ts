@@ -1,12 +1,13 @@
 import type { AttachmentMimeType, HistoryToolStep, MessageBlock } from "@rakazo/contracts";
 import {
+  AGENT_IMPORT_ASK_ACTION_ID,
   ATTACHMENT_COUNT_CEILING,
   ATTACHMENT_MAX_BYTES,
-  ATTACHMENT_MAX_COUNT,
   attachmentSizeLabel,
   isAllowedAttachmentMimeType,
   isAttachmentImageMimeType,
 } from "@rakazo/contracts";
+import { askOptionLetter, isQuestionAskBlock } from "../asks/ask-kind.js";
 import { sliceWellFormed } from "../primitives/utf8.js";
 import { isApprovalAskBlock, isSecretAskBlock } from "../runs/action-approval.js";
 
@@ -31,9 +32,11 @@ function isWellFormedBase64(value: string): boolean {
   return /^[A-Za-z0-9+/]*$/.test(body);
 }
 
+const DEFAULT_SERVER_ATTACHMENT_COUNT = 10;
+
 export function attachmentCountFromEnv(source: { MAX_ATTACHMENTS_PER_MESSAGE?: string }): number {
   const value = source.MAX_ATTACHMENTS_PER_MESSAGE?.trim();
-  if (!value) return ATTACHMENT_MAX_COUNT;
+  if (!value) return DEFAULT_SERVER_ATTACHMENT_COUNT;
   const count = Number(value);
   if (
     !/^\d+$/.test(value) ||
@@ -290,9 +293,20 @@ function blockHistoryText(block: MessageBlock): string {
       block.detail && !isApprovalAskBlock(block) && !isSecretAskBlock(block)
         ? `\n<draft>\n${block.detail.replace(/<\s*\/\s*draft\s*>/gi, "&lt;/draft&gt;")}\n</draft>`
         : "";
-    if (block.status !== "answered" || !block.answer) return `${block.text}${detail}`;
+    // The card shows its options lettered, and a typed reply like "A and C" refers to them.
+    // The import button opens a flow rather than answering, so it is not an option here. A
+    // label is kept to one line so it cannot pass for the answer.
+    const options = isQuestionAskBlock(block)
+      ? (block.actions ?? [])
+          .filter((action) => action.id !== AGENT_IMPORT_ASK_ACTION_ID)
+          .map(
+            (action, index) => `\n${askOptionLetter(index)}. ${action.label.replace(/\s+/g, " ")}`,
+          )
+      : [];
+    const question = `${block.text}${options.join("")}${detail}`;
+    if (block.status !== "answered" || !block.answer) return question;
     const choice = block.actions?.find((action) => action.id === block.answer);
-    return `${block.text}${detail}\nAnswer: ${choice?.label ?? block.answer}`;
+    return `${question}\nAnswer: ${choice?.label ?? block.answer}`;
   }
   // The bot needs the outcome of its own call: a missed call is its cue to follow up.
   if (block.kind === "call_request") {

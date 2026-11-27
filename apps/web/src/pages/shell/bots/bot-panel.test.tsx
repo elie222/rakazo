@@ -408,7 +408,11 @@ describe("BotSettings model choices", () => {
 });
 
 describe("BotSettings model connection", () => {
-  it("pins and unpins an exact connection for the same model", async () => {
+  it("pins an exact account for the Space-default model and can return to inheriting it", async () => {
+    vi.mocked(rpc.me).mockResolvedValueOnce({
+      defaultProvider: "openai-compatible",
+      defaultModel: "same-model",
+    } as Awaited<ReturnType<typeof rpc.me>>);
     vi.mocked(rpc.models.credentials).mockResolvedValueOnce(
       [
         ["first", "Work", true],
@@ -423,7 +427,7 @@ describe("BotSettings model connection", () => {
         enabledModelIds: ["same-model"],
       })),
     );
-    await render("Billing", { modelProvider: "openai-compatible", modelId: "same-model" });
+    await render("Billing", { modelProvider: null, modelId: null });
     await openSettings();
     const trigger = container.querySelector<HTMLElement>(
       '[role="combobox"][id$="-model-connection"]',
@@ -443,7 +447,11 @@ describe("BotSettings model connection", () => {
       (option) => option.textContent === "Automatic",
     );
     await act(async () => automatic!.click());
-    expect(onSave.mock.lastCall?.[0]).toMatchObject({ modelCredentialId: null });
+    expect(onSave.mock.lastCall?.[0]).toMatchObject({
+      modelProvider: null,
+      modelId: null,
+      modelCredentialId: null,
+    });
   });
 
   it("shows an unavailable pin without disclosing its ID and can clear it", async () => {
@@ -507,7 +515,6 @@ describe("BotSettings thinking options", () => {
     const checked = (await openModelPicker()).find((option) => option.dataset.checked === "true");
     expect(checked?.dataset.value).toBe("openai-compatible::beta");
     expect((await openOptions(thinkingField())).map((option) => option.textContent)).toEqual([
-      "Default (Medium)",
       "Minimal",
       "Low",
       "Medium",

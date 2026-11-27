@@ -422,11 +422,11 @@ test("imports a Grok Bot export as a new bot", async ({ page }, testInfo) => {
     .getByRole("textbox", { name: "Paste the reply" })
     .fill(grokReply(grokBot, { name: "Wren", instructions: "Plan trips." }));
   await grok.getByRole("button", { name: "Continue" }).click();
-  await expect(grok.getByText("Which Bot?")).toBeVisible();
+  await expect(grok.getByRole("button", { name: "Import 2 Bots" })).toBeVisible();
   await captureScreenshot(page, testInfo, "agent-import-grok-choose-bot");
   await clickAndWaitForRpc(
     page,
-    grok.getByRole("button", { name: "Bramble", exact: true }),
+    grok.getByRole("button", { name: "Review Bramble" }),
     "bots/importPreview",
   );
 
@@ -476,4 +476,43 @@ test("imports a Grok Bot export as a new bot", async ({ page }, testInfo) => {
   expect(byName("Triage issues")).toMatchObject({ active: false, crons: [], webhookEnabled: true });
   expect(byName("Triage issues")!.prompt).toMatch(/^Trigger: linear \(Team ENG\)/);
   expect(byName("Receipts")).toMatchObject({ active: false, emailSenders: "owner" });
+});
+
+test("imports every Bot in a Grok Bot export at once", async ({ page }) => {
+  const stamp = Date.now();
+  await signup(page, `grok-import-many-${stamp}@rakazo.test`, "password12", "Grok User");
+  await completeOnboarding(page);
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+
+  const panel = await openImport(page);
+  await origin(panel, "Grok Bot").click();
+  const grok = panel.getByTestId("agent-import-grok");
+  await grok
+    .getByRole("textbox", { name: "Paste the reply" })
+    .fill(
+      grokReply(
+        grokBot,
+        { name: "Wren", instructions: "Plan trips." },
+        { name: "Finch", instructions: "Track invoices." },
+      ),
+    );
+  await grok.getByRole("button", { name: "Continue" }).click();
+  await grok.getByRole("checkbox", { name: "Finch" }).uncheck();
+  await clickAndWaitForRpc(
+    page,
+    grok.getByRole("button", { name: "Import 2 Bots" }),
+    "bots/importMany",
+  );
+  await expect(page.getByPlaceholder("Message Bramble")).toBeVisible();
+  const bots = await rpc<Bot[]>(page, "bots/list", {});
+  const names = bots.map((bot) => bot.name);
+  expect(names).toEqual(expect.arrayContaining(["Bramble", "Wren"]));
+  expect(names).not.toContain("Finch");
+  const wren = bots.find((bot) => bot.name === "Wren")!;
+  expect((await rpc<Bot>(page, "bots/get", { botId: wren.id })).instructions).toBe("Plan trips.");
+  const routines = await rpc<Routine[]>(page, "routines/list", {
+    botId: bots.find((bot) => bot.name === "Bramble")!.id,
+  });
+  expect(routines.every((routine) => !routine.active)).toBe(true);
 });

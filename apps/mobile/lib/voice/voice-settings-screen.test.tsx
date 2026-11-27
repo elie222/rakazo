@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   saveGreeting: vi.fn(),
   saveCalls: vi.fn(),
   saveWaiting: vi.fn(),
+  callLanguage: null as string | null,
   cue: vi.fn(),
   focused: true,
   failStatus: false,
@@ -33,6 +34,7 @@ vi.mock("expo-router", () => ({
     }, [callback, mocks.focused]);
   },
   useLocalSearchParams: () => ({}),
+  useRouter: () => ({ push: vi.fn() }),
 }));
 vi.mock("../calls/call-sounds", () => ({
   loadCallSoundsEnabled: mocks.calls,
@@ -42,6 +44,15 @@ vi.mock("../calls/call-sounds", () => ({
   saveCallSoundsEnabled: mocks.saveCalls,
   saveWaitSoundEnabled: mocks.saveWaiting,
   playCallCue: mocks.cue,
+}));
+vi.mock("expo-secure-store", () => ({
+  getItemAsync: async () => mocks.callLanguage,
+  setItemAsync: async (_key: string, value: string) => {
+    mocks.callLanguage = value;
+  },
+  deleteItemAsync: async () => {
+    mocks.callLanguage = null;
+  },
 }));
 vi.mock("../api/api", () => ({
   currentApiBase: () => "https://app.example.test",
@@ -174,6 +185,7 @@ beforeEach(() => {
   mocks.saveGreeting.mockResolvedValue(undefined);
   mocks.saveCalls.mockResolvedValue(undefined);
   mocks.saveWaiting.mockResolvedValue(undefined);
+  mocks.callLanguage = null;
   mocks.cue.mockResolvedValue(undefined);
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -237,6 +249,20 @@ it("saves the call greeting switch without a preview", async () => {
   await act(async () => toggle("Call greeting").click());
   expect(mocks.saveGreeting).toHaveBeenLastCalledWith(true);
   expect(mocks.cue).not.toHaveBeenCalled();
+});
+
+it("keeps automatic call language off by default and restores the choice on reopen", async () => {
+  const label = "Detect call language automatically";
+  await render();
+  expect(toggle(label).checked).toBe(false);
+  await act(async () => toggle(label).click());
+  await act(async () => root.render(null));
+  await render();
+  expect(toggle(label).checked).toBe(true);
+  await act(async () => toggle(label).click());
+  await act(async () => root.render(null));
+  await render();
+  expect(toggle(label).checked).toBe(false);
 });
 
 it("rolls a failed save back without playing a preview", async () => {

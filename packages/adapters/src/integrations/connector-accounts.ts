@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
-import type { ConnectedConnector, ConnectorCall, ConnectorTool } from "@rakazo/adapter-kit";
+import type {
+  ConnectedConnector,
+  ConnectorCall,
+  ConnectorRoute,
+  ConnectorTool,
+} from "@rakazo/adapter-kit";
 
 /** Older saved watches can use an action name only when it identifies one account. */
 export function resolveAccountToolCall(call: ConnectorCall, tools: ConnectorTool[]) {
@@ -9,6 +14,21 @@ export function resolveAccountToolCall(call: ConnectorCall, tools: ConnectorTool
   );
   const tool = exact ?? (matches.length === 1 ? matches[0] : undefined);
   return tool ? { tool, call: { ...call, tool: tool.name, route: tool.route } } : undefined;
+}
+
+export function connectorAccountRoute(
+  tool: ConnectorTool,
+  connection: ConnectedConnector,
+): ConnectorRoute {
+  return {
+    ...tool.route,
+    connectorId: connection.connectorId,
+    resourceId: tool.route?.resourceId ?? connection.externalId,
+    toolName: tool.route?.toolName ?? tool.name,
+    connectionId: connection.id,
+    resourceRevision: tool.route?.resourceRevision ?? connection.providerRef,
+    catalogGroup: `${connection.externalId} (${connection.displayName}; ${connection.id})`,
+  };
 }
 
 /** Each account gets stable tool names and an opaque local route, even when siblings change. */
@@ -27,15 +47,7 @@ export function scopeConnectorTools(
       // account hash first so runtime name truncation cannot erase the account.
       name: tool.name.length <= 46 ? `${tool.name}__${suffix}` : `account_${suffix}__${tool.name}`,
       description: `${tool.description}\nConnected account: ${JSON.stringify(connection.displayName)} (${connection.id})`,
-      route: {
-        ...tool.route,
-        connectorId: connection.connectorId,
-        resourceId: tool.route?.resourceId ?? connection.externalId,
-        toolName: tool.route?.toolName ?? tool.name,
-        connectionId: connection.id,
-        resourceRevision: tool.route?.resourceRevision ?? connection.providerRef,
-        catalogGroup: `${connection.externalId} (${connection.displayName}; ${connection.id})`,
-      },
+      route: connectorAccountRoute(tool, connection),
     };
   });
 }

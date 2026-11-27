@@ -257,9 +257,15 @@ test("all native tracks close in pose and velocity at their own and common loop 
   await page.getByRole("heading", { level: 1 }).waitFor();
   await page.waitForTimeout(400);
   const proof = await page.evaluate(() => {
-    const tracks = document
-      .getAnimations()
-      .filter((animation) => animation.effect?.getTiming().iterations === Number.POSITIVE_INFINITY);
+    // Scope to LogoAvatar: the fixture also renders an idle studio shape whose paused mascot
+    // loops intentionally do not share the 24-second logo export interval.
+    const tracks = [...document.querySelectorAll(".rakazo-logo-avatar")].flatMap((avatar) =>
+      avatar
+        .getAnimations({ subtree: true })
+        .filter(
+          (animation) => animation.effect?.getTiming().iterations === Number.POSITIVE_INFINITY,
+        ),
+    );
     tracks.forEach((animation) => {
       animation.pause();
     });

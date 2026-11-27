@@ -35,6 +35,7 @@ export interface ExecutorDeps {
   /** The present moment the agent is told; evals move it to a follow-up's due time. */
   now?: () => Date;
   maxUploadSizeBytes?: number;
+  maxAttachmentsPerMessage?: number;
   contextStrategy?: AgentContextStrategy;
   prisma: PrismaClient;
   events: ThreadEvents;

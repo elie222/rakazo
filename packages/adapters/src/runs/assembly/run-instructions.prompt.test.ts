@@ -2,14 +2,14 @@ import { describe, expect, it } from "vitest";
 import { connectedPluginsInstruction, taughtSkillsInstruction } from "./run-instructions.prompt.js";
 
 describe("connectedPluginsInstruction", () => {
-  it("names each connected plugin and prefers its tools to browsing", () => {
+  it("names each connected plugin and points at its own tools", () => {
     expect(
       connectedPluginsInstruction([
         { displayName: "Mail", connectorId: "apps", provider: "mail" },
         { displayName: "Code", connectorId: "apps", provider: "code" },
       ]),
     ).toBe(
-      "Connected plugins: Mail (apps:mail), Code (apps:code). Prefer those plugin tools over the computer browser or web search when reading app data (repos, releases, mail, calendar, and similar).",
+      "Connected plugins: Mail (apps:mail), Code (apps:code). Find and run their actions with each plugin's own tools; a connector search only covers the sources it lists. Prefer those plugin tools over the computer browser or web search when reading app data (repos, releases, mail, calendar, and similar).",
     );
   });
 

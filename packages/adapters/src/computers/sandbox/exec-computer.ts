@@ -21,6 +21,7 @@ import {
   shellQuote,
   workspaceCwd,
   workspacePath,
+  workspaceRelativePath,
 } from "../screens/computer-support.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents } from "./sandbox-command-events.js";
@@ -232,7 +233,7 @@ export class ExecComputer {
     directory: string,
     context: AdapterContext,
   ): Promise<ComputerFileEntry[]> {
-    const relative = normalizeWorkspacePath(directory);
+    const relative = workspaceRelativePath(WORKSPACE, directory);
     const target = workspacePath(WORKSPACE, relative);
     const result = await this.run(
       computer,

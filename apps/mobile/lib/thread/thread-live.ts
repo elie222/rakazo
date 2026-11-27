@@ -5,11 +5,13 @@ import {
   isRetryableError,
   isRunTerminalEvent,
   messageUnreadFor,
+  needsThreadSnapshotAfterEvent,
   reconnectDelayMs,
   reduceThreadSnapshot,
   rememberTerminalRun,
   retryDelayMs,
 } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import type { RefObject } from "react";
 import { useEffect, useRef } from "react";
 import { rpc } from "../api/api";
@@ -272,12 +274,9 @@ export function useThreadLiveSubscription({
               if (isRunTerminalEvent(event)) {
                 void refreshMentionBots();
               }
-              if (
-                shouldProject &&
-                (isRunTerminalEvent(event) || event.type === "run.waiting_input")
-              ) {
+              if (shouldProject && needsThreadSnapshotAfterEvent(event)) {
                 // Reconcile run ownership for ask cards first seen through live events.
-                void snapshotRefresh.invalidate().catch(() => undefined);
+                void bestEffort("refresh thread snapshot", snapshotRefresh.invalidate());
               }
             },
             abort.signal,

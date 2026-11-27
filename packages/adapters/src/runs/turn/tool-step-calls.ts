@@ -8,6 +8,10 @@ import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
 import { PICTURE_READING_TOOLS } from "../../media/tool-result-image.js";
 import { READ_MEETING_TRANSCRIPT } from "../../meetings/meeting-chat.tool-definition.js";
 import { sanitizeSensitiveText } from "../../runtime/pi/pi-runtime-errors.js";
+import {
+  mapTurnTranscript,
+  turnTranscriptResults,
+} from "../../runtime/pi/pi-runtime-transcript.js";
 import { storeStepScreenshot } from "../../storage/thread-artifacts.js";
 import type { ReplyState, RunContext } from "../assembly/run-context.js";
 import { toolCompletionOutcome } from "./tool-completion-audit.js";
@@ -36,16 +40,28 @@ export const IMAGE_NOT_KEPT = "[image not kept]";
 const CREDENTIAL_FIELD =
   /("[\w-]*(?:api[_-]?key|token|password|passwd|secret|authorization|credential)[\w-]*"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
 
+function cleanToolText(text: string, secrets: string[]): string {
+  return sanitizeSensitiveText(redactSecrets(text, secrets)).replace(
+    CREDENTIAL_FIELD,
+    '$1"[redacted]"',
+  );
+}
+
+const notKept = (chars: number) => `\n… [${chars} characters not kept] …\n`;
+
+/** The largest a saved result gets: its kept text and the note of what was left out. */
+export const TOOL_CALL_SAVED_TEXT_MAX_CHARS =
+  TOOL_CALL_TEXT_MAX_CHARS + notKept(Number.MAX_SAFE_INTEGER).length;
+
 export function bounded(text: string, max: number, secrets: string[] = []): string {
-  const clean = (part: string) =>
-    sanitizeSensitiveText(redactSecrets(part, secrets)).replace(CREDENTIAL_FIELD, '$1"[redacted]"');
+  const clean = (part: string) => cleanToolText(part, secrets);
   if (text.length <= max) return clean(text);
   const margin = 200;
   const headLength = Math.floor(max * 0.7);
   const tailLength = max - headLength;
   const head = clean(text.slice(0, headLength + margin)).slice(0, headLength);
   const tail = clean(text.slice(-(tailLength + margin))).slice(-tailLength);
-  return `${head}\n… [${text.length - max} characters not kept] …\n${tail}`;
+  return `${head}${notKept(text.length - max)}${tail}`;
 }
 
 function keptArgument(value: unknown, depth: number, secrets: string[]): unknown {
@@ -139,6 +155,23 @@ export function runReplaysToolHistory(
   }
 }
 
+/**
+ * The runtime's record of a turn as the reply keeps it: tool arguments and results cleaned as
+ * kept calls are, the run's secrets redacted everywhere, and none for a turn that used a tool
+ * whose results are never kept.
+ */
+export function keptTurnTranscript(transcript: string, secrets: string[]): string | undefined {
+  return mapTurnTranscript(
+    transcript,
+    (text, kind) =>
+      kind === "arguments" || kind === "result"
+        ? cleanToolText(text, secrets)
+        : redactSecrets(text, secrets),
+    (name) => !SECRET_TOOL.test(name),
+    (args) => redactToolArgsForReview(args, secrets),
+  );
+}
+
 /** Adds a finished call's result to the call its step keeps, within the reply's result budget. */
 export function keepToolStepResult(
   reply: Pick<
@@ -179,27 +212,35 @@ export function keepToolStepResult(
  * an earlier run copied in), so the run starts as one that has read outside content.
  */
 export function historyReplaysOutsideContent(history: AgentRunRequest["history"]): boolean {
-  return history.some((entry) =>
-    entry.segments?.some(
-      (segment) =>
-        "steps" in segment &&
-        segment.steps.some((step) =>
-          step.calls?.some((call) => call.result !== undefined || call.image !== undefined),
-        ),
-    ),
+  return history.some(
+    (entry) =>
+      Boolean(turnTranscriptResults(entry.transcript)?.length) ||
+      entry.segments?.some(
+        (segment) =>
+          "steps" in segment &&
+          segment.steps.some((step) =>
+            step.calls?.some((call) => call.result !== undefined || call.image !== undefined),
+          ),
+      ),
   );
 }
 
 /** The kept results replayed history hands the model, oldest first. */
 export function historyToolResults(history: AgentRunRequest["history"]): unknown[] {
-  return history.flatMap((entry) =>
-    (entry.segments ?? []).flatMap((segment) =>
-      "steps" in segment
-        ? segment.steps.flatMap((step) =>
-            (step.calls ?? []).flatMap((call) => (call.result === undefined ? [] : [call.result])),
-          )
-        : [],
-    ),
+  return history.flatMap(
+    (entry) =>
+      // A stored turn replays its results whole, so those are what the model reads. One that
+      // cannot be read replays from the reply's kept results.
+      turnTranscriptResults(entry.transcript) ??
+      (entry.segments ?? []).flatMap((segment) =>
+        "steps" in segment
+          ? segment.steps.flatMap((step) =>
+              (step.calls ?? []).flatMap((call) =>
+                call.result === undefined ? [] : [call.result],
+              ),
+            )
+          : [],
+      ),
   );
 }
 

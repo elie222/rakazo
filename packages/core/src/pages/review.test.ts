@@ -25,25 +25,33 @@ it("uses only the authorized review and matching revision's headings", () => {
     id: "page",
     title: "Review",
     code: "reviewed page",
+    images: { hotel: "image-1" },
     version: 1,
     currentVersion: 2,
     owner: false,
     canRequestRevision: false,
   };
   const sections = [{ section: "Earlier heading" }];
+  const shown = { code: page.code, images: page.images, version: 1 };
+  const draft = { code: "cached draft", images: {} };
   expect(
     pageReviewContent({ page, showingDraft: false, reported: { version: 1, sections } }),
-  ).toEqual({ code: page.code, sections });
+  ).toEqual({ shown, sections });
   expect(
     pageReviewContent({ page, showingDraft: false, reported: { version: 2, sections } }),
-  ).toEqual({ code: page.code, sections: [] });
-  expect(pageReviewContent({ page, showingDraft: true, draftCode: "cached draft" })).toEqual({
-    code: undefined,
+  ).toEqual({ shown, sections: [] });
+  expect(pageReviewContent({ page, showingDraft: true, draft })).toEqual({
+    shown: undefined,
     sections: [],
   });
-  expect(
-    pageReviewContent({ page: undefined, showingDraft: true, draftCode: "cached draft" }),
-  ).toEqual({ code: undefined, sections: [] });
+  expect(pageReviewContent({ page: { ...page, owner: true }, showingDraft: true, draft })).toEqual({
+    shown: { ...draft, version: 1 },
+    sections: [],
+  });
+  expect(pageReviewContent({ page: undefined, showingDraft: true, draft })).toEqual({
+    shown: undefined,
+    sections: [],
+  });
 });
 
 it("offers distinct choices for repeated headings and accepts labels from older runtimes", () => {

@@ -79,6 +79,8 @@ type Desktop = { [Key in keyof RakazoDesktop]-?: NonNullable<RakazoDesktop[Key]>
  * copies the preloads unbundled. `ipc-channels.test.ts` fails when the three disagree.
  */
 export const ipcChannels = {
+  "desktop.appIcon.get": appPageLive<Desktop["appIcon"]["get"]>(),
+  "desktop.appIcon.set": appPage<Desktop["appIcon"]["set"]>(false),
   "desktop.badge.set": appPage<Desktop["badge"]["set"]>(false),
   "desktop.clipboard.write": appPage<Desktop["clipboard"]["writeText"]>(false),
   "desktop.computer.requestAccess": appPage<Desktop["computer"]["requestAccess"]>(REJECTS),
