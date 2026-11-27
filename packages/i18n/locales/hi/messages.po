@@ -520,6 +520,14 @@ msgstr "{name} विकल्प"
 msgid "{name} stopped"
 msgstr "{name} रोक दिया गया"
 
+#: apps/mobile/app/(settings)/billing.tsx
+msgid "{name}, {price} / month"
+msgstr ""
+
+#: apps/mobile/app/(settings)/billing.tsx
+msgid "{name}, {price} / year"
+msgstr ""
+
 #: apps/mobile/lib/routines/routine.ts
 msgid "{name}, Off"
 msgstr "{name}, बंद"
@@ -1848,6 +1856,10 @@ msgstr "बॉट से संशोधन करवाएँ"
 msgid "Ask first"
 msgstr "पहले पूछें"
 
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Ask the bot questions"
+msgstr ""
+
 #: apps/mobile/app/routines.tsx
 msgid "Ask this Bot in chat to set up a routine."
 msgstr "रूटीन सेट करने के लिए चैट में इस बॉट से कहें।"
@@ -2276,6 +2288,11 @@ msgstr "ब्राउज़ करें"
 msgid "Browse MCP servers"
 msgstr "MCP सर्वर ब्राउज़ करें"
 
+#: apps/mobile/components/cards/feedback-receipt-card.tsx
+#: apps/web/src/pages/shell/chat/message-view.tsx
+msgid "Bug report sent"
+msgstr ""
+
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Built-in"
@@ -2434,6 +2451,7 @@ msgstr "तस्वीरें नहीं पढ़ सकता"
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/components/messages/AskCard.tsx
 #: apps/web/src/components/messages/markdown-link-prompt.tsx
+#: apps/web/src/components/pages/PageAppButton.tsx
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
@@ -2654,9 +2672,10 @@ msgstr "जांच करें।"
 msgid "Check this yourself"
 msgstr "इसे खुद जाँचें"
 
+#: apps/web/src/components/pages/PageDrawing.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
-#: apps/web/src/components/pages/PageView.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
+#: apps/web/src/pages/PageAppPage.tsx
 msgid "Check your connection and try again."
 msgstr "अपना कनेक्शन जाँचें और फिर से कोशिश करें।"
 
@@ -3136,6 +3155,7 @@ msgstr "हटाने की पुष्टि करें"
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
 #: apps/web/src/pages/plugins/connector-detail.tsx
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 #: apps/web/src/pages/settings/PaymentWalletSettingsPanel.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
@@ -3219,10 +3239,6 @@ msgstr "MCP सर्वर “{name}” कनेक्ट करें"
 #: apps/mobile/components/cards/McpApprovalCard.tsx
 msgid "Connect MCP server {name}"
 msgstr "MCP सर्वर {name} कनेक्ट करें"
-
-#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
-msgid "Connect memory provider"
-msgstr "मेमोरी प्रोवाइडर कनेक्ट करें"
 
 #: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Connect my own"
@@ -4759,6 +4775,10 @@ msgstr "ऐप आइकन नहीं बदला जा सका"
 msgid "Couldn't copy. Select the link and copy it."
 msgstr "कॉपी नहीं हो सका। लिंक चुनें और उसे कॉपी करें।"
 
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Couldn't install this app. Try again."
+msgstr ""
+
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Couldn't load grants"
 msgstr "अनुमतियाँ लोड नहीं हो सकीं"
@@ -6032,6 +6052,11 @@ msgstr "विफल।"
 msgid "Failure handling"
 msgstr "विफलता प्रबंधन"
 
+#: apps/mobile/components/cards/feedback-receipt-card.tsx
+#: apps/web/src/pages/shell/chat/message-view.tsx
+msgid "Feedback sent"
+msgstr ""
+
 #: packages/i18n/src/app-icon.ts
 msgid "Feet"
 msgstr "पैर"
@@ -6721,6 +6746,20 @@ msgstr "इनपुट"
 msgid "Inputs"
 msgstr "इनपुट"
 
+#: apps/web/src/components/pages/PageAppButton.tsx
+#: apps/web/src/pages/PageAppPage.tsx
+msgid "Install"
+msgstr ""
+
+#. placeholder {0}: page.title
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Install {0}?"
+msgstr ""
+
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Install app"
+msgstr ""
+
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Install for organization"
@@ -6860,13 +6899,22 @@ msgstr "पृथक"
 msgid "Isolated preview: no access to your account"
 msgstr "पृथक प्रीव्यू: आपके खाते तक कोई पहुँच नहीं"
 
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "It can:"
+msgstr ""
+
 #: apps/mobile/app/new-space.tsx
 msgid "It could not be opened. Try again from the sidebar."
 msgstr "इसे खोला नहीं जा सका। साइडबार से फिर कोशिश करें।"
 
 #: apps/web/src/components/pages/PageViewHost.tsx
+#: apps/web/src/pages/PageAppPage.tsx
 msgid "It may have been deleted, or it belongs to someone else."
 msgstr "हो सकता है इसे हटा दिया गया हो, या यह किसी और का हो।"
+
+#: apps/web/src/components/vault/VaultSettings.tsx
+msgid "Items"
+msgstr ""
 
 #: apps/mobile/lib/inbox/sections/confirm-delete-section.ts
 #: apps/web/src/pages/shell/shell-dialogs.tsx
@@ -7537,6 +7585,10 @@ msgstr "मेमोरी {position}"
 msgid "Memory for {title}"
 msgstr "{title} के लिए मेमोरी"
 
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "Memory provider"
+msgstr ""
+
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "Mentions"
 msgstr "मेंशन"
@@ -7764,6 +7816,7 @@ msgid "month"
 msgstr "महीना"
 
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/billing/PlanControls.tsx
@@ -8701,6 +8754,10 @@ msgstr "{name} खोलें"
 msgid "Open {title}"
 msgstr "{title} खोलें"
 
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Open app"
+msgstr ""
+
 #: apps/web/src/pages/shell/chat/chat-header.tsx
 msgid "Open call"
 msgstr "कॉल खोलें"
@@ -9203,7 +9260,7 @@ msgid "Plain HTTP does not pair this computer. Use HTTPS, or a loopback server."
 msgstr "सादा HTTP इस कंप्यूटर को पेयर नहीं करता। HTTPS या लूपबैक सर्वर का उपयोग करें।"
 
 #: apps/mobile/app/(settings)/billing.tsx
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/PlanControls.tsx
 msgid "Plan"
 msgstr "प्लान"
 
@@ -9558,6 +9615,12 @@ msgstr "इस पीयर से याद करें; Rakazo के अप�
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Recall only"
 msgstr "केवल याद करें"
+
+#. placeholder {0}: block.reportId
+#: apps/mobile/components/cards/feedback-receipt-card.tsx
+#: apps/web/src/pages/shell/chat/message-view.tsx
+msgid "Receipt {0}"
+msgstr ""
 
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Received"
@@ -9973,6 +10036,10 @@ msgstr "नाम बदलें"
 msgid "Rename section"
 msgstr "अनुभाग का नाम बदलें"
 
+#: apps/web/src/components/billing/ModelCredits.tsx
+msgid "Renew for {price}"
+msgstr ""
+
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/lib/cards/run-error-presentation.ts
 #: apps/web/src/components/billing/ModelCredits.tsx
@@ -10380,6 +10447,7 @@ msgstr "पंक्ति {line}"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/components/settings/approval-settings-rows.tsx
+#: apps/web/src/components/settings/ApprovalRulesSettings.tsx
 msgid "Rules"
 msgstr "नियम"
 
@@ -11149,6 +11217,10 @@ msgstr "सूची दिखाएँ"
 #: apps/web/src/pages/space/ScratchpadSection.tsx
 msgid "Show more"
 msgstr "और दिखाएँ"
+
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Show notifications"
+msgstr ""
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/components/I18nBootstrap.tsx
@@ -12345,9 +12417,10 @@ msgstr "यह पेज दिखाया नहीं जा सका।"
 
 #: apps/mobile/lib/pages/page-card.tsx
 #: apps/web/src/components/pages/PageCard.tsx
+#: apps/web/src/components/pages/PageDrawing.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
-#: apps/web/src/components/pages/PageView.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
+#: apps/web/src/pages/PageAppPage.tsx
 msgid "This page couldn't load"
 msgstr "यह पेज लोड नहीं हो सका"
 
@@ -12356,6 +12429,7 @@ msgstr "यह पेज लोड नहीं हो सका"
 #: apps/mobile/app/page.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
+#: apps/web/src/pages/PageAppPage.tsx
 #: apps/web/src/pages/SharedPage.tsx
 msgid "This page isn't available"
 msgstr "यह पेज उपलब्ध नहीं है"
@@ -13559,6 +13633,7 @@ msgstr "लिखें कि इस रूटीन को क्या कर
 msgid "year"
 msgstr "वर्ष"
 
+#: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/billing/PlanControls.tsx
 msgid "Yearly"
 msgstr "वार्षिक"
@@ -13655,6 +13730,7 @@ msgstr "आपके कार्ड से शुल्क नहीं लि�
 #: apps/mobile/app/page.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
+#: apps/web/src/pages/PageAppPage.tsx
 msgid "Your changes aren't saved. Check your connection."
 msgstr "आपके बदलाव सहेजे नहीं गए। अपना कनेक्शन जाँचें।"
 
@@ -13708,6 +13784,10 @@ msgstr "आपका OpenRouter"
 msgid "Your other spaces stay private"
 msgstr "आपके दूसरे स्पेस निजी रहते हैं"
 
+#: apps/web/src/components/billing/CreditChoice.tsx
+msgid "Your own AI"
+msgstr ""
+
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."
 msgstr "ट्रायल खत्म होने पर आपका प्लान {annualPrice} / वर्ष हो जाएगा।"
@@ -13749,7 +13829,6 @@ msgstr "आपके स्किल"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/paywall.tsx
-#: apps/web/src/components/billing/CreditChoice.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Your subscription or API key"
 msgstr "आपका सब्सक्रिप्शन या API कुंजी"

@@ -514,6 +514,14 @@ msgstr "ตัวเลือกของ {name}"
 msgid "{name} stopped"
 msgstr "{name} หยุดแล้ว"
 
+#: apps/mobile/app/(settings)/billing.tsx
+msgid "{name}, {price} / month"
+msgstr ""
+
+#: apps/mobile/app/(settings)/billing.tsx
+msgid "{name}, {price} / year"
+msgstr ""
+
 #: apps/mobile/lib/routines/routine.ts
 msgid "{name}, Off"
 msgstr "{name}, ปิด"
@@ -1842,6 +1850,10 @@ msgstr "ให้บอทแก้ไข"
 msgid "Ask first"
 msgstr "ถามก่อน"
 
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Ask the bot questions"
+msgstr ""
+
 #: apps/mobile/app/routines.tsx
 msgid "Ask this Bot in chat to set up a routine."
 msgstr "ขอให้บอทนี้ตั้งค่ารูทีนในแชท"
@@ -2270,6 +2282,11 @@ msgstr "เรียกดู"
 msgid "Browse MCP servers"
 msgstr "เรียกดูเซิร์ฟเวอร์ MCP"
 
+#: apps/mobile/components/cards/feedback-receipt-card.tsx
+#: apps/web/src/pages/shell/chat/message-view.tsx
+msgid "Bug report sent"
+msgstr ""
+
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Built-in"
@@ -2428,6 +2445,7 @@ msgstr "อ่านรูปภาพไม่ได้"
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/components/messages/AskCard.tsx
 #: apps/web/src/components/messages/markdown-link-prompt.tsx
+#: apps/web/src/components/pages/PageAppButton.tsx
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
@@ -2648,9 +2666,10 @@ msgstr "ตรวจสอบสถานการณ์"
 msgid "Check this yourself"
 msgstr "ตรวจสอบส่วนนี้ด้วยตนเอง"
 
+#: apps/web/src/components/pages/PageDrawing.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
-#: apps/web/src/components/pages/PageView.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
+#: apps/web/src/pages/PageAppPage.tsx
 msgid "Check your connection and try again."
 msgstr "ตรวจสอบการเชื่อมต่อ แล้วลองอีกครั้ง"
 
@@ -3130,6 +3149,7 @@ msgstr "ยืนยันการนำออก"
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
 #: apps/web/src/pages/plugins/connector-detail.tsx
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 #: apps/web/src/pages/settings/PaymentWalletSettingsPanel.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
@@ -3213,10 +3233,6 @@ msgstr "เชื่อมต่อเซิร์ฟเวอร์ MCP “{nam
 #: apps/mobile/components/cards/McpApprovalCard.tsx
 msgid "Connect MCP server {name}"
 msgstr "เชื่อมต่อเซิร์ฟเวอร์ MCP {name}"
-
-#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
-msgid "Connect memory provider"
-msgstr "เชื่อมต่อผู้ให้บริการความจำ"
 
 #: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Connect my own"
@@ -4753,6 +4769,10 @@ msgstr "เปลี่ยนไอคอนแอปไม่สำเร็จ
 msgid "Couldn't copy. Select the link and copy it."
 msgstr "คัดลอกไม่สำเร็จ เลือกลิงก์แล้วคัดลอก"
 
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Couldn't install this app. Try again."
+msgstr ""
+
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Couldn't load grants"
 msgstr "โหลดการให้สิทธิ์ไม่สำเร็จ"
@@ -6026,6 +6046,11 @@ msgstr "ล้มเหลว"
 msgid "Failure handling"
 msgstr "การจัดการเมื่อล้มเหลว"
 
+#: apps/mobile/components/cards/feedback-receipt-card.tsx
+#: apps/web/src/pages/shell/chat/message-view.tsx
+msgid "Feedback sent"
+msgstr ""
+
 #: packages/i18n/src/app-icon.ts
 msgid "Feet"
 msgstr "เท้า"
@@ -6715,6 +6740,20 @@ msgstr "อินพุต"
 msgid "Inputs"
 msgstr "อินพุต"
 
+#: apps/web/src/components/pages/PageAppButton.tsx
+#: apps/web/src/pages/PageAppPage.tsx
+msgid "Install"
+msgstr ""
+
+#. placeholder {0}: page.title
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Install {0}?"
+msgstr ""
+
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Install app"
+msgstr ""
+
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Install for organization"
@@ -6854,13 +6893,22 @@ msgstr "แยกส่วน"
 msgid "Isolated preview: no access to your account"
 msgstr "ตัวอย่างแบบแยกส่วน: ไม่มีสิทธิ์เข้าถึงบัญชีของคุณ"
 
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "It can:"
+msgstr ""
+
 #: apps/mobile/app/new-space.tsx
 msgid "It could not be opened. Try again from the sidebar."
 msgstr "เปิดไม่สำเร็จ ลองอีกครั้งจากแถบด้านข้าง"
 
 #: apps/web/src/components/pages/PageViewHost.tsx
+#: apps/web/src/pages/PageAppPage.tsx
 msgid "It may have been deleted, or it belongs to someone else."
 msgstr "อาจถูกลบไปแล้ว หรือเป็นของผู้อื่น"
+
+#: apps/web/src/components/vault/VaultSettings.tsx
+msgid "Items"
+msgstr ""
 
 #: apps/mobile/lib/inbox/sections/confirm-delete-section.ts
 #: apps/web/src/pages/shell/shell-dialogs.tsx
@@ -7531,6 +7579,10 @@ msgstr "ความจำ {position}"
 msgid "Memory for {title}"
 msgstr "ความจำของ {title}"
 
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "Memory provider"
+msgstr ""
+
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "Mentions"
 msgstr "เมนชัน"
@@ -7758,6 +7810,7 @@ msgid "month"
 msgstr "เดือน"
 
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/billing/PlanControls.tsx
@@ -8695,6 +8748,10 @@ msgstr "เปิด {name}"
 msgid "Open {title}"
 msgstr "เปิด {title}"
 
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Open app"
+msgstr ""
+
 #: apps/web/src/pages/shell/chat/chat-header.tsx
 msgid "Open call"
 msgstr "เปิดการโทร"
@@ -9197,7 +9254,7 @@ msgid "Plain HTTP does not pair this computer. Use HTTPS, or a loopback server."
 msgstr "HTTP ปกติจับคู่คอมพิวเตอร์นี้ไม่ได้ ใช้ HTTPS หรือเซิร์ฟเวอร์ลูปแบ็ก"
 
 #: apps/mobile/app/(settings)/billing.tsx
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/PlanControls.tsx
 msgid "Plan"
 msgstr "แผน"
 
@@ -9552,6 +9609,12 @@ msgstr "เรียกคืนจากเพียร์นี้ บัน�
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Recall only"
 msgstr "เรียกคืนเท่านั้น"
+
+#. placeholder {0}: block.reportId
+#: apps/mobile/components/cards/feedback-receipt-card.tsx
+#: apps/web/src/pages/shell/chat/message-view.tsx
+msgid "Receipt {0}"
+msgstr ""
 
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Received"
@@ -9967,6 +10030,10 @@ msgstr "เปลี่ยนชื่อ"
 msgid "Rename section"
 msgstr "เปลี่ยนชื่อส่วน"
 
+#: apps/web/src/components/billing/ModelCredits.tsx
+msgid "Renew for {price}"
+msgstr ""
+
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/lib/cards/run-error-presentation.ts
 #: apps/web/src/components/billing/ModelCredits.tsx
@@ -10374,6 +10441,7 @@ msgstr "แถวที่ {line}"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/components/settings/approval-settings-rows.tsx
+#: apps/web/src/components/settings/ApprovalRulesSettings.tsx
 msgid "Rules"
 msgstr "กฎ"
 
@@ -11143,6 +11211,10 @@ msgstr "แสดงรายการ"
 #: apps/web/src/pages/space/ScratchpadSection.tsx
 msgid "Show more"
 msgstr "แสดงเพิ่มเติม"
+
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Show notifications"
+msgstr ""
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/components/I18nBootstrap.tsx
@@ -12339,9 +12411,10 @@ msgstr "ไม่สามารถแสดงหน้านี้ได้"
 
 #: apps/mobile/lib/pages/page-card.tsx
 #: apps/web/src/components/pages/PageCard.tsx
+#: apps/web/src/components/pages/PageDrawing.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
-#: apps/web/src/components/pages/PageView.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
+#: apps/web/src/pages/PageAppPage.tsx
 msgid "This page couldn't load"
 msgstr "โหลดหน้านี้ไม่สำเร็จ"
 
@@ -12350,6 +12423,7 @@ msgstr "โหลดหน้านี้ไม่สำเร็จ"
 #: apps/mobile/app/page.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
+#: apps/web/src/pages/PageAppPage.tsx
 #: apps/web/src/pages/SharedPage.tsx
 msgid "This page isn't available"
 msgstr "หน้านี้ไม่พร้อมใช้งาน"
@@ -13553,6 +13627,7 @@ msgstr "เขียนว่ารูทีนนี้ควรทำอะไ
 msgid "year"
 msgstr "ปี"
 
+#: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/billing/PlanControls.tsx
 msgid "Yearly"
 msgstr "รายปี"
@@ -13649,6 +13724,7 @@ msgstr "ยังไม่มีการตัดเงินจากบัต
 #: apps/mobile/app/page.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
+#: apps/web/src/pages/PageAppPage.tsx
 msgid "Your changes aren't saved. Check your connection."
 msgstr "การเปลี่ยนแปลงของคุณยังไม่ได้บันทึก ตรวจสอบการเชื่อมต่อ"
 
@@ -13702,6 +13778,10 @@ msgstr "OpenRouter ของคุณ"
 msgid "Your other spaces stay private"
 msgstr "สเปซอื่น ๆ ยังคงเป็นส่วนตัว"
 
+#: apps/web/src/components/billing/CreditChoice.tsx
+msgid "Your own AI"
+msgstr ""
+
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."
 msgstr "เมื่อช่วงทดลองใช้สิ้นสุด แพ็กเกจจะเป็น {annualPrice} / ปี"
@@ -13743,7 +13823,6 @@ msgstr "สกิลของคุณ"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/paywall.tsx
-#: apps/web/src/components/billing/CreditChoice.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Your subscription or API key"
 msgstr "การสมัครใช้งานหรือ API key ของคุณ"
