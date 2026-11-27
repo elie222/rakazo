@@ -116,6 +116,27 @@ describe.skipIf(!databaseUrl)("paired computers end with the sign-in that paired
     for (const device of devices) expect(await active(device.token)).toBe(false);
   });
 
+  it("signing out everywhere removes the pages installed as apps", async () => {
+    const owner = await newAccount();
+    const { userId } = await pair(await owner.signIn());
+    await runAsSystem("install a page app", async () => {
+      const { spaceId } = await handles.prisma.spaceMember.findFirstOrThrow({ where: { userId } });
+      await handles.prisma.page.create({
+        data: {
+          spaceId,
+          userId,
+          title: "Deals",
+          apps: { create: { userId, spaceId, tokenHash: `hash-${stamp}-${account}` } },
+        },
+      });
+    });
+    const apps = () =>
+      runAsSystem("count page apps", () => handles.prisma.pageApp.count({ where: { userId } }));
+    expect(await apps()).toBe(1);
+    await auth("/revoke-sessions", {}, await owner.signIn());
+    expect(await apps()).toBe(0);
+  });
+
   it("a password change that signs out other sessions ends their computers, not the caller's", async () => {
     const owner = await newAccount();
     const attacker = await pair(await owner.signIn());

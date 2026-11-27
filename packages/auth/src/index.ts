@@ -23,6 +23,7 @@ import {
   clearAccountIdentity,
   OwnedOrganizationHasMembersError,
   recordSecurityEvent,
+  runAsSystem,
   SpaceDeletionInProgressError,
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
@@ -171,6 +172,17 @@ export const CLIENT_IP_HEADER = "x-rakazo-client-ip";
 
 /** Routes that end sessions other than the caller's own sign-out. Recorded per deleted session. */
 const REVOCATION_PATHS = new Set(["/revoke-session", "/revoke-sessions", "/revoke-other-sessions"]);
+
+/**
+ * Routes that end every other session at once, as someone does after losing a device. Installed
+ * page apps hold their own tokens, so those end with them.
+ */
+const SIGN_OUT_EVERYWHERE_PATHS = new Set([
+  "/revoke-sessions",
+  "/revoke-other-sessions",
+  "/reset-password",
+  "/change-password",
+]);
 
 /** Successful account changes worth an audit row. Sign-in, sign-up, sign-out and deletion use hooks. */
 const ACCOUNT_EVENT_PATHS: Record<string, SecurityEventType> = {
@@ -866,6 +878,10 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                 metadata: { via: ctx.path },
               });
             }
+            if (ctx?.path && SIGN_OUT_EVERYWHERE_PATHS.has(ctx.path))
+              await runAsSystem("revoke page apps with every session", () =>
+                prisma.pageApp.deleteMany({ where: { userId: session.userId } }),
+              );
             if (replacedSession(ctx)?.id !== session.id) await env.afterDeleteSession?.(session);
           },
         },
@@ -987,6 +1003,7 @@ async function revokeUnprovenCredentials(prisma: PrismaClient, userId: string) {
     await tx.account.deleteMany({ where: { userId, providerId: { not: "credential" } } });
     await tx.messagingIdentity.deleteMany({ where: { userId } });
     await tx.messagingLinkCode.deleteMany({ where: { userId } });
+    await tx.pageApp.deleteMany({ where: { userId } });
     await tx.userDevice.updateMany({
       where: { userId, revokedAt: null },
       data: { revokedAt: new Date() },
