@@ -147,7 +147,7 @@ async function start() {
   }
 
   handleIpc("desktop.pageApp.ready", () => controller.screen());
-  handleIpc("desktop.pageApp.message", (_event, data) => controller.message(data));
+  handleIpc("desktop.pageApp.message", (_event, data, frame) => controller.message(data, frame));
   servePageApp(controller.frameDocument);
   win = await createPageAppWindow(title);
   desktop.pageAppWindow = win;

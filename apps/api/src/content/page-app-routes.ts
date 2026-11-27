@@ -18,6 +18,7 @@ import type { PageAppAccess } from "./page-apps.js";
 import {
   pageAppFromToken,
   pageAppStillInstalled,
+  pageAppVersion,
   revokePageAppToken,
   setPageAppAbilities,
 } from "./page-apps.js";
@@ -148,6 +149,8 @@ export function mountPageAppRoutes(
         access.actor,
         { ...body.data, pageId: access.pageId },
         c.req.raw.signal,
+        // An uninstall ends a question still running, as a sign-out does a session's.
+        () => pageAppStillInstalled(deps.prisma, access.appId),
       );
       const first = await events.next();
       const encoder = new TextEncoder();
@@ -204,8 +207,14 @@ export function mountPageAppRoutes(
             "page app change stream",
             (async () => {
               try {
-                for await (const _ of follow(pageChangesScope(access.actor.userId), stop.signal))
+                // The owner's signal covers all their pages; only this page's changes go out.
+                let seen = await pageAppVersion(deps.prisma, access);
+                for await (const _ of follow(pageChangesScope(access.actor.userId), stop.signal)) {
+                  const now = await pageAppVersion(deps.prisma, access);
+                  if (now === seen) continue;
+                  seen = now;
                   send("data: changed\n\n");
+                }
               } finally {
                 // A failed subscription ends the stream, so the app reconnects and catches up.
                 close();

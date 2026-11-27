@@ -283,7 +283,8 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
     screen: () => screen,
     /** The frame's document while it is the one shown; older frames get nothing. */
     frameDocument: (id: number) => (id === frame.id ? frame.document : null),
-    message: async (data: unknown) => {
+    message: async (data: unknown, from: unknown) => {
+      if (from !== `${FRAME_ORIGIN}/${frame.id}`) return null;
       const request = frameRequest(data);
       return request ? answer(request) : null;
     },

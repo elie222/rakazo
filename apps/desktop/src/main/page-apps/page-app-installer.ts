@@ -116,7 +116,14 @@ async function staged<T>(
 
 async function stopApp(bundle: string) {
   const pids = await runningAppPids(bundle);
-  for (const pid of pids) process.kill(pid, "SIGTERM");
+  for (const pid of pids) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch (error) {
+      // It quit between the lookup and the signal.
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    }
+  }
   if (pids.length === 0) return;
   await pollUntil(async () => (await runningAppPids(bundle)).length === 0, {
     intervalMs: 200,
@@ -217,6 +224,43 @@ export function createPageAppInstaller(options: {
     return true;
   }
 
+  async function refreshApp(app: InstalledPageApp) {
+    // An app moved to the Trash from Finder ends with its token, as an uninstall does.
+    if (!existsSync(app.bundlePath)) {
+      const moved = await findBundle(pageAppBundleId(app.appId), home ?? os.homedir());
+      if (moved) await registry.put({ ...app, bundlePath: moved });
+      else await forget(app);
+      return;
+    }
+    if ((await readBundleVersion(app.bundlePath)) === options.version) return;
+    if ((await runningAppPids(app.bundlePath)).length > 0) return;
+    const built = await readBuiltApp(app.bundlePath);
+    const config = pageAppConfig(built.config);
+    if (!config || config.appId !== app.appId) return;
+    await staged(
+      home,
+      (target) =>
+        buildPageAppBundle({
+          source,
+          target,
+          name: pageAppName(config.title),
+          bundleId: pageAppBundleId(app.appId),
+          icon: built.icon,
+          config,
+        }),
+      async (next) => {
+        const old = `${next}.old`;
+        await rename(app.bundlePath, old);
+        try {
+          await rename(next, app.bundlePath);
+        } catch (error) {
+          await rename(old, app.bundlePath);
+          throw error;
+        }
+      },
+    );
+  }
+
   /**
    * Makes each installed app again from this Rakazo when it was made from another version, so
    * apps get Rakazo's fixes. An app that is running is left for the next start.
@@ -224,40 +268,8 @@ export function createPageAppInstaller(options: {
   async function refresh() {
     await removeBundle(path.join(pageAppsFolder(home), STAGING));
     for (const app of await registry.list()) {
-      // An app moved to the Trash from Finder ends with its token, as an uninstall does.
-      if (!existsSync(app.bundlePath)) {
-        const moved = await findBundle(pageAppBundleId(app.appId), home ?? os.homedir());
-        if (moved) await registry.put({ ...app, bundlePath: moved });
-        else await forget(app);
-        continue;
-      }
-      if ((await readBundleVersion(app.bundlePath)) === options.version) continue;
-      if ((await runningAppPids(app.bundlePath)).length > 0) continue;
-      const built = await readBuiltApp(app.bundlePath);
-      const config = pageAppConfig(built.config);
-      if (!config || config.appId !== app.appId) continue;
-      await staged(
-        home,
-        (target) =>
-          buildPageAppBundle({
-            source,
-            target,
-            name: pageAppName(config.title),
-            bundleId: pageAppBundleId(app.appId),
-            icon: built.icon,
-            config,
-          }),
-        async (next) => {
-          const old = `${next}.old`;
-          await rename(app.bundlePath, old);
-          try {
-            await rename(next, app.bundlePath);
-          } catch (error) {
-            await rename(old, app.bundlePath);
-            throw error;
-          }
-        },
-      );
+      // One app that cannot be rebuilt or forgotten leaves the others to go ahead.
+      await bestEffort(`refresh page app ${app.appId}`, refreshApp(app));
     }
   }
 

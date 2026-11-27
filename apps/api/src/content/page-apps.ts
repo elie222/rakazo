@@ -153,3 +153,23 @@ export async function pageAppStillInstalled(prisma: PrismaClient, appId: string)
     ),
   );
 }
+
+/** What an app shows of its page, as one value that differs whenever any of it changes. */
+export async function pageAppVersion(
+  prisma: PrismaClient,
+  access: Pick<PageAppAccess, "pageId" | "actor">,
+): Promise<string> {
+  const [page, state] = await runAsSystem("read a page app's version", () =>
+    Promise.all([
+      prisma.page.findUnique({
+        where: { id: access.pageId },
+        select: { currentVersion: true, updatedAt: true, title: true, icon: true, iconColor: true },
+      }),
+      prisma.pageReaderState.findUnique({
+        where: { pageId_userId: { pageId: access.pageId, userId: access.actor.userId } },
+        select: { updatedAt: true },
+      }),
+    ]),
+  );
+  return JSON.stringify([page, state?.updatedAt ?? null]);
+}
