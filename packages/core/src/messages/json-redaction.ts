@@ -88,12 +88,12 @@ const RAW_UNQUOTED_STOP = new RegExp(
   `(?:${RAW_NEXT_BEARER.source}|${RAW_BARE_SPLITTING_CREDENTIAL_KEY.source}|${RAW_JSON_CONTAINER_START.source})`,
 );
 const RAW_QUOTED_SUFFIX_ASSIGNMENT =
-  '[=:](?:\\\\"(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\")?|"(?!\\s|$|[:,}\\]\\r\\n])(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+"?|\'(?!\\s|$|[:,}\\]\\r\\n])(?:\\\\[^\\r\\n]|[^\'\\\\\\r\\n])+\'?)';
+  '[=:](?:\\\\"(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\")?|"(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+"?|\'(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^"\\r\\n]|[^\'\\"\\\\\\r\\n])+\'?)';
 const RAW_SUFFIX_ATOM = new RegExp(
   `(?:(?!${RAW_ADJACENT_CREDENTIAL_START.source})(?:${RAW_QUOTED_SUFFIX_ASSIGNMENT}|=(?!["']|\\\\")|:(?!(?:\\s|$|["']|\\\\"|${RAW_ADJACENT_CREDENTIAL_START.source}|${RAW_JSON_CONTAINER_START.source}))|\\[redacted\\]|(?!\\[redacted\\]|${RAW_JSON_CONTAINER_START.source})(?:\\[+(?!redacted\\])|\\{)|${RAW_BACKSLASH_ATOM.source}|[^\\s"',;&}{[\\]:=\\\\]))`,
 );
 const RAW_BEARER = new RegExp(
-  `${BEARER_CI}\\s+(?!${RAW_DEFERRED_BEARER_FOLLOWS.source}|${RAW_SPLITTING_CREDENTIAL_KEY.source}|\\[redacted\\](?!${RAW_SUFFIX_ATOM.source}))(?:\\\\"(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"${RAW_SUFFIX_ATOM.source}*)?|"(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${RAW_SUFFIX_ATOM.source}*)?|'(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^\\r\\n]|[^'"\\\\\\r\\n])+(?:'${RAW_SUFFIX_ATOM.source}*)?|\\[redacted\\]${RAW_SUFFIX_ATOM.source}+|${RAW_ATOM.source}(?:(?!${RAW_UNQUOTED_STOP.source})${RAW_ATOM.source})*)`,
+  `${BEARER_CI}\\s+(?!${RAW_DEFERRED_BEARER_FOLLOWS.source}|${RAW_SPLITTING_CREDENTIAL_KEY.source}|${RAW_JSON_CONTAINER_START.source}|\\[redacted\\](?!${RAW_SUFFIX_ATOM.source}))(?:\\\\"(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"${RAW_SUFFIX_ATOM.source}*)?|"(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${RAW_SUFFIX_ATOM.source}*)?|'(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^\\r\\n]|[^'"\\\\\\r\\n])+(?:'${RAW_SUFFIX_ATOM.source}*)?|\\[redacted\\]${RAW_SUFFIX_ATOM.source}+|${RAW_ATOM.source}(?:(?!${RAW_UNQUOTED_STOP.source})${RAW_ATOM.source})*)`,
   "g",
 );
 
@@ -110,12 +110,12 @@ const DECODED_ATOM = new RegExp(
   `(?:\\\\(?!(?:${DECODED_UNQUOTED_STOP.source}))[^\\s]|\\\\(?=\\s|$|${DECODED_UNQUOTED_STOP.source})|\\[+|[^\\s"',;&}:\\]\\\\[])`,
 );
 const DECODED_QUOTED_SUFFIX_ASSIGNMENT =
-  "[=:](?:\"(?!\\s|$|[:,}\\]\\r\\n])(?:\\\\[^\\r\\n]|[^\"\\\\\\r\\n])+\"?|'(?!\\s|$|[:,}\\]\\r\\n])(?:\\\\[^\\r\\n]|[^'\\\\\\r\\n])+'?)";
+  "[=:](?:\"(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^\\r\\n]|[^\"\\\\\\r\\n])+\"?|'(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^\\r\\n]|[^'\\\\\\r\\n])+'?)";
 const DECODED_SUFFIX_ATOM = new RegExp(
   `(?:(?!${DECODED_ADJACENT_CREDENTIAL_START.source})(?:${DECODED_QUOTED_SUFFIX_ASSIGNMENT}|=(?!["'])|:(?!(?:\\s|$|["']|${DECODED_ADJACENT_CREDENTIAL_START.source}|${JSON_CONTAINER_LINE_START.source}))|\\[redacted\\]|(?!\\[redacted\\]|${JSON_CONTAINER_LINE_START.source})(?:\\[+(?!redacted\\])|\\{)|\\\\(?!(?:${DECODED_ADJACENT_CREDENTIAL_START.source}|${JSON_CONTAINER_LINE_START.source}))[^\\s]|\\\\(?=\\s|$|${DECODED_ADJACENT_CREDENTIAL_START.source}|${JSON_CONTAINER_LINE_START.source})|[^\\s"',;&}{[\\]:=\\\\]))`,
 );
 const DECODED_BEARER = new RegExp(
-  `${BEARER_CI}\\s+(?!${DECODED_DEFERRED_BEARER_FOLLOWS.source}|${DECODED_SPLITTING_CREDENTIAL_KEY.source}|\\[redacted\\](?!${DECODED_SUFFIX_ATOM.source}))(?:"(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${DECODED_SUFFIX_ATOM.source}*)?|'(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^\\r\\n]|[^'\\\\\\r\\n])+(?:'${DECODED_SUFFIX_ATOM.source}*)?|\\[redacted\\]${DECODED_SUFFIX_ATOM.source}+|${DECODED_ATOM.source}(?:(?!${DECODED_UNQUOTED_STOP.source})${DECODED_ATOM.source})*)`,
+  `${BEARER_CI}\\s+(?!${DECODED_DEFERRED_BEARER_FOLLOWS.source}|${DECODED_SPLITTING_CREDENTIAL_KEY.source}|${JSON_CONTAINER_LINE_START.source}|\\[redacted\\](?!${DECODED_SUFFIX_ATOM.source}))(?:"(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${DECODED_SUFFIX_ATOM.source}*)?|'(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^\\r\\n]|[^'\\\\\\r\\n])+(?:'${DECODED_SUFFIX_ATOM.source}*)?|\\[redacted\\]${DECODED_SUFFIX_ATOM.source}+|${DECODED_ATOM.source}(?:(?!${DECODED_UNQUOTED_STOP.source})${DECODED_ATOM.source})*)`,
   "g",
 );
 

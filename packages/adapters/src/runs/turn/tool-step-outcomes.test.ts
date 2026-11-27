@@ -1957,6 +1957,8 @@ describe("tool step outcomes", () => {
       "Bearer [redacted]:key=opaque-123",
       'Bearer [redacted]:key="opaque-123"',
       'Bearer [redacted]key="opaque-123"',
+      'Bearer [redacted]key=" opaque-123"',
+      "Bearer [redacted]key='opaque-123",
     ]) {
       const payload = JSON.stringify({ msg, sibling: 7 });
       for (const read of [kept, replay, failed, sanitizeError, sanitizeSensitiveText]) {
@@ -1989,6 +1991,8 @@ describe("tool step outcomes", () => {
       "Bearer [redacted]:key=opaque-123",
       'Bearer [redacted]:key="opaque-123"',
       'Bearer [redacted]key="opaque-123"',
+      'Bearer [redacted]key=" opaque-123"',
+      "Bearer [redacted]key='opaque-123",
     ]) {
       expect(sanitizeConnectorError(new Error(plain))).toBe("Bearer [redacted]");
     }

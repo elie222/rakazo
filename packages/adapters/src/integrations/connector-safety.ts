@@ -44,7 +44,7 @@ const CONNECTOR_NON_BOUNDARY_ESCAPED_WS = new RegExp(
   `(?:\\\\[nrt])+(?!(?:\\\\[nrt]|\\s|["',;&}\\]]|$|:?${BEARER_CI}(?:\\s|\\\\[nrt])|:?${CONNECTOR_RAW_JSON_CONTAINER_START.source}))`,
 );
 const CONNECTOR_RAW_UNIT = new RegExp(
-  `(?:[=:](?:\\\\"(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\")?|"(?!\\s|$|[:,}\\]\\r\\n])(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+"?|'(?!\\s|$|[:,}\\]\\r\\n])(?:\\\\[^\\r\\n]|[^'"\\\\\\r\\n])+'?)|=|:(?!\\s|$|["']|\\\\")|\\[redacted\\]|\\[+(?!redacted\\])|${CONNECTOR_NON_BOUNDARY_ESCAPED_WS.source}|\\\\(?![nrt"])|[^\\s"',;&}=:\\]\\\\[])`,
+  `(?:[=:](?:\\\\"(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\")?|"(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+"?|'(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^"\\r\\n]|[^'"\\\\\\r\\n])+'?)|=|:(?!\\s|$|["']|\\\\")|\\[redacted\\]|\\[+(?!redacted\\])|${CONNECTOR_NON_BOUNDARY_ESCAPED_WS.source}|\\\\(?![nrt"])|[^\\s"',;&}=:\\]\\\\[])`,
 );
 const CONNECTOR_SUFFIX_STOP = new RegExp(
   `(?:${CONNECTOR_ADJACENT_CREDENTIAL_START.source}|${CONNECTOR_RAW_JSON_CONTAINER_START.source})`,
