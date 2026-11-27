@@ -44,7 +44,7 @@ function PlanCard({
 }) {
   return (
     <Card className={highlighted ? "ring-2 ring-primary" : undefined}>
-      <CardHeader className="flex h-9 items-center justify-between gap-3">
+      <CardHeader className="flex min-h-9 flex-wrap items-center justify-between gap-3">
         <h2 className="text-heading3 font-medium">{title}</h2>
         {titleAction}
       </CardHeader>
@@ -194,7 +194,7 @@ export function CreditChoice({
           </p>
         ) : null}
       </div>
-      <div className="grid gap-4 min-[480px]:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2">
         <PlanCard
           title={<Trans>Your own AI</Trans>}
           titleAction={
