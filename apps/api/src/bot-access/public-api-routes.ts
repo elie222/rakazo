@@ -5,6 +5,7 @@ import { ClientError } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import type { Context, Hono } from "hono";
 import type * as z from "zod";
+import { KEYED_API_PATHS, mountNoStore } from "../http/no-store.js";
 import { requestBodyLimit } from "../http/request-body-limit.js";
 import type { BotAccess, BotAccessDeps, KeyCaller } from "./bot-access.js";
 import { createBotAccess, publicApiFailure } from "./bot-access.js";
@@ -138,8 +139,8 @@ const taskError = (status: number, message: string) => ({ error: { message, stat
  * holding one of the person's API keys.
  */
 export function mountPublicApiRoutes(app: Hono, access: BotAccess) {
-  for (const path of ["/api/v1/chat/*", "/api/v1/tasks", "/api/v1/tasks/*"])
-    app.use(path, requestBodyLimit(MAX_PUBLIC_API_BODY_BYTES));
+  mountNoStore(app, KEYED_API_PATHS);
+  for (const path of KEYED_API_PATHS) app.use(path, requestBodyLimit(MAX_PUBLIC_API_BODY_BYTES));
 
   app.get(
     "/api/v1/models",

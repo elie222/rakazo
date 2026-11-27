@@ -145,6 +145,7 @@ import {
 import { databaseProbe, healthRoutes } from "./http/health.js";
 import { startHourlySweep } from "./http/hourly-sweep.js";
 import { trackInFlightRequests } from "./http/in-flight-requests.js";
+import { mountNoStore } from "./http/no-store.js";
 import { mountApiRequestBodyLimits } from "./http/request-body-limit.js";
 import { mountRpcRoute } from "./http/rpc-route.js";
 import { mountScriptAssets } from "./http/script-assets.js";
@@ -760,13 +761,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     prisma,
   });
   app.use("*", sendRenewedCookies);
-  // Session and account replies must never be stored by a client or an HTTP cache.
-  for (const path of ["/api/auth/*", "/rpc/*"]) {
-    app.use(path, async (c, next) => {
-      await next();
-      c.header("cache-control", "no-store");
-    });
-  }
+  // Session, account and keyed API replies must never be stored by a client or an HTTP cache.
+  mountNoStore(app);
   mountAuthCapabilities(app, { env, auth, email, billing });
   mountAppAssociation(app, env);
   if (localEmailEmulator && env.nodeEnv === "development") {
