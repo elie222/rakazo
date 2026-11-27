@@ -212,7 +212,7 @@ function OpenPage({
       share={
         data ? (
           <>
-            <PageAppButton page={{ ...data, abilities: [] }} />
+            <PageAppButton page={data} />
             <SharePopover
               compact={compact}
               title={data.title}

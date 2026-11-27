@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { PageAbility } from "@rakazo/contracts";
+import type { PageAbility, PageAppView } from "@rakazo/contracts";
 import {
   abortableDelay,
   deadlineSignal,
@@ -9,7 +9,7 @@ import {
 } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import { desktopLocale, t } from "../../i18n.js";
-import type { PageAppApi, PageAppViewWithAbilities } from "../page-app-api.js";
+import type { PageAppApi } from "../page-app-api.js";
 import { PageAppRequestError } from "../page-app-api.js";
 import type { FrameRequest } from "./frame-requests.js";
 import { askAnswer, createRateLimit, frameRequest } from "./frame-requests.js";
@@ -38,7 +38,7 @@ export type PageAppHost = {
   /** The token no longer works: the app was removed. */
   removed: () => void;
   /** The view changed, so menus that depend on it can update. */
-  viewed: (view: PageAppViewWithAbilities) => void;
+  viewed: (view: PageAppView) => void;
 };
 
 function isRemoved(error: unknown) {
@@ -56,7 +56,7 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
   const mayNotify = createRateLimit(NOTIFY_INTERVAL_MS);
   const mayOpenLink = createRateLimit(LINK_INTERVAL_MS);
   const mayCopy = createRateLimit(COPY_INTERVAL_MS);
-  let view: PageAppViewWithAbilities | null = null;
+  let view: PageAppView | null = null;
   let runtime: string | null = null;
   let shown: string | null = null;
   let frame = { id: 0, document: "" };
@@ -87,7 +87,7 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
    * Asks, one dialog at a time, for each ability this version uses that the person has not
    * approved or declined, while the page already shows; an approval shows it again with it.
    */
-  async function consent(next: PageAppViewWithAbilities) {
+  async function consent(next: PageAppView) {
     if (consenting) return;
     consenting = true;
     try {
@@ -107,7 +107,7 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
     }
   }
 
-  async function imageSources(page: PageAppViewWithAbilities["page"]) {
+  async function imageSources(page: PageAppView["page"]) {
     const entries = await Promise.all(
       Object.entries(page.images).map(async ([name, imageId]) => {
         const cached = images.get(imageId) ?? (await api.image(imageId));
@@ -136,14 +136,9 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
       surface: host.surface(),
       lang: desktopLocale(),
       state: next.page.readerState ?? {},
+      ask,
     });
-    // Hosts that can ask mark the document, as the kit's `askBot` checks before it asks.
-    frame = {
-      id: frame.id + 1,
-      document: withSandboxedArtifactCsp(
-        ask ? document.replace("<html", "<html data-ask") : document,
-      ),
-    };
+    frame = { id: frame.id + 1, document: withSandboxedArtifactCsp(document) };
     shown = key;
     show({ frame: `${FRAME_ORIGIN}/${frame.id}`, title: host.name, lang: desktopLocale() });
   }

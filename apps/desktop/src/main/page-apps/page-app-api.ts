@@ -1,4 +1,4 @@
-import type { PageAbility, PageAppView, PageAskEvent, PageState } from "@rakazo/contracts";
+import type { PageAbility, PageAskEvent, PageState } from "@rakazo/contracts";
 import {
   PAGE_APP_API_PATH,
   PageAbilitiesSchema,
@@ -7,22 +7,6 @@ import {
   PageImageSourceSchema,
 } from "@rakazo/contracts";
 import { PAGE_RUNTIME_PATH } from "@rakazo/core";
-
-export type PageAppViewWithAbilities = PageAppView & {
-  page: PageAppView["page"] & { abilities: PageAbility[] };
-};
-
-/** Tolerates a server that does not send the page's abilities yet: such a page uses none. */
-function parseView(value: unknown): PageAppViewWithAbilities {
-  const page = (value as { page?: Record<string, unknown> } | null)?.page;
-  const abilities = PageAbilitiesSchema.parse(page?.abilities ?? []);
-  const parsed = PageAppViewSchema.safeParse(value);
-  const { abilities: _abilities, ...detail } = page ?? {};
-  const view = parsed.success
-    ? parsed.data
-    : PageAppViewSchema.parse({ ...(value as object), page: detail });
-  return { ...view, page: { ...view.page, abilities } };
-}
 
 /** A refused or failed request; 401 means the app's token no longer works. */
 export class PageAppRequestError extends Error {
@@ -68,7 +52,7 @@ export function createPageAppApi(server: string, token: string, fetcher: Fetch =
     request(path, init).then((response) => response.json() as Promise<unknown>);
 
   return {
-    view: async (signal?: AbortSignal) => parseView(await json("", { signal })),
+    view: async (signal?: AbortSignal) => PageAppViewSchema.parse(await json("", { signal })),
     image: async (imageId: string) =>
       PageImageSourceSchema.parse(await json(`/images/${encodeURIComponent(imageId)}`)).src,
     saveState: async (values: PageState) => {

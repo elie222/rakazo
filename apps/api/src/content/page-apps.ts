@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { Actor, PageAbility, PageAppInstall } from "@rakazo/contracts";
 import {
-  PAGE_ABILITIES,
+  knownPageAbilities,
   PAGE_APP_TOKEN,
   PAGE_APP_TOKEN_PREFIX,
   PageIconColorSchema,
@@ -23,11 +23,6 @@ export class TooManyPageAppsError extends ClientError {
 
 export function hashPageAppToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
-}
-
-/** Only abilities the app knows, each once, in their canonical order. */
-export function approvedAbilities(values: readonly string[]): PageAbility[] {
-  return PAGE_ABILITIES.filter((ability) => values.includes(ability));
 }
 
 export async function installPageApp(
@@ -53,7 +48,7 @@ export async function installPageApp(
           userId: actor.userId,
           spaceId: actor.spaceId,
           tokenHash: hashPageAppToken(token),
-          abilities: approvedAbilities(input.abilities),
+          abilities: knownPageAbilities(input.abilities),
         },
         select: { id: true },
       });
@@ -118,7 +113,7 @@ export async function pageAppFromToken(
   return {
     appId: app.id,
     pageId: app.pageId,
-    abilities: approvedAbilities(app.abilities),
+    abilities: knownPageAbilities(app.abilities),
     actor,
   };
 }
@@ -128,7 +123,7 @@ export async function setPageAppAbilities(
   appId: string,
   abilities: PageAbility[],
 ): Promise<PageAbility[]> {
-  const approved = approvedAbilities(abilities);
+  const approved = knownPageAbilities(abilities);
   await runAsSystem("approve page app abilities", () =>
     prisma.pageApp.updateMany({ where: { id: appId }, data: { abilities: approved } }),
   );

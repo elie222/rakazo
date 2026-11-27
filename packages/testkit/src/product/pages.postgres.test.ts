@@ -14,6 +14,7 @@ import type {
   AiConsentStatus,
   PageAppInstall,
   PageAppView,
+  PageAskEvent,
   PageDetail,
   PageReview,
   PageSummary,
@@ -1913,11 +1914,19 @@ describePages("pages", () => {
     expect((await rpc<PageDetail>(app, owner, "pages/get", { pageId })).readerState).toEqual({
       done: true,
     });
+    const question = () =>
+      call("/ask", {
+        method: "POST",
+        body: JSON.stringify({ text: "Next?", clientNonce: "app-ask-1" }),
+      });
+    expect((await question()).status).toBe(403);
     const approved = await call("/abilities", {
       method: "PUT",
       body: JSON.stringify({ abilities: ["ask", "notify"] }),
     });
     expect(await approved.json()).toEqual({ approved: ["ask", "notify"] });
+    // Approved, but this version never calls askBot, so nothing reaches the chat.
+    expect((await question()).status).toBe(403);
 
     // The token names one page: nothing in it reaches the owner's other pages or session routes.
     const forged = `${PAGE_APP_TOKEN_PREFIX}${"x".repeat(43)}`;
@@ -1945,6 +1954,32 @@ describePages("pages", () => {
     });
     await rpc(app, owner, "pages/remove", { pageId });
     expect((await call("", {}, again.token)).status).toBe(401);
+  });
+
+  it("streams an installed app's question to the page's bot and back", async () => {
+    const owner = await signup(app, `app-asker-${stamp}@example.test`, "Asker");
+    const bot = await createBot(app, owner, "Asked bot");
+    const source =
+      'const App = () => <Page title="Ask"><Button label="Ask" onClick={() => askBot("Next?")} /></Page>;\nexport default App;\n';
+    await sendAndWait(app, owner, bot.id, {
+      text: `call save_page with ${JSON.stringify({ title: "Ask", source })}`,
+    });
+    const { pageId } = (await lastResult(bot.id)) as { pageId: string };
+    const installed = await rpc<PageAppInstall>(app, owner, "pageApps/install", {
+      pageId,
+      abilities: ["ask"],
+    });
+    const response = await app.request(`${PAGE_APP_API_PATH}/ask`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${installed.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ text: "Next?", clientNonce: "app-ask-stream" }),
+    });
+    expect(response.status).toBe(200);
+    const events = (await response.text())
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as PageAskEvent);
+    expect(events.at(-1)).toMatchObject({ kind: "answer", text: expect.any(String) });
   });
 });
 
