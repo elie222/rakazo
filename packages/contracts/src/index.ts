@@ -11,6 +11,8 @@ export * from "./account/space-availability.js";
 export * from "./account/user-devices.js";
 export * from "./artifacts/artifacts.js";
 export * from "./artifacts/board.js";
+export * from "./artifacts/page-abilities.js";
+export * from "./artifacts/page-apps.js";
 export * from "./artifacts/page-collaboration.js";
 export * from "./artifacts/page-reader-state.js";
 export * from "./artifacts/pages.js";
