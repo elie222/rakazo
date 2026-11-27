@@ -1613,6 +1613,8 @@ describe("tool step outcomes", () => {
       "password:\nopaque-123-secret=tail",
       "password: opaque-123-secret=\n",
       "password: opaque-123-secret=\nnextline",
+      "password:\nopaque-123-secret=\nnextline",
+      "password: secret: opaque-123",
       "auth=opaque-123-secret=tail",
     ];
     for (const input of cases) {
@@ -1626,23 +1628,49 @@ describe("tool step outcomes", () => {
       expect(read('Bearer Bearer\n{"token":"opaque-123","x":1}')).toBe(
         'Bearer [redacted]\n{"token":"[redacted]","x":1}',
       );
+      expect(read("Bearer Bearer\n[12,34]")).toBe("Bearer [redacted]\n[12,34]");
     }
+    expect(sanitizeConnectorError(new Error("Bearer Bearer\n[12,34]"))).toBe(
+      "Bearer [redacted]\n[12,34]",
+    );
     expect(sanitizeConnectorError(new Error("Bearer Bearer\nopaque-123"))).toBe(
       "Bearer Bearer [redacted]",
     );
     expect(sanitizeConnectorError(new Error("Bearer Bearer\n[opaque-123]"))).toBe(
       "Bearer Bearer [redacted]]",
     );
+    const rawEscapedBracketed = JSON.stringify({ msg: "Bearer Bearer\n[opaque-123]" });
+    expect(JSON.parse(sanitizeSensitiveText(rawEscapedBracketed))).toEqual({
+      msg: "Bearer Bearer [redacted]]",
+    });
     const rawEscapedSecretBreak = JSON.stringify({ msg: "Bearer Bearer secret=\nopaque-123" });
     expect(sanitizeSensitiveText(rawEscapedSecretBreak)).toBe(
       '{"msg":"Bearer [redacted] secret=[redacted]"}',
     );
+    const rawEscapedQuotedSecret = JSON.stringify({ msg: 'Bearer Bearer secret="opaque-123"' });
+    expect(JSON.parse(sanitizeSensitiveText(rawEscapedQuotedSecret))).toEqual({
+      msg: 'Bearer [redacted] secret="[redacted]"',
+    });
     const rawPlaceholderJson = JSON.stringify({ msg: 'auth=[redacted]{"ok":true}' });
     expect(JSON.parse(sanitizeSensitiveText(rawPlaceholderJson))).toEqual({
       msg: 'auth=[redacted]{"ok":true}',
     });
     expect(JSON.parse(sanitizeError(rawPlaceholderJson))).toEqual({
       msg: 'auth=[redacted]{"ok":true}',
+    });
+    const rawMultilinePlaceholderJson = JSON.stringify({ msg: 'auth=[redacted]{\n"ok":true\n}' });
+    expect(JSON.parse(sanitizeSensitiveText(rawMultilinePlaceholderJson))).toEqual({
+      msg: 'auth=[redacted]{\n"ok":true\n}',
+    });
+    const escapedKeyPlaceholderJson = JSON.stringify({ msg: 'auth=[redacted]{"a\\"b":1}' });
+    expect(JSON.parse(sanitizeError(escapedKeyPlaceholderJson))).toEqual({
+      msg: 'auth=[redacted]{"a\\"b":1}',
+    });
+    expectLinearTime(() => {
+      const indented = `password:\n${" ".repeat(64_000)}client_secret: fixtureTok`;
+      const out = sanitizeSensitiveText(indented);
+      expect(out).not.toContain("fixtureTok");
+      expect(out).toContain("client_secret: [redacted]");
     });
     expect(
       sanitizeConnectorError(new Error(JSON.stringify({ msg: "Bearer Bearer\nopaque-123" }))),
