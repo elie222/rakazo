@@ -1,5 +1,5 @@
 import type { ArtifactStore, SecretStore } from "@rakazo/adapter-kit";
-import type { PageAppView } from "@rakazo/contracts";
+import type { Actor, PageAppView } from "@rakazo/contracts";
 import {
   PAGE_APP_API_PATH,
   PAGE_STATE_MAX_BYTES,
@@ -21,6 +21,7 @@ import {
   setPageAppAbilities,
 } from "./page-apps.js";
 import { getPageImage, savePageReaderState } from "./page-collaboration.js";
+import { mountPageWebApp } from "./page-web-app.js";
 import { getPage } from "./pages.js";
 
 const MINUTE_MS = 60_000;
@@ -38,17 +39,20 @@ export type PageAppRouteDeps = {
   artifacts: ArtifactStore;
   webOrigin: string;
   events: ThreadEvents;
+  sessionActor: (request: Request, spaceId?: string | null) => Promise<Actor | null>;
 };
 
 /**
  * What an installed page app reads and writes, with its own token and nothing else: its page,
  * that page's pictures, its owner's saved values on it, and which abilities the owner approved.
+ * Also what a browser reads to install a page, with the owner's session.
  */
 export function mountPageAppRoutes(
   app: Hono,
   deps: PageAppRouteDeps,
   clientIp: (c: Context) => string | undefined,
 ) {
+  mountPageWebApp(app, deps);
   const requests = windowCounter(MINUTE_MS);
   const addresses = windowCounter(MINUTE_MS);
 
