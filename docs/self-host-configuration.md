@@ -267,3 +267,27 @@ RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS=api.example.com,*.downloads.example.com
 ```
 
 For mirrors of the installer and images, see [restricted networks](./self-host-restricted-network.md).
+
+## Protected sign-in for shared logins
+
+Organization owners and admins can save and revoke shared login sessions in the
+web and desktop organization settings. The sign-in form supports websites with
+a username field, a password field, and a submit button on the same page. It
+waits for the heading you identify on the signed-in page before saving.
+
+To enable protected sign-in, run the API on a trusted Linux host with access to
+its local container engine and a host-visible temporary directory. Build the
+image from `infra/sandboxes/protected-browser/Dockerfile`, then set
+`PROTECTED_BROWSER_IMAGE` to the local image name and
+`PROTECTED_BROWSER_SECCOMP_PROFILE` to the absolute host path of the Chromium
+sandbox profile used by the protected browser workflow. The API starts each
+sign-in in a fresh container and encrypts the saved session with the deployment
+encryption key. Removing a saved session in Rakazo removes its local copy.
+
+Each organization can run one sign-in at a time. The local container engine can
+run two protected browsers at once, shared by all API replicas using its socket.
+A request that reaches either limit returns immediately and can be retried.
+A later sign-in can reclaim a protected browser container that was created
+at least two minutes ago and never started, including after a slow container
+creation or API interruption. If an older deployment left a container behind,
+remove it after confirming its sign-in has ended.

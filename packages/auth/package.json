@@ -25,6 +25,7 @@
     "test": "vitest run --root ../.. packages/auth/src"
   },
   "dependencies": {
+    "@better-auth/api-key": "1.7.18",
     "@better-auth/expo": "1.7.18",
     "@better-auth/passkey": "1.7.18",
     "@better-auth/scim": "1.7.18",

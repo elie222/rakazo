@@ -357,6 +357,8 @@ export class PiAgentRuntime implements AgentRuntime {
               mode === "computer" && computer ? computer.model : model,
             )
           : undefined;
+        if (restored?.foundConnectorTools)
+          host.foundConnectorTools = new Map(restored.foundConnectorTools);
         const history =
           restored?.messages ??
           toHistory(
@@ -823,6 +825,7 @@ export class PiAgentRuntime implements AgentRuntime {
             modelId: activeStreamTarget.model.id,
             systemPrompt,
             representedHistoryIds,
+            foundConnectorTools: host.foundConnectorTools,
           });
         host.captureCheckpoint = async (toolCallId, executionId) => {
           if (!request.onCheckpoint) return;

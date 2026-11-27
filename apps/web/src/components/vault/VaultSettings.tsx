@@ -25,9 +25,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   ListSearchInput,
+  SectionHeading,
 } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, FileUp, Plus } from "lucide-react";
+import { ChevronRight, FileUp, Plus } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useSpaceQueries } from "../../lib/query/query";
 import { useSpaceRpc } from "../../lib/query/space-rpc";
@@ -356,48 +357,18 @@ export function VaultSettings({
 
   return (
     <section data-testid="vault" className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        {kindsShown.length > 1 ? (
-          <fieldset className="m-0 flex min-w-0 flex-wrap gap-1 border-0 p-0" aria-label={t`Show`}>
-            {(["all", ...kindsShown] as const).map((kind) => (
-              <Button
-                key={kind}
-                type="button"
-                variant="ghost"
-                size="sm"
-                aria-pressed={activeFilter === kind}
-                data-testid={`vault-filter-${kind}`}
-                className="rounded-full text-muted-foreground aria-pressed:bg-accent aria-pressed:text-foreground"
-                onClick={() => setFilter(kind)}
-              >
-                {kind === "all" ? t`All` : many[kind]}
-                <span className="text-faint-foreground tabular-nums">
-                  {kind === "all" ? items?.length : counts.get(kind)}
-                </span>
-              </Button>
-            ))}
-          </fieldset>
-        ) : null}
-        <span className="flex-1" />
-        {searching ? (
-          <div className="w-44">
-            <ListSearchInput
-              query={search}
-              setQuery={setSearch}
-              label={t`Search Vault`}
-              placeholder={t`Search`}
-            />
-          </div>
-        ) : null}
+      <div className="flex items-center justify-between gap-3 px-3.5">
+        <SectionHeading variant="heading">
+          <Trans>Items</Trans>
+        </SectionHeading>
         <DropdownMenu>
           <DropdownMenuTrigger
             data-testid="vault-new"
             disabled={busy}
-            render={<Button size="sm" className="rounded-full" />}
+            render={<Button variant="secondary" />}
           >
-            <Plus />
+            <Plus data-icon="inline-start" />
             <Trans>New</Trans>
-            <ChevronDown />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-44">
             {VAULT_KINDS.map((kind) => (
@@ -437,6 +408,45 @@ export function VaultSettings({
           }}
         />
       </div>
+      {kindsShown.length > 1 || searching ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {kindsShown.length > 1 ? (
+            <fieldset
+              className="m-0 flex min-w-0 flex-wrap gap-1 border-0 p-0"
+              aria-label={t`Show`}
+            >
+              {(["all", ...kindsShown] as const).map((kind) => (
+                <Button
+                  key={kind}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-pressed={activeFilter === kind}
+                  data-testid={`vault-filter-${kind}`}
+                  className="rounded-full text-muted-foreground aria-pressed:bg-accent aria-pressed:text-foreground"
+                  onClick={() => setFilter(kind)}
+                >
+                  {kind === "all" ? t`All` : many[kind]}
+                  <span className="text-faint-foreground tabular-nums">
+                    {kind === "all" ? items?.length : counts.get(kind)}
+                  </span>
+                </Button>
+              ))}
+            </fieldset>
+          ) : null}
+          <span className="flex-1" />
+          {searching ? (
+            <div className="w-44">
+              <ListSearchInput
+                query={search}
+                setQuery={setSearch}
+                label={t`Search Vault`}
+                placeholder={t`Search`}
+              />
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {ownVault ? (
         <p data-testid="vault-own-space-note" className="text-body-sm text-muted-foreground">
           {vaultOwnSpaceNote()}

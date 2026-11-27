@@ -23,6 +23,7 @@ import type {
   ModelConnectIntent,
 } from "../../components/models/model-role-settings";
 import { ModelRoleSettings } from "../../components/models/model-role-settings";
+import { OrganizationModelSettings } from "../../components/models/organization-model-settings";
 import { SpaceBotsModel } from "../../components/settings/space-bots-model";
 import { LoadFailure } from "../../components/ui/load-failure";
 import type { MobileBot, MobileModel, MobileModelCredential } from "../../lib/api/mobile-types";
@@ -314,6 +315,11 @@ export default function Models() {
         ) : null}
         {me ? (
           <>
+            <OrganizationModelSettings
+              key={spaceId ?? me.spaceId}
+              spaceId={spaceId ?? me.spaceId}
+              providers={allProviders}
+            />
             <ModelRoleSettings
               {...shared}
               modelRole="main"

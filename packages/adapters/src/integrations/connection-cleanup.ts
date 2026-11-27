@@ -5,20 +5,40 @@ import type {
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
 import {
+  CONNECTION_CLEANUP_MAX_ATTEMPTS,
   connectionCleanupJob,
   connectionCleanupJobKey,
   RetryJobLaterError,
 } from "@rakazo/adapter-kit";
+import { ClientError } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
-import { ProviderTransactionBusyError, runProviderTransaction } from "@rakazo/db";
+import {
+  JsonColumnMismatchError,
+  ProviderTransactionBusyError,
+  readJsonColumn,
+  reportJsonColumnOnce,
+  runProviderTransaction,
+} from "@rakazo/db";
 import { getLogger, unwrapJobPayload } from "@rakazo/logging";
+import { z } from "zod";
 import { advisoryLock } from "../locks/advisory-lock.js";
 import { sanitizeIntegrationError } from "../providers/integration/composio/composio-connector.js";
 import type { ConnectorRegistry } from "./connector-registry.js";
 import { prepareManagedConnectorForTransaction } from "./integration-provider-settings.js";
 
-type ConnectionScope = { spaceId: string; userId: string; connectorId: string; provider: string };
-type ConnectionCleanup = BackgroundJobPayloads["connection.cleanup"];
+export type ConnectionOwner = { spaceId: string; userId: string; organizationId?: string };
+type ConnectionScope = ConnectionOwner & { connectorId: string; provider: string };
+type ConnectionCleanup = BackgroundJobPayloads["connection.cleanup"] & { organizationId?: string };
+
+export function connectionOwnerWhere(owner: ConnectionOwner) {
+  return owner.organizationId
+    ? { organizationId: owner.organizationId, userId: null, spaceId: null }
+    : { userId: owner.userId, spaceId: owner.spaceId };
+}
+
+export function connectionProviderWhere(owner: ConnectionOwner, provider: string) {
+  return owner.organizationId ? { equals: provider, mode: "insensitive" as const } : provider;
+}
 
 /** Connection flows hold the provider lock across provider calls (45s budget plus database work). */
 export const PROVIDER_LOCK_TRANSACTION_MS = 60_000;
@@ -73,17 +93,19 @@ const ACTIVE_STATUSES = ["connected", "pending", "error"];
  * behind work the database would serialize anyway.
  */
 export function providerScopeKey(
-  owner: { spaceId: string; userId: string },
+  owner: ConnectionOwner,
   connectorId: string,
   provider: string,
 ): string {
   // Avoid NUL separators in the lock key; text params may truncate at a zero byte and break begin.
+  if (owner.organizationId)
+    return `organization:${owner.organizationId}|provider:${provider.toLowerCase()}`;
   return `space:${owner.spaceId}|user:${owner.userId}|connector:${connectorId}|provider:${provider}`;
 }
 
 export async function lockProviderConnectionScope(
   tx: Prisma.TransactionClient,
-  owner: { spaceId: string; userId: string },
+  owner: ConnectionOwner,
   connectorId: string,
   provider: string,
 ): Promise<void> {
@@ -93,7 +115,7 @@ export async function lockProviderConnectionScope(
 /** Like lockProviderConnectionScope, but returns false instead of waiting for a holder. */
 export async function tryLockProviderConnectionScope(
   tx: Prisma.TransactionClient,
-  owner: { spaceId: string; userId: string },
+  owner: ConnectionOwner,
   connectorId: string,
   provider: string,
 ): Promise<boolean> {
@@ -128,15 +150,14 @@ export function providerLockTransaction<T>(
  * owns no account, and counting it would make a failed begin wait on its own row forever.
  */
 function concreteKeepAccountIds(
-  rows: Array<{ providerRef: string | null; status: string }>,
-  provider: string,
+  rows: Array<{ provider: string; providerRef: string | null; status: string }>,
 ): { keepIds: string[]; canRevokeUnreferenced: boolean } {
   const keepIds: string[] = [];
   let canRevokeUnreferenced = true;
   for (const row of rows) {
     const value = row.providerRef?.trim();
     if (!value && row.status === "error") continue;
-    if (!value || value === provider) {
+    if (!value || value === row.provider) {
       canRevokeUnreferenced = false;
       continue;
     }
@@ -153,12 +174,11 @@ export function leftoverAuthorization(
 ): ConnectionCleanup | undefined {
   const ref = state?.trim();
   if (!ref) return undefined;
-  const { spaceId, userId, connectorId, provider } = scope;
+  const { spaceId, userId, organizationId, connectorId, provider } = scope;
+  const owner = { spaceId, userId, ...(organizationId ? { organizationId } : {}) };
   // A request or account id is removed by id; an app slug names no single account.
-  if (ref !== provider) return { spaceId, userId, connectorId, provider, ref };
-  return connector.revokeUnreferencedAccounts
-    ? { spaceId, userId, connectorId, provider }
-    : undefined;
+  if (ref !== provider) return { ...owner, connectorId, provider, ref };
+  return connector.revokeUnreferencedAccounts ? { ...owner, connectorId, provider } : undefined;
 }
 
 /**
@@ -174,10 +194,9 @@ export async function authorizationInUse(
 ): Promise<boolean> {
   const referring = await tx.connection.count({
     where: {
-      spaceId: scope.spaceId,
-      userId: scope.userId,
+      ...connectionOwnerWhere(scope),
       connectorId: scope.connectorId,
-      provider: scope.provider,
+      provider: connectionProviderWhere(scope, scope.provider),
       providerRef: ref,
       status: { in: ACTIVE_STATUSES },
     },
@@ -211,6 +230,7 @@ async function dropAuthorization(
         target.ref,
         [],
         target.spaceId,
+        ...(target.organizationId ? [target.organizationId] : []),
       )
     : target.ref;
   if (!accountId) return;
@@ -233,29 +253,122 @@ async function dropUnreferencedAccounts(
   if (!connector.revokeUnreferencedAccounts) return "done";
   const kept = await tx.connection.findMany({
     where: {
-      spaceId: scope.spaceId,
-      userId: scope.userId,
+      ...connectionOwnerWhere(scope),
       connectorId: scope.connectorId,
-      provider: scope.provider,
+      provider: connectionProviderWhere(scope, scope.provider),
       status: { in: ACTIVE_STATUSES },
     },
-    select: { providerRef: true, status: true },
+    select: { provider: true, providerRef: true, status: true },
   });
-  const { keepIds, canRevokeUnreferenced } = concreteKeepAccountIds(kept, scope.provider);
+  const { keepIds, canRevokeUnreferenced } = concreteKeepAccountIds(kept);
   if (!canRevokeUnreferenced) return "undecided";
   await connector.revokeUnreferencedAccounts(scope.provider, keepIds, context);
   return "done";
 }
 
-function cleanupContext(
-  owner: { spaceId: string; userId: string },
-  operationId: string,
-): AdapterContext {
+const hostedSignInMetadata = z.object({
+  priorAccountIds: z.array(z.string()).optional(),
+  expiresAt: z
+    .string()
+    .refine((value) => Number.isFinite(Date.parse(value)))
+    .optional(),
+});
+
+type HostedSignIn = Pick<
+  Prisma.ConnectionGetPayload<object>,
+  "id" | "provider" | "providerRef" | "metadata" | "updatedAt" | "connectorId"
+>;
+
+export function readHostedSignIn(row: HostedSignIn) {
+  try {
+    return readJsonColumn(
+      hostedSignInMetadata,
+      row.metadata,
+      { table: "connections", column: "metadata", id: row.id },
+      "reject",
+    );
+  } catch (error) {
+    if (!(error instanceof JsonColumnMismatchError)) throw error;
+    reportJsonColumnOnce(
+      "Hosted sign-in metadata is invalid; automatic cleanup was skipped",
+      error.row,
+    );
+    return undefined;
+  }
+}
+
+/** Under the provider lock, before a later hosted URL takes its own baseline. */
+export async function settleRevokedHostedSignIn(
+  tx: Pick<Prisma.TransactionClient, "connection">,
+  connector: ManagedConnectorProvider,
+  row: HostedSignIn,
+  context: AdapterContext,
+) {
+  if (row.providerRef !== row.provider || !connector.listAccountsBeforeSignIn) return;
+  const signIn = readHostedSignIn(row);
+  if (!signIn) return false;
+  const { expiresAt, priorAccountIds } = signIn;
+  const recorded = Date.parse(expiresAt ?? "");
+  const expiry = Number.isFinite(recorded)
+    ? recorded
+    : row.updatedAt.getTime() + (connector.legacySignInLifetimeMs ?? Number.POSITIVE_INFINITY);
+  if (expiry > Date.now())
+    throw new ClientError(
+      "CONFLICT",
+      "Wait for the previous sign-in link to expire, then try again.",
+    );
+
+  if (priorAccountIds) {
+    // No later link can be issued in this scope before this snapshot is settled.
+    const prior = new Set(priorAccountIds);
+    const accounts = await connector.listAccountsBeforeSignIn(row.provider, context);
+    const added = accounts.filter((id) => !prior.has(id));
+    const candidate = added.length === 1 ? added[0] : undefined;
+    if (
+      candidate &&
+      candidate !== row.provider &&
+      !(await authorizationInUse(
+        tx,
+        {
+          ...context,
+          connectorId: row.connectorId,
+          provider: row.provider,
+        },
+        candidate,
+      ))
+    ) {
+      await connector.revoke(candidate, context);
+    }
+    if (added.length > 1)
+      getLogger().warn("A cancelled hosted sign-in left ambiguous authorizations", {
+        connectionId: row.id,
+      });
+  }
+
+  // Legacy rows have no baseline. A fresh sign-in snapshots their existing accounts.
+  await tx.connection.update({ where: { id: row.id }, data: { providerRef: null } });
+}
+
+export function hostedSignInCleanupJob(
+  payload: BackgroundJobPayloads["connection.hosted-sign-in-cleanup"],
+  availableAt: Date,
+) {
+  return {
+    name: "connection.hosted-sign-in-cleanup" as const,
+    payload,
+    availableAt,
+    maxAttempts: CONNECTION_CLEANUP_MAX_ATTEMPTS,
+    replaceKey: `connection.hosted-sign-in-cleanup:${payload.connectionId}`,
+  };
+}
+
+function cleanupContext(owner: ConnectionOwner, operationId: string): AdapterContext {
   return {
     operationId,
     traceId: operationId,
     spaceId: owner.spaceId,
     userId: owner.userId,
+    ...(owner.organizationId ? { organizationId: owner.organizationId } : {}),
     signal: AbortSignal.timeout(CONNECTION_CLEANUP_ATTEMPT_MS),
   };
 }
@@ -353,7 +466,14 @@ export async function retryConnectionCleanup(
     connectors: Pick<ConnectorRegistry, "managed">;
     jobs: Pick<JobPublisher, "enqueue">;
   },
-  payload: ConnectionCleanup,
+  payload: ConnectionCleanup &
+    Partial<
+      Pick<
+        BackgroundJobPayloads["connection.hosted-sign-in-cleanup"],
+        "connectionId" | "removeUnreferenced" | "legacyIssuedAt"
+      >
+    >,
+  directJobs?: Pick<JobPublisher, "cancelIn">,
 ): Promise<void> {
   const configured = deps.connectors.managed(payload.connectorId);
   if (!configured) {
@@ -373,13 +493,53 @@ export async function retryConnectionCleanup(
     throw new RetryJobLaterError(CONNECTION_CLEANUP_NO_CREDENTIALS_RETRY_MS, {
       cause: new Error("The connector has no credentials to remove the authorization with"),
     });
+  if (payload.legacyIssuedAt && connector.legacySignInLifetimeMs) {
+    const remaining =
+      Date.parse(payload.legacyIssuedAt) + connector.legacySignInLifetimeMs - Date.now();
+    if (remaining > 0) throw new RetryJobLaterError(remaining);
+  }
   const outcome = await whileScopeIsFree(deps.prisma, payload, async (tx) => {
     // Credentials saved between preparing them and taking the lock: the next try has the new ones.
     if (prepared.recheck && !(await prepared.recheck(tx))) return "busy" as const;
+    if (payload.removeUnreferenced)
+      return dropUnreferencedAccounts(
+        tx,
+        connector,
+        payload,
+        cleanupContext(payload, "connection.cleanup"),
+      );
+    if (payload.connectionId) {
+      const row = await tx.connection.findFirst({
+        where: {
+          ...connectionOwnerWhere(payload),
+          id: payload.connectionId,
+          connectorId: payload.connectorId,
+          provider: connectionProviderWhere(payload, payload.provider),
+          status: "revoked",
+        },
+      });
+      if (row)
+        await settleRevokedHostedSignIn(
+          tx,
+          connector,
+          row,
+          cleanupContext(payload, "connection.cleanup"),
+        );
+      return "done" as const;
+    }
     // A flow that ran since the failure may have saved this account on a row, which owns it now.
-    return dropLeftover(tx, connector, payload, cleanupContext(payload, "connection.cleanup"));
+    const result = await dropLeftover(
+      tx,
+      connector,
+      payload,
+      cleanupContext(payload, "connection.cleanup"),
+    );
+    if (result === "done" && directJobs)
+      await directJobs.cancelIn(tx, connectionCleanupJobKey(payload));
+    return result;
   });
   if (outcome === "busy") {
+    if (payload.connectionId) throw new RetryJobLaterError(CONNECTION_CLEANUP_SLOT_WAIT_MS);
     // Not a failed attempt: replacing the job under its key starts it afresh, so a scope that
     // other flows keep busy never uses up its retries.
     await deps.jobs.enqueue(connectionCleanupJob(payload, connectionCleanupRetryAt("busy")));
@@ -407,7 +567,12 @@ export function recordConnectionCleanupAttemptsExhausted(
   job: { task_identifier: string; payload: unknown; attempts: number },
   error: unknown,
 ): void {
-  if (job.task_identifier !== "connection.cleanup") return;
+  if (
+    job.task_identifier !== "connection.cleanup" &&
+    job.task_identifier !== "connection.organization-cleanup" &&
+    job.task_identifier !== "connection.hosted-sign-in-cleanup"
+  )
+    return;
   const { payload } = unwrapJobPayload(job.payload);
   getLogger().error(
     "connection cleanup gave up; remove the authorization at the provider by hand",

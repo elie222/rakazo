@@ -1,6 +1,12 @@
 import type { Locator, Page, TestInfo } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { activeBotId, captureScreenshot, completeOnboarding, signup } from "../helpers/helpers";
+import {
+  activeBotId,
+  captureScreenshot,
+  completeOnboarding,
+  expectStoredSend,
+  signup,
+} from "../helpers/helpers";
 
 /** Submit from the Send control so an in-flight prior send cannot swallow Enter. */
 async function sendComposerMessage(page: Page, composer: Locator, text: string) {
@@ -455,8 +461,15 @@ test.describe("touch message actions", () => {
     await page.keyboard.press("Escape");
     const composer = page.getByRole("combobox", { name: /^Message/ });
     await sendComposerMessage(page, composer, `touch-width-${Date.now()}`);
-    const userRow = page.locator("[data-message-id]").filter({ hasText: "touch-width-" }).first();
+    // The bot echoes the text, so only a row with a user bubble is the one sent.
+    const userRow = page
+      .locator("[data-message-id]")
+      .filter({ has: page.getByTestId("message-user-bubble") })
+      .filter({ hasText: "touch-width-" })
+      .first();
     await expect(userRow).toBeVisible({ timeout: 20_000 });
+    // The row shows before the server stores the send and is then replaced; measure the stored one.
+    await expectStoredSend(userRow);
     await expectNoTouchSideGutter(userRow.getByTestId("message-bubble-frame"));
     await rail.scrollIntoViewIfNeeded();
     await rail.getByRole("button", { name: "Reply", exact: true }).tap();

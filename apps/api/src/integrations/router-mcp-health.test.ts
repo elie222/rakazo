@@ -63,6 +63,7 @@ describe("MCP server health", () => {
           : (server as Row)[key] === value,
       );
     const prisma = {
+      space: { findUnique: async () => null },
       mcpServer: {
         findMany: vi.fn(async () => []),
         findFirst: vi.fn(async ({ where }: { where: Row }) =>
@@ -79,7 +80,7 @@ describe("MCP server health", () => {
         }),
         updateMany,
       },
-      mcpServerSpace: { findMany: vi.fn(async () => []) },
+      mcpServerSpace: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
       secret: { findFirst: vi.fn(), create: vi.fn(), deleteMany: vi.fn() },
       user: {
         findUnique: vi.fn(async () => ({ email: "owner@rakazo.test", emailVerified: true })),
@@ -893,6 +894,7 @@ describe("private API connectors", () => {
       createdAt: new Date(0),
     }));
     const prisma = {
+      space: { findUnique: async () => null },
       capabilityInstall: { create },
       $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma)),
     } as unknown as PrismaClient;

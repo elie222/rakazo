@@ -1,7 +1,11 @@
 import type { MenuAction } from "@expo/ui/community/menu";
 import { t } from "@lingui/core/macro";
 import type { OrganizationList } from "@rakazo/contracts";
-import { organizationLandingSpaceId, organizationOfSpace } from "@rakazo/core";
+import {
+  activeOrganizationForSpace,
+  organizationLandingSpaceId,
+  organizationOfSpace,
+} from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { selectedSpaceId } from "../api/api";
@@ -61,11 +65,7 @@ export function ensureOrganizations(): Promise<void> {
 
 /** The organization of the selected Space, which the server's answer may not have caught up to. */
 export function activeOrganization(list: OrganizationList | undefined): Organization | undefined {
-  if (!list) return undefined;
-  return (
-    organizationOfSpace(list.organizations, selectedSpaceId()) ??
-    list.organizations.find((organization) => organization.id === list.activeOrganizationId)
-  );
+  return activeOrganizationForSpace(list, selectedSpaceId());
 }
 
 export function refreshOrganizations(): Promise<void> {
@@ -84,7 +84,8 @@ export function refreshOrganizationReads(): Promise<void> {
       queryKey.includes("organizations/list") ||
       queryKey.includes("organizations/members/list") ||
       queryKey.includes("billing/status") ||
-      queryKey.includes("cloudComputers/list"),
+      queryKey.includes("cloudComputers/list") ||
+      queryKey.includes("models/organizationConnections/available"),
   });
 }
 

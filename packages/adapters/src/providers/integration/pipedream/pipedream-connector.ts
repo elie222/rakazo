@@ -11,6 +11,7 @@ import { readResponseWithin } from "@rakazo/core";
 import { isVitestRuntime } from "@rakazo/core/node/test-runtime";
 import { getLogger } from "@rakazo/logging";
 import { catalogToolPrefix } from "../../../approvals/approval-effect.js";
+import { accountIdentityFromResponse } from "../../../integrations/account-identity.js";
 import {
   connectorAccountRoute,
   resolveAccountToolCall,
@@ -77,7 +78,7 @@ type PipedreamApp = {
   img_src?: string;
 };
 
-type ApprovedAccount = { id: string; label: string; connectionId: string };
+type ApprovedAccount = { id: string; label: string; connectionId: string; organizationId?: string };
 
 type PipedreamAccount = {
   id: string;
@@ -108,6 +109,15 @@ function securePipedreamConnectUrl(value: string): URL {
     throw new Error("Pipedream did not return a secure HTTPS connect URL");
   }
   return url;
+}
+
+class PipedreamHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
 }
 
 export class PipedreamConnector implements ManagedConnectorProvider {
@@ -157,6 +167,13 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     await this.apps();
   }
 
+  async listConnectedRefs(context: AdapterContext): Promise<string[] | undefined> {
+    if (!context.organizationId) return undefined;
+    return (await this.accounts(context))
+      .filter((account) => account.healthy !== false && account.dead !== true)
+      .map((account) => account.id);
+  }
+
   async listConnectedExternalIds(context: AdapterContext): Promise<string[]> {
     const accounts = await this.accounts(context);
     return [
@@ -188,7 +205,12 @@ export class PipedreamConnector implements ManagedConnectorProvider {
             accounts.map(async (account) => {
               const tools = await listRemoteMcpTools({
                 endpoint: MCP_ENDPOINT,
-                headers: this.mcpHeaders(context, app, account.id, token),
+                headers: this.mcpHeaders(
+                  { ...context, organizationId: account.organizationId },
+                  app,
+                  account.id,
+                  token,
+                ),
                 signal: context.signal,
                 fetch: this.dependencies.fetch,
                 resolveHostname: this.dependencies.resolveHostname,
@@ -310,7 +332,12 @@ export class PipedreamConnector implements ManagedConnectorProvider {
       const result = await callRemoteMcpTool(
         {
           endpoint: MCP_ENDPOINT,
-          headers: this.mcpHeaders(context, app, account.id, token),
+          headers: this.mcpHeaders(
+            { ...context, organizationId: account.organizationId },
+            app,
+            account.id,
+            token,
+          ),
           signal: context.signal,
           fetch: this.dependencies.fetch,
           resolveHostname: this.dependencies.resolveHostname,
@@ -333,11 +360,19 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     }
   }
 
+  readonly legacySignInLifetimeMs = 4 * 60 * 60 * 1_000;
+
+  async listAccountsBeforeSignIn(slug: string, context: AdapterContext): Promise<string[]> {
+    return (await this.accounts(context))
+      .filter((account) => account.app?.name_slug?.toLowerCase() === slug.toLowerCase())
+      .map((account) => account.id);
+  }
+
   async begin(
     request: { provider: string; redirectUrl: string },
     context: AdapterContext,
-  ): Promise<{ authorizationUrl: string | null; state: string }> {
-    const response = await this.request<{ connect_link_url: string }>(
+  ): Promise<{ authorizationUrl: string | null; state: string; expiresAt?: string }> {
+    const response = await this.request<{ connect_link_url: string; expires_at: string }>(
       `/v1/connect/${encodeURIComponent(this.config.projectId)}/tokens`,
       {
         method: "POST",
@@ -346,13 +381,18 @@ export class PipedreamConnector implements ManagedConnectorProvider {
           success_redirect_uri: request.redirectUrl,
           error_redirect_uri: request.redirectUrl,
           scope: "connect:accounts:read connect:accounts:write",
+          ...(context.organizationId ? { expires_in: 600, app_id: request.provider } : {}),
         }),
       },
       context.signal,
     );
     const url = securePipedreamConnectUrl(response.connect_link_url);
     url.searchParams.set("app", request.provider);
-    return { authorizationUrl: url.toString(), state: request.provider };
+    return {
+      authorizationUrl: url.toString(),
+      state: request.provider,
+      ...(context.organizationId && { expiresAt: response.expires_at }),
+    };
   }
 
   async complete(request: { state: string }): Promise<{ connectionRef: string }> {
@@ -370,6 +410,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     currentRef: string | null | undefined,
     excludeIds: string[] = [],
     spaceId?: string,
+    organizationId?: string,
   ): Promise<string | undefined> {
     const excluded = new Set(excludeIds.filter(Boolean));
     const current = currentRef?.trim() || undefined;
@@ -383,6 +424,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     const context = {
       userId,
       spaceId,
+      organizationId,
       signal: AbortSignal.timeout(30_000),
     } as AdapterContext;
     const accounts = await this.accounts(context, slug);
@@ -390,7 +432,35 @@ export class PipedreamConnector implements ManagedConnectorProvider {
       .filter((account) => account.healthy !== false && account.dead !== true)
       .map((account) => account.id)
       .filter(Boolean);
-    return ids.find((id) => !excluded.has(id));
+    const available = ids.filter((id) => !excluded.has(id));
+    return available.length === 1 ? available[0] : undefined;
+  }
+
+  async connectedAccountIdentity(slug: string, ref: string, context: AdapterContext) {
+    if (slug.trim().toLowerCase() !== "gmail") return undefined;
+    const endpoint = Buffer.from("https://gmail.googleapis.com/gmail/v1/users/me/profile").toString(
+      "base64url",
+    );
+    const query = new URLSearchParams({
+      external_user_id: this.externalUserId(context),
+      account_id: ref,
+    });
+    try {
+      const profile = await this.request<unknown>(
+        `/v1/connect/${encodeURIComponent(this.config.projectId)}/proxy/${endpoint}?${query}`,
+        {},
+        context.signal,
+      );
+      const address =
+        profile && typeof profile === "object" && "emailAddress" in profile
+          ? profile.emailAddress
+          : undefined;
+      return accountIdentityFromResponse(200, address);
+    } catch (error) {
+      context.signal.throwIfAborted();
+      if (error instanceof PipedreamHttpError) return accountIdentityFromResponse(error.status);
+      throw new Error(sanitizeConnectorError(error, [this.config.clientSecret]));
+    }
   }
 
   async connectionReady(context: AdapterContext, externalId: string): Promise<boolean> {
@@ -459,7 +529,11 @@ export class PipedreamConnector implements ManagedConnectorProvider {
   /** Pipedream keys connected accounts by this stateless ID; changing it orphans them. */
   private externalUserId(context: AdapterContext): string {
     return `rkz_${createHmac("sha256", this.config.identitySecret)
-      .update(`${context.spaceId}:${context.userId}`)
+      .update(
+        context.organizationId
+          ? `organization:${context.organizationId}`
+          : `${context.spaceId}:${context.userId}`,
+      )
       .digest("hex")}`;
   }
 
@@ -548,7 +622,8 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     if (response.status === 401) this.accessToken = undefined;
     const body = await readPipedreamBody(response, requestAbort);
     if (!response.ok) {
-      throw new Error(
+      throw new PipedreamHttpError(
+        response.status,
         sanitizeConnectorError(`Pipedream returned HTTP ${response.status}: ${body}`, [token]),
       );
     }
@@ -613,7 +688,12 @@ function approvedAccounts(context: AdapterContext, app: string): ApprovedAccount
     if (connection.connectorId !== "pipedream" || connection.externalId !== app) continue;
     const ref = connection.providerRef?.trim();
     if (ref && ref !== app && !approved.has(ref)) {
-      approved.set(ref, { id: ref, label: connection.displayName, connectionId: connection.id });
+      approved.set(ref, {
+        id: ref,
+        label: connection.displayName,
+        connectionId: connection.id,
+        organizationId: connection.organizationId,
+      });
     }
   }
   return [...approved.values()];

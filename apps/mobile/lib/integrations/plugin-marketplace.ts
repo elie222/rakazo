@@ -4,12 +4,19 @@ import type {
   PluginMarketplaceEntry,
 } from "@rakazo/contracts";
 import { PluginPreviewSchema } from "@rakazo/contracts";
-import { installedPluginParts, matchesPluginQuery, pluginSite } from "@rakazo/core";
+import {
+  installedPluginParts,
+  installedPluginSelection,
+  matchesPluginQuery,
+  pluginSite,
+} from "@rakazo/core";
 
 /** What the plugin screen needs, from a catalog entry or a pasted GitHub URL. */
 export type PluginParams = {
   source: string;
   installedSource: string;
+  installId?: string;
+  organization?: "1";
   name: string;
   description?: string;
   logo?: string;
@@ -74,4 +81,12 @@ export function sourceHref(source: string, sha: string | undefined): string | nu
   const [repo = "", subdir] = source.split("#");
   if (!/^https?:\/\//i.test(repo)) return null;
   return subdir ? `${repo}/tree/${sha ?? "HEAD"}/${subdir}` : repo;
+}
+
+export function installedPluginParams(
+  install: CapabilityInstall,
+  entries: readonly PluginMarketplaceEntry[],
+): PluginParams {
+  const { organization, ...selection } = installedPluginSelection(install, entries);
+  return { ...selection, ...(organization ? { organization: "1" } : {}) };
 }

@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { AccountChatPreferencesPatch } from "@rakazo/contracts";
 import { APP_LOCALE_LABELS } from "@rakazo/core";
+import { appIconLabel } from "@rakazo/i18n/app-icon";
 import * as Notifications from "expo-notifications";
 import { useFocusEffect, useIsFocused, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -20,6 +21,7 @@ import type { MobileMe } from "../../lib/api/mobile-types";
 import { useLiveStream } from "../../lib/api/roster-signals";
 import { loadSessionToken } from "../../lib/api/session";
 import { errorText } from "../../lib/api/user-error";
+import { appIconRead } from "../../lib/appearance/app-icon";
 import {
   getCachedAppearancePreference,
   setAppearancePreference,
@@ -102,6 +104,7 @@ export default function General() {
     stale: [meRead.queryKey],
     onFailed: () => Alert.alert(t`Could not save`),
   });
+  const { data: appIcon } = useScreenQuery(appIconRead);
   const appearance = getCachedAppearancePreference();
   const enterToSend = useComposerHardwareEnterPreference();
   const chatSaveDisabled = loadingAccount || chatSave.pending;
@@ -280,6 +283,17 @@ export default function General() {
             title={t`Language`}
             value={APP_LOCALE_LABELS[locale]}
           />
+          {appIcon?.supported ? (
+            <SettingsRow
+              accessibilityRole="button"
+              accessibilityLabel={t`App icon`}
+              accessibilityValue={{ text: appIconLabel(appIcon.icon) }}
+              chevron="right"
+              onPress={() => router.push("/app-icon")}
+              title={t`App icon`}
+              value={appIconLabel(appIcon.icon)}
+            />
+          ) : null}
           <SettingsSwitch label={t`Haptics`} value={hapticsEnabled} onChange={updateHaptics} />
         </SettingsGroup>
 
