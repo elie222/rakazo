@@ -254,7 +254,8 @@ export const MessageView = memo(function MessageView({
   // Anchored below the speaker and reply line so the rail centers on the bubble itself.
   // A message with text and attachments anchors it on its first text bubble.
   const textAnchorIndex = message.blocks.findIndex((block) => block.kind === "text");
-  const hasText = textAnchorIndex !== -1;
+  const canReadAloud =
+    textAnchorIndex !== -1 || message.blocks.some((block) => block.kind === "feedback_receipt");
   const hoverAnchorIndex =
     textAnchorIndex === -1
       ? message.blocks.findIndex((block) => block.kind === "ask")
@@ -270,7 +271,7 @@ export const MessageView = memo(function MessageView({
       markedUnread={markedUnread}
       onReact={onReact}
       speech={
-        voiceReady && !isLive && hasText && message.role !== "user"
+        voiceReady && !isLive && canReadAloud && message.role !== "user"
           ? { speaking, disabled: callHoldsSpeaker && !speaking, onSpeak: () => onSpeak(message) }
           : undefined
       }

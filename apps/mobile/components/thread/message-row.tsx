@@ -14,6 +14,7 @@ import {
   isPeerReceiptBlocks,
   liveMessageComposing,
   selectableMessageText,
+  speechFromBlocks,
 } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -209,7 +210,8 @@ export const MessageRow = memo(function MessageRow({
       hasQuotableText(message.role, message.blocks);
     const includeReact = !readOnly && canReactToThreadMessage(message);
     // The call already reads replies aloud; a second voice would talk over it.
-    const includeSpeak = message.role === "bot" && !onCall && Boolean(blockText(message));
+    const includeSpeak =
+      message.role === "bot" && !onCall && Boolean(speechFromBlocks(message.blocks));
     const includeSelect = messageText.trim().length > 0;
     const includeSelectMessages = canSelectMessage(message);
     // Any sent message can be marked unread; the next open starts New at the first reply from it.
@@ -219,7 +221,10 @@ export const MessageRow = memo(function MessageRow({
     const speakMessage = () => actions.speak(message);
     const select = () =>
       actions.select(
-        message.role === "user" ? messageText : selectableTextFromMarkdown(messageText),
+        message.role === "user" ||
+          message.blocks.every((block) => block.kind === "feedback_receipt")
+          ? messageText
+          : selectableTextFromMarkdown(messageText),
       );
     const selectMessages = () => actions.startSelection(message);
     const copy = () => {

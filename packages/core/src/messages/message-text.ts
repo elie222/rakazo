@@ -8,11 +8,18 @@ export function channelMessageLine(
   return `${block.fromLabel} (${messagingProviderLabel(block.provider, block.transport)}): ${block.text}`;
 }
 
-/** The message's text exactly as written (text, ask and progress, no chrome), for selection. */
+export function feedbackReceiptText(
+  block: Extract<MessageBlock, { kind: "feedback_receipt" }>,
+): string {
+  return `${block.description}\nReceipt ${block.reportId}`;
+}
+
+/** The message text available for selection, including receipt references. */
 export function selectableMessageText(message: { blocks: readonly MessageBlock[] }): string {
   return message.blocks
     .map((block) => {
       if (block.kind === "channel_message") return channelMessageLine(block);
+      if (block.kind === "feedback_receipt") return feedbackReceiptText(block);
       if (block.kind === "text" || block.kind === "progress" || block.kind === "ask")
         return block.text;
       return "";
