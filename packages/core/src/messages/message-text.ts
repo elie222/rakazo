@@ -14,6 +14,10 @@ export function feedbackReceiptText(
   return `${block.description}\nReceipt ${block.reportId}`;
 }
 
+export function isFeedbackReceiptMessage(blocks: readonly MessageBlock[]): boolean {
+  return blocks.length > 0 && blocks.every((block) => block.kind === "feedback_receipt");
+}
+
 /** The message text available for selection, including receipt references. */
 export function selectableMessageText(message: { blocks: readonly MessageBlock[] }): string {
   return message.blocks

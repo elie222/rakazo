@@ -11,6 +11,7 @@ import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
 import {
   canMarkMessageUnread,
   copyableMessageText,
+  isFeedbackReceiptMessage,
   isPeerReceiptBlocks,
   liveMessageComposing,
   selectableMessageText,
@@ -221,8 +222,7 @@ export const MessageRow = memo(function MessageRow({
     const speakMessage = () => actions.speak(message);
     const select = () =>
       actions.select(
-        message.role === "user" ||
-          message.blocks.every((block) => block.kind === "feedback_receipt")
+        message.role === "user" || isFeedbackReceiptMessage(message.blocks)
           ? messageText
           : selectableTextFromMarkdown(messageText),
       );

@@ -6,7 +6,7 @@ import type {
 } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { answerableAskMessageIds, dismissableAskMessageIds } from "../asks/answerable-ask.js";
-import { withLiveStreamingProgress } from "../messages/events.js";
+import { projectMessages, withLiveStreamingProgress } from "../messages/events.js";
 import { prependThreadHistoryPage } from "../messages/message-pages.js";
 import type { LiveThreadMessage, LiveThreadSnapshot } from "./thread-snapshot-events.js";
 import {
@@ -370,6 +370,41 @@ describe("thread event reduction", () => {
         blocks: [{ kind: "text", text: "Lisbon" }],
       }),
     ]);
+  });
+
+  it("keeps streamed text when a feedback receipt arrives mid-reply", () => {
+    const receipt = {
+      kind: "feedback_receipt",
+      reportKind: "bug",
+      reportId: "report-1",
+      description: "The preview stayed blank.",
+    } as const;
+    const before = event({
+      type: "thread.progress",
+      seq: 4,
+      runId: "run-1",
+      payload: { text: "I filed ", streaming: true },
+    });
+    const submitted = event({
+      type: "thread.message.created",
+      seq: 5,
+      runId: "run-1",
+      payload: { messageId: "receipt", role: "bot", blocks: [receipt] },
+    });
+    const after = event({
+      type: "thread.progress",
+      seq: 6,
+      runId: "run-1",
+      payload: { delta: "the report.", streaming: true },
+    });
+    const received = reduceThreadSnapshot(reduceThreadSnapshot(snapshot([]), before), submitted);
+    expect(received?.messages.map((message) => message.id)).toEqual(["receipt", "progress:run-1"]);
+    const expected = [
+      { id: "receipt", blocks: [receipt] },
+      { id: "progress:run-1", blocks: [{ kind: "progress", text: "I filed the report." }] },
+    ];
+    expect(reduceThreadSnapshot(received, after)?.messages).toMatchObject(expected);
+    expect(projectMessages([before, submitted, after])).toMatchObject(expected);
   });
 
   it("resumes from retained tokens after streaming is turned back on mid-reply", () => {

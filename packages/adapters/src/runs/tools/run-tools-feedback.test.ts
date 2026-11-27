@@ -1,16 +1,16 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { sanitizeUtf16ForJson, toolRequiresApproval, toolResultTaintsRun } from "@rakazo/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { selectBuiltinToolsForRun } from "./run-tool-selection.js";
 import { FEEDBACK_REPORTS_PER_HOUR, feedbackTools } from "./run-tools-feedback.js";
 
 type Report = Record<string, unknown> & { userId: string; createdAt: Date };
 
-function fakeRun(existing: Report[] = []) {
+function fakeRun(existing: Report[] = [], trigger = "user") {
   const reports = [...existing];
   const messages: MessageBlock[][] = [];
   const tx = {
-    $executeRaw: async () => 1,
+    $executeRaw: vi.fn(async () => 1),
     $queryRaw: async () => [],
     thread: {
       update: async () => ({ nextMessageSeq: 2, nextEventSeq: 2, spaceId: "space-1" }),
@@ -51,6 +51,7 @@ function fakeRun(existing: Report[] = []) {
       spaceId: "space-1",
       botId: "bot-1",
       threadId: "thread-1",
+      trigger,
     },
     secrets: ["sk-test-secret"],
   };
@@ -64,7 +65,7 @@ function fakeRun(existing: Report[] = []) {
         finish: async (result: unknown) => result,
       } as never,
     );
-  return { reports, call, messages };
+  return { reports, call, messages, markUnread: tx.$executeRaw };
 }
 
 describe("feedback", () => {
@@ -134,6 +135,22 @@ describe("feedback", () => {
   it("asks for approval and does not taint the run", () => {
     expect(toolRequiresApproval("feedback", false)).toBe(true);
     expect(toolResultTaintsRun("feedback")).toBe(false);
+  });
+
+  it("stores background feedback without posting a hidden chat receipt", async () => {
+    const { call, messages } = fakeRun([], "tickets");
+    await expect(call({ kind: "bug", description: "The preview stayed blank." })).resolves.toEqual({
+      sent: true,
+      id: "report-1",
+    });
+    expect(messages).toEqual([]);
+  });
+
+  it("does not mark the chat unread for a peer-run receipt", async () => {
+    const { call, messages, markUnread } = fakeRun([], "bot_message");
+    await call({ kind: "bug", description: "The preview stayed blank." });
+    expect(messages).toHaveLength(1);
+    expect(markUnread).not.toHaveBeenCalled();
   });
 
   it("is offered only on runs the user started, routines included", () => {

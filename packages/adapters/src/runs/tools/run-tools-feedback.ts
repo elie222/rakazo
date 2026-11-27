@@ -1,5 +1,5 @@
 import { FEEDBACK_DESCRIPTION_MAX_LENGTH, FEEDBACK_KINDS } from "@rakazo/contracts";
-import { redactSecrets } from "@rakazo/core";
+import { isBackgroundRunTrigger, redactSecrets } from "@rakazo/core";
 import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { z } from "zod";
@@ -47,6 +47,7 @@ async function sendFeedback(ctx: RunContext, call: ToolCall) {
         },
         select: { id: true, description: true },
       });
+      if (isBackgroundRunTrigger(run.trigger)) return { id: report.id, receipt: null };
       const receipt = await persistMessageInTransaction(
         tx,
         run,
@@ -59,18 +60,23 @@ async function sendFeedback(ctx: RunContext, call: ToolCall) {
             description: report.description,
           },
         ],
-        undefined,
+        run.trigger === "bot_message" ? false : undefined,
         undefined,
         false,
         runLeaseFor(deps, run.id),
       );
-      return { id: report.id, ...receipt };
+      return { id: report.id, receipt };
     }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
-  await bestEffort(
-    "notify feedback receipt",
-    deps.events.notify(run.threadId, committed.eventSeq, committed.firstResponseRunId),
-  );
+  if (committed.receipt)
+    await bestEffort(
+      "notify feedback receipt",
+      deps.events.notify(
+        run.threadId,
+        committed.receipt.eventSeq,
+        committed.receipt.firstResponseRunId,
+      ),
+    );
   return call.finish({ sent: true, id: committed.id });
 }
 
