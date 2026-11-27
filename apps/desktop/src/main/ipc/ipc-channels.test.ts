@@ -43,6 +43,57 @@ function handledChannels() {
     .sort();
 }
 
+/**
+ * Signals a preload listens for. The channel map lists calls only, so a signal name is agreed by
+ * two files that cannot import each other: the preload that subscribes and the main process that
+ * sends. A typo on either side leaves the feature waiting for a message that never arrives.
+ */
+function preloadSignals() {
+  const signals: string[] = [];
+  for (const file of new Set(Object.values(PRELOADS))) {
+    const source = readFileSync(path.join(srcDir, file), "utf8");
+    for (const match of source.matchAll(/\b(?:ipcRenderer\.on|subscribe)\(\s*(["'`])([^"'`]+)\1/g))
+      signals.push(match[2] ?? "");
+    // A listener given a variable would escape the check, so the only one allowed to take one is
+    // the `subscribe` helper's own call.
+    const named = (source.match(/\bipcRenderer\.on\(\s*["'`]/g) ?? []).length;
+    const all = (source.match(/\bipcRenderer\.on\(/g) ?? []).length;
+    expect(
+      all - named,
+      `${file} must name every listener except its own helper`,
+    ).toBeLessThanOrEqual(1);
+  }
+  return signals;
+}
+
+/** Every source file of the main process, where a signal name may be a literal or a constant. */
+function mainSource() {
+  return readdirSync(mainDir, { recursive: true, encoding: "utf8" })
+    .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
+    .map((file) => readFileSync(path.join(mainDir, file), "utf8"))
+    .join("\n");
+}
+
+/**
+ * Signals the main process actually sends. A send names its channel either directly or through a
+ * constant, and only a send counts: the name surviving in a listener or a comment would leave the
+ * preload waiting just the same.
+ */
+function sentSignals() {
+  const source = mainSource();
+  const constants = new Map<string, string>();
+  for (const match of source.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*(["'`])([^"'`]+)\2/g))
+    if (match[1] && match[3]) constants.set(match[1], match[3]);
+  const sent = new Set<string>();
+  for (const match of source.matchAll(/\.send\(\s*(?:(["'`])([^"'`]+)\1|([A-Za-z_$][\w$]*))/g)) {
+    const literal = match[2];
+    const identifier = match[3];
+    if (literal) sent.add(literal);
+    else if (identifier && constants.has(identifier)) sent.add(constants.get(identifier)!);
+  }
+  return sent;
+}
+
 describe("desktop IPC channels", () => {
   it("handles every channel in the map exactly once", () => {
     expect(handledChannels()).toEqual(channels.map(([name]) => name).sort());
@@ -62,4 +113,14 @@ describe("desktop IPC channels", () => {
       expect(preloadChannels(file, "sendSync")).toEqual(mapped(true));
     },
   );
+
+  it("sends every signal a preload listens for from the main process", () => {
+    const signals = [...new Set(preloadSignals())].sort();
+    expect(signals.length, "no preload signal was found; update this check").toBeGreaterThan(0);
+    const sent = sentSignals();
+    expect(
+      signals.filter((signal) => !sent.has(signal)),
+      "a preload listens for a signal the main process never sends",
+    ).toEqual([]);
+  });
 });
