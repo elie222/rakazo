@@ -1491,4 +1491,18 @@ describe("tool step outcomes", () => {
       expect(out).toContain('{"ok":true}');
     }
   });
+
+  it("preserves container JSON lines after a credential key with an empty value", () => {
+    const kept = (text: string) =>
+      keptToolResult({ ...base, result: { content: [{ type: "text", text }] } }, []);
+    const replay = (text: string) =>
+      bounded(text, TOOL_CALL_SAVED_TEXT_MAX_CHARS, [], { replaySaved: true });
+    const failed = (text: string) => keptToolResult({ ...base, error: new Error(text) }, []);
+    const emptyKey = 'password:\n{"ok":true}';
+    const chainedKey = 'client_id=abc\nclient_secret=\n{"access_token":"opaque-123"}';
+    for (const read of [kept, replay, failed, sanitizeError]) {
+      expect(read(emptyKey)).toBe(emptyKey);
+      expect(read(chainedKey)).toBe('client_id=abc\nclient_secret=\n{"access_token":"[redacted]"}');
+    }
+  });
 });
