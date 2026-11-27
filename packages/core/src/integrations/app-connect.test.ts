@@ -18,9 +18,14 @@ const entry: ConnectionCatalogItem = {
   noAuth: false,
 };
 describe("inline app cards", () => {
-  it("uses the app's description when its catalog display name matches", () => {
-    const card = appConnectCard({ ...entry, slug: "SCREENSHOTONE_MCP", name: "ScreenshotOne" });
-    expect(card.description).toBe("Capture screenshots of webpages.");
+  it("uses a catalog description for an app without curated copy", () => {
+    const card = appConnectCard({
+      ...entry,
+      slug: "example-drive",
+      name: "Example Drive",
+      description: "  Organize your files.\nSearch folders.  ",
+    });
+    expect(card.description).toBe("Organize your files. Search folders.");
   });
   it("reads a card that names no connector as the default the caller gives", () => {
     const { connectorId: _omitted, ...unnamed } = appConnectCard(entry);

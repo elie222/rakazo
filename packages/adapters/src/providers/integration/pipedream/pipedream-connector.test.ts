@@ -372,7 +372,14 @@ describe("PipedreamConnector", () => {
         }
         if (url.includes("/v1/connect/apps?")) {
           return Response.json({
-            data: [{ id: "app-1", name_slug: "gmail", name: "Gmail" }],
+            data: [
+              {
+                id: "app-1",
+                name_slug: "gmail",
+                name: "Gmail",
+                description: "Read and send email.",
+              },
+            ],
             page_info: {},
           });
         }
@@ -406,6 +413,7 @@ describe("PipedreamConnector", () => {
       expect.objectContaining({
         connectorId: "pipedream",
         slug: "gmail",
+        description: "Read and send email.",
         connected: true,
       }),
     ]);

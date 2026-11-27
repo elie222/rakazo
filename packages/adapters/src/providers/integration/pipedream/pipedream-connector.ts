@@ -75,6 +75,7 @@ type PipedreamApp = {
   id: string;
   name_slug: string;
   name: string;
+  description?: string;
   img_src?: string;
 };
 
@@ -151,6 +152,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
         connectorId: "pipedream",
         slug: app.name_slug,
         name: app.name,
+        ...(app.description ? { description: app.description } : {}),
         logo: app.img_src ?? null,
         connected: connectedSet.has(app.name_slug),
         noAuth: false,

@@ -292,6 +292,7 @@ export class FakeComposioClient implements ComposioClient {
     get: async () =>
       this.directory.map((entry) => ({
         slug: entry.slug,
+        meta: { description: entry.description },
         noAuth: entry.noAuth,
         composioManagedAuthSchemes: entry.needsSignInSetup || entry.noAuth ? [] : ["OAUTH2"],
       })),

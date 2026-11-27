@@ -163,6 +163,21 @@ describe("ComposioConnector over the fake Composio client", () => {
     ]);
   });
 
+  it("carries toolkit metadata descriptions into the app catalog", async () => {
+    const client = new FakeComposioClient([
+      {
+        slug: "EXAMPLE_MCP",
+        name: "Example",
+        description: "Organize your files.",
+        logo: null,
+        noAuth: false,
+      },
+    ]);
+    await expect(new ComposioConnector({ client }).catalog(context())).resolves.toEqual([
+      expect.objectContaining({ slug: "EXAMPLE_MCP", description: "Organize your files." }),
+    ]);
+  });
+
   it("hides apps nobody can sign in to until the project sets up their auth", async () => {
     const fake = new FakeComposioClient([
       { slug: "GMAIL", name: "Gmail", logo: null, noAuth: false },
