@@ -1,27 +1,39 @@
 import { redactJsonStringsAndPlainText, redactSecrets, sliceWellFormed } from "@rakazo/core";
 
+const ci = (word: string) =>
+  word.replace(/[a-z]/gi, (ch) => `[${ch.toLowerCase()}${ch.toUpperCase()}]`);
+const BEARER_CI = ci("bearer");
+const CREDENTIAL_KEY_CI = `(?:${ci("api")}[_-]?${ci("key")}|${ci("access")}[_-]?${ci("token")}|${ci("password")}|${ci("secret")}|${ci("authorization")}|${ci("auth")})`;
+
 const CONNECTOR_JSON_CONTAINER_START =
   /(?:\{\s*(?:["}]|$)|\[\s*(?:["{[\]]|(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)(?=[\s,\]]|$)))/;
 const CONNECTOR_RAW_JSON_CONTAINER_START =
   /(?:\{(?:\s|\\[nrt])*(?:\\*"|\}|$)|\[(?:\s|\\[nrt])*(?:\\*"|[{[\]]|(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)(?=\s|\\[nrt]|[,\]$])))/;
 const CONNECTOR_DECODED_DEFERRED_BEARER_FOLLOWS = new RegExp(
-  `Bearer(?:[^\\S\\r\\n]+(?!(?:\\s|\\S*Bearer\\s+\\S))\\S|\\s+(?!(?:\\s|${CONNECTOR_JSON_CONTAINER_START.source}|\\S*Bearer\\s+\\S))\\S)`,
+  `${BEARER_CI}(?:[^\\S\\r\\n]+(?!(?:\\s|\\S*${BEARER_CI}\\s+\\S))\\S|\\s+(?!(?:\\s|${CONNECTOR_JSON_CONTAINER_START.source}|\\S*${BEARER_CI}\\s+\\S))\\S)`,
 );
 const CONNECTOR_DECODED_BEARER_RE = new RegExp(
-  `Bearer\\s+(?!${CONNECTOR_DECODED_DEFERRED_BEARER_FOLLOWS.source})\\S+`,
-  "gi",
+  `${BEARER_CI}\\s+(?!${CONNECTOR_DECODED_DEFERRED_BEARER_FOLLOWS.source})(?!:${BEARER_CI}\\s)\\S(?:(?!:?${BEARER_CI}\\s)\\S)*`,
+  "g",
 );
 const CONNECTOR_PLAIN_DEFERRED_BEARER_FOLLOWS = new RegExp(
-  `Bearer(?:[^\\S\\r\\n]+(?!(?:\\s|\\\\[nrt]|\\S*Bearer(?:\\s|\\\\[nrt])+\\S))\\S|\\s+(?!(?:\\s|\\\\[nrt]|${CONNECTOR_JSON_CONTAINER_START.source}|\\S*Bearer(?:\\s|\\\\[nrt])+\\S))\\S|\\s*\\\\[nrt](?:\\s|\\\\[nrt])*(?!(?:\\s|\\\\[nrt]|${CONNECTOR_RAW_JSON_CONTAINER_START.source}|\\S*Bearer(?:\\s|\\\\[nrt])+\\S))(?:\\\\"|["']|\\\\(?![nrt"\\\\])|[^\\s"',;&}:\\]\\\\]))`,
+  `${BEARER_CI}(?:[^\\S\\r\\n]+(?!(?:\\s|\\\\[nrt]|\\S*${BEARER_CI}(?:\\s|\\\\[nrt])+\\S))\\S|\\s+(?!(?:\\s|\\\\[nrt]|${CONNECTOR_JSON_CONTAINER_START.source}|\\S*${BEARER_CI}(?:\\s|\\\\[nrt])+\\S))\\S|\\s*\\\\[nrt](?:\\s|\\\\[nrt])*(?!(?:\\s|\\\\[nrt]|${CONNECTOR_RAW_JSON_CONTAINER_START.source}|\\S*${BEARER_CI}(?:\\s|\\\\[nrt])+\\S))(?:\\\\"|["']|\\\\(?![nrt"\\\\])|[^\\s"',;&}:\\]\\\\]))`,
+);
+const CONNECTOR_ESCAPED_WS_BOUNDARY = new RegExp(
+  `(?:\\\\[nrt])+(?=(?:$|\\s|["',;&}\\]]|:?${BEARER_CI}(?:\\s|\\\\[nrt])|:?${CONNECTOR_RAW_JSON_CONTAINER_START.source}))`,
 );
 const CONNECTOR_PLAIN_BOUNDARY_AFTER_REDACTED = new RegExp(
-  `(?=(?:$|\\s|["',;&}\\]]|\\\\[nrt"\\\\]|:?Bearer(?:\\s|\\\\[nrt])|:?${CONNECTOR_RAW_JSON_CONTAINER_START.source}))`,
+  `(?=(?:$|\\s|["',;&}\\]]|${CONNECTOR_ESCAPED_WS_BOUNDARY.source}|\\\\(?:\\\\\\\\)*"(?=$|\\s|[:,}\\]\\r\\n])|:?${BEARER_CI}(?:\\s|\\\\[nrt])|:?${CONNECTOR_RAW_JSON_CONTAINER_START.source}))`,
 );
 const CONNECTOR_ADJACENT_CREDENTIAL_START = new RegExp(
-  `(?:Bearer(?:\\s|\\\\[nrt])|(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\\s*[=:](?:\\s|\\\\[nrt])*(?:\\[redacted\\]|["']\\[redacted\\]["']|\\\\(?:\\\\\\\\)*"\\[redacted\\]\\\\(?:\\\\\\\\)*")${CONNECTOR_PLAIN_BOUNDARY_AFTER_REDACTED.source})`,
+  `(?:${BEARER_CI}(?:\\s|\\\\[nrt])|${CREDENTIAL_KEY_CI}\\s*[=:](?:\\s|\\\\[nrt])*(?:\\[redacted\\]|["']\\[redacted\\]["']|\\\\(?:\\\\\\\\)*"\\[redacted\\]\\\\(?:\\\\\\\\)*")${CONNECTOR_PLAIN_BOUNDARY_AFTER_REDACTED.source})`,
 );
-const CONNECTOR_RAW_UNIT =
-  /(?:[=:](?:\\"(?!\s*[:,}\]\r\n]|$)(?:\\[^"\r\n]|[^"\\\r\n])+(?:\\")?|"(?!\s*[:,}\]\r\n]|$)(?:\\[^\r\n]|[^"\\\r\n])+"?|'(?!\s*[:,}\]\r\n]|$)(?:\\[^\r\n]|[^'"\\\r\n])+'?)|=|:(?!\s|$|["']|\\")|\[redacted\]|\[(?!redacted\])|\\(?![nrt"\\])|[^\s"',;&}=:\]\\[])/;
+const CONNECTOR_NON_BOUNDARY_ESCAPED_WS = new RegExp(
+  `(?:\\\\[nrt])+(?!(?:\\\\[nrt]|\\s|["',;&}\\]]|$|:?${BEARER_CI}(?:\\s|\\\\[nrt])|:?${CONNECTOR_RAW_JSON_CONTAINER_START.source}))`,
+);
+const CONNECTOR_RAW_UNIT = new RegExp(
+  `(?:[=:](?:\\\\"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\")?|"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+"?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'"\\\\\\r\\n])+'?)|=|:(?!\\s|$|["']|\\\\")|\\[redacted\\]|\\[(?!redacted\\])|${CONNECTOR_NON_BOUNDARY_ESCAPED_WS.source}|\\\\(?![nrt"])|[^\\s"',;&}=:\\]\\\\[])`,
+);
 const CONNECTOR_SUFFIX_STOP = new RegExp(
   `(?:${CONNECTOR_ADJACENT_CREDENTIAL_START.source}|${CONNECTOR_RAW_JSON_CONTAINER_START.source})`,
 );
@@ -29,17 +41,20 @@ const CONNECTOR_SUFFIX_UNIT = new RegExp(
   `(?:(?!:?${CONNECTOR_SUFFIX_STOP.source})${CONNECTOR_RAW_UNIT.source})`,
 );
 const CONNECTOR_PLAIN_BEARER_RE = new RegExp(
-  `Bearer\\s+(?!${CONNECTOR_PLAIN_DEFERRED_BEARER_FOLLOWS.source}|\\[redacted\\](?!${CONNECTOR_SUFFIX_UNIT.source}))(?:\\\\"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"${CONNECTOR_SUFFIX_UNIT.source}*)?|"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${CONNECTOR_SUFFIX_UNIT.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'"\\\\\\r\\n])+(?:'${CONNECTOR_SUFFIX_UNIT.source}*)?|\\[redacted\\]${CONNECTOR_SUFFIX_UNIT.source}+|(?!:Bearer(?:\\s|\\\\[nrt]))${CONNECTOR_RAW_UNIT.source}(?:(?!:?Bearer(?:\\s|\\\\[nrt]))${CONNECTOR_RAW_UNIT.source})*)`,
-  "gi",
+  `${BEARER_CI}\\s+(?!${CONNECTOR_PLAIN_DEFERRED_BEARER_FOLLOWS.source}|\\[redacted\\](?!${CONNECTOR_SUFFIX_UNIT.source}))(?:\\\\"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"${CONNECTOR_SUFFIX_UNIT.source}*)?|"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${CONNECTOR_SUFFIX_UNIT.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'"\\\\\\r\\n])+(?:'${CONNECTOR_SUFFIX_UNIT.source}*)?|\\[redacted\\]${CONNECTOR_SUFFIX_UNIT.source}+|(?!:${BEARER_CI}(?:\\s|\\\\[nrt]))${CONNECTOR_RAW_UNIT.source}(?:(?!:?${BEARER_CI}(?:\\s|\\\\[nrt]))${CONNECTOR_RAW_UNIT.source})*)`,
+  "g",
 );
-const CONNECTOR_ESCAPED_WS_BEARER_RE = /Bearer\s*\\[nrt](?:\s|\\[nrt])*/gi;
-const CONNECTOR_ESCAPED_BEARER_NEXT_STICKY = /:?Bearer(?:\s|\\[nrt])+/iy;
+const CONNECTOR_ESCAPED_WS_BEARER_RE = new RegExp(
+  `${BEARER_CI}\\s*\\\\[nrt](?:\\s|\\\\[nrt])*`,
+  "g",
+);
+const CONNECTOR_ESCAPED_BEARER_NEXT_STICKY = new RegExp(`:?${BEARER_CI}(?:\\s|\\\\[nrt])+`, "y");
 const CONNECTOR_RAW_JSON_CONTAINER_STICKY = new RegExp(
   CONNECTOR_RAW_JSON_CONTAINER_START.source,
   "y",
 );
-const CONNECTOR_RAW_UNIT_STICKY = new RegExp(CONNECTOR_RAW_UNIT.source, "iy");
-const CONNECTOR_SUFFIX_UNIT_STICKY = new RegExp(CONNECTOR_SUFFIX_UNIT.source, "iy");
+const CONNECTOR_RAW_UNIT_STICKY = new RegExp(CONNECTOR_RAW_UNIT.source, "y");
+const CONNECTOR_SUFFIX_UNIT_STICKY = new RegExp(CONNECTOR_SUFFIX_UNIT.source, "y");
 
 function consumeConnectorSuffix(text: string, from: number): number {
   let cur = from;
