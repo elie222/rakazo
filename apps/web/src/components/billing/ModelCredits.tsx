@@ -18,7 +18,7 @@ import {
   formatBillingDate,
   formatBillingPrice,
 } from "@rakazo/i18n/billing";
-import { tierComputerDescription, tierComputerSummary } from "@rakazo/i18n/computer-usage";
+import { tierComputerDescription } from "@rakazo/i18n/computer-usage";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,12 +34,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
 } from "@rakazo/ui-web";
 import { RefreshCw } from "lucide-react";
 import { useState } from "react";
@@ -49,75 +43,9 @@ import type { RpcClient } from "../../lib/query/rpc";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { ComputerUsage } from "./ComputerUsage";
 import type { CreditAmount } from "./PlanControls";
-import { ByokIntervalToggle, CreditAmountSelect } from "./PlanControls";
+import { ByokIntervalToggle, ByokTierSelect, CreditAmountSelect } from "./PlanControls";
 
 type TierOffer = NonNullable<BillingStatus["byokTiers"]>[number];
-
-/** The own-key plan's tiers at `interval`, each with its price and computer. */
-function ByokTierSelect({
-  tiers,
-  interval,
-  value,
-  disabled,
-  onChange,
-}: {
-  tiers: TierOffer[];
-  interval: ByokInterval;
-  value: ByokTier;
-  disabled?: boolean;
-  onChange: (offer: TierOffer) => void;
-}) {
-  const { t, i18n } = useLingui();
-  const offered = tiers.flatMap((offer) => {
-    const cents = tierPriceCents(offer, interval);
-    return cents === null
-      ? []
-      : [
-          {
-            offer,
-            price: formatBillingPrice(
-              { amount: cents, currency: "usd", interval, intervalCount: 1 },
-              i18n.locale,
-            ),
-          },
-        ];
-  });
-  return (
-    <Select
-      value={value}
-      disabled={disabled}
-      onValueChange={(next) => {
-        const chosen = offered.find(({ offer }) => offer.tier === next);
-        if (chosen) onChange(chosen.offer);
-      }}
-      items={offered.map(({ offer }) => ({ value: offer.tier, label: offer.name }))}
-    >
-      <SelectTrigger aria-label={t`Plan`} className="min-w-28">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent
-        alignItemWithTrigger={false}
-        align="start"
-        className="w-auto min-w-(--anchor-width)"
-      >
-        <SelectGroup>
-          {offered.map(({ offer, price }) => (
-            <SelectItem key={offer.tier} value={offer.tier} className="py-2">
-              <span className="flex flex-col gap-0.5">
-                <span>
-                  {offer.name} · {price}
-                </span>
-                <span className="text-label text-muted-foreground">
-                  {tierComputerSummary(offer)}
-                </span>
-              </span>
-            </SelectItem>
-          ))}
-        </SelectGroup>
-      </SelectContent>
-    </Select>
-  );
-}
 
 /** The free period's subscribe button, at the chosen tier and interval. */
 function SubscribeLabel({ price, annualPrice }: { price: string; annualPrice: string | null }) {
