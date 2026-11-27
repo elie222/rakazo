@@ -19,6 +19,8 @@ export type ClientErrorKind =
 export class ClientError extends Error {
   /** What a client switches on: the kind, unless the refusal has a narrower stable code. */
   readonly code: string;
+  /** Detail a client reads next to the code. The API sends it as the error's `data`. */
+  declare data: unknown;
 
   constructor(
     readonly kind: ClientErrorKind,

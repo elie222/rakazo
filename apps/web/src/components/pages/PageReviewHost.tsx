@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { PageReview, PageSectionAnchor } from "@rakazo/contracts";
-import { pageReviewPath } from "@rakazo/contracts";
+import { PAGE_REVISION_NOT_FOUND, pageReviewPath, pageRevisionFloor } from "@rakazo/contracts";
 import type { PageCommentSubmission, PageReviewSections } from "@rakazo/core";
 import { pageReviewContent } from "@rakazo/core";
 import {
@@ -14,7 +14,7 @@ import {
   PopoverTrigger,
   Spinner,
 } from "@rakazo/ui-web";
-import type { QueryClient } from "@tanstack/react-query";
+import type { Query, QueryClient } from "@tanstack/react-query";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageSquare } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
@@ -35,24 +35,110 @@ import {
 } from "./PageReviewComments";
 import { PageView } from "./PageView";
 
-function isNotFoundError(error: unknown): boolean {
-  if (errorCode(error) === "NOT_FOUND") return true;
-  const status = error && typeof error === "object" && "status" in error ? error.status : undefined;
-  return status === 404;
-}
-
 function isUnavailablePageError(error: unknown): boolean {
   const code = errorCode(error);
-  if (code === "NOT_FOUND" || code === "FORBIDDEN" || code === "UNAUTHORIZED") return true;
+  if (
+    code === "NOT_FOUND" ||
+    code === PAGE_REVISION_NOT_FOUND ||
+    code === "FORBIDDEN" ||
+    code === "UNAUTHORIZED"
+  )
+    return true;
   const status = error && typeof error === "object" && "status" in error ? error.status : undefined;
   return status === 401 || status === 403 || status === 404;
 }
 
-function isSameReviewerPageReviewQuery(
+/**
+ * Whether a cached payload is a revision the reviewer may no longer read: one below the lowest
+ * revision the server just confirmed readable, or one whose revision is unknown.
+ */
+function isUnreadable(payload: unknown, floor: number): boolean {
+  if (payload === undefined || payload === null) return false;
+  return !(
+    typeof payload === "object" &&
+    "version" in payload &&
+    typeof payload.version === "number" &&
+    payload.version >= floor
+  );
+}
+
+/**
+ * Stops these queries' reads in flight and restores nothing. A query whose last view unmounts while
+ * it reads gets back the state from before that read, which would undo what is cleared next.
+ */
+function stopReads(queryClient: QueryClient, queries: Query[]): Promise<void> {
+  return queryClient.cancelQueries(
+    { predicate: (query) => queries.includes(query) },
+    { revert: false, silent: true },
+  );
+}
+
+/** Pages shared with the reviewer as the list query caches them. */
+type SharedPageList = {
+  pages: Array<{ items: Array<{ id: string; title: string }> }>;
+};
+
+/** Whether a value is a list of objects. */
+function isObjectList(value: unknown): value is object[] {
+  return (
+    Array.isArray(value) && value.every((entry) => typeof entry === "object" && entry !== null)
+  );
+}
+
+/** Whether a cached payload is shaped as the list query stores it. Anything else is dropped whole. */
+function isSharedPageList(payload: unknown): payload is SharedPageList {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    "pages" in payload &&
+    isObjectList(payload.pages) &&
+    payload.pages.every((page) => "items" in page && isObjectList(page.items))
+  );
+}
+
+/** The list with one page under another title, or without the page when it has none to keep. */
+function withPageTitle(list: SharedPageList, pageId: string, title: string | undefined) {
+  return {
+    ...list,
+    pages: list.pages.map((page) => ({
+      ...page,
+      items: page.items.flatMap((item) => {
+        if (item.id !== pageId) return [item];
+        return title === undefined ? [] : [{ ...item, title }];
+      }),
+    })),
+  };
+}
+
+/**
+ * The title of the newest revision still cached for a page. Of two reads at the same revision, the
+ * one updated last gives the title: a page renamed without a new revision keeps its number.
+ */
+function newestCachedTitle(queries: Query[]): string | undefined {
+  let version = -1;
+  let updatedAt = -1;
+  let title: string | undefined;
+  for (const { state } of queries) {
+    const cached = state.data as PageReview | undefined;
+    if (!cached) continue;
+    if (
+      cached.version > version ||
+      (cached.version === version && state.dataUpdatedAt >= updatedAt)
+    ) {
+      version = cached.version;
+      updatedAt = state.dataUpdatedAt;
+      title = cached.title;
+    }
+  }
+  return title;
+}
+
+/** A cached `pageReviews.<procedure>` read of one reviewer in any Space, of one page when named. */
+function isReviewerPageQuery(
   queryKey: readonly unknown[],
   userSegment: unknown,
-  pageId: string,
-  versionFilter?: { version: number | undefined },
+  procedure: "get" | "comments" | "list",
+  pageId?: string,
 ): boolean {
   const path = queryKey[0];
   if (
@@ -63,18 +149,29 @@ function isSameReviewerPageReviewQuery(
     typeof path[1] !== "string" ||
     !path[1].startsWith("space:") ||
     path[2] !== "pageReviews" ||
-    path[3] !== "get"
+    path[3] !== procedure
   ) {
     return false;
   }
+  if (pageId === undefined) return true;
   const options = queryKey[1];
   if (!options || typeof options !== "object" || !("input" in options)) return false;
   const input = (options as { input?: unknown }).input;
-  if (!input || typeof input !== "object" || (input as { pageId?: unknown }).pageId !== pageId) {
-    return false;
-  }
+  return Boolean(
+    input && typeof input === "object" && (input as { pageId?: unknown }).pageId === pageId,
+  );
+}
+
+function isSameReviewerPageReviewQuery(
+  queryKey: readonly unknown[],
+  userSegment: unknown,
+  pageId: string,
+  versionFilter?: { version: number | undefined },
+): boolean {
+  if (!isReviewerPageQuery(queryKey, userSegment, "get", pageId)) return false;
   if (!versionFilter) return true;
-  return (input as { version?: unknown }).version === versionFilter.version;
+  const input = (queryKey[1] as { input: { version?: unknown } }).input;
+  return input.version === versionFilter.version;
 }
 
 type PageDenialRecord = {
@@ -185,7 +282,16 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
           : undefined;
       const matchingQueries = () =>
         queryClient.getQueryCache().findAll({
-          predicate: (query) => isSameReviewerPageReviewQuery(query.queryKey, userSegment, pageId),
+          predicate: (query) => isReviewerPageQuery(query.queryKey, userSegment, "get", pageId),
+        });
+      const matchingComments = () =>
+        queryClient.getQueryCache().findAll({
+          predicate: (query) =>
+            isReviewerPageQuery(query.queryKey, userSegment, "comments", pageId),
+        });
+      const sharedPageLists = () =>
+        queryClient.getQueryCache().findAll({
+          predicate: (query) => isReviewerPageQuery(query.queryKey, userSegment, "list"),
         });
       const denialKey = pageDenialKey(userSegment, pageId);
       const revisionDenialKey =
@@ -199,16 +305,28 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
           fetched = await read.queryFn!(context);
         } catch (error) {
           if (isUnavailablePageError(error)) {
-            if (revisionDenialKey !== undefined && isNotFoundError(error)) {
-              // A 404 on an explicit historical revision can mean that revision predates the
-              // reviewer's grant while the latest revision remains accessible. Clear only the
-              // denied revision and invalidate siblings so accessible views stay visible and
-              // revalidate against the server.
+            const floor = pageRevisionFloor(error);
+            const revisionOnly = revisionDenialKey !== undefined && floor !== undefined;
+            const comments = matchingComments();
+            const lists = sharedPageLists();
+            await stopReads(queryClient, [...comments, ...lists]);
+            // The cached comments can hold revisions the reviewer may no longer read, whatever the
+            // refusal says about the page itself, so they never outlive a refusal.
+            for (const query of comments) {
+              query.setState({ data: undefined, dataUpdatedAt: 0, fetchStatus: "idle" });
+            }
+            if (revisionOnly) {
+              // Only the server's own answer for an unreadable revision, given after it checked the
+              // page is still readable, spares the other revisions: it names the lowest one the
+              // reviewer may still read. Drop the refused revision and every cached payload below
+              // that floor, whichever key it is stored under, and invalidate the rest so accessible
+              // views revalidate against the server.
               recordPageDenial(queryClient, revisionDenialKey, spaceSegment, error);
               for (const query of matchingQueries()) {
-                if (
-                  isSameReviewerPageReviewQuery(query.queryKey, userSegment, pageId, { version })
-                ) {
+                const refused = isSameReviewerPageReviewQuery(query.queryKey, userSegment, pageId, {
+                  version,
+                });
+                if (refused || isUnreadable(query.state.data, floor)) {
                   query.setState({ data: undefined, dataUpdatedAt: 0 });
                 }
               }
@@ -219,13 +337,28 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
               });
             } else {
               recordPageDenial(queryClient, denialKey, spaceSegment, error);
-              // Drop every cached revision payload for this reviewer and page across Spaces so
-              // failed retries, remounts, or Space switches while offline cannot resurface a
-              // revoked page before a new authorized read succeeds.
+              // Any other refusal names no floor a client can trust: a revoked grant, an older
+              // server and a refusal without a usable detail all answer alike. Drop every cached
+              // revision payload for this reviewer and page across Spaces so failed retries,
+              // remounts, or Space switches while offline cannot resurface a revoked page before a
+              // new authorized read succeeds.
               for (const query of matchingQueries()) {
                 query.setState({ data: undefined, dataUpdatedAt: 0 });
               }
             }
+            // A list of shared pages still names this page. Once the revisions below the floor are
+            // dropped, its row keeps the title of the newest revision left cached; without one, the
+            // row goes.
+            const title = revisionOnly ? newestCachedTitle(matchingQueries()) : undefined;
+            for (const query of lists) {
+              query.setState({
+                data: isSharedPageList(query.state.data)
+                  ? withPageTitle(query.state.data, pageId, title)
+                  : undefined,
+                fetchStatus: "idle",
+              });
+            }
+            void queryClient.invalidateQueries({ predicate: (query) => lists.includes(query) });
           }
           throw error;
         }

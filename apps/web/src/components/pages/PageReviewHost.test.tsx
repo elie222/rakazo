@@ -2,7 +2,9 @@
 
 import { i18n } from "@lingui/core";
 import type { PageComment, PageReview, PageSectionAnchor } from "@rakazo/contracts";
+import { PAGE_REVISION_NOT_FOUND } from "@rakazo/contracts";
 import { deferred, flush } from "@rakazo/core/test-async";
+import type { Query } from "@tanstack/react-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -37,6 +39,9 @@ const rpcState = vi.hoisted(() => ({
   addComment: vi.fn<(input: Record<string, unknown>) => Promise<void>>(),
   publish: vi.fn<(input: { pageId: string; requestId: string }) => Promise<void>>(),
   saveState: vi.fn<(input: Record<string, unknown>) => Promise<void>>(),
+  list: vi.fn<
+    () => Promise<{ items: { id: string; title: string }[]; nextCursor: string | null }>
+  >(),
 }));
 
 const viewState = vi.hoisted(() => ({
@@ -70,7 +75,7 @@ vi.mock("../../lib/query/rpc", () => {
       publish: (input: { pageId: string; requestId: string }) => rpcState.publish(input),
       resolve: vi.fn(),
       askRevision: vi.fn(),
-      list: vi.fn(async () => ({ items: [], nextCursor: null })),
+      list: () => rpcState.list(),
       image: vi.fn(),
       saveState: (input: Record<string, unknown>) => rpcState.saveState(input),
     },
@@ -216,6 +221,122 @@ function sectionInput() {
   return document.querySelector<HTMLInputElement>('input[aria-label="Section"]');
 }
 
+/** Cached `pageReviews.get` reads of page-1, keyed by the revision each asked for. */
+function cachedPageReads(): Map<number | undefined, Query> {
+  const reads = new Map<number | undefined, Query>();
+  for (const query of queryClient.getQueryCache().getAll()) {
+    const path = query.queryKey[0];
+    const input = (
+      query.queryKey[1] as { input?: { pageId?: string; version?: number } } | undefined
+    )?.input;
+    if (
+      Array.isArray(path) &&
+      path[2] === "pageReviews" &&
+      path[3] === "get" &&
+      input?.pageId === "page-1"
+    ) {
+      reads.set(input.version, query);
+    }
+  }
+  return reads;
+}
+
+/** The query that lists the comments of page-1. */
+function commentsQuery(): Query | undefined {
+  return queryClient.getQueryCache().findAll({
+    predicate: (query) => {
+      const path = query.queryKey[0];
+      const input = (query.queryKey[1] as { input?: { pageId?: string } } | undefined)?.input;
+      return (
+        Array.isArray(path) &&
+        path[2] === "pageReviews" &&
+        path[3] === "comments" &&
+        input?.pageId === "page-1"
+      );
+    },
+  })[0];
+}
+
+/** The comments of page-1 still cached for the reviewer. */
+function cachedComments() {
+  return [commentsQuery()].filter((query) => query?.state.data !== undefined);
+}
+
+/** Refreshes the page's latest read and waits until the server answered it. */
+async function refreshLatestRead() {
+  const latestRead = cachedPageReads().get(undefined);
+  await act(async () => {
+    await queryClient.refetchQueries({ predicate: (query) => query === latestRead });
+  });
+}
+
+/** The query that lists the pages shared with the reviewer. */
+function listQuery(): Query | undefined {
+  return queryClient.getQueryCache().findAll({
+    predicate: (query) => {
+      const path = query.queryKey[0];
+      return Array.isArray(path) && path[2] === "pageReviews" && path[3] === "list";
+    },
+  })[0];
+}
+
+/** The pages the cached list of shared pages names, each with its title. */
+function listedPages(): Array<[string, string]> {
+  const list = listQuery()?.state.data as
+    | { pages: Array<{ items: Array<{ id: string; title: string }> }> }
+    | undefined;
+  return (list?.pages ?? []).flatMap((page) => page.items.map((item) => [item.id, item.title]));
+}
+
+function refusedPage() {
+  return Object.assign(new Error("Page not found"), { code: "NOT_FOUND", status: 404 });
+}
+
+/** Sets when a cached read of page-1 was last updated, which is what two reads of one revision compare. */
+function pinReadTime(version: number | undefined, updatedAt: number) {
+  act(() => {
+    cachedPageReads().get(version)?.setState({ dataUpdatedAt: updatedAt });
+  });
+}
+
+/** The server's answer for a revision below the lowest one the reviewer may read. */
+function revisionRefusal(readableFrom?: unknown) {
+  return Object.assign(new Error("Not found"), {
+    code: PAGE_REVISION_NOT_FOUND,
+    status: 404,
+    data: readableFrom === undefined ? undefined : { readableFrom },
+  });
+}
+
+/** Reads of a page whose latest revision is `current`, which the reviewer may read from `floor`. */
+function grantedPage(grant: { floor: number; current: number }) {
+  return async ({ version }: { pageId: string; version?: number }) => {
+    if (version !== undefined && version < grant.floor) throw revisionRefusal(grant.floor);
+    return makePage({ version: version ?? grant.current, currentVersion: grant.current });
+  };
+}
+
+/** Opens a revision from its comment and waits until the server answered that read. */
+async function openRevision(version: number) {
+  await openCommentsPopover();
+  await clickButton((button) => button.textContent?.includes(`Revision ${version}`) ?? false);
+  await vi.waitFor(() => {
+    expect(rpcState.getReview).toHaveBeenCalledWith({ pageId: "page-1", version });
+  });
+}
+
+/** Leaves the page and comes back, so every read is requested again. */
+async function reopenReview() {
+  await act(async () => {
+    viewState.navigateTo?.("/review");
+  });
+  await act(flush);
+  await act(async () => {
+    viewState.navigateTo?.("/review/page-1");
+  });
+  await act(flush);
+}
+
 beforeEach(() => {
   i18n.load("en", {});
   i18n.activate("en");
@@ -237,12 +358,14 @@ beforeEach(() => {
   rpcState.addComment.mockReset();
   rpcState.publish.mockReset();
   rpcState.saveState.mockReset();
+  rpcState.list.mockReset();
   rpcState.getReview.mockResolvedValue(makePage());
   rpcState.getComments.mockResolvedValue({ items: [], nextCursor: null });
   rpcState.getDraft.mockResolvedValue({ code: "<main>draft</main>", images: {}, version: 1 });
   rpcState.addComment.mockResolvedValue(undefined);
   rpcState.publish.mockResolvedValue(undefined);
   rpcState.saveState.mockResolvedValue(undefined);
+  rpcState.list.mockResolvedValue({ items: [], nextCursor: null });
 });
 
 afterEach(async () => {
@@ -1117,12 +1240,8 @@ describe("PageReviewHost comment draft preservation", () => {
   });
 
   it("keeps the accessible latest revision cached when an older pre-grant revision returns 404", async () => {
-    rpcState.getReview.mockImplementation(async ({ version }) => {
-      if (version === 1) {
-        throw Object.assign(new Error("Not found"), { code: "NOT_FOUND", status: 404 });
-      }
-      return makePage({ version: 2, currentVersion: 2 });
-    });
+    const grant = { floor: 1, current: 2 };
+    rpcState.getReview.mockImplementation(grantedPage(grant));
     rpcState.getComments.mockResolvedValue({
       items: [makeComment({ id: "comment-v1", version: 1, section: "Summary", body: "v1 note" })],
       nextCursor: null,
@@ -1130,26 +1249,569 @@ describe("PageReviewHost comment draft preservation", () => {
 
     await mountReview("/review/page-1");
     expect(document.querySelector('[data-testid="review-document"]')).not.toBeNull();
+    // Revision 1 is read and cached while the reviewer's grant still covers it.
+    await openRevision(1);
+    await clickButton((button) => button.textContent?.includes("Back to latest") ?? false);
 
-    // Open historical revision 1 which predates the reviewer's grant and returns 404.
-    await openCommentsPopover();
-    await clickButton((button) => button.textContent?.includes("Revision 1") ?? false);
+    // The grant is replaced and now starts at revision 2, so revision 1 is refused on its own.
+    grant.floor = 2;
+    await openRevision(1);
     await vi.waitFor(() => {
       expect(document.body.textContent).toContain("This page isn't available");
     });
 
+    // The refused revision loses its cached payload.
+    const reads = cachedPageReads();
+    expect(reads.get(1)?.state.data).toBeUndefined();
     // Latest revision (version: undefined) must keep its cached payload instead of being erased.
-    const latestCached = queryClient
-      .getQueryCache()
-      .findAll({
-        predicate: (query) => {
-          const opts = query.queryKey[1] as
-            | { input?: { pageId?: string; version?: number } }
-            | undefined;
-          return opts?.input?.pageId === "page-1" && opts?.input?.version === undefined;
-        },
-      })
-      .some((query) => query.state.data !== undefined);
-    expect(latestCached).toBe(true);
+    expect(reads.get(undefined)?.state.data).toBeDefined();
+    // Its siblings are invalidated, so the latest revalidates when it is shown again.
+    expect(reads.get(undefined)?.state.isInvalidated).toBe(true);
   });
+
+  it("drops a cached latest revision that a replacement grant leaves below its floor", async () => {
+    const grant = { floor: 1, current: 2 };
+    let offline = false;
+    rpcState.getReview.mockImplementation(async (input) => {
+      if (offline) throw new Error("Failed to fetch");
+      return grantedPage(grant)(input);
+    });
+    rpcState.getComments.mockResolvedValue({
+      items: [
+        makeComment({ id: "comment-v1", version: 1, section: "Summary" }),
+        makeComment({ id: "comment-v3", version: 3, section: "Pricing" }),
+      ],
+      nextCursor: null,
+    });
+
+    // Revision 2 is cached as the latest one, and revision 1 under its own number.
+    await mountReview("/review/page-1");
+    await openRevision(1);
+
+    // The owner publishes revision 3 and replaces the grant to start there.
+    grant.floor = 3;
+    grant.current = 3;
+    await openRevision(3);
+    // Revision 1 is refused, and the server names revision 3 as the lowest readable one.
+    await openRevision(1);
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("This page isn't available");
+    });
+    const reads = cachedPageReads();
+    // The refused revision and revision 2, cached under the latest key, are gone.
+    expect(reads.get(1)?.state.data).toBeUndefined();
+    expect(reads.get(undefined)?.state.data).toBeUndefined();
+    // Revision 3 stays cached, invalidated like every remaining read of the page.
+    expect(reads.get(3)?.state.data).toMatchObject({ version: 3 });
+    expect(reads.get(3)?.state.isInvalidated).toBe(true);
+    // The cached comments may hold revisions below the floor, so they go too.
+    expect(cachedComments()).toEqual([]);
+
+    // Reopened offline, revision 2 does not come back.
+    offline = true;
+    await reopenReview();
+    expect(document.body.textContent).toContain("This page isn't available");
+    expect(document.querySelector('[data-testid="review-document"]')).toBeNull();
+  });
+
+  it("shows no cached comments after a refusal, while their refresh is still waiting", async () => {
+    const grant = { floor: 1, current: 2 };
+    const pendingComments = deferred<Awaited<ReturnType<typeof rpcState.getComments>>>();
+    let refreshed = false;
+    rpcState.getReview.mockImplementation(grantedPage(grant));
+    rpcState.getComments.mockImplementation(async () => {
+      // A refresh that never answers, as when the server is out of reach.
+      if (refreshed) return pendingComments.promise;
+      return {
+        items: [
+          makeComment({ id: "comment-v1", version: 1, section: "Summary", body: "Pre-grant note" }),
+          makeComment({ id: "comment-v2", version: 2, section: "Pricing", body: "Older note" }),
+        ],
+        nextCursor: null,
+      };
+    });
+
+    // The comments are cached while the reviewer's grant starts at revision 1.
+    await mountReview("/review/page-1");
+    await openCommentsPopover();
+    expect(document.body.textContent).toContain("Pre-grant note");
+    expect(document.body.textContent).toContain("Older note");
+
+    // The grant is replaced to start at revision 3, and revision 1 is refused.
+    grant.floor = 3;
+    grant.current = 3;
+    await clickButton((button) => button.textContent?.includes("Revision 1") ?? false);
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("This page isn't available");
+    });
+    expect(cachedComments()).toEqual([]);
+
+    // Back at the latest revision, the popover waits for its refresh without the old comments.
+    refreshed = true;
+    await reopenReview();
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="review-document"]')).not.toBeNull();
+    });
+    await openCommentsPopover();
+    expect(document.body.textContent).not.toContain("Pre-grant note");
+    expect(document.body.textContent).not.toContain("Older note");
+
+    // Only what the server answers now is listed.
+    pendingComments.resolve({
+      items: [makeComment({ id: "comment-v3", version: 3, section: "Pricing", body: "New note" })],
+      nextCursor: null,
+    });
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("New note");
+    });
+  });
+
+  it("does not let a refresh still in flight bring back a revision below the floor", async () => {
+    const grant = { floor: 1, current: 2 };
+    const slowLatest = deferred<PageReview>();
+    let refetching = false;
+    rpcState.getReview.mockImplementation(async (input) => {
+      if (refetching && input.version === undefined) return slowLatest.promise;
+      return grantedPage(grant)(input);
+    });
+    rpcState.getComments.mockResolvedValue({
+      items: [makeComment({ id: "comment-v1", version: 1, section: "Summary" })],
+      nextCursor: null,
+    });
+
+    await mountReview("/review/page-1");
+    await openRevision(1);
+    await clickButton((button) => button.textContent?.includes("Back to latest") ?? false);
+    // A refresh of the latest revision is still waiting for the server.
+    refetching = true;
+    act(() => {
+      void queryClient.refetchQueries();
+    });
+    await act(flush);
+
+    // Meanwhile the grant is replaced to start at revision 3, and revision 1 is refused.
+    grant.floor = 3;
+    await openRevision(1);
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("This page isn't available");
+    });
+
+    // The refresh answers with what the page held before, which must not be cached again.
+    slowLatest.resolve(makePage({ version: 2, currentVersion: 2 }));
+    const latest = cachedPageReads().get(undefined);
+    await vi.waitFor(() => expect(latest?.state.fetchStatus).toBe("idle"));
+    expect(latest?.state.data).toBeUndefined();
+  });
+
+  it("does not let an unmounted comments refresh bring back the cleared comments", async () => {
+    let outcome: "granted" | "revoked" = "granted";
+    let refreshing = false;
+    const pendingComments = deferred<Awaited<ReturnType<typeof rpcState.getComments>>>();
+    rpcState.getReview.mockImplementation(async () => {
+      if (outcome === "revoked") throw refusedPage();
+      return makePage({ version: 2, currentVersion: 2 });
+    });
+    rpcState.getComments.mockImplementation(async () => {
+      // A refresh that never answers, as when the server is out of reach.
+      if (refreshing) return pendingComments.promise;
+      return {
+        items: [
+          makeComment({ id: "comment-v1", version: 1, section: "Summary", body: "Old note" }),
+        ],
+        nextCursor: null,
+      };
+    });
+
+    // The comments are cached while the reviewer may still read the page.
+    await mountReview("/review/page-1");
+    await openCommentsPopover();
+    expect(document.body.textContent).toContain("Old note");
+    // The popover reopens, and its refresh is still waiting for the server.
+    refreshing = true;
+    await act(async () => {
+      commentTextarea()!.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+    await act(flush);
+    await openCommentsPopover();
+    expect(commentsQuery()?.state.fetchStatus).toBe("fetching");
+
+    // The grant ends with the popover open, so the page's own refresh is refused and unmounts it.
+    outcome = "revoked";
+    await refreshLatestRead();
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("This page isn't available");
+    });
+    expect(commentTextarea()).toBeNull();
+    expect(cachedComments()).toEqual([]);
+    // The stopped refresh left no error behind: the next refresh starts as any first read does.
+    expect(commentsQuery()?.state).toMatchObject({
+      data: undefined,
+      fetchStatus: "idle",
+      error: null,
+    });
+
+    // Access is granted again: the page reopens, and the popover waits for a fresh answer.
+    outcome = "granted";
+    await clickButton((button) => button.textContent === "Try again");
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="review-document"]')).not.toBeNull();
+    });
+    if (!commentTextarea()) await openCommentsPopover();
+    expect(commentTextarea()).not.toBeNull();
+    expect(commentsQuery()?.state.fetchStatus).toBe("fetching");
+    expect(document.body.textContent).not.toContain("Old note");
+  });
+
+  it("does not list a refused page again while the shared-pages list refresh is still waiting", async () => {
+    let outcome: "granted" | "revoked" = "granted";
+    let refreshing = false;
+    const pendingList = deferred<Awaited<ReturnType<typeof rpcState.list>>>();
+    rpcState.getReview.mockImplementation(async () => {
+      if (outcome === "revoked") throw refusedPage();
+      return makePage({ version: 2, currentVersion: 2 });
+    });
+    rpcState.list.mockImplementation(async () => {
+      // A refresh that never answers, as when the server is out of reach.
+      if (refreshing) return pendingList.promise;
+      return {
+        items: [
+          { id: "page-1", title: "Shared Page" },
+          { id: "page-2", title: "Other Page" },
+        ],
+        nextCursor: null,
+      };
+    });
+
+    // The list of shared pages is cached with the page's title.
+    await mountReview("/review");
+    expect(document.body.textContent).toContain("Shared Page");
+    await act(async () => {
+      viewState.navigateTo?.("/review/page-1");
+    });
+    await act(flush);
+
+    // The grant ends while the page is open.
+    outcome = "revoked";
+    await refreshLatestRead();
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("This page isn't available");
+    });
+
+    // Back at the list, its refresh is still waiting for the server.
+    refreshing = true;
+    await act(async () => {
+      viewState.navigateTo?.("/review");
+    });
+    await act(flush);
+    expect(document.body.textContent).not.toContain("Shared Page");
+    // The other pages the reviewer may still read stay listed.
+    expect(document.body.textContent).toContain("Other Page");
+    expect(rpcState.list).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a page in the shared-pages list under a readable revision's title after a floor refusal", async () => {
+    const grant = { floor: 1, current: 2 };
+    let refreshing = false;
+    const pendingList = deferred<Awaited<ReturnType<typeof rpcState.list>>>();
+    rpcState.getReview.mockImplementation(grantedPage(grant));
+    rpcState.getComments.mockResolvedValue({
+      items: [
+        makeComment({ id: "comment-v1", version: 1, section: "Summary" }),
+        makeComment({ id: "comment-v2", version: 2, section: "Pricing" }),
+      ],
+      nextCursor: null,
+    });
+    rpcState.list.mockImplementation(async () => {
+      // A refresh that never answers, as when the server is out of reach.
+      if (refreshing) return pendingList.promise;
+      return {
+        items: [
+          { id: "page-1", title: "Stale title" },
+          { id: "page-2", title: "Other Page" },
+        ],
+        nextCursor: null,
+      };
+    });
+
+    // The list names the page under its title from before, and revisions 1 and 2 are cached.
+    await mountReview("/review");
+    await act(async () => {
+      viewState.navigateTo?.("/review/page-1");
+    });
+    await act(flush);
+    await openRevision(1);
+    await clickButton((button) => button.textContent?.includes("Back to latest") ?? false);
+    await openRevision(2);
+
+    // The grant is replaced to start at revision 2, and revision 1 is refused.
+    grant.floor = 2;
+    await openRevision(1);
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("This page isn't available");
+    });
+    const reads = cachedPageReads();
+    expect(reads.get(1)?.state.data).toBeUndefined();
+    expect(reads.get(2)?.state.data).toMatchObject({ version: 2 });
+    // The row stays, under the title of a cached revision the server confirmed readable.
+    expect(listedPages()).toEqual([
+      ["page-1", "Launch Plan"],
+      ["page-2", "Other Page"],
+    ]);
+    expect(listQuery()?.state.isInvalidated).toBe(true);
+
+    // Back at the list, its refresh still waiting, the title from before the grant is gone.
+    refreshing = true;
+    await act(async () => {
+      viewState.navigateTo?.("/review");
+    });
+    await act(flush);
+    expect(document.body.textContent).toContain("Launch Plan");
+    expect(document.body.textContent).not.toContain("Stale title");
+  });
+
+  it("removes a page from the shared-pages list when no revision at or above the floor is cached", async () => {
+    const grant = { floor: 1, current: 2 };
+    let refreshing = false;
+    const pendingList = deferred<Awaited<ReturnType<typeof rpcState.list>>>();
+    rpcState.getReview.mockImplementation(grantedPage(grant));
+    rpcState.getComments.mockResolvedValue({
+      items: [makeComment({ id: "comment-v1", version: 1, section: "Summary" })],
+      nextCursor: null,
+    });
+    rpcState.list.mockImplementation(async () => {
+      // A refresh that never answers, as when the server is out of reach.
+      if (refreshing) return pendingList.promise;
+      return { items: [{ id: "page-1", title: "Stale title" }], nextCursor: null };
+    });
+
+    // The list names the page, and the latest revision 2 and revision 1 are cached.
+    await mountReview("/review");
+    await act(async () => {
+      viewState.navigateTo?.("/review/page-1");
+    });
+    await act(flush);
+    await openRevision(1);
+    await clickButton((button) => button.textContent?.includes("Back to latest") ?? false);
+
+    // The grant is replaced to start at revision 3: nothing cached is readable any more.
+    grant.floor = 3;
+    grant.current = 3;
+    await openRevision(1);
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("This page isn't available");
+    });
+    expect(listedPages()).toEqual([]);
+    expect(listQuery()?.state.isInvalidated).toBe(true);
+
+    // Back at the list, its refresh still waiting, the title from before cannot show.
+    refreshing = true;
+    await act(async () => {
+      viewState.navigateTo?.("/review");
+    });
+    await act(flush);
+    expect(document.body.textContent).not.toContain("Stale title");
+  });
+
+  it("takes the list row's title from the highest cached revision, not the first one cached", async () => {
+    const grant = { floor: 1, current: 2 };
+    rpcState.getReview.mockImplementation(async (input) => {
+      const page = await grantedPage(grant)(input);
+      return page.version === 3 ? { ...page, title: "Third title" } : page;
+    });
+    rpcState.getComments.mockResolvedValue({
+      items: [
+        makeComment({ id: "comment-v1", version: 1, section: "Summary" }),
+        makeComment({ id: "comment-v3", version: 3, section: "Pricing" }),
+      ],
+      nextCursor: null,
+    });
+    rpcState.list.mockResolvedValue({
+      items: [{ id: "page-1", title: "Stale title" }],
+      nextCursor: null,
+    });
+
+    // The list names the page, and its latest read stops at revision 2.
+    await mountReview("/review");
+    await act(async () => {
+      viewState.navigateTo?.("/review/page-1");
+    });
+    await act(flush);
+    // The owner publishes revision 3 and starts a new grant at revision 2, which is read under its
+    // own number.
+    grant.floor = 2;
+    grant.current = 3;
+    await openRevision(3);
+    // Revision 1 is refused: of the reads left cached, the first holds revision 2 and the newer
+    // holds revision 3.
+    await openRevision(1);
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("This page isn't available");
+    });
+    expect(cachedPageReads().get(undefined)?.state.data).toMatchObject({ version: 2 });
+    expect(listedPages()).toEqual([["page-1", "Third title"]]);
+  });
+
+  it("takes the list row's title from the read of a revision that was updated last", async () => {
+    const grant = { floor: 1, current: 2 };
+    let renamed = false;
+    rpcState.getReview.mockImplementation(async (input) => {
+      const page = await grantedPage(grant)(input);
+      return { ...page, title: renamed ? "New title" : "Old title" };
+    });
+    rpcState.getComments.mockResolvedValue({
+      items: [
+        makeComment({ id: "comment-v1", version: 1, section: "Summary" }),
+        makeComment({ id: "comment-v2", version: 2, section: "Pricing" }),
+      ],
+      nextCursor: null,
+    });
+    rpcState.list.mockResolvedValue({
+      items: [{ id: "page-1", title: "Stale title" }],
+      nextCursor: null,
+    });
+
+    // The list names the page, and the latest read of revision 2 carries the title from before a
+    // rename.
+    await mountReview("/review");
+    await act(async () => {
+      viewState.navigateTo?.("/review/page-1");
+    });
+    await act(flush);
+    pinReadTime(undefined, 1_000);
+    // The page is renamed without a new revision. Revision 2 is then read again under its own number.
+    renamed = true;
+    await openRevision(2);
+    pinReadTime(2, 2_000);
+    // A new grant starts at revision 2, and revision 1 is refused.
+    grant.floor = 2;
+    await openRevision(1);
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("This page isn't available");
+    });
+    expect(listedPages()).toEqual([["page-1", "New title"]]);
+  });
+
+  it("takes the list row's title from the read updated last, whichever cache entry holds it", async () => {
+    const grant = { floor: 1, current: 2 };
+    let renamed = false;
+    rpcState.getReview.mockImplementation(async (input) => {
+      const page = await grantedPage(grant)(input);
+      return { ...page, title: renamed ? "New title" : "Old title" };
+    });
+    rpcState.getComments.mockResolvedValue({
+      items: [
+        makeComment({ id: "comment-v1", version: 1, section: "Summary" }),
+        makeComment({ id: "comment-v2", version: 2, section: "Pricing" }),
+      ],
+      nextCursor: null,
+    });
+    rpcState.list.mockResolvedValue({
+      items: [{ id: "page-1", title: "Stale title" }],
+      nextCursor: null,
+    });
+
+    // The list names the page, and the latest read of revision 2 carries the title from before a
+    // rename.
+    await mountReview("/review");
+    await act(async () => {
+      viewState.navigateTo?.("/review/page-1");
+    });
+    await act(flush);
+    pinReadTime(undefined, 1_000);
+    // Revision 2 is read under its own number, still under the title from before.
+    await openRevision(2);
+    pinReadTime(2, 2_000);
+    // The page is renamed without a new revision, and the latest read repeats with the new title.
+    renamed = true;
+    await reopenReview();
+    await vi.waitFor(() => {
+      expect(cachedPageReads().get(undefined)?.state.data).toMatchObject({ title: "New title" });
+    });
+    pinReadTime(undefined, 3_000);
+    // A new grant starts at revision 2, and revision 1 is refused.
+    grant.floor = 2;
+    await openRevision(1);
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("This page isn't available");
+    });
+    expect(listedPages()).toEqual([["page-1", "New title"]]);
+  });
+
+  it.each([
+    ["pages that are not a list", { pages: "not a list" }],
+    ["a page whose items are not a list", { pages: [{ items: "not a list" }] }],
+  ])(
+    "drops a cached shared-pages list with %s and still answers the refusal",
+    async (_case, payload) => {
+      let outcome: "granted" | "revoked" = "granted";
+      rpcState.getReview.mockImplementation(async () => {
+        if (outcome === "revoked") throw refusedPage();
+        return makePage({ version: 2, currentVersion: 2 });
+      });
+      rpcState.list.mockResolvedValue({ items: [], nextCursor: null });
+
+      // The list is cached. Left alone in the cache, what it holds is not shaped as the app wrote it.
+      await mountReview("/review");
+      await act(async () => {
+        viewState.navigateTo?.("/review/page-1");
+      });
+      await act(flush);
+      await act(async () => {
+        queryClient.setQueryData(listQuery()!.queryKey, payload);
+      });
+      // The grant ends while the page is open.
+      outcome = "revoked";
+      await refreshLatestRead();
+      await vi.waitFor(() => {
+        expect(document.body.textContent).toContain("This page isn't available");
+      });
+      expect(listQuery()?.state.data).toBeUndefined();
+      expect(listQuery()?.state.isInvalidated).toBe(true);
+    },
+  );
+
+  // None of these answers says which revisions the reviewer may still read: a grant that ended
+  // answers a plain not-found, and so does an older server.
+  it.each([
+    ["a plain not-found", refusedPage()],
+    ["no floor", revisionRefusal()],
+    ["an invalid floor", revisionRefusal("3")],
+  ])(
+    "clears every cached revision when a refusal for an older revision carries %s",
+    async (_case, refusal) => {
+      const grant = { floor: 1, current: 2, refused: false };
+      let offline = false;
+      rpcState.getReview.mockImplementation(async (input) => {
+        if (offline) throw new Error("Failed to fetch");
+        if (input.version !== undefined && grant.refused) throw refusal;
+        return grantedPage(grant)(input);
+      });
+      rpcState.getComments.mockResolvedValue({
+        items: [makeComment({ id: "comment-v1", version: 1, section: "Summary" })],
+        nextCursor: null,
+      });
+
+      // The latest revision and revision 1 are cached while the reviewer may still read them.
+      await mountReview("/review/page-1");
+      await openRevision(1);
+      await clickButton((button) => button.textContent?.includes("Back to latest") ?? false);
+      grant.refused = true;
+      await openRevision(1);
+      await vi.waitFor(() => {
+        expect(document.body.textContent).toContain("This page isn't available");
+      });
+      expect(
+        [...cachedPageReads().values()].filter((query) => query.state.data !== undefined),
+      ).toEqual([]);
+      expect(cachedComments()).toEqual([]);
+
+      // Reopened offline, none of them comes back.
+      offline = true;
+      await reopenReview();
+      expect(document.body.textContent).toContain("This page isn't available");
+      expect(document.querySelector('[data-testid="review-document"]')).toBeNull();
+    },
+  );
 });

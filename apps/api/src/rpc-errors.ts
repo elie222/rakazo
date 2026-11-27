@@ -82,6 +82,7 @@ export function handleRpcError(
     const answer = new ORPCError(error.code, {
       status: clientErrorStatus(error.kind),
       message: error.message,
+      ...(error.data === undefined ? {} : { data: error.data }),
       cause: error,
     });
     // An outage the caller is told to wait out is still reported, unless its thrower logged it.

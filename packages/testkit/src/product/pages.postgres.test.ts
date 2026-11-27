@@ -17,7 +17,7 @@ import type {
   PageSummary,
   ThreadSnapshot,
 } from "@rakazo/contracts";
-import { SHARED_PAGE_PATH_PREFIX } from "@rakazo/contracts";
+import { PAGE_REVISION_NOT_FOUND, SHARED_PAGE_PATH_PREFIX } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import { deletePageShareSecrets, pageRevisionPendingCutoff } from "@rakazo/db";
 import { pageViewerCode } from "@rakazo/page-kit/compile";
@@ -454,6 +454,13 @@ describePages("pages", () => {
     try {
       await rpc(app, owner, "pageReviews/revoke", { ...input, grantId: grant.id });
       expect((await raw(app, reviewer, "pageReviews/get", input)).status).toBe(404);
+      // A revision is refused like the page: a plain not-found without a lowest readable revision,
+      // since the page is what was refused.
+      const revoked = await refusal(
+        await raw(app, reviewer, "pageReviews/get", { ...input, version: 2 }),
+      );
+      expect(revoked).toMatchObject({ status: 404, code: "NOT_FOUND" });
+      expect(revoked.data).toBeUndefined();
       expect((await raw(app, reviewer, "pageReviews/comments", input)).status).toBe(404);
       expect(
         (
@@ -464,9 +471,17 @@ describePages("pages", () => {
         ).status,
       ).toBe(404);
       await rpc(app, owner, "pageReviews/grant", { ...input, email: reviewerEmail });
-      expect((await raw(app, reviewer, "pageReviews/get", { ...input, version: 2 })).status).toBe(
-        404,
+      // The new grant starts at the current revision 3, so only the older revision is refused,
+      // with that lowest readable revision named.
+      const older = await refusal(
+        await raw(app, reviewer, "pageReviews/get", { ...input, version: 2 }),
       );
+      expect(older).toMatchObject({
+        status: 404,
+        code: PAGE_REVISION_NOT_FOUND,
+        data: { readableFrom: 3 },
+      });
+      expect((await raw(app, reviewer, "pageReviews/get", input)).status).toBe(200);
     } finally {
       complete.resolve(page("Revoked result"));
     }
@@ -1918,6 +1933,11 @@ async function raw(app: App, cookie: string, proc: string, body: unknown, spaceI
     },
     body: JSON.stringify({ json: body }),
   });
+}
+
+/** The error a refused RPC call was answered with, as a client receives it. */
+async function refusal(response: Response) {
+  return (await response.json()).json as { status?: number; code?: string; data?: unknown };
 }
 
 async function sendAndWait(

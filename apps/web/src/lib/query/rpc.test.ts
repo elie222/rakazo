@@ -1,3 +1,4 @@
+import { PAGE_REVISION_NOT_FOUND, pageRevisionFloor } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   clearSpaceSelection,
@@ -33,6 +34,35 @@ describe("signed-out responses", () => {
     );
     await expect(rpc.me()).rejects.toMatchObject({ status: 500 });
     expect(notify).not.toHaveBeenCalled();
+  });
+});
+
+describe("refusal detail", () => {
+  it("hands a refusal's structured detail to the caller with its code", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          {
+            json: {
+              defined: false,
+              code: PAGE_REVISION_NOT_FOUND,
+              status: 404,
+              message: "Resource not found",
+              data: { readableFrom: 3 },
+            },
+          },
+          { status: 404 },
+        ),
+      ),
+    );
+
+    const refusal: unknown = await rpc.pageReviews
+      .get({ pageId: "page-1", version: 1 })
+      .catch((error: unknown) => error);
+
+    expect(refusal).toMatchObject({ code: PAGE_REVISION_NOT_FOUND, status: 404 });
+    expect(pageRevisionFloor(refusal)).toBe(3);
   });
 });
 
