@@ -15,7 +15,6 @@ import {
 } from "@rakazo/contracts";
 import type { AccountExportSource, PrismaClient } from "@rakazo/db";
 import {
-  accountDeactivated,
   parseComputerMode,
   readAccountExport,
   runAsTenant,
@@ -241,6 +240,21 @@ export function accountExportFilename(now = new Date()): string {
 }
 
 /**
+ * Whether a link may still start an export. A deleted account counts as gone rather than active,
+ * because its source read would throw and every retry would answer 500 until the link expired.
+ */
+async function exportableAccount(
+  prisma: Pick<PrismaClient, "user">,
+  userId: string,
+): Promise<boolean> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { deactivatedAt: true },
+  });
+  return Boolean(user) && !user?.deactivatedAt;
+}
+
+/**
  * `GET /api/account/export?token=`: a plain navigation, so the browser or Electron saves the
  * download itself. The one-time token from `export.accountToken` is the only credential.
  */
@@ -248,16 +262,22 @@ export function mountAccountExportRoute(
   app: Hono,
   deps: AccountExportStores & {
     prisma: PrismaClient;
-    auth: Pick<Auth, "consumeAccountExportToken">;
+    auth: Pick<Auth, "readAccountExportToken" | "spendAccountExportToken">;
   },
 ): void {
   app.get("/api/account/export", async (c) => {
-    const userId = await deps.auth.consumeAccountExportToken(c.req.query("token") ?? "");
-    // A link issued just before the account was deactivated no longer downloads it.
-    if (!userId || (await accountDeactivated(deps.prisma, userId)))
+    const token = c.req.query("token") ?? "";
+    // Read the link before spending it, so a failure while the archive is built leaves the
+    // download retryable instead of stranding a one-time link the user never got to use.
+    const userId = await deps.auth.readAccountExportToken(token);
+    // A link issued just before the account was deactivated or deleted no longer downloads it.
+    if (!userId || !(await exportableAccount(deps.prisma, userId)))
       return c.text("Export link expired", 410, { "cache-control": "no-store" });
     const now = new Date();
     const source = await readAccountExport(deps.prisma, userId);
+    // Spend it once the archive can be produced; losing a race answers like an expired link.
+    if ((await deps.auth.spendAccountExportToken(token)) !== userId)
+      return c.text("Export link expired", 410, { "cache-control": "no-store" });
     const signal = c.req.raw.signal;
     const body = zipStream(accountArchiveFiles(source, deps, { signal, now }), { signal });
     return new Response(body, {

@@ -41,6 +41,8 @@ import {
   ACCOUNT_EXPORT_TOKEN_PREFIX,
   consumeAccountExportToken,
   issueAccountExportToken,
+  readAccountExportToken,
+  spendAccountExportToken,
 } from "./account-export-token.js";
 import {
   accountSecurity,
@@ -969,6 +971,10 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       hasRecentIdentityConfirmation((await auth.$context).internalAdapter, session),
     issueAccountExportToken: async (userId: string) =>
       issueAccountExportToken((await auth.$context).internalAdapter, userId),
+    readAccountExportToken: async (token: string) =>
+      readAccountExportToken((await auth.$context).internalAdapter, token),
+    spendAccountExportToken: async (token: string) =>
+      spendAccountExportToken((await auth.$context).internalAdapter, token),
     consumeAccountExportToken: async (token: string) =>
       consumeAccountExportToken((await auth.$context).internalAdapter, token),
     ...apiKeyMethods(auth.api),
