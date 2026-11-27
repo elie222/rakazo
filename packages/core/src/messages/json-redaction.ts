@@ -17,17 +17,24 @@ import {
 const BOUNDED_OMISSION_MARKER = /(\n… \[\d+ characters not kept\] …\n)/;
 
 /**
- * Redact Bearer tokens in plain or raw JSON-like text, handling quoted, escaped-quote, and
- * newline-wrapped values without consuming JSON structural delimiters (`:`, `,`, `}`, `]`).
+ * Redact Bearer tokens without consuming JSON structural delimiters (`:`, `,`, `}`, `]`).
  * `[redacted]` stays in place only when it is the whole token. A suffix such as `FixtureTail`
- * or `\fixtureTail` is still masked. A JSON escape (`\\`, `\"`, `\n`, `\r`, `\t`) ends the token.
- * Any other backslash stays inside it. A later pass does not grow another `]`.
+ * or `\fixtureTail` is still masked. A later pass does not grow another `]`.
+ *
+ * Raw text treats a JSON escape (`\\`, `\"`, `\n`, `\r`, `\t`) as the end of the token, so a
+ * saved JSON string stays valid. `decoded` is for text JSON.parse already returned: a backslash
+ * is then one character, and only whitespace or a delimiter ends the token.
  */
-export function redactPlainBearerTokens(text: string): string {
-  return text.replace(
-    /Bearer\s+(?!\[redacted\](?!(?:\\(?![nrt"\\])|[^\s"',;&}:\]\\])))(?:\\"(?!\s*[:,}\]\r\n]|$)(?:\\[^"\r\n]|[^"\\\r\n])+(?:\\")?|"(?!\s*[:,}\]\r\n]|$)[^"\r\n]+"?|'(?!\s*[:,}\]\r\n]|$)[^'\r\n]+'?|\[redacted\](?:\\(?![nrt"\\])|[^\s"',;&}:\]\\])+|(?:\\(?![nrt"\\])|[^\s"',;&}:\]\\])+)/gi,
-    "Bearer [redacted]",
-  );
+const RAW_BEARER =
+  /Bearer\s+(?!\[redacted\](?!(?:\\(?![nrt"\\])|[^\s"',;&}:\]\\])))(?:\\"(?!\s*[:,}\]\r\n]|$)(?:\\[^"\r\n]|[^"\\\r\n])+(?:\\")?|"(?!\s*[:,}\]\r\n]|$)[^"\r\n]+"?|'(?!\s*[:,}\]\r\n]|$)[^'\r\n]+'?|\[redacted\](?:\\(?![nrt"\\])|[^\s"',;&}:\]\\])+|(?:\\(?![nrt"\\])|[^\s"',;&}:\]\\])+)/gi;
+
+const DECODED_BEARER =
+  /Bearer\s+(?!\[redacted\](?!(?:[^\s"',;&}:\]])))(?:\\"(?!\s*[:,}\]\r\n]|$)(?:\\[^"\r\n]|[^"\\\r\n])+(?:\\")?|"(?!\s*[:,}\]\r\n]|$)[^"\r\n]+"?|'(?!\s*[:,}\]\r\n]|$)[^'\r\n]+'?|\[redacted\](?:[^\s"',;&}:\]])+|(?:[^\s"',;&}:\]])+)/gi;
+
+export function redactPlainBearerTokens(text: string, options?: { decoded?: boolean }): string {
+  const pattern = options?.decoded ? DECODED_BEARER : RAW_BEARER;
+  pattern.lastIndex = 0;
+  return text.replace(pattern, "Bearer [redacted]");
 }
 
 function blackBoxTokenRanges(

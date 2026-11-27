@@ -66,11 +66,12 @@ export function providerFailureText(message: unknown): string | undefined {
   return undefined;
 }
 
-export function sanitizeSensitiveText(message: string) {
+export function sanitizeSensitiveText(message: string, options?: { decoded?: boolean }) {
   return redactPlainBearerTokens(
     message
       .replace(/sk-or-v1-[a-zA-Z0-9]+/g, "[redacted]")
       .replace(/sk-[a-zA-Z0-9-]+/g, "[redacted]"),
+    options,
   )
     .replace(/eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g, "[redacted]")
     .replace(

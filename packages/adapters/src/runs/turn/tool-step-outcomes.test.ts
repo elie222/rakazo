@@ -836,6 +836,58 @@ describe("tool step outcomes", () => {
     }
   });
 
+  it("redacts a decoded bearer suffix and a credential after a quoted log prefix", () => {
+    const kept = (text: string, secrets: string[] = []) =>
+      keptToolResult({ ...base, result: { content: [{ type: "text", text }] } }, secrets);
+    const replay = (text: string, secrets: string[] = []) =>
+      bounded(text, 1_000, secrets, { replaySaved: true });
+    const bearerTails = [
+      "Bearer fixturePrefix\\nameTail",
+      "Bearer fixturePrefix\\rTail",
+      "Bearer fixturePrefix\\tTail",
+      "Bearer fixturePrefix\\\\Tail",
+    ];
+    const prefixes = ['INFO path="C:\\logs\\latest"', "INFO label='mix\"ed'"];
+    for (const read of [kept, replay]) {
+      for (const tail of bearerTails) {
+        const raw = JSON.stringify({ message: tail, status: "ok" });
+        expect(JSON.parse(read(raw) ?? "")).toEqual({ message: "Bearer [redacted]", status: "ok" });
+      }
+      const keptSlash = JSON.stringify({ message: "Bearer [redacted]\\", status: "ok" });
+      expect(JSON.parse(read(keptSlash) ?? "")).toEqual({
+        message: "Bearer [redacted]",
+        status: "ok",
+      });
+      const keptLine = JSON.stringify({ message: "Bearer [redacted]\nNext line", status: "ok" });
+      expect(JSON.parse(read(keptLine) ?? "")).toEqual({
+        message: "Bearer [redacted]\nNext line",
+        status: "ok",
+      });
+      for (const prefix of prefixes) {
+        for (const key of ["access_token", "COMPOSIO_API_KEY"]) {
+          const raw = `${prefix} {"${key}":"fixtureValue123","status":"ok"}`;
+          const logged = read(raw) ?? "";
+          expect(logged.startsWith(`${prefix} `)).toBe(true);
+          expect(logged).not.toContain("fixtureValue123");
+          expect(JSON.parse(logged.slice(logged.indexOf("{")))).toEqual({
+            [key]: "[redacted]",
+            status: "ok",
+          });
+        }
+      }
+    }
+    const wide =
+      'INFO path="C:\\logs\\latest" {"access_token":"fixtureValue123","status":"ok"}\n'.repeat(
+        40_000,
+      );
+    expect(wide.length).toBeGreaterThan(2_000_000);
+    expectLinearTime(() => {
+      const redacted = kept(wide) ?? "";
+      expect(redacted).not.toContain("fixtureValue123");
+      expect(redacted).toContain('"status":"ok"');
+    });
+  });
+
   it("redacts a raw credential that contains a forged omission marker, including its suffix", () => {
     const forged = "\n… [12 characters not kept] …\n";
     const suffix = "SECRET_SUFFIX_UNLABELED";

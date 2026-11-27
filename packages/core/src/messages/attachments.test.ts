@@ -1200,6 +1200,11 @@ describe("tool step history", () => {
       message: "Bearer [redacted]\nNext line",
       status: "ok",
     });
+    for (const suffix of ["\\nameTail", "\\rTail", "\\tTail", "\\\\Tail"]) {
+      expect(redactPlainBearerTokens(`Bearer fixturePrefix${suffix}`, { decoded: true })).toBe(
+        "Bearer [redacted]",
+      );
+    }
     const bearerJson = JSON.stringify({ msg: "Bearer fixturePrefix\\fixtureTail" });
     const bearerRedacted = redactJsonStringsAndPlainText(
       bearerJson,
