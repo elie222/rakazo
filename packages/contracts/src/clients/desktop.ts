@@ -1,3 +1,4 @@
+import type { PageAbility } from "../artifacts/page-abilities.js";
 import type { AppIcon } from "./app-icons.js";
 
 /**
@@ -92,6 +93,20 @@ export function isDesktopMenuCommand(value: unknown): value is DesktopMenuComman
   return (DESKTOP_MENU_COMMANDS as readonly unknown[]).includes(value);
 }
 
+export interface RakazoDesktopPageApp {
+  appId: string;
+  pageId: string;
+  title: string;
+}
+
+export interface RakazoDesktopPageAppInstall extends RakazoDesktopPageApp {
+  /** The app's own token from `pageApps.install`; only the desktop's main process keeps it. */
+  token: string;
+  abilities: PageAbility[];
+  /** Square PNGs, base64, at each icon size the platform wants. */
+  icon: { size: number; png: string }[];
+}
+
 export interface RakazoDesktop {
   /** Optional for older desktop releases. Returns false when the native write is refused. */
   clipboard?: {
@@ -133,6 +148,18 @@ export interface RakazoDesktop {
   locale?: {
     /** The language the page shows, so the app's own menus, dialogs and setup window follow it. */
     set: (locale: string) => Promise<void>;
+  };
+  /**
+   * Pages installed as their own apps. Absent where the desktop cannot install them: other
+   * platforms, unpackaged builds and older releases.
+   */
+  pageApps?: {
+    /** False when the app could not be made; nothing is left behind then. */
+    install: (input: RakazoDesktopPageAppInstall) => Promise<boolean>;
+    installed: () => Promise<RakazoDesktopPageApp[]>;
+    open: (appId: string) => Promise<boolean>;
+    /** Removes the app and revokes its token. */
+    uninstall: (appId: string) => Promise<boolean>;
   };
   /** Optional for compatibility with older desktop releases. */
   passkeys?: {

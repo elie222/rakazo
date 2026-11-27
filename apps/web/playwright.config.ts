@@ -14,7 +14,6 @@ const heavySpecs = ["page-browser", "pages"];
 const nightlySpecs = [
   "activity-list",
   "agent-connection-approval",
-  "app-connect-card",
   "app-marks",
   "artifacts-tab",
   "avatar-indicator-bounds",

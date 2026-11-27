@@ -279,6 +279,11 @@ const ICONS: Record<PageIconName, LucideIcon> = {
   zap: Zap,
 };
 
+/** The drawing for a page icon name, for app chrome that shows the same glyph outside a page. */
+export function pageIconComponent(name: unknown): LucideIcon | undefined {
+  return isPageIcon(name) ? ICONS[name] : undefined;
+}
+
 export function Icon({ name, label, size }: { name?: string; label?: string; size?: number }) {
   if (!isPageIcon(name)) return null;
   const Drawn = ICONS[name];

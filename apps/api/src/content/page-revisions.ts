@@ -16,6 +16,7 @@ import {
   signalPage,
   verifiedPageAccount,
 } from "@rakazo/db";
+import { pageAbilities } from "@rakazo/page-kit/validate";
 import type { RouterDeps } from "../router.js";
 import { readPageReview, StalePageReviewError, writePageReview } from "./page-collaboration.js";
 
@@ -214,7 +215,13 @@ export async function publishPageDraft(
       const draft = await requireReadyDraft(tx, request);
       const version = page.currentVersion + 1;
       await tx.pageVersion.create({
-        data: { ...draft, pageId: page.id, version, title: page.title },
+        data: {
+          ...draft,
+          abilities: pageAbilities(draft.source),
+          pageId: page.id,
+          version,
+          title: page.title,
+        },
       });
       await tx.page.update({
         where: { id: page.id },

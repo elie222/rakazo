@@ -220,4 +220,14 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
   "Restart Rakazo": "重新启动 Rakazo",
   "Not Now": "暂不",
   "Restart Rakazo to finish setup": "重新启动 Rakazo 以完成设置",
+  // Page apps
+  "Keep on Top": "保持在最前面",
+  "Open in Rakazo": "在 Rakazo 中打开",
+  "Uninstall…": "卸载…",
+  "Uninstall {name}?": "要卸载“{name}”吗？",
+  Uninstall: "卸载",
+  "Allow {name} to ask its bot?": "允许“{name}”向它的机器人提问吗？",
+  "Allow {name} to show notifications?": "允许“{name}”显示通知吗？",
+  "{name} was removed.": "“{name}”已被移除。",
+  "Move to Trash": "移到废纸篓",
 };

@@ -409,4 +409,24 @@ describe("read-aloud while a call is active", () => {
       messageId: "m2",
     });
   });
+
+  it("reads the saved description and reference aloud for a feedback receipt", () => {
+    const receipt: MobileMessage = {
+      ...message("receipt", ""),
+      blocks: [
+        {
+          kind: "feedback_receipt",
+          reportKind: "bug",
+          description: "The preview stayed blank.",
+          reportId: "example-report-1",
+        },
+      ],
+    };
+    act(() => root.render(createElement(ManualReadHarness, { messages: [receipt] })));
+    act(() => latestSpeakFrom(receipt));
+    expect(vi.mocked(speakQueue).mock.calls[0]?.[0]?.[0]).toMatchObject({
+      text: "The preview stayed blank.\nReceipt example-report-1",
+      messageId: "receipt",
+    });
+  });
 });

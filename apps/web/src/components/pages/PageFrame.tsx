@@ -1,6 +1,8 @@
 import { useExternalLinkOpener } from "@rakazo/chat-ui/web";
 import type { PageSectionAnchor, PageState } from "@rakazo/contracts";
 import {
+  pageAskAnswer,
+  pageAskRequest,
   pageCopyRequest,
   pageCopyResult,
   pageLinkRequest,
@@ -28,6 +30,7 @@ export function PageFrame({
   onHeight,
   previewScrollTop,
   onReply,
+  onAsk,
   onSections,
   onSaveState,
 }: {
@@ -39,6 +42,8 @@ export function PageFrame({
   previewScrollTop?: number;
   /** Where a page's reply button puts its text; without it the page offers no replies. */
   onReply?: (text: unknown) => void;
+  /** Sends a page's question to its bot; without it the page asks nothing. */
+  onAsk?: (text: string) => Promise<string | null>;
   onSections?: (sections: PageSectionAnchor[]) => void;
   onSaveState?: (values: PageState) => void;
 }) {
@@ -84,8 +89,20 @@ export function PageFrame({
         return;
       }
       const { gesture } = message;
-      if (!interactive || !focused || typeof gesture !== "string") return;
-      if (gesture === usedGesture.current) return;
+      const fresh =
+        interactive && focused && typeof gesture === "string" && gesture !== usedGesture.current;
+      const ask = interactive ? pageAskRequest(data) : null;
+      if (ask && onAsk) {
+        // A page waits on every question, so one it may not send is answered at once.
+        if (!fresh) {
+          answer(pageAskAnswer(ask.id, null));
+          return;
+        }
+        usedGesture.current = gesture;
+        void onAsk(ask.text).then((text) => answer(pageAskAnswer(ask.id, text)));
+        return;
+      }
+      if (!fresh) return;
       const copy = pageCopyRequest(data);
       const url = copy ? null : pageLinkRequest(data);
       const reply = !copy && !url && message.type === "rakazo-page:reply" && onReply;
@@ -95,7 +112,7 @@ export function PageFrame({
       else if (url) open(url);
       else if (reply) reply(message.text);
     },
-    [interactive, onHeight, onReply, onSaveState, onSections, open, scrollablePreview],
+    [interactive, onAsk, onHeight, onReply, onSaveState, onSections, open, scrollablePreview],
   );
   return (
     <>

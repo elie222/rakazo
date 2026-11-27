@@ -1063,6 +1063,8 @@ export interface VoiceTranscribeRequest {
 export interface BackgroundJobPayloads {
   "run.continue": { runId: string };
   "page.revise": { requestId: string };
+  /** Removes an installed page app whose token was never used: its install never finished. */
+  "page.app-unused": { appId: string };
   "routine.wakeup": { routineId: string; scheduledFor: string };
   /** Run a failed routine run once more; the payload names the failed run. */
   "routine.retry": { runId: string };
