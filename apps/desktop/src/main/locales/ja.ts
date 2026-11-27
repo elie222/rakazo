@@ -242,4 +242,8 @@ export const JA_MESSAGES: Record<string, string> = {
   "Restart Rakazo": "Rakazoを再起動",
   "Not Now": "今はしない",
   "Restart Rakazo to finish setup": "Rakazoを再起動して設定を完了",
+  "Let bots use {name}?": "ボットに{name}の使用を許可しますか？",
+  "Rakazo will change how this app starts from your launcher so bots can read it. Turning off computer access undoes this. Quit and reopen the app after allowing.":
+    "ボットが読み取れるよう、Rakazoはランチャーからのこのアプリの起動方法を変更します。コンピュータへのアクセスをオフにすると元に戻ります。許可したらアプリを終了して開き直してください。",
+  "Could not set up {name}": "{name}を設定できませんでした",
 };

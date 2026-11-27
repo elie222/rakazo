@@ -225,4 +225,8 @@ export const TH_MESSAGES: Record<string, string> = {
   "Restart Rakazo": "เริ่ม Rakazo ใหม่",
   "Not Now": "ไว้ก่อน",
   "Restart Rakazo to finish setup": "เริ่ม Rakazo ใหม่เพื่อตั้งค่าให้เสร็จ",
+  "Let bots use {name}?": "อนุญาตให้บอทใช้ {name} ไหม",
+  "Rakazo will change how this app starts from your launcher so bots can read it. Turning off computer access undoes this. Quit and reopen the app after allowing.":
+    "Rakazo จะเปลี่ยนวิธีเปิดแอปนี้จากตัวเปิดแอปของคุณเพื่อให้บอทอ่านได้ การปิดสิทธิ์เข้าถึงคอมพิวเตอร์จะยกเลิกการเปลี่ยนแปลงนี้ หลังจากอนุญาตแล้ว ให้ปิดแอปและเปิดใหม่อีกครั้ง",
+  "Could not set up {name}": "ตั้งค่า {name} ไม่ได้",
 };

@@ -704,9 +704,13 @@ describe("remote computer access", () => {
     );
     await saveDeviceConsent(userData, origin, { consent: "allowed", userId: null });
     const confirm = vi.fn(async () => true);
-    const { access, clients, requests } = setup({ confirm });
+    const revoked = vi.fn();
+    const { access, clients, requests } = setup({ confirm, revoked });
     await access.select(origin);
+    expect(access.allowedAnywhere()).toBe(true);
     clients[0]!.revoke();
+    await vi.waitFor(() => expect(revoked).toHaveBeenCalledTimes(1));
+    expect(access.allowedAnywhere()).toBe(false);
     await vi.waitFor(async () =>
       expect(await readPairedDevice(userData, origin, cipher)).toBeNull(),
     );

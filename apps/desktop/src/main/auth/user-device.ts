@@ -147,6 +147,8 @@ export function createUserDeviceAccess(deps: {
   device: () => Promise<UserDevicePairRequest>;
   /** The native consent prompt. Resolves true only when the person clicks Allow. */
   confirm: (host: string) => Promise<boolean>;
+  /** Runs once the server ended this computer's access, other than by signing out. */
+  revoked?: () => void;
   /** Optional screen setup follows the persisted consent, including consent asked by a bot. */
   prepareAccess?: (valid: () => boolean) => Promise<void>;
   fetch: (url: string, init: RequestInit) => Promise<Response>;
@@ -203,7 +205,9 @@ export function createUserDeviceAccess(deps: {
         // a prompt still open belongs to the ended sign-in. Removed or rejected otherwise:
         // stay unpaired until turned back on.
         if (reason !== "session-ended") {
-          void decide(origin, "declined").catch(() => undefined);
+          void decide(origin, "declined")
+            .catch(() => undefined)
+            .finally(() => deps.revoked?.());
           return;
         }
         changes.set(origin, (changes.get(origin) ?? 0) + 1);
@@ -451,6 +455,8 @@ export function createUserDeviceAccess(deps: {
     },
     /** Pairs the current server when it is not paired yet, e.g. once the person signs in. */
     pair,
+    /** Whether bots on any server may use this computer. */
+    allowedAnywhere: () => [...consent.keys()].some((origin) => isAllowed(origin)),
     state(origin: string): Omit<RakazoDesktopDevice, "name"> | null {
       if (origin !== current) return null;
       return { deviceId: paired.get(origin)?.deviceId ?? null, allowed: isAllowed(origin) };

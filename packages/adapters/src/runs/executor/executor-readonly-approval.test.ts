@@ -5190,21 +5190,6 @@ describe("user computer screen control", () => {
     } satisfies UserDeviceGateway;
     return { gateway, requests };
   }
-  it("offers screen targeting when a different connected computer supports it", async () => {
-    const { gateway } = devices("linux");
-    gateway.list = async () => [
-      { deviceId: "mac", name: "Laptop", platform: "darwin", connected: true },
-    ];
-    const f = fixture({
-      name: "user_computer_observe",
-      builtin: true,
-      sourceRole: "user",
-      userDevices: gateway,
-    });
-    await f.run();
-    expect(f.offeredTools()).toContain("user_computer_observe");
-  });
-
   const ownRun = { name: "user_computer_observe", builtin: true, sourceRole: "user" };
   const observe = (app: string, executionId = "call-1") => ({
     name: "user_computer_observe",
@@ -5225,18 +5210,18 @@ describe("user computer screen control", () => {
       ],
     });
 
-  it("is offered only with a connected Mac or Windows PC", async () => {
-    for (const platform of ["darwin", "win32"]) {
+  it("is offered with any connected computer", async () => {
+    for (const platform of ["darwin", "win32", "linux"]) {
       const connected = fixture({ ...ownRun, userDevices: devices(platform).gateway });
       await connected.run();
       expect(connected.offeredTools()).toEqual(
-        expect.arrayContaining(["user_computer_observe", "user_computer_act"]),
+        expect.arrayContaining([
+          "user_computer_shell",
+          "user_computer_observe",
+          "user_computer_act",
+        ]),
       );
     }
-    const linux = fixture({ ...ownRun, userDevices: devices("linux").gateway });
-    await linux.run();
-    expect(linux.offeredTools()).toContain("user_computer_shell");
-    expect(linux.offeredTools()).not.toContain("user_computer_observe");
     const disabled = fixture({
       ...ownRun,
       userDevices: devices().gateway,

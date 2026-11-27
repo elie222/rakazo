@@ -255,4 +255,8 @@ export const ES_MESSAGES: Record<string, string> = {
   "Restart Rakazo": "Reiniciar Rakazo",
   "Not Now": "Ahora no",
   "Restart Rakazo to finish setup": "Reinicia Rakazo para finalizar la configuración",
+  "Let bots use {name}?": "¿Permitir que los bots usen {name}?",
+  "Rakazo will change how this app starts from your launcher so bots can read it. Turning off computer access undoes this. Quit and reopen the app after allowing.":
+    "Rakazo cambiará cómo se inicia esta app desde tu lanzador para que los bots puedan leerla. Desactivar el acceso a la computadora lo deshace. Ciérrala y vuelve a abrirla después de permitirlo.",
+  "Could not set up {name}": "No se pudo configurar {name}",
 };

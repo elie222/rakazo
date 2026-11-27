@@ -71,6 +71,9 @@ import {
   reportDesktopError,
 } from "./system/monitoring.js";
 import { createSystemSpeech } from "./system/system-speech.js";
+import { createAppAccessibility } from "./this-computer/app-accessibility/app-accessibility.js";
+import { launcherDirs } from "./this-computer/app-accessibility/launcher-override.js";
+import { userProcesses } from "./this-computer/app-accessibility/processes.js";
 import {
   confirmRemoteComputerAccess,
   createComputerAccessHandler,
@@ -192,9 +195,57 @@ async function saveHostChoice(computerHost: "docker" | "this-mac") {
     }),
   );
 }
+/** Linux only: asks before changing how a Chromium-engine app starts, so bots can read it. */
+const appAccessibility =
+  process.platform === "linux"
+    ? createAppAccessibility({
+        dirs: launcherDirs(process.env, os.homedir()),
+        processes: () => userProcesses(),
+        selfPid: process.pid,
+        ask: async (name) => {
+          const win =
+            desktop.mainWindow !== null && !desktop.mainWindow.isDestroyed()
+              ? desktop.mainWindow
+              : null;
+          if (win && !win.isVisible()) win.show();
+          const options: Electron.MessageBoxOptions = {
+            type: "question",
+            message: t("Let bots use {name}?", { name }),
+            detail: t(
+              "Rakazo will change how this app starts from your launcher so bots can read it. Turning off computer access undoes this. Quit and reopen the app after allowing.",
+            ),
+            buttons: [t("Not Now"), t("Allow")],
+            defaultId: 0,
+            cancelId: 0,
+            noLink: true,
+          };
+          const result = await (win
+            ? dialog.showMessageBox(win, options)
+            : dialog.showMessageBox(options));
+          return result.response === 1;
+        },
+        failed: (name, error) =>
+          dialog.showErrorBox(
+            t("Could not set up {name}", { name }),
+            error instanceof Error ? error.message : String(error),
+          ),
+      })
+    : undefined;
+/** Once no bots may use this computer, every app it set up for them is undone. */
+const removeAppLaunchers = async () => {
+  if (!appAccessibility) return;
+  if (desktop.hostComputer?.isEnabled() || desktop.userDevices?.allowedAnywhere()) return;
+  await bestEffort("remove app launchers", appAccessibility.remove());
+};
 const localComputerChoice = createLocalComputerChoice({
   save: saveHostChoice,
-  revoke: () => desktop.hostComputer?.revoke(),
+  revoke: async () => {
+    try {
+      await desktop.hostComputer?.revoke();
+    } finally {
+      await removeAppLaunchers();
+    }
+  },
   settled: () => installApplicationMenu(),
 });
 const persistHostChoice = localComputerChoice.persist;
@@ -638,6 +689,8 @@ app.whenReady().then(async () => {
       app.quit();
     },
   });
+  // An app update can change the entry Rakazo's launcher was made from.
+  if (appAccessibility) void bestEffort("refresh app launchers", appAccessibility.refresh());
   hostScreen =
     screenDriver &&
     createDesktopHostScreen({
@@ -650,6 +703,7 @@ app.whenReady().then(async () => {
       home: path.join(userDataDir, "screen-driver", "home"),
       permissions: screenPermissions,
       locked: () => powerMonitor.getSystemIdleState(1) === "locked",
+      accessibility: appAccessibility,
       fitImage: (png, maxDimension) => {
         const image = nativeImage.createFromBuffer(png);
         const { width, height } = image.getSize();
@@ -669,6 +723,7 @@ app.whenReady().then(async () => {
         process.platform === "win32" || process.platform === "linux" ? process.platform : "darwin",
     }),
     confirm: (host) => confirmRemoteComputerAccess(host),
+    revoked: () => void removeAppLaunchers(),
     prepareAccess: prepareComputerAccess,
     // The app window's session carries the sign-in for that server; the token never reaches it.
     fetch: (url, init) =>
@@ -859,7 +914,11 @@ app.whenReady().then(async () => {
   handleIpc("desktop.device.setAllowed", async (event, allowed) => {
     const origin = remoteDeviceOrigin(event);
     if (origin === null || typeof allowed !== "boolean") return null;
-    await desktop.userDevices?.setAllowed(origin, allowed);
+    try {
+      await desktop.userDevices?.setAllowed(origin, allowed);
+    } finally {
+      if (!allowed) await removeAppLaunchers();
+    }
     return deviceState(remoteDeviceOrigin(event));
   });
   handleIpc(

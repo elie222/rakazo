@@ -223,4 +223,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Restart Rakazo": "重新啟動 Rakazo",
   "Not Now": "稍後再說",
   "Restart Rakazo to finish setup": "重新啟動 Rakazo 以完成設定",
+  "Let bots use {name}?": "要允許機器人使用 {name} 嗎？",
+  "Rakazo will change how this app starts from your launcher so bots can read it. Turning off computer access undoes this. Quit and reopen the app after allowing.":
+    "Rakazo 會變更此應用程式從啟動器啟動的方式，讓機器人可以讀取。關閉電腦存取權即可復原。允許後請結束並重新開啟該應用程式。",
+  "Could not set up {name}": "無法設定 {name}",
 };

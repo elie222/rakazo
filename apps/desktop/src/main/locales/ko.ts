@@ -236,4 +236,8 @@ export const KO_MESSAGES: Record<string, string> = {
   "Restart Rakazo": "Rakazo 재시동",
   "Not Now": "나중에",
   "Restart Rakazo to finish setup": "Rakazo를 재시동하여 설정 완료",
+  "Let bots use {name}?": "봇이 {name}을(를) 사용하도록 허용할까요?",
+  "Rakazo will change how this app starts from your launcher so bots can read it. Turning off computer access undoes this. Quit and reopen the app after allowing.":
+    "봇이 이 앱을 읽을 수 있도록 Rakazo가 런처에서 앱이 시작되는 방식을 변경합니다. 컴퓨터 접근을 끄면 원래대로 돌아갑니다. 허용한 후 앱을 종료했다가 다시 여세요.",
+  "Could not set up {name}": "{name}을(를) 설정할 수 없습니다",
 };
