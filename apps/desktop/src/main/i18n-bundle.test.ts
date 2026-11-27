@@ -1,14 +1,14 @@
-import { execFileSync } from "node:child_process";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import {
   desktopLocaleCatalogFiles,
   emitDesktopLocaleCatalogs,
 } from "../../scripts/locale-catalogs.js";
+import type * as I18n from "./i18n.js";
 
 it("loads packaged translations on demand and falls back when a catalog is missing", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "rakazo-i18n-"));
@@ -29,33 +29,25 @@ it("loads packaged translations on demand and falls back when a catalog is missi
       plugins: [desktopLocaleCatalogFiles(tags)],
     });
 
-    const probe = `
-      import { strict as assert } from "node:assert";
-      import { rmSync } from "node:fs";
-      import * as i18n from ${JSON.stringify(pathToFileURL(bundle).href)};
+    const i18n: typeof I18n = await import(/* @vite-ignore */ pathToFileURL(bundle).href);
+    const label = "Check for Updates…";
+    expect(i18n.startDesktopLocale("es-MX", "en")).toBe("es");
+    expect(i18n.t(label)).toBe("Buscar actualizaciones…");
 
-      const label = "Check for Updates…";
-      assert.equal(i18n.startDesktopLocale("es-MX", "en"), "es");
-      assert.equal(i18n.t(label), "Buscar actualizaciones…");
-
-      // Remove the Hebrew catalog after startup. It must still be unread at this point.
-      rmSync(new URL("./locales/he.json", ${JSON.stringify(pathToFileURL(bundle).href)}));
-      let savedLocale;
-      const reportLocale = i18n.createLocaleHandler(async (locale) => {
-        savedLocale = locale;
-      }, () => {});
+    // Removing the catalog after startup makes an eager loader fail this check.
+    await rm(path.join(localeDirectory, "he.json"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const save = vi.fn<(locale: string) => Promise<void>>(async () => {});
+      const reportLocale = i18n.createLocaleHandler(save, () => {});
       await reportLocale(null, "he");
-      assert.equal(savedLocale, "he");
-      assert.equal(i18n.desktopLocale(), "en");
-      assert.equal(i18n.desktopDirection(), "ltr");
-      assert.equal(i18n.t(label), label);
-    `;
-    const output = execFileSync(process.execPath, ["--input-type=module", "--eval", probe], {
-      cwd: tmpdir(),
-      encoding: "utf8",
-      stdio: "pipe",
-    });
-    expect(output).toBe("");
+      expect(save).toHaveBeenCalledExactlyOnceWith("he");
+      expect(i18n.desktopLocale()).toBe("en");
+      expect(i18n.desktopDirection()).toBe("ltr");
+      expect(i18n.t(label)).toBe(label);
+    } finally {
+      warn.mockRestore();
+    }
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
