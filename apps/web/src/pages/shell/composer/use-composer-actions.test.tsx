@@ -59,6 +59,7 @@ let root: ReturnType<typeof createQueryRoot>;
 let latest: ReturnType<typeof useComposerActions>;
 let pageSession: PageSession;
 let activeChat: string;
+let activeGroup: string | undefined;
 let refreshThread: (id: string) => Promise<ThreadSnapshot>;
 let activeSnapshot: ThreadSnapshot | null;
 // One stable ref object per value, like the real Shell: a fresh object per
@@ -86,8 +87,8 @@ function Harness({ extras }: { extras?: Record<string, unknown> }) {
     rpc: rpc as unknown as ReturnType<typeof createSpaceRpc>,
     pageSession,
     activeId: activeChat,
-    inGroup: false,
-    groupId: undefined,
+    inGroup: Boolean(activeGroup),
+    groupId: activeGroup,
     activeBotId,
     activeGroupId,
     botsRef,
@@ -108,8 +109,17 @@ function Harness({ extras }: { extras?: Record<string, unknown> }) {
 }
 
 function switchChat(activeId: string) {
+  activeGroup = undefined;
   activeChat = activeId;
   activeBotId.current = activeId;
+  activeGroupId.current = undefined;
+  act(() => root.render(<Harness />));
+}
+
+function switchGroup(groupId: string) {
+  activeGroup = groupId;
+  activeBotId.current = undefined;
+  activeGroupId.current = groupId;
   act(() => root.render(<Harness />));
 }
 
@@ -124,6 +134,7 @@ beforeEach(() => {
   me = null;
   navigate = vi.fn();
   activeChat = "bot-1";
+  activeGroup = undefined;
   refreshThread = async () => ({}) as ThreadSnapshot;
   activeSnapshot = null;
   activeBotId.current = activeChat;
@@ -422,6 +433,28 @@ it("drops a late group-reroute error after leaving and returning to the origin c
   });
   expect(latest.sendError).toBeNull();
   expect(latest.pendingSends).toEqual([]);
+});
+
+it("does not offer image confirmation in a destination group opened while a rerouted send is in flight", async () => {
+  const team = { kind: "group" as const, id: "group-2", name: "Team" };
+  const response = deferred<never>();
+  rpc.threads.send.mockReturnValueOnce(response.promise);
+  let submitted!: Promise<boolean>;
+  act(() => {
+    submitted = latest.sendMessage("@Team check this", [team], "nonce-reroute-img");
+  });
+  switchGroup("group-2");
+  act(() => latest.clearImageConfirmation());
+  const imageConfirm = Object.assign(new Error("Send image as file?"), {
+    status: 409,
+    data: { reason: "model_image_input_unsupported" },
+  });
+  await act(async () => {
+    response.reject(imageConfirm);
+    expect(await submitted).toBe(false);
+  });
+  expect(latest.sendError).toBe("Send image as file?");
+  expect(latest.imageConfirmation).toBe(false);
 });
 
 it("asks the chat to follow on submit, before the send lands", async () => {

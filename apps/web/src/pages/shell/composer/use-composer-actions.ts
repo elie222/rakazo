@@ -700,8 +700,8 @@ export function useComposerActions({
           (originDraftKey !== null &&
             submittedDraft !== null &&
             hasComposerDraftChangedSince(originDraftKey, submittedDraft));
-        // Offer the file resend only for the unchanged draft this send carried.
-        const confirmation = isConfirmation && !editedSinceSend;
+        // Offer the file resend only for the unchanged draft in the still-open origin chat.
+        const confirmation = isConfirmation && !editedSinceSend && originStillOpen();
         const failure = {
           message: errorText(error, t`Failed to send message`),
           imageConfirmation: confirmation,
