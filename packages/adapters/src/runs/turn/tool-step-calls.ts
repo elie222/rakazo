@@ -403,6 +403,24 @@ function structuralLeadEnd(tail: string): number {
   return index;
 }
 
+/**
+ * True when `index` opens `]` / `}` closers and the next thing is a comma plus a real JSON field.
+ * A bare `]` or a `]` with raw text after it is still the credential.
+ */
+function closersThenField(text: string, index: number): boolean {
+  let at = index;
+  if (text[at] !== "]" && text[at] !== "}") return false;
+  while (at < text.length && (text[at] === "]" || text[at] === "}")) {
+    at = skipJsonSpace(text, at + 1);
+  }
+  if (at >= text.length || text[at] !== ",") return false;
+  const key = skipJsonSpace(text, at + 1);
+  if (!keyColonAt(text, key)) return false;
+  const keyEnd = jsonStringEnd(text, key);
+  const colon = skipJsonSpace(text, keyEnd);
+  return text[colon] === ":" && jsonValueStarts(text, colon + 1);
+}
+
 function isStructuralContinuation(tail: string): boolean {
   const start = structuralLeadEnd(tail);
   if (start >= tail.length) return true;
@@ -415,6 +433,7 @@ function isStructuralContinuation(tail: string): boolean {
     return tail[colon] === ":" && jsonValueStarts(tail, colon + 1);
   }
   if (ch === "," || ch === "}") return authenticAfterQuote(tail, start - 1);
+  if (ch === "]") return closersThenField(tail, start);
   return false;
 }
 

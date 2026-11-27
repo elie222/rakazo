@@ -827,6 +827,66 @@ describe("replaying an earlier reply's tool steps", () => {
     expect(spaced).not.toContain("secret-head");
   });
 
+  it("keeps status when a saved omission ends on the array close before that field", () => {
+    const open = '{"items":[{"token":"';
+    const secret = "0123456789";
+    const closed = '"}';
+    const tailJson = '], "status":"Job completed"';
+    const headCut = Math.floor(1_000 * 0.7);
+    const padLen = headCut - open.length;
+    const total = 1_000 + secret.length + closed.length;
+    const core = `${"z".repeat(padLen)}${open}${secret}${closed}${tailJson}`;
+    const text = `${core}${"z".repeat(total - core.length)}`;
+    const tailAt = total - (1_000 - headCut);
+    expect(padLen).toBeGreaterThan(0);
+    expect(text).toHaveLength(total);
+    expect(text[tailAt]).toBe("]");
+    expect(text.slice(tailAt, tailAt + tailJson.length)).toBe(tailJson);
+    const saved = keptToolResult(
+      {
+        name: "shell",
+        executionId: "call-1",
+        durationMs: 1,
+        result: { content: [{ type: "text", text }] },
+      },
+      [],
+    );
+    expect(saved).toMatch(/\n… \[\d+ characters not kept\] …\n], "status":"Job completed"/);
+    expect(saved).not.toContain(secret);
+    const replayed = replayedCallText(saved!);
+    expect(replayed).toContain('"status":"Job completed"');
+    expect(replayed).not.toContain(secret);
+
+    const marker = "\n… [16 characters not kept] …\n";
+    const direct = replayedCallText(
+      `{"items":[{"token":"secret-head${marker}], "status":"Job completed"}`,
+    );
+    expect(direct).toContain('"status":"Job completed"');
+    expect(direct).not.toContain("secret-head");
+    const spaced = replayedCallText(
+      `{"items":[{"token":"secret-head${marker}] , "status": "Job completed"}`,
+    );
+    expect(spaced).toContain("Job completed");
+    expect(spaced).not.toContain("secret-head");
+    const nestedClose = replayedCallText(
+      `{"items":[{"token":"secret-head${marker}] } , "status": "Job completed"}`,
+    );
+    expect(nestedClose).toContain("Job completed");
+    expect(nestedClose).not.toContain("secret-head");
+
+    const bare = replayedCallText(`{"token":"secret-head${marker}]raw-credential-tail`);
+    expect(bare).not.toContain("secret-head");
+    expect(bare).not.toContain("raw-credential-tail");
+    const commaJunk = replayedCallText(`{"token":"secret-head${marker}], still-secret`);
+    expect(commaJunk).not.toContain("still-secret");
+    expect(commaJunk).not.toContain("secret-head");
+    const malformed = replayedCallText(
+      `{"items":[{"token":"secret-head${marker}], "note": trueish-secret-tail}`,
+    );
+    expect(malformed).not.toContain("trueish-secret-tail");
+    expect(malformed).not.toContain("secret-head");
+  });
+
   it("stays inside the saved cap when shared omission markers grow during redaction", () => {
     const marker = "\n… [8 characters not kept] …\n";
     const prefix = '{"token":"qq","password":"qq","secret":"qq"}';
