@@ -1,5 +1,6 @@
 import { MessageBlock } from "@rakazo/contracts";
 import {
+  ACTIVE_RUN_STATUSES,
   BOT_MESSAGE_MAX_LENGTH,
   BOT_MESSAGE_TOO_LONG,
   botMessageContext,
@@ -20,6 +21,14 @@ import {
 } from "@rakazo/db";
 import { runLeaseFor } from "../runs/assembly/run-messages.js";
 import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
+import {
+  groupHandoffNonce,
+  groupPilotEnrolled,
+  handoffPilotRuntimeForBot,
+  pilotHandoffSourceWhere,
+  pilotLauncher,
+  pilotRunModel,
+} from "../runs/turn/primary-runtime-pilot.js";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
 
 export async function handoffToGroupBot(
@@ -96,7 +105,7 @@ export async function handoffToGroupBot(
     }
 
     // A group stage has one owner; an outside turn can send several independent tasks.
-    const deliveryKey = `group-handoff:${inGroup ? run.id : (input.deliveryKey ?? run.id)}`;
+    const deliveryKey = groupHandoffNonce(inGroup ? run.id : (input.deliveryKey ?? run.id));
     const existing = await tx.message.findUnique({
       where: { threadId_clientNonce: { threadId: targetThreadId, clientNonce: deliveryKey } },
       select: {
@@ -161,6 +170,46 @@ export async function handoffToGroupBot(
       } as const;
     }
 
+    let pilotPin: ReturnType<typeof pilotRunModel>;
+    if (groupPilotEnrolled(targetId)) {
+      const runtime = handoffPilotRuntimeForBot(targetId);
+      if (!runtime || !pilotLauncher()) {
+        return { error: "the receiving bot is not available for pilot handoffs" } as const;
+      }
+      if (!inGroup || hop !== 1 || input.files?.length) {
+        return {
+          error: "the receiving pilot only supports a first plain-text handoff in this group",
+        } as const;
+      }
+      const source = await tx.run.findFirst({
+        where: { ...pilotHandoffSourceWhere(run), id: run.id, status: "running" },
+        select: { id: true },
+      });
+      const recipient = await tx.bot.findFirst({
+        where: { id: targetId, spaceId: run.spaceId, userId: run.userId, archivedAt: null },
+        select: { modelProvider: true, modelId: true, modelCredentialId: true },
+      });
+      if (!source || !recipient) {
+        return {
+          error: "pilot handoffs require a human-started group run and bots with the same owner",
+        } as const;
+      }
+      pilotPin = pilotRunModel(runtime, recipient);
+      if (!pilotPin) {
+        return { error: "the receiving pilot bot needs an explicit API-key connection" } as const;
+      }
+      const activeTarget = await tx.run.findFirst({
+        where: {
+          threadId: targetThreadId,
+          botId: targetId,
+          status: { in: [...ACTIVE_RUN_STATUSES] },
+        },
+        select: { id: true },
+      });
+      if (activeTarget)
+        return { error: "the receiving pilot bot already has an active turn" } as const;
+    }
+
     const handoffBlock: MessageBlock = {
       kind: "handoff",
       fromBotId: run.botId,
@@ -197,6 +246,7 @@ export async function handoffToGroupBot(
         status: "queued",
         trigger: "follow_up",
         sourceMessageId: message.id,
+        ...pilotPin,
       },
     });
     const event = await appendEventInTransaction(tx, {
