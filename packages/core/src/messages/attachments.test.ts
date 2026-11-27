@@ -1190,6 +1190,16 @@ describe("tool step history", () => {
     expect(redactPlainBearerTokens("Bearer fixturePrefix\\fixtureTail")).toBe("Bearer [redacted]");
     expect(redactPlainBearerTokens("Bearer [redacted]\nmore")).toBe("Bearer [redacted]\nmore");
     expect(redactPlainBearerTokens('Bearer [redacted]\\"')).toBe('Bearer [redacted]\\"');
+    const bearerSlash = JSON.stringify({ message: "Bearer [redacted]\\", status: "ok" });
+    expect(JSON.parse(redactPlainBearerTokens(bearerSlash))).toEqual({
+      message: "Bearer [redacted]\\",
+      status: "ok",
+    });
+    const bearerLine = JSON.stringify({ message: "Bearer [redacted]\nNext line", status: "ok" });
+    expect(JSON.parse(redactPlainBearerTokens(bearerLine))).toEqual({
+      message: "Bearer [redacted]\nNext line",
+      status: "ok",
+    });
     const bearerJson = JSON.stringify({ msg: "Bearer fixturePrefix\\fixtureTail" });
     const bearerRedacted = redactJsonStringsAndPlainText(
       bearerJson,

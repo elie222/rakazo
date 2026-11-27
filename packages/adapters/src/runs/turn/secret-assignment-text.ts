@@ -58,6 +58,26 @@ function isComposioLabel(text: string, start: number, end: number): boolean {
   );
 }
 
+/** A `"` preceded by an odd number of backslashes is an escape, not the start of a string. */
+function quoteIsEscaped(text: string, index: number): boolean {
+  let slashes = 0;
+  for (let prev = index - 1; prev >= 0 && text[prev] === "\\"; prev -= 1) slashes += 1;
+  return slashes % 2 === 1;
+}
+
+/** Raw or JSON-decoded text of a closed string. `\u0043OMPOSIO_API_KEY` is `COMPOSIO_API_KEY`. */
+function closedStringIsComposioKey(text: string, open: number, end: number): boolean {
+  if (isComposioLabel(text, open + 1, end - 1)) return true;
+  const raw = text.slice(open, end);
+  if (!raw.includes("\\")) return false;
+  try {
+    const decoded: unknown = JSON.parse(raw);
+    return typeof decoded === "string" && isComposioLabel(decoded, 0, decoded.length);
+  } catch {
+    return false;
+  }
+}
+
 /** A quoted value after a COMPOSIO_API_KEY key, redacted inside its own quotes. */
 function quotedKeyValue(
   text: string,
@@ -107,8 +127,9 @@ function assignmentValueEnd(text: string, open: number): number {
 
 /**
  * Redact a COMPOSIO_API_KEY assignment.
- * A closed JSON string is left intact unless it is the key itself, in which case only the
- * following quoted value is replaced. The decoded string is redacted again by the JSON walker.
+ * A closed JSON string is left intact unless its decoded text is the key itself, in which case
+ * only the following quoted value is replaced. An escaped quote is not a string start. The
+ * decoded string is redacted again by the JSON walker.
  * Whitespace may surround `:` or `=`, including a newline before a quoted value.
  */
 export function redactComposioApiKeyAssignments(text: string): string {
@@ -117,10 +138,10 @@ export function redactComposioApiKeyAssignments(text: string): string {
   let index = 0;
   let blockStringProbe = 0;
   while (index < text.length) {
-    if (text[index] === '"' && index >= blockStringProbe) {
+    if (text[index] === '"' && index >= blockStringProbe && !quoteIsEscaped(text, index)) {
       const scanned = scanQuoted(text, index);
       if (scanned.closed) {
-        if (isComposioLabel(text, index + 1, scanned.end - 1)) {
+        if (closedStringIsComposioKey(text, index, scanned.end)) {
           const value = quotedKeyValue(text, scanned.end);
           if (value) {
             out += `${text.slice(cursor, value.interiorStart)}${REDACTED_VALUE}`;

@@ -810,6 +810,32 @@ describe("tool step outcomes", () => {
     });
   });
 
+  it("keeps a log prefix and an escaped credential key around the redaction", () => {
+    const kept = (text: string, secrets: string[] = []) =>
+      keptToolResult({ ...base, result: { content: [{ type: "text", text }] } }, secrets);
+    const replay = (text: string, secrets: string[] = []) =>
+      bounded(text, 1_000, secrets, { replaySaved: true });
+    const prefixed =
+      'INFO label=\\"fixture\\" {"message":"COMPOSIO_API_KEY: fixtureValue123","status":"ok"}';
+    const escapedKey = '{"\\u0043OMPOSIO_API_KEY":"fixtureValue123","status":"ok"}';
+    for (const read of [kept, replay]) {
+      const logged = read(prefixed) ?? "";
+      expect(logged.startsWith('INFO label=\\"fixture\\" ')).toBe(true);
+      expect(logged).not.toContain("fixtureValue123");
+      const brace = logged.indexOf("{");
+      expect(JSON.parse(logged.slice(brace))).toEqual({
+        message: "COMPOSIO_API_KEY=[redacted]",
+        status: "ok",
+      });
+      const decoded = read(escapedKey) ?? "";
+      expect(decoded).not.toContain("fixtureValue123");
+      expect(JSON.parse(decoded)).toEqual({
+        COMPOSIO_API_KEY: "[redacted]",
+        status: "ok",
+      });
+    }
+  });
+
   it("redacts a raw credential that contains a forged omission marker, including its suffix", () => {
     const forged = "\n… [12 characters not kept] …\n";
     const suffix = "SECRET_SUFFIX_UNLABELED";

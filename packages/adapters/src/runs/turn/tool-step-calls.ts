@@ -68,19 +68,14 @@ function omissionMarkerEnd(text: string, index: number): number {
 export const TOOL_CALL_SAVED_TEXT_MAX_CHARS =
   TOOL_CALL_TEXT_MAX_CHARS + notKept(Number.MAX_SAFE_INTEGER).length;
 
-/** Keyword match inside an ASCII identifier key (`[\w-]+`). */
+/** Keyword match on a JSON object key after its escapes are decoded. */
 const CREDENTIAL_KEY_NAME =
   /(?:api[_-]?key|token|password|passwd|secret|authorization|credential)/i;
 
-function isCredentialKeyChar(ch: string): boolean {
-  const code = ch.charCodeAt(0);
-  return (
-    (code >= 48 && code <= 57) ||
-    (code >= 65 && code <= 90) ||
-    (code >= 97 && code <= 122) ||
-    code === 95 ||
-    code === 45
-  );
+function quoteIsEscaped(text: string, index: number): boolean {
+  let slashes = 0;
+  for (let prev = index - 1; prev >= 0 && text[prev] === "\\"; prev -= 1) slashes += 1;
+  return slashes % 2 === 1;
 }
 
 /**
@@ -449,20 +444,28 @@ function redactCredentialJsonFields(text: string, honorOmissionMarker: boolean):
   while (index < text.length) {
     const openKey = text.indexOf('"', index);
     if (openKey < 0) break;
-    let pos = openKey + 1;
-    while (pos < text.length && isCredentialKeyChar(text[pos]!)) pos += 1;
-    if (pos >= text.length) break;
-    if (text[pos] !== '"') {
-      index = pos;
+    if (quoteIsEscaped(text, openKey)) {
+      index = openKey + 1;
       continue;
     }
-    const closeKey = pos;
-    const keyName = text.slice(openKey + 1, closeKey);
+    const closeKey = jsonStringEnd(text, openKey);
+    if (closeKey < 0) {
+      const lineBreak = text.indexOf("\n", openKey);
+      index = lineBreak < 0 ? text.length : lineBreak + 1;
+      continue;
+    }
+    let keyName = "";
+    try {
+      const decoded: unknown = JSON.parse(text.slice(openKey, closeKey));
+      if (typeof decoded === "string") keyName = decoded;
+    } catch {
+      keyName = "";
+    }
     if (!CREDENTIAL_KEY_NAME.test(keyName)) {
       index = closeKey;
       continue;
     }
-    pos = closeKey + 1;
+    let pos = closeKey;
     while (pos < text.length && /\s/.test(text[pos]!)) pos += 1;
     if (text[pos] !== ":") {
       index = pos;

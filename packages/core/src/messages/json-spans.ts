@@ -400,6 +400,13 @@ function isAsciiDigit(ch: string | undefined): boolean {
   return ch !== undefined && ch >= "0" && ch <= "9";
 }
 
+/** A `"` preceded by an odd number of backslashes is an escape, not the start of a string. */
+function quoteIsEscaped(raw: string, index: number): boolean {
+  let slashes = 0;
+  for (let prev = index - 1; prev >= 0 && raw[prev] === "\\"; prev -= 1) slashes += 1;
+  return slashes % 2 === 1;
+}
+
 export type ScannedJsonToken = { start: number; end: number; isString: boolean };
 
 /**
@@ -413,6 +420,10 @@ export function scanJsonTokens(raw: string, includeNumbers: boolean): ScannedJso
   while (i < raw.length) {
     const ch = raw[i]!;
     if (ch === '"') {
+      if (quoteIsEscaped(raw, i)) {
+        i += 1;
+        continue;
+      }
       let end = i + 1;
       while (end < raw.length) {
         const next = raw[end]!;
