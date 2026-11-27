@@ -114,6 +114,8 @@ export async function endDeactivatedAccess(deps: AccountStatusDeps, userId: stri
     () => prisma.callPushDevice.deleteMany({ where: { userId } }),
     // A pending code would otherwise link a chat app to the account after this.
     () => prisma.messagingLinkCode.deleteMany({ where: { userId } }),
+    // Installed page apps hold their own tokens, which a reactivation must not bring back.
+    () => prisma.pageApp.deleteMany({ where: { userId } }),
     // Screen links issued before now stop working; people still allowed get new ones.
     () =>
       prisma.bot.updateMany({ where: { userId }, data: { screenGeneration: { increment: 1 } } }),
