@@ -157,8 +157,8 @@ export function createLauncherInstaller(options: {
   async function uninstall(appId: string): Promise<boolean> {
     const app = (await registry.list()).find((entry) => entry.appId === appId);
     if (!app) return false;
-    await launcher.remove(app.bundlePath);
-    // A copy the person made of the launcher would start nothing once the app is gone.
+    // Only launchers that start this app go: the recorded one, found again in case it was
+    // renamed (and its name since reused by another app), and any copy the person made.
     for (
       let copies = 0, found = await launcher.find(appId);
       found && copies < MAX_COPIES;
