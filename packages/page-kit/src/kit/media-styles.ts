@@ -39,8 +39,8 @@ export const MEDIA_CSS = `
 [dir="rtl"] .rk-gallery-arrow svg{transform:scaleX(-1)}
 .rk-gallery-arrow:dir(ltr) svg{transform:none}
 @media (hover:hover){.rk-gallery-arrow{display:grid}.rk-gallery:hover .rk-gallery-arrow{opacity:.92}.rk-gallery .rk-gallery-arrow:hover{opacity:1}}
-.rk-gallery-dots{position:absolute;left:0;right:0;bottom:3px;display:flex;justify-content:center}
-.rk-gallery-dots button{appearance:none;display:grid;place-items:center;width:24px;height:24px;margin:0 -6px;padding:0;border:0;background:none;cursor:pointer}
+.rk-gallery-dots{position:absolute;left:0;right:0;bottom:3px;display:flex;justify-content:center;pointer-events:none}
+.rk-gallery-dots button{appearance:none;display:grid;place-items:center;width:24px;height:24px;margin:0 -6px;padding:0;border:0;background:none;cursor:pointer;pointer-events:auto}
 .rk-gallery-dots button::before{content:"";width:6px;height:6px;border-radius:6px;background:${pageKitPalette.shared.onDeepTone};opacity:.5;box-shadow:0 1px 3px ${pageKitPalette.shared.dotShadow};transition:opacity .14s,width .2s}
 .rk-gallery-dots button[aria-current="true"]::before{width:14px;opacity:1}
 .rk-gallery-dots button:focus-visible{outline:2px solid var(--ring);outline-offset:2px}

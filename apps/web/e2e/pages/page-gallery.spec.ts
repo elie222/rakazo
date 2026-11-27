@@ -139,3 +139,18 @@ for (const { lang, label, next, previous } of [
     });
   });
 }
+
+test("two quick Next clicks advance through two photos", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const track = await openGallery(page, "en");
+  await track.hover();
+  await page.getByRole("button", { name: "Next photo" }).dblclick({ delay: 50 });
+  await expect.poll(() => shown(track)).toBe("Third");
+});
+
+test("a photo opens when clicked beside the dots", async ({ page }) => {
+  const track = await openGallery(page, "en");
+  const box = (await track.boundingBox())!;
+  await page.mouse.click(box.x + 30, box.y + box.height - 15);
+  await expect(page.getByRole("dialog", { name: "First" })).toBeVisible();
+});

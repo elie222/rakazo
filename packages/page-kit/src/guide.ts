@@ -99,7 +99,7 @@ Keep each control's value in useState, or in usePageState when the reader should
 ### Media
 Give each picture (a web image, a generated image, a chat or computer file) a name in save_page images and write "image:<name>" in full wherever a picture goes: src, image, photos, poster. Sound and video must be data: URIs (or a blob: the page makes itself). Web addresses never load and the component is left out.
 - Image {src, alt, caption?, fit?: "cover" | "contain", width?, height?, ratio?: number | "16/9"}: click to enlarge.
-- Gallery {photos: [{src, alt}], height?}: up to 8 photos the reader swipes or steps through; click to enlarge.
+- Gallery {photos: [{src, alt}], height?}: up to 8 photos the reader swipes or steps through.
 - PhotoStrip {items: [{image, alt?, title?, price?, note?, href?}], tileWidth?, imageHeight?}: a sideways row of small cards.
 - Video {src, alt, poster?, caption?, autoplay?, loop?, controls?, ratio?} and Audio {src, alt, caption?, loop?}.
 

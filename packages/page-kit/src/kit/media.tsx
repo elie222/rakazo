@@ -316,13 +316,13 @@ export function Gallery({
   const current = Math.min(chosen, items.length - 1);
   // A right-to-left track starts at zero and scrolls to negative offsets towards later photos.
   const side = (node: HTMLElement) => (getComputedStyle(node).direction === "rtl" ? -1 : 1);
-  const show = (index: number) => {
+  const show = (index: number, smooth = true) => {
     const node = track.current;
     if (!node) return;
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     node.scrollTo({
       left: side(node) * index * node.clientWidth,
-      behavior: reduced ? "auto" : "smooth",
+      behavior: smooth && !reduced ? "smooth" : "auto",
     });
     setCurrent(index);
   };
@@ -400,7 +400,7 @@ export function Gallery({
                 tabIndex={-1}
                 aria-label={words.t(way === "next" ? "nextPhoto" : "previousPhoto")}
                 onClick={() => {
-                  show(current + step);
+                  show(current + step, false);
                   focusPhoto(current + step);
                 }}
               >
