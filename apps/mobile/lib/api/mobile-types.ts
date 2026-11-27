@@ -56,6 +56,7 @@ export type MobileMe = Pick<
   | "isDeploymentOwner"
   | "needsSignupSurvey"
   | "billingEnabled"
+  | "supportPromptDisabled"
   | "paymentWalletProvider"
   | "labs"
   | "labsAvailable"

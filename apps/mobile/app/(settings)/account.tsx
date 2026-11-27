@@ -28,7 +28,10 @@ import type { MobileMe } from "../../lib/api/mobile-types";
 import { errorText } from "../../lib/api/user-error";
 import { signOut } from "../../lib/auth/api-auth";
 import { replaceWithSignIn } from "../../lib/auth/auth-routing";
-import { selfHosted, showSelfHostedSupport } from "../../lib/billing/self-hosted-support";
+import {
+  selfHostedSupportEnabled,
+  showSelfHostedSupport,
+} from "../../lib/billing/self-hosted-support";
 import { endCallBeforeSessionEnd } from "../../lib/calls/call-session";
 import { dateLocaleForUi, useUiLocale } from "../../lib/i18n/i18n";
 import { useSideInsets } from "../../lib/layout/side-insets";
@@ -78,6 +81,7 @@ export default function Account() {
   const approvals = useApprovalSettings(ACCOUNT_SETTINGS);
   const spending = useSpendingStatus();
   const organizations = useOrganizations().data;
+  const showSupport = selfHostedSupportEnabled(me?.supportPromptDisabled);
 
   const icon = ({ ios, android }: Icon) => (
     <NativeSymbol ios={ios} android={android} color={tokens.mutedForeground} />
@@ -432,9 +436,9 @@ export default function Account() {
             : null}
         </SettingsGroup>
 
-        {writeReviewUrl() || selfHosted() ? (
+        {writeReviewUrl() || showSupport ? (
           <SettingsGroup>
-            {selfHosted() ? (
+            {showSupport ? (
               <SettingsRow
                 accessibilityRole="button"
                 leading={icon({ ios: "heart", android: "heart-outline" })}

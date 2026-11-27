@@ -62,6 +62,7 @@ const { element, account } = vi.hoisted(() => ({
     messaging: { enabled: true },
     plans: [] as unknown[],
     billing: {} as Record<string, unknown>,
+    apiBase: "http://127.0.0.1:3100",
   },
 }));
 
@@ -266,7 +267,7 @@ vi.mock("../api/api-server", async (importOriginal) => ({
 }));
 vi.mock("../api/api", async (importOriginal) => ({
   ...(await importOriginal<typeof Api>()),
-  currentApiBase: () => "http://127.0.0.1:3100",
+  currentApiBase: () => account.apiBase,
   rpc: vi.fn(async (method: string) =>
     method === "me"
       ? account.me
@@ -436,6 +437,7 @@ beforeEach(() => {
   account.messaging = { enabled: true };
   account.plans = [];
   account.billing = {};
+  account.apiBase = "http://127.0.0.1:3100";
   haptics.enabled = true;
   storeUpdate.available = false;
   storeReview.url = null;
@@ -1158,4 +1160,19 @@ it("shows subscription allowances and credits only for members who have them", a
   expect(titles).toContain("Session");
   expect(view.button("Session")!.dataset.value).toBe("38% used");
   expect(view.button("Credits")!.dataset.value).toBe("$12.50 left");
+});
+
+it("hides Support Rakazo on custom servers when supportPromptDisabled is true", async () => {
+  account.apiBase = "https://self.example.test";
+  let view = await renderAccount();
+  let titles = Array.from(view.screen.querySelectorAll("[data-row]"), (row) => row.textContent);
+  expect(titles).toContain("Support Rakazo");
+
+  act(() => root?.unmount());
+  container?.remove();
+  queryClient.clear();
+  account.me = { ...account.me, supportPromptDisabled: true };
+  view = await renderAccount();
+  titles = Array.from(view.screen.querySelectorAll("[data-row]"), (row) => row.textContent);
+  expect(titles).not.toContain("Support Rakazo");
 });

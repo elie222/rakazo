@@ -3,6 +3,7 @@ import {
   offerSelfHostedSupportOnce,
   resetSelfHostedSupportForTests,
   selfHosted,
+  selfHostedSupportEnabled,
 } from "./self-hosted-support";
 
 const store = new Map<string, string>();
@@ -78,6 +79,17 @@ describe("self-hosted support offer", () => {
 
     fail.read = false;
     await expect(offerSelfHostedSupportOnce(() => true)).resolves.toBe(true);
+    expect(native.alert).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays suppressed when disabled by the server and leaves asked unset", async () => {
+    expect(selfHostedSupportEnabled(true)).toBe(false);
+    expect(selfHostedSupportEnabled(false)).toBe(true);
+
+    await expect(offerSelfHostedSupportOnce(() => true, { disabled: true })).resolves.toBe(false);
+    expect(native.alert).not.toHaveBeenCalled();
+
+    await expect(offerSelfHostedSupportOnce(() => true, { disabled: false })).resolves.toBe(true);
     expect(native.alert).toHaveBeenCalledTimes(1);
   });
 });

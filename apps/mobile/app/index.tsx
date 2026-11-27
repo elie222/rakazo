@@ -209,6 +209,8 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   const [spaceBusy, setSpaceBusy] = useState(false);
   const [spaceRecoveryId, setSpaceRecoveryId] = useState<string | null>(null);
   const userId = me?.userId;
+  const liveMeLoaded = me?.billingEnabled !== undefined;
+  const supportPromptDisabled = me?.supportPromptDisabled;
   const { collapsed, toggleCollapsed, loaded: collapsedLoaded } = useCollapsedSections(userId);
   // Collapsed sections and the view load before the inbox first renders, so neither jumps on launch.
   const ready = sessionLoaded && collapsedLoaded && activityModeLoaded;
@@ -230,14 +232,19 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         "inbox prompts",
         (async () => {
           if (await offerPasskeyOnce(userId, () => active)) return;
-          if (await offerSelfHostedSupportOnce(() => active)) return;
+          if (
+            liveMeLoaded &&
+            (await offerSelfHostedSupportOnce(() => active, { disabled: supportPromptDisabled }))
+          ) {
+            return;
+          }
           await askForReviewIfDue(() => active);
         })(),
       );
       return () => {
         active = false;
       };
-    }, [userId]),
+    }, [liveMeLoaded, supportPromptDisabled, userId]),
   );
 
   const toggleActivityMode = useCallback(() => {
