@@ -1,9 +1,8 @@
 import type { BrowserWindow, MenuItemConstructorOptions } from "electron";
 import { describe, expect, it, vi } from "vitest";
+import { pageAppMenu } from "./page-app-window.js";
 
 vi.mock("electron", () => ({}));
-
-const { pageAppMenu } = await import("./page-app-window.js");
 
 const input = {
   name: "Deals",
