@@ -249,7 +249,7 @@ describe("listing pages", () => {
     });
   });
 
-  it("reports when the list leaves out older matches", async () => {
+  it("returns the last listed page as the cursor when more pages match", async () => {
     const { ctx } = listing(
       Array.from({ length: PAGE_LIST_MAX_LIMIT + 1 }, (_, index) => ({
         id: String(index),
@@ -260,10 +260,35 @@ describe("listing pages", () => {
     );
     const result = (await pageTools.save_page!(ctx, call({ list: true }))) as {
       pages: unknown[];
-      hasMore?: boolean;
+      nextCursor?: { pageId: string; updatedAt: string };
     };
     expect(result.pages).toHaveLength(PAGE_LIST_MAX_LIMIT);
-    expect(result.hasMore).toBe(true);
+    expect(result.nextCursor).toEqual({
+      pageId: String(PAGE_LIST_MAX_LIMIT - 1),
+      updatedAt: "2026-11-01T00:00:00.000Z",
+    });
+  });
+
+  it("continues a title search after the cursor within the same access scope", async () => {
+    const { ctx, findMany } = listing([], "group-1");
+    const updatedAt = new Date("2026-11-01");
+    await pageTools.save_page!(
+      ctx,
+      call({
+        list: true,
+        query: "Plan",
+        cursor: { pageId: "page-1", updatedAt: updatedAt.toISOString() },
+      }),
+    );
+    expect(findMany.mock.calls[0]?.[0]).toMatchObject({
+      where: {
+        spaceId: "space-1",
+        userId: "user-1",
+        OR: [{ botId: "bot-1" }, { groupId: "group-1" }],
+        title: { contains: "Plan", mode: "insensitive" },
+        AND: { OR: [{ updatedAt: { lt: updatedAt } }, { updatedAt, id: { lt: "page-1" } }] },
+      },
+    });
   });
 
   it("answers an empty list when the bot has no pages", async () => {

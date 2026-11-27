@@ -1,5 +1,7 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import {
+  Id,
+  IsoDate,
   PAGE_IMAGE_PREFIX,
   PAGE_IMAGES_MAX,
   PAGE_LIST_MAX_LIMIT,
@@ -12,6 +14,7 @@ import {
   escapeSearchWildcards,
   redactSecrets,
 } from "@rakazo/core";
+import type { Prisma } from "@rakazo/db";
 import {
   isUniqueViolation,
   pageImageNames,
@@ -24,6 +27,7 @@ import {
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { checkPageSource, PAGE_KIT_GUIDE } from "@rakazo/page-kit/validate";
+import { z } from "zod";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "../../approvals/approval-ask.js";
 import { argumentGiven } from "../../bots/update-bot-patch.js";
 import type { RunContext } from "../assembly/run-context.js";
@@ -98,25 +102,41 @@ function reachablePage(ctx: RunContext, pageId: string) {
   return { id: pageId, ...reachablePages(ctx) };
 }
 
-async function listPages(ctx: RunContext, search: unknown) {
-  const query = typeof search === "string" ? search.trim().slice(0, PAGE_TITLE_MAX_LENGTH) : "";
+const PageListCursor = z.object({ pageId: Id, updatedAt: IsoDate });
+
+async function listPages(ctx: RunContext, args: Record<string, unknown>) {
+  const query =
+    typeof args.query === "string" ? args.query.trim().slice(0, PAGE_TITLE_MAX_LENGTH) : "";
+  let afterCursor: Prisma.PageWhereInput | undefined;
+  if (argumentGiven(args.cursor)) {
+    const cursor = PageListCursor.safeParse(args.cursor);
+    if (!cursor.success) return { error: "Pass nextCursor from the previous page list." };
+    const updatedAt = new Date(cursor.data.updatedAt);
+    afterCursor = {
+      OR: [{ updatedAt: { lt: updatedAt } }, { updatedAt, id: { lt: cursor.data.pageId } }],
+    };
+  }
   const rows = await ctx.deps.prisma.page.findMany({
     where: {
       ...reachablePages(ctx),
       ...(query ? { title: { contains: escapeSearchWildcards(query), mode: "insensitive" } } : {}),
+      ...(afterCursor ? { AND: afterCursor } : {}),
     },
     select: { id: true, title: true, visibility: true, updatedAt: true },
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     take: PAGE_LIST_MAX_LIMIT + 1,
   });
   const pages = rows.slice(0, PAGE_LIST_MAX_LIMIT);
+  const last = pages.at(-1);
   if (pages.length)
     await markReadOutsideContent(
       ctx,
       pages.map((page) => page.title),
     );
   return {
-    ...(rows.length > PAGE_LIST_MAX_LIMIT ? { hasMore: true } : {}),
+    ...(rows.length > PAGE_LIST_MAX_LIMIT && last
+      ? { nextCursor: { pageId: last.id, updatedAt: last.updatedAt.toISOString() } }
+      : {}),
     pages: pages.map((page) => ({
       pageId: page.id,
       title: page.title,
@@ -279,7 +299,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, thread } = ctx;
   const { args } = call;
   if (args.help === true) return { guide: PAGE_KIT_GUIDE };
-  if (args.list === true) return listPages(ctx, args.query);
+  if (args.list === true) return listPages(ctx, args);
   const pageId = argumentGiven(args.pageId) ? String(args.pageId) : undefined;
   const hasSource = argumentGiven(args.source);
   const hasEdits = editsGiven(args);
