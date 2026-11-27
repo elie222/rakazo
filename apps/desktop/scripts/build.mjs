@@ -48,6 +48,27 @@ if (leakedCatalogs.length > 0) {
   throw new Error(`desktop main.js includes locale catalogs:\n${leakedCatalogs.join("\n")}`);
 }
 
+// An installed page app's main process: launch.ts loads it instead of main.js inside such an app.
+await build({
+  absWorkingDir: root,
+  entryPoints: ["src/main/page-app.ts"],
+  outfile: path.join(root, "dist", "page-app.js"),
+  bundle: true,
+  charset: "utf8",
+  platform: "node",
+  format: "esm",
+  target: "node24",
+  sourcemap: true,
+  plugins: [zodEnglishLocaleOnly, desktopLocaleCatalogFiles(localeTags)],
+  banner: {
+    js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);',
+  },
+  external: ["electron", "electron-updater", "koffi", "@sentry/electron"],
+  define: {
+    "process.env.RAKAZO_DESKTOP_RELEASE": JSON.stringify(process.env.RAKAZO_DESKTOP_RELEASE ?? ""),
+  },
+});
+
 // The entry Electron starts: turns on the compile cache, then loads the bundle above.
 await build({
   absWorkingDir: root,

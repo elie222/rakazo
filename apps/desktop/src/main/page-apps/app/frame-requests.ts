@@ -1,0 +1,76 @@
+import type { PageState } from "@rakazo/contracts";
+import {
+  PAGE_ANSWER_MAX_LENGTH,
+  PAGE_ASK_MAX_LENGTH,
+  PAGE_NOTIFY_BODY_MAX_LENGTH,
+  PAGE_NOTIFY_TITLE_MAX_LENGTH,
+} from "@rakazo/contracts";
+import { pageCopyRequest, pageLinkRequest, pageStateRequest } from "@rakazo/core";
+
+/** What the page in the frame asked its app for, once it has been checked. */
+export type FrameRequest =
+  | { kind: "state"; values: PageState }
+  | { kind: "open-link"; url: string }
+  | { kind: "copy"; id: string; text: string }
+  | { kind: "ask"; id: string; text: string }
+  | { kind: "notify"; title: string; body: string };
+
+function line(value: unknown, max: number): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.replace(/\s+/g, " ").trim();
+  return text && text.length <= max ? text : null;
+}
+
+function requestId(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 && value.length <= 64 ? value : null;
+}
+
+/** The frame is untrusted: anything not exactly one of these is dropped. */
+export function frameRequest(data: unknown): FrameRequest | null {
+  if (!data || typeof data !== "object") return null;
+  const message = data as Record<string, unknown>;
+  switch (message.type) {
+    case "rakazo-page:state": {
+      const values = pageStateRequest(data);
+      return values ? { kind: "state", values } : null;
+    }
+    case "rakazo-page:open-link": {
+      const url = pageLinkRequest(data);
+      return url ? { kind: "open-link", url } : null;
+    }
+    case "rakazo-page:copy": {
+      const copy = pageCopyRequest(data);
+      return copy ? { kind: "copy", ...copy } : null;
+    }
+    case "rakazo-page:ask": {
+      const id = requestId(message.id);
+      const text = typeof message.text === "string" ? message.text.trim() : "";
+      return id && text && text.length <= PAGE_ASK_MAX_LENGTH ? { kind: "ask", id, text } : null;
+    }
+    case "rakazo-page:notify": {
+      const title = line(message.title, PAGE_NOTIFY_TITLE_MAX_LENGTH);
+      const body =
+        message.body === undefined ? "" : line(message.body, PAGE_NOTIFY_BODY_MAX_LENGTH);
+      return title && body !== null ? { kind: "notify", title, body } : null;
+    }
+    default:
+      return null;
+  }
+}
+
+export function askAnswer(id: string, text: string | null) {
+  return text === null
+    ? { type: "rakazo-page:answer", id, ok: false }
+    : { type: "rakazo-page:answer", id, ok: true, text: text.slice(0, PAGE_ANSWER_MAX_LENGTH) };
+}
+
+/** Whether a notification may show now: at most one per interval, so a page cannot flood. */
+export function createRateLimit(intervalMs: number, now: () => number = Date.now) {
+  let last = Number.NEGATIVE_INFINITY;
+  return () => {
+    const time = now();
+    if (time - last < intervalMs) return false;
+    last = time;
+    return true;
+  };
+}
