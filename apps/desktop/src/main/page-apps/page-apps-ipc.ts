@@ -4,6 +4,7 @@ import { app, shell } from "electron";
 import { desktop } from "../desktop-state.js";
 import type { IpcCaller } from "../ipc/ipc.js";
 import { handleIpc } from "../ipc/ipc.js";
+import { serverHeadersFor } from "../setup/setup-config.js";
 import { reportDesktopError } from "../system/monitoring.js";
 import { isLoopbackOrigin, serverOrigin, writeServerOverride } from "./page-app-files.js";
 import {
@@ -63,7 +64,11 @@ export function registerPageApps(userDataDir: string) {
     const server = callerServer(event);
     if (!request || !server) return false;
     try {
-      return await installer.install(request, server);
+      return await installer.install(
+        request,
+        server,
+        serverHeadersFor(server, desktop.currentSetup),
+      );
     } catch (error) {
       reportDesktopError(error, "desktop.ipc", { "ipc.channel": "desktop.pageApps.install" });
       return false;

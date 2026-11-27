@@ -1957,6 +1957,27 @@ describePages("pages", () => {
     expect((await call("", {}, again.token)).status).toBe(401);
   });
 
+  it("ends an installed app with the sign-in that installed it", async () => {
+    const owner = await signup(app, `app-session-${stamp}@example.test`, "Owner");
+    const bot = await createBot(app, owner, "Session bot");
+    await sendAndWait(app, owner, bot.id, {
+      text: `call save_page with ${JSON.stringify({ title: "Mine", source: page("Mine") })}`,
+    });
+    const { pageId } = (await lastResult(bot.id)) as { pageId: string };
+    const installed = await rpc<PageAppInstall>(app, owner, "pageApps/install", {
+      pageId,
+      abilities: [],
+    });
+    const read = () =>
+      app.request(PAGE_APP_API_PATH, { headers: { authorization: `Bearer ${installed.token}` } });
+    expect((await read()).status).toBe(200);
+    await app.request("/api/auth/sign-out", {
+      method: "POST",
+      headers: { cookie: owner, origin: "http://127.0.0.1:5173" },
+    });
+    expect((await read()).status).toBe(401);
+  });
+
   it("streams an installed app's question to the page's bot and back", async () => {
     const owner = await signup(app, `app-asker-${stamp}@example.test`, "Asker");
     const bot = await createBot(app, owner, "Asked bot");

@@ -49,7 +49,7 @@ export type PageAppHost = {
  * key in a closure, so a page can report no click or key the person did not make.
  */
 function gestureGuard(key: string): string {
-  return `<script>(() => { const up = parent, key = ${JSON.stringify(key)}; document.currentScript.remove(); const apply = Reflect.apply, repeat = Object.getOwnPropertyDescriptor(KeyboardEvent.prototype, "repeat").get; const tell = () => up.postMessage({ type: "rakazo-page:gesture", key }, "*"); addEventListener("pointerup", (event) => { if (event.isTrusted) tell(); }, true); addEventListener("keydown", (event) => { if (event.isTrusted && !apply(repeat, event, [])) tell(); }, true); })();</script>`;
+  return `<script>(() => { const up = parent, key = ${JSON.stringify(key).replace(/</g, "\\u003c")}; document.currentScript.remove(); const apply = Reflect.apply, repeat = Object.getOwnPropertyDescriptor(KeyboardEvent.prototype, "repeat").get; const tell = () => up.postMessage({ type: "rakazo-page:gesture", key }, "*"); addEventListener("pointerup", (event) => { if (event.isTrusted) tell(); }, true); addEventListener("keydown", (event) => { if (event.isTrusted && !apply(repeat, event, [])) tell(); }, true); })();</script>`;
 }
 
 /** JSON with object keys sorted, since the database keeps its own key order. */
@@ -83,7 +83,7 @@ function isRemoved(error: unknown) {
 export function createPageAppController(api: PageAppApi, host: PageAppHost) {
   const stopped = new AbortController();
   const images = new Map<string, string>();
-  const declined = new Set<string>();
+  const declined = new Set<PageAbility>();
   const mayNotify = createRateLimit(NOTIFY_INTERVAL_MS);
   const mayOpenLink = createRateLimit(LINK_INTERVAL_MS);
   const mayCopy = createRateLimit(COPY_INTERVAL_MS);
@@ -130,10 +130,10 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
     try {
       let approvals = next.approved;
       for (const ability of next.page.abilities) {
-        const key = `${next.page.version}:${ability}`;
-        if (approvals.includes(ability) || declined.has(key)) continue;
+        // "Not Now" holds until the app is opened again, whatever versions arrive meanwhile.
+        if (approvals.includes(ability) || declined.has(ability)) continue;
         if (!(await host.confirmAbility(ability))) {
-          declined.add(key);
+          declined.add(ability);
           continue;
         }
         approvals = await api.approve([...approvals, ability]);

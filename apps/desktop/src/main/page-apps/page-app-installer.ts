@@ -4,7 +4,7 @@ import { mkdir, readdir, rename, rmdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { PAGE_APP_TOKEN } from "@rakazo/contracts";
-import { pollUntil } from "@rakazo/core";
+import { deadlineSignal, pollUntil } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import {
   buildPageAppBundle,
@@ -26,9 +26,11 @@ import {
   isPageAppIdentity,
   pageAppConfig,
   pageAppsFolder,
+  readPageAppHeaders,
   readPageAppToken,
   readServerOverride,
   removePageAppData,
+  writePageAppHeaders,
   writePageAppToken,
 } from "./page-app-files.js";
 import type { InstalledPageApp } from "./registry.js";
@@ -39,6 +41,7 @@ const MAX_ICON_ENTRIES = 12;
 /** Where bundles are made before they appear in the apps folder, on the same volume. */
 const STAGING = ".staging";
 const SET_ASIDE = ".previous.app";
+const MARK_USED_DEADLINE_MS = 15_000;
 const RETIRED = ".retired.app";
 
 export type PageAppInstallRequest = {
@@ -168,7 +171,12 @@ export function createPageAppInstaller(options: {
   const source = options.source ?? runningBundle();
   const exclusive = createOneAtATime();
 
-  async function install(request: PageAppInstallRequest, server: string): Promise<boolean> {
+  async function install(
+    request: PageAppInstallRequest,
+    server: string,
+    serverHeaders: Record<string, string> = {},
+  ): Promise<boolean> {
+    const api = createPageAppApi(server, request.token, fetch, serverHeaders);
     const config: PageAppConfig = {
       appId: request.appId,
       pageId: request.pageId,
@@ -194,18 +202,25 @@ export function createPageAppInstaller(options: {
           }),
         async (built) => {
           await writePageAppToken(request.appId, request.token, home);
+          await writePageAppHeaders(request.appId, serverHeaders, home);
           const target = path.join(folder, uniqueBundleName(name, await bundleNames(folder)));
           await rename(built, target);
           return target;
         },
       );
       await registry.put({ ...config, bundlePath: placed });
+      // One read marks the token used, so the server's cleanup of never-used apps leaves this one
+      // even if its first launch does not get through.
+      await bestEffort(
+        "mark a page app installed",
+        api.view(deadlineSignal(MARK_USED_DEADLINE_MS)),
+      );
       await bestEffort("register page app", registerWithLaunchServices(placed));
       await bestEffort("open page app", options.open(placed));
       return true;
     } catch (error) {
       // Nothing will use the token now, so it ends first, before any cleanup that could fail.
-      await revokePageAppToken(createPageAppApi(server, request.token));
+      await revokePageAppToken(api);
       if (placed !== null) await bestEffort("remove an unfinished page app", removeBundle(placed));
       await bestEffort(
         "remove an unfinished page app's data",
@@ -224,7 +239,9 @@ export function createPageAppInstaller(options: {
   /** Drops an app whose bundle is gone; until its token is revoked, the next start tries again. */
   async function forget(app: InstalledPageApp) {
     const token = await readPageAppToken(app.appId, home);
-    if (token && !(await revokePageAppToken(createPageAppApi(app.server, token)))) return;
+    const headers = await readPageAppHeaders(app.appId, home);
+    const api = token && createPageAppApi(app.server, token, fetch, headers);
+    if (api && !(await revokePageAppToken(api))) return;
     await removePageAppData(app.appId, home);
     await registry.remove(app.appId);
   }
@@ -240,7 +257,10 @@ export function createPageAppInstaller(options: {
   async function refreshApp(app: InstalledPageApp) {
     // An app moved to the Trash from Finder ends with its token, as an uninstall does.
     if (!existsSync(app.bundlePath)) {
-      const moved = await findBundle(pageAppBundleId(app.appId), home ?? os.homedir());
+      // Renamed in its folder, it is found there; moved anywhere else, Spotlight may know.
+      const moved =
+        (await installedBundles(home)).find((found) => found.appId === app.appId)?.bundlePath ??
+        (await findBundle(pageAppBundleId(app.appId), home ?? os.homedir()));
       if (moved) await registry.put({ ...app, bundlePath: moved });
       else await forget(app);
       return;
@@ -340,8 +360,11 @@ export function createPageAppInstaller(options: {
   }
 
   return {
-    install: (request: PageAppInstallRequest, server: string) =>
-      exclusive(() => install(request, server)),
+    install: (
+      request: PageAppInstallRequest,
+      server: string,
+      serverHeaders?: Record<string, string>,
+    ) => exclusive(() => install(request, server, serverHeaders)),
     uninstall: (appId: string) => exclusive(() => uninstall(appId)),
     refresh,
     /** Settles once no install, removal or update is moving a bundle. */
