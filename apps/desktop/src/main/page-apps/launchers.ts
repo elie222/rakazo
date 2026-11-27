@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getLogger } from "@rakazo/logging";
 import { app, shell } from "electron";
@@ -48,7 +48,7 @@ function windowsLauncher(appData: string): PageAppLauncher {
         throw new Error("The shortcut could not be written.");
     },
     remove: (shortcut) => rm(shortcut, { force: true }),
-    find: (appId) => findOwnShortcut(folder, appId),
+    find: async (appId) => (await ownShortcuts(folder, appId))[0] ?? null,
   };
 }
 
@@ -69,7 +69,14 @@ function linuxLauncher(): PageAppLauncher {
       const folder = applicationsDir(process.env);
       await mkdir(folder, { recursive: true });
       const entry = path.join(folder, desktopFileName(config.appId));
-      await writeFile(entry, entryText(config, dataDir));
+      // Written beside it and moved into place, so a failed write leaves no broken entry.
+      const next = `${entry}.${process.pid}.tmp`;
+      try {
+        await writeFile(next, entryText(config, dataDir));
+        await rename(next, entry);
+      } finally {
+        await rm(next, { force: true });
+      }
       return entry;
     },
     repoint: async (installed, dataDir) => {
@@ -85,16 +92,14 @@ function linuxLauncher(): PageAppLauncher {
   };
 }
 
-/** The shortcut in Rakazo's Start Menu folder that starts this app, if one does. */
-async function findOwnShortcut(folder: string, appId: string): Promise<string | null> {
-  if (!existsSync(folder)) return null;
+/** The shortcuts in Rakazo's Start Menu folder that start this app. */
+async function ownShortcuts(folder: string, appId: string): Promise<string[]> {
+  if (!existsSync(folder)) return [];
   const argument = pageAppArgument(appId);
-  for (const name of await readdir(folder)) {
-    if (!name.toLowerCase().endsWith(".lnk")) continue;
-    const shortcut = path.join(folder, name);
-    if (ownShortcut(shortcut, argument)) return shortcut;
-  }
-  return null;
+  return (await readdir(folder))
+    .filter((name) => name.toLowerCase().endsWith(".lnk"))
+    .map((name) => path.join(folder, name))
+    .filter((shortcut) => ownShortcut(shortcut, argument));
 }
 
 /** The launcher kind of the running platform; macOS apps are bundles instead. */
@@ -142,12 +147,6 @@ export async function removeOwnLauncher(appId: string, appData: string) {
     await rm(path.join(applicationsDir(process.env), desktopFileName(appId)), { force: true });
     return;
   }
-  const folder = startMenuFolder(appData);
-  if (!existsSync(folder)) return;
-  const argument = pageAppArgument(appId);
-  for (const name of await readdir(folder)) {
-    if (!name.toLowerCase().endsWith(".lnk")) continue;
-    const shortcut = path.join(folder, name);
-    if (ownShortcut(shortcut, argument)) await rm(shortcut, { force: true });
-  }
+  for (const shortcut of await ownShortcuts(startMenuFolder(appData), appId))
+    await rm(shortcut, { force: true });
 }
