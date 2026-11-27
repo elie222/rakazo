@@ -32,12 +32,13 @@ const JSON_CONTAINER_LINE_START =
   /(?:\{\s*(?:["}]|$)|\[\s*(?:["{[\]]|(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)(?=[\s,\]]|$)))/;
 const RAW_JSON_CONTAINER_START =
   /(?:\{(?:\s|\\[nrt])*(?:\\*"|\}|$)|\[(?:\s|\\[nrt])*(?:\\*"|[{[\]]|(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)(?=\s|\\[nrt]|[,\]$])))/;
-const RAW_ESCAPED_QUOTED_VALUE = /\\(?:\\\\)*"(?!\\")[^\S\r\n]*(?!\\")[^"\s\r\n]/;
+const RAW_ESCAPED_QUOTED_VALUE = /\\(?:\\\\)*"(?!\\(?:\\\\)*")[^\S\r\n]*(?!\\(?:\\\\)*")[^"\s\r\n]/;
 const RAW_QUOTED_VALUE = /"(?!\s*[:,}\]\r\n]|$)[^"\r\n]+"|'[^'"\r\n]+'/;
 const RAW_ASSIGNED_VALUE = new RegExp(
   `(?:${RAW_ESCAPED_QUOTED_VALUE.source}|${RAW_QUOTED_VALUE.source}|\\\\(?:\\\\|(?![nrt"]))|[^\\s"',;&\\\\])`,
 );
-const RAW_MID_VALUE_SPLIT = /(?:\\(?![nrt"\\])|[^\s"'\\,;&}:\]])*(?:[:}\]]|\\\\)[^\s"',;&]/;
+const RAW_MID_VALUE_SPLIT =
+  /(?:\\(?![nrt"\\])|[^\s"'\\,;&}:\]])*(?:[:}\]]|(?:\\\\)+(?![\\"]))[^\s"',;&]/;
 const RAW_SPLITTING_CREDENTIAL_KEY = new RegExp(
   `[\\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\\s*(?::(?:\\s|\\\\[nrt])*${RAW_ASSIGNED_VALUE.source}|=(?:(?:\\s|\\\\[nrt])+${RAW_ASSIGNED_VALUE.source}|${RAW_ESCAPED_QUOTED_VALUE.source}|${RAW_QUOTED_VALUE.source}|${RAW_MID_VALUE_SPLIT.source}))`,
 );
@@ -808,6 +809,7 @@ function redactJsonStringsAndPlainTextSingle(
   if (!raw.includes('"')) return redactPlain(raw);
   let out = "";
   let cursor = 0;
+  let lastOverlapEnd = 0;
   for (const { start: index, end } of scanJsonTokens(raw, false)) {
     const token = raw.slice(index, end);
     const closed = isClosedJsonStringToken(token);
@@ -822,10 +824,19 @@ function redactJsonStringsAndPlainTextSingle(
       continue;
     }
     const replaced = redactSingleJsonStringToken(token, redactString, redactPlain, rawTokenRanges);
-    if (!isStrictJsonColon(raw, index, false) && replaced === token) continue;
+    if (!isStrictJsonColon(raw, index, false)) {
+      if (replaced === token) continue;
+      const windowStart = Math.max(cursor, lastOverlapEnd);
+      const prefix = raw.slice(windowStart, index);
+      if (redactPlain(raw.slice(windowStart, end)) !== redactPlain(prefix) + redactPlain(token)) {
+        lastOverlapEnd = end;
+        continue;
+      }
+    }
     if (index > cursor) out += redactPlain(raw.slice(cursor, index));
     out += replaced;
     cursor = end;
+    lastOverlapEnd = end;
   }
   if (cursor < raw.length) out += redactPlain(raw.slice(cursor));
   return out;

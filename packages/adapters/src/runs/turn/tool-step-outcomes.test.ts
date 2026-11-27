@@ -1714,6 +1714,8 @@ describe("tool step outcomes", () => {
       "secret:\nopaque-123secret=",
       'secret:\nopaque-123secret=""',
       'Bearer opaque-123secret=""',
+      String.raw`Bearer opaque-123secret=\"\"`,
+      String.raw`Bearer opaque-123secret=\\\"\\\"`,
     ];
     for (const msg of rawQuotedDeferredBearers) {
       const payload = JSON.stringify({ msg, sibling: 7 });
@@ -1856,7 +1858,21 @@ describe("tool step outcomes", () => {
     );
     expect(sanitizeConnectorError(new Error("Bearer auth:opaque-123"))).toBe("Bearer [redacted]");
     expect(sanitizeConnectorError(new Error('Bearer auth:"opaque-123"'))).toBe("Bearer [redacted]");
+    expect(sanitizeConnectorError(new Error('Bearer auth:"opaque-123 Bearer xyz"'))).toBe(
+      "Bearer [redacted]",
+    );
     expect(sanitizeError('Bearer auth:"opaque-123"')).toBe('Bearer auth:"[redacted]"');
+    expect(sanitizeError('Bearer auth:"opaque-123 Bearer xyz"')).toBe('Bearer auth:"[redacted]"');
+    expect(sanitizeError('auth:"opaque-123 Bearer xyz"')).toBe('auth:"[redacted]"');
+    expect(sanitizeConnectorError(new Error('Bearer "fixture"[12,34]'))).toBe(
+      "Bearer [redacted][12,34]",
+    );
+    expect(sanitizeConnectorError(new Error('Bearer [redacted]{"ok":true}'))).toBe(
+      'Bearer [redacted]{"ok":true}',
+    );
+    for (const sep of [String.raw`\n`, String.raw`\r\n`, String.raw`\t `, String.raw` \t`]) {
+      expect(sanitizeConnectorError(new Error(`Bearer${sep}opaque-123`))).toBe("Bearer [redacted]");
+    }
     expect(
       sanitizeConnectorError(
         new Error(JSON.stringify({ msg: "Bearer Bearer xBearer opaque-123" })),

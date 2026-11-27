@@ -2,24 +2,137 @@ import { redactJsonStringsAndPlainText, redactSecrets, sliceWellFormed } from "@
 
 const CONNECTOR_JSON_CONTAINER_START =
   /(?:\{\s*(?:["}]|$)|\[\s*(?:["{[\]]|(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)(?=[\s,\]]|$)))/;
-const CONNECTOR_DEFERRED_BEARER_FOLLOWS = new RegExp(
+const CONNECTOR_RAW_JSON_CONTAINER_START =
+  /(?:\{(?:\s|\\[nrt])*(?:\\*"|\}|$)|\[(?:\s|\\[nrt])*(?:\\*"|[{[\]]|(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)(?=\s|\\[nrt]|[,\]$])))/;
+const CONNECTOR_DECODED_DEFERRED_BEARER_FOLLOWS = new RegExp(
   `Bearer(?:[^\\S\\r\\n]+(?!(?:\\s|\\S*Bearer\\s+\\S))\\S|\\s+(?!(?:\\s|${CONNECTOR_JSON_CONTAINER_START.source}|\\S*Bearer\\s+\\S))\\S)`,
 );
 const CONNECTOR_DECODED_BEARER_RE = new RegExp(
-  `Bearer\\s+(?!${CONNECTOR_DEFERRED_BEARER_FOLLOWS.source})\\S+`,
+  `Bearer\\s+(?!${CONNECTOR_DECODED_DEFERRED_BEARER_FOLLOWS.source})\\S+`,
   "gi",
+);
+const CONNECTOR_PLAIN_DEFERRED_BEARER_FOLLOWS = new RegExp(
+  `Bearer(?:[^\\S\\r\\n]+(?!(?:\\s|\\\\[nrt]|\\S*Bearer(?:\\s|\\\\[nrt])+\\S))\\S|\\s+(?!(?:\\s|\\\\[nrt]|${CONNECTOR_JSON_CONTAINER_START.source}|\\S*Bearer(?:\\s|\\\\[nrt])+\\S))\\S|\\s*\\\\[nrt](?:\\s|\\\\[nrt])*(?!(?:\\s|\\\\[nrt]|${CONNECTOR_RAW_JSON_CONTAINER_START.source}|\\S*Bearer(?:\\s|\\\\[nrt])+\\S))(?:\\\\"|["']|\\\\(?![nrt"\\\\])|[^\\s"',;&}:\\]\\\\]))`,
 );
 const CONNECTOR_ADJACENT_CREDENTIAL_START =
   /(?:Bearer\s|(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:])/;
 const CONNECTOR_RAW_UNIT =
   /(?:[=:](?:\\"(?!\s*[:,}\]\r\n]|$)(?:\\[^"\r\n]|[^"\\\r\n])+(?:\\")?|"(?!\s*[:,}\]\r\n]|$)(?:\\[^\r\n]|[^"\\\r\n])+"?|'(?!\s*[:,}\]\r\n]|$)(?:\\[^\r\n]|[^'"\\\r\n])+'?)|=|:(?!\s|$|["']|\\")|\[redacted\]|\[(?!redacted\])|\\(?![nrt"\\])|[^\s"',;&}=:\]\\[])/;
 const CONNECTOR_SUFFIX_UNIT = new RegExp(
-  `(?:(?!${CONNECTOR_ADJACENT_CREDENTIAL_START.source})${CONNECTOR_RAW_UNIT.source})`,
+  `(?:(?!${CONNECTOR_ADJACENT_CREDENTIAL_START.source})(?:\\\\(?![nrt"\\\\])|[^\\s"',;&}{[\\]:\\\\]))`,
 );
 const CONNECTOR_PLAIN_BEARER_RE = new RegExp(
-  `Bearer\\s+(?!${CONNECTOR_DEFERRED_BEARER_FOLLOWS.source}|\\[redacted\\](?!${CONNECTOR_SUFFIX_UNIT.source}))(?:\\\\"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"${CONNECTOR_SUFFIX_UNIT.source}*)?|"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${CONNECTOR_SUFFIX_UNIT.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'"\\\\\\r\\n])+(?:'${CONNECTOR_SUFFIX_UNIT.source}*)?|\\[redacted\\]${CONNECTOR_SUFFIX_UNIT.source}+|(?:${CONNECTOR_RAW_UNIT.source})+)`,
+  `Bearer\\s+(?!${CONNECTOR_PLAIN_DEFERRED_BEARER_FOLLOWS.source}|\\[redacted\\](?!${CONNECTOR_SUFFIX_UNIT.source}))(?:\\\\"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"${CONNECTOR_SUFFIX_UNIT.source}*)?|"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${CONNECTOR_SUFFIX_UNIT.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'"\\\\\\r\\n])+(?:'${CONNECTOR_SUFFIX_UNIT.source}*)?|\\[redacted\\]${CONNECTOR_SUFFIX_UNIT.source}+|(?:${CONNECTOR_RAW_UNIT.source})+)`,
   "gi",
 );
+const CONNECTOR_ESCAPED_WS_BEARER_RE = /Bearer\s*\\[nrt](?:\s|\\[nrt])*/gi;
+const CONNECTOR_ESCAPED_BEARER_NEXT_STICKY = /Bearer(?:\s|\\[nrt])+/iy;
+const CONNECTOR_RAW_JSON_CONTAINER_STICKY = new RegExp(
+  CONNECTOR_RAW_JSON_CONTAINER_START.source,
+  "y",
+);
+const CONNECTOR_RAW_UNIT_STICKY = new RegExp(CONNECTOR_RAW_UNIT.source, "y");
+const CONNECTOR_SUFFIX_UNIT_STICKY = new RegExp(CONNECTOR_SUFFIX_UNIT.source, "y");
+
+function consumeConnectorSuffix(text: string, from: number): number {
+  let cur = from;
+  while (cur < text.length) {
+    CONNECTOR_SUFFIX_UNIT_STICKY.lastIndex = cur;
+    if (!CONNECTOR_SUFFIX_UNIT_STICKY.test(text)) break;
+    cur = CONNECTOR_SUFFIX_UNIT_STICKY.lastIndex;
+  }
+  return cur;
+}
+
+function redactConnectorEscapedWhitespaceBearers(text: string): string {
+  if (!text.includes("\\")) return text;
+  CONNECTOR_ESCAPED_WS_BEARER_RE.lastIndex = 0;
+  let out = "";
+  let cursor = 0;
+  for (
+    let match = CONNECTOR_ESCAPED_WS_BEARER_RE.exec(text);
+    match !== null;
+    match = CONNECTOR_ESCAPED_WS_BEARER_RE.exec(text)
+  ) {
+    const start = match.index;
+    const valueStart = start + match[0].length;
+    if (valueStart >= text.length) break;
+    CONNECTOR_ESCAPED_BEARER_NEXT_STICKY.lastIndex = valueStart;
+    if (CONNECTOR_ESCAPED_BEARER_NEXT_STICKY.test(text)) continue;
+    CONNECTOR_RAW_JSON_CONTAINER_STICKY.lastIndex = valueStart;
+    if (CONNECTOR_RAW_JSON_CONTAINER_STICKY.test(text)) continue;
+    let end = valueStart;
+    if (text.startsWith("[redacted]", valueStart)) {
+      CONNECTOR_SUFFIX_UNIT_STICKY.lastIndex = valueStart + 10;
+      if (!CONNECTOR_SUFFIX_UNIT_STICKY.test(text)) continue;
+      end = consumeConnectorSuffix(text, valueStart + 10);
+    } else if (text[valueStart] === "\\" && text[valueStart + 1] === '"') {
+      let cur = valueStart + 2;
+      let closed = false;
+      while (cur < text.length) {
+        const ch = text[cur]!;
+        if (ch === "\n" || ch === "\r" || ch === '"') break;
+        if (ch === "\\") {
+          const next = text[cur + 1];
+          if (next === '"') {
+            cur += 2;
+            closed = true;
+            break;
+          }
+          if (next === "n" || next === "r") break;
+          cur += next === undefined ? 1 : 2;
+          continue;
+        }
+        cur += 1;
+      }
+      end = closed ? consumeConnectorSuffix(text, cur) : cur;
+    } else if (text[valueStart] === '"' || text[valueStart] === "'") {
+      const quote = text[valueStart]!;
+      if (quote === '"') {
+        let probe = valueStart + 1;
+        while (
+          probe < text.length &&
+          text[probe] !== "\n" &&
+          text[probe] !== "\r" &&
+          /\s/.test(text[probe]!)
+        ) {
+          probe += 1;
+        }
+        if (probe >= text.length || /[:,}\]\r\n]/.test(text[probe]!)) continue;
+      }
+      let cur = valueStart + 1;
+      let closed = false;
+      while (cur < text.length) {
+        const ch = text[cur]!;
+        if (ch === "\n" || ch === "\r") break;
+        if (quote === "'" && ch === '"') break;
+        if (ch === "\\") {
+          const next = text[cur + 1];
+          if (next === "n" || next === "r" || (quote === "'" && next === '"')) break;
+          cur += next === undefined ? 1 : 2;
+          continue;
+        }
+        cur += 1;
+        if (ch === quote) {
+          closed = true;
+          break;
+        }
+      }
+      end = closed ? consumeConnectorSuffix(text, cur) : cur;
+    } else {
+      while (end < text.length) {
+        CONNECTOR_RAW_UNIT_STICKY.lastIndex = end;
+        if (!CONNECTOR_RAW_UNIT_STICKY.test(text)) break;
+        end = CONNECTOR_RAW_UNIT_STICKY.lastIndex;
+      }
+    }
+    if (end <= valueStart) continue;
+    out += `${text.slice(cursor, start)}Bearer [redacted]`;
+    cursor = end;
+    CONNECTOR_ESCAPED_WS_BEARER_RE.lastIndex = cursor;
+  }
+  return cursor === 0 ? text : out + text.slice(cursor);
+}
 
 export function combineSignals(...signals: Array<AbortSignal | undefined>): AbortSignal {
   return AbortSignal.any(signals.filter((signal): signal is AbortSignal => Boolean(signal)));
@@ -58,9 +171,9 @@ export function sanitizeConnectorError(
       .replace(CONNECTOR_DECODED_BEARER_RE, "Bearer [redacted]")
       .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]");
   const sanitizePlain = (value: string) =>
-    redactSecrets(value, secrets)
-      .replace(CONNECTOR_PLAIN_BEARER_RE, "Bearer [redacted]")
-      .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]");
+    redactConnectorEscapedWhitespaceBearers(
+      redactSecrets(value, secrets).replace(CONNECTOR_PLAIN_BEARER_RE, "Bearer [redacted]"),
+    ).replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]");
   const cleaned = redactJsonStringsAndPlainText(message, sanitizeDecoded, sanitizePlain, secrets);
   const maxChars = options?.maxChars ?? 2_000;
   return Number.isFinite(maxChars) ? sliceWellFormed(cleaned, maxChars) : cleaned;
