@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { PageAbility, PageAppView } from "@rakazo/contracts";
+import type { PageAbility, PageAppView, PageState } from "@rakazo/contracts";
 import {
   abortableDelay,
   deadlineSignal,
@@ -7,7 +7,7 @@ import {
   pageViewerDocument,
   withSandboxedArtifactCsp,
 } from "@rakazo/core";
-import { bestEffort } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { desktopLocale, t } from "../../i18n.js";
 import type { PageAppApi } from "../page-app-api.js";
 import { PageAppRequestError } from "../page-app-api.js";
@@ -64,6 +64,7 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
   let reading: Promise<void> | null = null;
   let again: { force: boolean } | null = null;
   let asks = 0;
+  let unsaved: PageState = {};
   let consenting = false;
 
   function show(next: PageAppScreen) {
@@ -110,7 +111,7 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
   async function imageSources(page: PageAppView["page"]) {
     const entries = await Promise.all(
       Object.entries(page.images).map(async ([name, imageId]) => {
-        const cached = images.get(imageId) ?? (await api.image(imageId));
+        const cached = images.get(imageId) ?? (await api.image(imageId, page.version));
         images.set(imageId, cached);
         return [name, cached] as const;
       }),
@@ -150,6 +151,7 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
       again = { force: force || again?.force === true };
       return;
     }
+    if (Object.keys(unsaved).length) void saveState({});
     reading = read(force)
       .catch(fail)
       .finally(() => {
@@ -170,12 +172,25 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
         }
       } catch (error) {
         if (isRemoved(error)) return fail(error);
+        getLogger().warn("page app change stream ended", { error });
       }
       if (stopped.signal.aborted) return;
       await abortableDelay(delay, stopped.signal);
       delay = Math.min(delay * 2, CHANGES_RETRY_MAX_MS);
       // A signal may have been missed while the stream was down.
       refresh();
+    }
+  }
+
+  /** Values a failed save could not keep go again with the next one, so none are lost. */
+  async function saveState(values: PageState) {
+    const sending = { ...unsaved, ...values };
+    unsaved = {};
+    try {
+      await api.saveState(sending);
+    } catch (error) {
+      unsaved = { ...sending, ...unsaved };
+      fail(error);
     }
   }
 
@@ -200,7 +215,7 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
   async function answer(request: FrameRequest): Promise<unknown> {
     switch (request.kind) {
       case "state":
-        await api.saveState(request.values).catch(fail);
+        await saveState(request.values);
         return null;
       case "open-link":
         if (mayOpenLink()) host.openLink(request.url);

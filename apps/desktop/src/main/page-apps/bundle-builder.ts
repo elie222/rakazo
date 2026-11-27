@@ -1,7 +1,9 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { bestEffort } from "@rakazo/logging";
 import type { PageAppConfig } from "./page-app-files.js";
 import { PAGE_APP_CONFIG_FILE } from "./page-app-files.js";
 
@@ -184,6 +186,21 @@ export async function registerWithLaunchServices(bundle: string) {
 /** Unregisters a bundle about to be removed, so Launch Services forgets it at once. */
 export async function unregisterFromLaunchServices(bundle: string) {
   await run(LSREGISTER, ["-u", bundle]);
+}
+
+/** Where Spotlight last saw a bundle with this id outside the Trash, if anywhere. */
+export async function findBundle(bundleId: string, home: string): Promise<string | null> {
+  const trash = path.join(home, ".Trash") + path.sep;
+  // With Spotlight off, nothing is found and a missing bundle reads as removed.
+  const found = await bestEffort(
+    "find a moved page app",
+    run("/usr/bin/mdfind", [`kMDItemCFBundleIdentifier == "${bundleId}"`]),
+  );
+  return (
+    (found?.stdout ?? "")
+      .split("\n")
+      .find((each) => each.endsWith(".app") && !each.startsWith(trash) && existsSync(each)) ?? null
+  );
 }
 
 /** The process ids of an app's main process running from this bundle. */

@@ -53,8 +53,10 @@ export function createPageAppApi(server: string, token: string, fetcher: Fetch =
 
   return {
     view: async (signal?: AbortSignal) => PageAppViewSchema.parse(await json("", { signal })),
-    image: async (imageId: string) =>
-      PageImageSourceSchema.parse(await json(`/images/${encodeURIComponent(imageId)}`)).src,
+    image: async (imageId: string, version: number) =>
+      PageImageSourceSchema.parse(
+        await json(`/images/${encodeURIComponent(imageId)}?version=${version}`),
+      ).src,
     saveState: async (values: PageState) => {
       await json("/state", { method: "PUT", body: JSON.stringify({ values }) });
     },
