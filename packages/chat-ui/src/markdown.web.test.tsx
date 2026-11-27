@@ -749,6 +749,18 @@ describe("web markdown code copy", () => {
   });
 });
 
+describe("web markdown line breaks", () => {
+  it("keeps a single newline inside a paragraph as a line break", () => {
+    const holder = document.createElement("div");
+    holder.innerHTML = renderToStaticMarkup(
+      <ChatMarkdown>{"Which one?\n\nA. First\nB. Second"}</ChatMarkdown>,
+    );
+    const options = holder.querySelectorAll("p")[1];
+    expect(options?.querySelectorAll("br")).toHaveLength(1);
+    expect(options?.textContent).toBe("A. First\nB. Second");
+  });
+});
+
 describe("web markdown prose fences", () => {
   const draft =
     "Dear team, this line of prose is far wider than a bubble, so it wraps instead of scrolling.";

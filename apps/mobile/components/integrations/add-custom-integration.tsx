@@ -2,6 +2,7 @@ import { MenuView } from "@expo/ui/community/menu";
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { McpSourcePreset } from "@rakazo/contracts";
+import type { ConnectionOwnerChoice } from "@rakazo/core";
 import { Text, TextInput, View } from "react-native";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native/native";
 import type { ScreenHeaderMenuProps } from "../../lib/navigation/screen-header";
@@ -9,10 +10,12 @@ import { openExternalUrl } from "../../lib/platform/open-url";
 import { NativeActionButton } from "../native/native-action-button";
 import { NativeSymbol } from "../native/native-symbol";
 import { MenuPicker } from "../ui/menu-picker";
+import { ConnectionOwnerPicker } from "./connection-owner-picker";
 import { createIntegrationsStyles } from "./integrations-styles";
 
 export type SourceAuth = "none" | "bearer" | "header" | "oauth";
 export type SourceKind = "mcp" | "api" | "graphql";
+export type SourceOwner = ConnectionOwnerChoice;
 export type AddCustomOption = {
   id: string;
   label: string;
@@ -63,6 +66,9 @@ export function AddCustomForm({
   setAuthHeader,
   credential,
   setCredential,
+  organizationName,
+  owner,
+  setOwner,
   busy,
   onAdd,
   onClose,
@@ -84,6 +90,10 @@ export function AddCustomForm({
   setAuthHeader: (next: string) => void;
   credential: string;
   setCredential: (next: string) => void;
+  /** Set when the member may add this server for their organization too. */
+  organizationName: string | null;
+  owner: SourceOwner;
+  setOwner: (next: SourceOwner) => void;
   busy: boolean;
   onAdd: () => void;
   onClose: () => void;
@@ -152,6 +162,13 @@ export function AddCustomForm({
               }
               placeholderTextColor={native.tertiaryLabel}
               style={styles.input}
+            />
+          ) : null}
+          {organizationName ? (
+            <ConnectionOwnerPicker
+              organizationName={organizationName}
+              value={owner}
+              onChange={setOwner}
             />
           ) : null}
           {!sourcePreset ? (

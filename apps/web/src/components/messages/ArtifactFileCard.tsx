@@ -27,6 +27,7 @@ import { selectFilePreviewContents } from "../../lib/pages/file-preview-selectio
 import { errorText } from "../../lib/query/user-error";
 import { BuiCard } from "../ai/primitives";
 import { IconTooltip } from "../IconTooltip";
+import { Notice } from "../Notice";
 import { PdfViewer } from "./PdfViewer";
 import { SandboxedHtmlViewer } from "./SandboxedHtmlViewer";
 
@@ -276,9 +277,9 @@ function FilePreview({
             <Spinner aria-label={t`Loading preview…`} />
           </div>
         ) : state.status === "error" ? (
-          <div className="m-5 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive">
+          <Notice tone="error" className="m-5">
             {state.message}
-          </div>
+          </Notice>
         ) : kind === "html" && state.text !== undefined ? (
           <SandboxedHtmlViewer html={state.text} title={name} />
         ) : kind === "video" ? (

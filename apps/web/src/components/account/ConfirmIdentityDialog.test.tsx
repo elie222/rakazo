@@ -47,7 +47,8 @@ vi.mock("@rakazo/ui-web", () => {
     DialogHeader: Plain,
     DialogTitle: Plain,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
-    Label: ({ htmlFor, children, ...props }: ComponentProps<"label">) => (
+    Field: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+    FieldLabel: ({ htmlFor, children, ...props }: ComponentProps<"label">) => (
       <label htmlFor={htmlFor} {...props}>
         {children}
       </label>

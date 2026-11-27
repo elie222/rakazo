@@ -8,7 +8,7 @@ import { desktopDirection, desktopLocale, desktopMessages, t } from "../i18n.js"
 import { handleIpc } from "../ipc/ipc.js";
 import { dockerDownloadUrl, isDesktopSetupLink } from "../this-computer/docker-cli.js";
 import type { createAppOpener } from "../windows/app-opener.js";
-import { developmentIcon, markOnce } from "../windows/app-window.js";
+import { markOnce, windowIcon } from "../windows/app-window.js";
 import { setupWindowOptions } from "../windows/window-options.js";
 import { managedLocalOpenUrl, parseSetupInput, RAKAZO_CLOUD_URL } from "./setup-config.js";
 import { writeSetup } from "./setup-store.js";
@@ -21,7 +21,7 @@ export function isSetupSaveInProgress(): boolean {
 }
 
 function createSetupWindow() {
-  const icon = developmentIcon();
+  const icon = windowIcon();
   const win = new BrowserWindow({
     ...setupWindowOptions(process.platform, screen.getPrimaryDisplay().workAreaSize),
     ...(icon ? { icon } : {}),

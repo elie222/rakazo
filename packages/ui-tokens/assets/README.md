@@ -36,6 +36,14 @@ After exporting, run `pnpm exec tsx apps/www/src/marketing/scripts/render-og.mjs
 marketing page social cards; set `CHROME_PATH` to a headless Chrome executable when
 it is not available at the script's default location.
 
+## Alternate app icons
+
+`app-icons/` holds the 512-pixel opaque squares people can pick as the app's icon in settings,
+named by their id in `APP_ICONS` (`packages/contracts/src/clients/app-icons.ts`). The default is
+the primary icon above. Run `pnpm --filter @rakazo/ui-tokens export:app-icons` after adding or
+changing one: it writes the desktop Dock and taskbar files, the 180-pixel mobile images the iOS
+build resizes into its alternate icon sets, and the web picker thumbnails.
+
 ## Animated vector avatars
 
 The animated Rakazo avatar uses SVG paths and gradients in the shared

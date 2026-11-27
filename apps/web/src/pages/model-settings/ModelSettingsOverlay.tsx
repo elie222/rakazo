@@ -25,7 +25,7 @@ import {
   Spinner,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { X } from "lucide-react";
+import { Unplug, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
@@ -39,6 +39,7 @@ import type { ModelRoleConnectIntent } from "./ModelRoleSettings";
 import { ModelRoleSettings, useModelRole } from "./ModelRoleSettings";
 import { MediaModelSettings } from "./media-model-settings";
 import { ModelSettingsPanel } from "./model-settings-panel";
+import { OrganizationModelSettings } from "./organization-model-settings";
 import { ProviderPage } from "./provider-page";
 import { ConnectionNameField, ProvidersSection } from "./providers-section";
 import type { ConnectableProvider } from "./role-model-picker";
@@ -224,12 +225,12 @@ export function ModelSettingsOverlay({
         <ConnectionNameField key={credential.id} credential={credential} disabled={busy} />
         <Button
           type="button"
-          variant="ghost"
+          variant="destructive-secondary"
           size="sm"
-          className="text-destructive"
           disabled={busy}
           onClick={() => setConfirmDisconnect(true)}
         >
+          <Unplug data-icon="inline-start" />
           {pending === "disconnect" ? <Trans>Disconnecting…</Trans> : <Trans>Disconnect</Trans>}
         </Button>
       </div>
@@ -374,6 +375,7 @@ export function ModelSettingsOverlay({
       ) : null}
       {me && !loading ? (
         <>
+          <OrganizationModelSettings providers={allProviders} />
           <ModelRoleSettings
             userId={me.userId}
             spaceId={me.spaceId}

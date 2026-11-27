@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import {
   captureScreenshot,
+  chooseOption,
   completeOnboarding,
   openUserSettings,
   rpc,
@@ -106,8 +107,40 @@ test("an owner invites someone to the organization, who joins with a private Spa
   await expect(settings.getByText("Invited", { exact: true })).toHaveCount(0);
   await captureScreenshot(ownerPage, testInfo, "org-members");
 
+  await test.step("the owner can connect an app for Acme and the member sees it read-only", async () => {
+    await ownerPage.keyboard.press("Escape");
+    await ownerPage.getByRole("button", { name: "Connect apps", exact: true }).click();
+    const ownerIntegrations = ownerPage.getByRole("dialog", { name: "Integrations" });
+    const gmail = ownerIntegrations.getByTestId("featured-connectors");
+    await gmail.getByRole("button", { name: "Add Gmail", exact: true }).click();
+    const ownerDetail = ownerIntegrations.getByTestId("connection-detail");
+    const availableTo = ownerDetail.getByRole("combobox", { name: "Available to" });
+    await expect(availableTo).toHaveText("Just me");
+    await chooseOption(availableTo, "Acme");
+    await captureScreenshot(ownerPage, testInfo, "organization-app-owner-picker");
+    await ownerDetail.getByRole("button", { name: "Connect", exact: true }).click();
+    await expect(ownerDetail.getByText("Organization", { exact: true })).toBeVisible();
+    await expect(availableTo).toHaveText("Acme");
+    await expect(ownerDetail.getByRole("button", { name: "Add another" })).toBeVisible();
+    await captureScreenshot(ownerPage, testInfo, "organization-app-owner-account");
+    await ownerIntegrations.getByRole("button", { name: "Close integrations" }).click();
+
+    await inviteePage.getByRole("button", { name: "Connect apps", exact: true }).click();
+    const memberIntegrations = inviteePage.getByRole("dialog", { name: "Integrations" });
+    const shared = memberIntegrations.getByTestId("connection-tile-gmail");
+    await expect(shared.getByText("Organization", { exact: true })).toBeVisible();
+    await shared.getByRole("button", { name: "Added", exact: true }).click();
+    const memberDetail = memberIntegrations.getByTestId("connection-detail");
+    await expect(memberDetail.getByText("Organization", { exact: true })).toBeVisible();
+    await expect(memberDetail.getByRole("textbox", { name: "Account label" })).toHaveCount(0);
+    await expect(
+      memberDetail.getByRole("button", { name: /Remove|Uninstall|Reconnect/ }),
+    ).toHaveCount(0);
+    await expect(memberDetail.getByRole("button", { name: "Add another" })).toBeVisible();
+    await captureScreenshot(inviteePage, testInfo, "organization-app-member-account");
+  });
+
   // A Space's owner picks them from the organization instead of sending a link.
-  await ownerPage.keyboard.press("Escape");
   const sidebar = ownerPage.locator("aside").first();
   await sidebar.getByRole("button", { name: "Settings for Team" }).press("Enter");
   const spaceSettings = ownerPage.getByTestId("space-members-settings");

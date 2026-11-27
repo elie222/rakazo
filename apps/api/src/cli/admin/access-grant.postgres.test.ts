@@ -46,4 +46,33 @@ dbTests("operator access grant", () => {
       await db.pool.end();
     }
   });
+
+  it("reports the requested tier's own expiry", async () => {
+    const db = createDb(databaseUrl!);
+    const prisma = asSystem(db.prisma);
+    const userId = randomUUID();
+    const email = `${userId}@example.test`;
+    try {
+      await prisma.user.create({
+        data: { id: userId, email, name: "Fixture", emailVerified: true },
+      });
+      const { spaceId } = await bootstrapUserSpace(prisma, { id: userId });
+      const { organizationId } = await prisma.space.findUniqueOrThrow({ where: { id: spaceId } });
+      const grant = (months: string, tier: string) =>
+        runAsSystem("test a named own-key grant", () =>
+          parseAdminArgs(["access", "grant", email, months, tier])!.run({ prisma } as AdminContext),
+        );
+      await grant("7", "pro");
+      const max = await grant("6", "max");
+      expect(max.json).toMatchObject({ organizationId, tier: "max", counting: true });
+      const expiry = new Date(String(max.json.freeUntil));
+      expect((expiry.getTime() - Date.now()) / 86_400_000).toBeGreaterThan(179);
+      expect((expiry.getTime() - Date.now()) / 86_400_000).toBeLessThanOrEqual(180);
+    } finally {
+      await prisma.accessGrant.deleteMany({ where: { email } });
+      await prisma.user.deleteMany({ where: { id: userId } });
+      await prisma.$disconnect();
+      await db.pool.end();
+    }
+  });
 });

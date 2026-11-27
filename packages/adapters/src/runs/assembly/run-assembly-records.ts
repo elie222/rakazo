@@ -2,6 +2,7 @@ import type { SemanticMemoryProvider } from "@rakazo/adapter-kit";
 import { hasLab, resolveLabs } from "@rakazo/contracts";
 import { BACKGROUND_HELPER_TRIGGER, isMessagingChannelRun, messagingChannelId } from "@rakazo/core";
 import {
+  connectionIn,
   effectiveMemoryScope,
   expireRunToolQuestions,
   loadRunHistoryMessages,
@@ -35,6 +36,7 @@ import { loadPurchaseRedactions } from "../../payments/purchase-service.js";
 import {
   mergeConnectedPlugins,
   needsLivePluginSync,
+  personalComposioConnections,
 } from "../../providers/integration/composio/composio-connector.js";
 import { routineRunUsesOwnerComputer } from "../../routines/routine-owner-computer.js";
 import { LEGACY_HISTORY_WINDOW_SIZE } from "../../runtime/context/history-compaction.js";
@@ -248,9 +250,12 @@ export async function loadRunRecords(
       : Promise.resolve(undefined),
     deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } }),
     deps.prisma.connection.findMany({
-      where: { userId: run.userId, spaceId: run.spaceId },
+      where: connectionIn(run),
+      // This order feeds the system prompt and must survive updates to the same rows.
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       select: {
         id: true,
+        organizationId: true,
         connectorId: true,
         provider: true,
         providerRef: true,
@@ -382,9 +387,7 @@ export async function connectRun(
   const onShutdown = () => runAbortController?.abort(deps.shutdownSignal?.reason);
   deps.shutdownSignal?.addEventListener("abort", onShutdown);
   hold.detachShutdown = () => deps.shutdownSignal?.removeEventListener("abort", onShutdown);
-  const composioRows = storedConnections.filter(
-    (connection) => connection.connectorId === "composio",
-  );
+  const composioRows = personalComposioConnections(storedConnections);
   let liveSlugs: string[] = [];
   if (needsLivePluginSync(composioRows)) {
     const listing = await loadLivePlugins(deps.listConnectedPlugins, run.userId);

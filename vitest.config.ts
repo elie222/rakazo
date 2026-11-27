@@ -16,6 +16,7 @@ const include = [
   "apps/mobile/plugins/**/*.test.js",
   "apps/api/src/**/*.test.ts",
   "apps/worker/src/**/*.test.ts",
+  "apps/cli/src/**/*.test.ts",
 ];
 
 // Package scripts run from their own folder, so paths resolve from the repo root, not the cwd.

@@ -52,8 +52,7 @@ vi.mock("@lingui/react/macro", () => {
   };
 });
 vi.mock("@rakazo/ui-web", async (importOriginal) => {
-  const { Disclosure, OptionSelect, SwitchField, useCopyText } =
-    await importOriginal<typeof UiWeb>();
+  const { Disclosure, OptionSelect, Switch, useCopyText } = await importOriginal<typeof UiWeb>();
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
     Spinner: (props: ComponentProps<"svg">) => <svg role="status" {...props} />,
@@ -73,7 +72,7 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     ),
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     OptionSelect,
-    SwitchField,
+    Switch,
     useCopyText,
   };
 });
@@ -679,7 +678,7 @@ it.each([null, "space-edited"])("plays a sample for the bound space %s", async (
     });
     await act(async () => {
       [...container.querySelectorAll("button")]
-        .find((button) => button.textContent === "Hear a sample")
+        .find((button) => button.getAttribute("aria-label") === "Hear a sample")
         ?.click();
     });
     await vi.waitFor(() =>
@@ -715,7 +714,7 @@ it("does not play a sample during a call", async () => {
       );
     });
     const sample = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Hear a sample",
+      (button) => button.getAttribute("aria-label") === "Hear a sample",
     );
     if (!sample) throw new Error("Missing sample button");
     expect(sample.disabled).toBe(true);
@@ -924,7 +923,7 @@ it("reports a disconnect as disconnected when the read after it fails", async ()
     if (!disconnect) throw new Error("Missing disconnect button");
     await act(async () => disconnect.click());
     await vi.waitFor(() => expect(voice.credentials).toHaveBeenCalledTimes(2));
-    expect(container.querySelector("p.text-destructive")?.textContent).toBe(
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
       "Could not load voice settings",
     );
     expect(container.textContent).not.toContain("(Connected)");
@@ -1104,7 +1103,9 @@ it("picks a Space's own voice from the account's connections without managing th
         withQueries(<VoiceSettingsOverlay embedded scope="space" onClose={() => undefined} />),
       );
     });
-    await vi.waitFor(() => expect(container.textContent).toContain("Hear a sample"));
+    await vi.waitFor(() =>
+      expect(container.querySelector('[aria-label="Hear a sample"]')).not.toBeNull(),
+    );
     expect(voice.credentials).toHaveBeenCalledWith({ scope: "space" }, expect.anything());
     expect(voice.status).toHaveBeenCalledWith({ scope: "space" }, expect.anything());
     // The connection itself belongs to the account.

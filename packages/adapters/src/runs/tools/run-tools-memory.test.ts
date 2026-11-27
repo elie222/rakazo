@@ -50,7 +50,10 @@ it.each(["Provider-generated context", ""])(
       bot: { id: "bot-1" },
       context: {},
       state: { tainted: false },
-      memory: { semantic: { reflect: vi.fn(async () => ({ ok: true, value: text })) } },
+      memory: {
+        scope: "isolated",
+        semantic: { reflect: vi.fn(async () => ({ ok: true, value: text })) },
+      },
       deps: { prisma: { run: { updateMany: vi.fn(async () => ({ count: 1 })) } } },
     };
     await memoryTools.reflect_memory!(ctx as never, { args: { query: "Question" } } as never);
