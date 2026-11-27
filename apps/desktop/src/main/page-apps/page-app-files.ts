@@ -136,7 +136,14 @@ export async function readPageAppHeaders(
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
     throw error;
   }
-  const value: unknown = JSON.parse(text);
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch (error) {
+    // A damaged file sends no headers rather than stopping the app's removal.
+    if (error instanceof SyntaxError) return {};
+    throw error;
+  }
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return Object.fromEntries(
     Object.entries(value).filter(
