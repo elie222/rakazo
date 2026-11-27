@@ -20,6 +20,7 @@ import { desktopBridge } from "../../lib/platform/desktop";
 import { useSave } from "../../lib/query/query";
 import { selectedSpaceId } from "../../lib/query/rpc";
 import { useBoundSpaceId } from "../../lib/query/space-rpc";
+import { isStandalone } from "../../pwa/standalone";
 
 const INSTALLED_KEY = ["desktop", "page-apps"] as const;
 
@@ -33,14 +34,12 @@ type InstallablePage = {
 
 /**
  * Installs the page as its own app where the desktop can, or opens the app already installed. A
- * browser installs it from the page opened on its own, which this opens in a new window.
+ * browser installs it from the page opened on its own, which this opens in a new window. Rakazo
+ * installed as an app keeps that window as one of its own, where the browser offers no install.
  */
 export function PageAppButton({ page, className }: { page: InstallablePage; className?: string }) {
-  return desktopBridge() ? (
-    <DesktopPageAppButton page={page} className={className} />
-  ) : (
-    <BrowserPageAppButton pageId={page.id} className={className} />
-  );
+  if (desktopBridge()) return <DesktopPageAppButton page={page} className={className} />;
+  return isStandalone() ? null : <BrowserPageAppButton pageId={page.id} className={className} />;
 }
 
 function BrowserPageAppButton({ pageId, className }: { pageId: string; className?: string }) {

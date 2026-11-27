@@ -16,7 +16,9 @@ import { getPageSummary } from "./pages.js";
 
 const MINUTE_MS = 60_000;
 const ICONS_PER_USER_PER_MINUTE = 120;
-const HEADERS = { "cache-control": "private, max-age=300", "referrer-policy": "no-referrer" };
+const HEADERS = { "cache-control": "no-store", "referrer-policy": "no-referrer" };
+/** Only an answer the owner was given is kept, briefly, in their own browser. */
+const SERVED = { ...HEADERS, "cache-control": "private, max-age=300" };
 
 /**
  * What a browser needs to install a page as its own app: a manifest and its icons. Only the
@@ -73,7 +75,7 @@ export function mountPageWebApp(
         ],
       };
       return c.body(JSON.stringify(manifest), 200, {
-        ...HEADERS,
+        ...SERVED,
         "content-type": "application/manifest+json; charset=utf-8",
       });
     }),
@@ -88,7 +90,7 @@ export function mountPageWebApp(
       if (iconReads(actor.userId) > ICONS_PER_USER_PER_MINUTE)
         return c.json({ error: "Too many requests" }, 429, { ...HEADERS, "retry-after": "60" });
       const png = await renderPageAppIconPng(page, size, maskable ? "full" : "plate");
-      return c.body(png, 200, { ...HEADERS, "content-type": "image/png" });
+      return c.body(png, 200, { ...SERVED, "content-type": "image/png" });
     });
   });
 }

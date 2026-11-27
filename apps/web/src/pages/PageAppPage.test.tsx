@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import { flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act, createElement } from "react";
@@ -70,7 +69,7 @@ async function open(path: string) {
       ),
     ),
   );
-  for (let tick = 0; tick < 10; tick++) await act(flush);
+  await vi.waitFor(() => expect(document.title).toBe("Trip plan"));
 }
 
 it("installs as the page itself, and gives Rakazo its manifest back on leaving", async () => {

@@ -8,7 +8,7 @@ import { Button } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { PageFrame } from "../components/pages/PageFrame";
+import { PageDrawing, usePageDrawing } from "../components/pages/PageDrawing";
 import { PageNotice } from "../components/pages/PageNotice";
 import { usePageStateSaver } from "../lib/pages/page-state";
 import { usePageDocument, useReviewedPageContent } from "../lib/pages/pages";
@@ -67,7 +67,7 @@ function PageApp({ pageId, spaceId }: { pageId: string; spaceId: string | null }
     savedState,
   );
   const readerState = usePageStateSaver(pageId, read.queryKey);
-  const [height, setHeight] = useState(0);
+  const drawing = usePageDrawing(data ? viewer.document : null);
   const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(null);
   useEventListener(window, "beforeinstallprompt", (event) => {
     event.preventDefault();
@@ -94,20 +94,22 @@ function PageApp({ pageId, spaceId }: { pageId: string; spaceId: string | null }
       />
     ) : null;
   return (
-    <main className="relative h-dvh overflow-auto bg-card text-foreground">
+    <main className="relative h-dvh bg-card text-foreground">
       {notice ?? (
-        <div className="min-h-full" style={{ height: height || undefined }}>
-          {data && viewer.document !== null ? (
-            <PageFrame
-              document={viewer.document}
-              title={data.title}
-              interactive
-              onHeight={setHeight}
-              onSaveState={savedState ? readerState.save : undefined}
-            />
-          ) : null}
-        </div>
+        <PageDrawing
+          drawing={drawing}
+          title={data?.title ?? ""}
+          onSaveState={savedState ? readerState.save : undefined}
+        />
       )}
+      {readerState.failed ? (
+        <p
+          role="alert"
+          className="fixed inset-x-3 bottom-3 mx-auto w-fit rounded-full bg-card px-3 py-1.5 text-label text-destructive ring-[0.5px] ring-border"
+        >
+          {t`Your changes aren't saved. Check your connection.`}
+        </p>
+      ) : null}
       {installPrompt ? (
         <Button
           size="sm"
