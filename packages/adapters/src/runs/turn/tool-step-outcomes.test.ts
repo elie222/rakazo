@@ -2,6 +2,7 @@ import type { HistoryToolStep, RunTrigger } from "@rakazo/contracts";
 import { RUN_TRIGGERS } from "@rakazo/contracts";
 import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { appendToolCallSegment } from "@rakazo/core";
+import { getLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
 import { sanitizeError, sanitizeSensitiveText } from "../../runtime/pi/pi-runtime-errors.js";
@@ -1253,5 +1254,45 @@ describe("tool step outcomes", () => {
       /<reply_target>([\s\S]*?)<\/reply_target>/,
     )?.[1];
     expect(JSON.parse(innerJson ?? "")).toEqual({ message: "details: [[redacted]]", next: "ok" });
+  });
+
+  it("discards a screenshot when the bot was deleted during the save", async () => {
+    const reply = {
+      toolStepCalls: new Map([["call-1", { arguments: "{}" }]]),
+      latestScreenshot: {
+        executionId: "call-1",
+        mimeType: "image/png",
+        data: new Uint8Array([1]),
+      },
+    };
+    const remove = vi.fn(async () => {});
+    const ctx = {
+      deps: {
+        prisma: {
+          artifact: {
+            findFirst: async () => null,
+            create: async () => {
+              throw Object.assign(new Error("Foreign key violation"), { code: "P2003" });
+            },
+          },
+          bot: { findUnique: async () => null },
+        },
+        artifacts: { put: async () => ({ id: "storage-1" }), remove },
+      },
+      run: { spaceId: "space-1", userId: "user-1" },
+      bot: { id: "bot-1" },
+      thread: { groupId: null },
+      runId: "run-1",
+      state: { reply },
+    } as unknown as RunContext;
+    const logError = vi.spyOn(getLogger(), "error");
+    try {
+      await saveLatestStepScreenshot(ctx);
+      expect(remove).toHaveBeenCalledWith("storage-1", expect.anything());
+      expect(reply.toolStepCalls.get("call-1")).toEqual({ arguments: "{}" });
+      expect(logError).not.toHaveBeenCalled();
+    } finally {
+      logError.mockRestore();
+    }
   });
 });

@@ -8,7 +8,8 @@ import {
   redactSecrets,
   sliceWellFormed,
 } from "@rakazo/core";
-import { getLogger } from "@rakazo/logging";
+import { isForeignKeyViolation } from "@rakazo/db";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { redactToolArgsForReview } from "../../approvals/auto-review.js";
 import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
 import { PICTURE_READING_TOOLS } from "../../media/tool-result-image.js";
@@ -558,6 +559,16 @@ export async function saveLatestStepScreenshot(ctx: RunContext): Promise<void> {
     );
     reply.toolStepCalls.set(shot.executionId, { ...call, image: { artifactId } });
   } catch (error) {
+    if (isForeignKeyViolation(error)) {
+      const bot = await bestEffort(
+        "check the screenshot's bot after a rejected save",
+        ctx.deps.prisma.bot.findUnique({
+          where: { id: ctx.bot.id, spaceId: ctx.run.spaceId },
+          select: { id: true },
+        }),
+      );
+      if (bot === null) return;
+    }
     getLogger().error("step screenshot save", error);
   }
 }
