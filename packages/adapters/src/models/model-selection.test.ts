@@ -178,6 +178,12 @@ describe("routine model pin", () => {
     ).toEqual(bot);
   });
 
+  it("uses the bot connection only when the routine follows the bot", () => {
+    const pinnedBot = { ...bot, modelCredentialId: "connection-2" };
+    expect(runModelChoice({ ...bot, modelPinned: true }, pinnedBot)).toEqual(bot);
+    expect(runModelChoice({ ...bot, modelPinned: false }, pinnedBot)).toEqual(pinnedBot);
+  });
+
   it("follows the bot when a routine run only recorded the model an attempt used", () => {
     expect(runModelChoice({ modelPinned: false, ...routine }, bot)).toEqual(bot);
   });

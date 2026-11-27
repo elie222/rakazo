@@ -12,6 +12,7 @@ import {
   effectiveModelRole,
   ORGANIZATION_MODEL_CONNECTION_PREFIX,
 } from "../../models/model-roles.js";
+import { ModelConnectionGoneError } from "../../models/model-selection.js";
 import { isRetiredModelCredentialError } from "../../runtime/pi/models/pi-oauth.js";
 import type { restoreComputerModels } from "../../runtime/pi/tools/pi-runtime-computer-mode.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
@@ -29,13 +30,13 @@ export function runModelBackups(
   defaults: DeploymentModelDefaults,
   scripted: boolean,
   registerSecrets: (values: string[]) => void,
-  organizationPrimary = false,
+  exactConnection = false,
 ) {
   let backupChoices: Promise<ModelRoleChoice[]> | undefined;
-  // A shared model selection uses organization funding for the entire run.
+  // A named personal connection stays exact; an organization model keeps organization funding.
   const load = () =>
     (backupChoices ??=
-      scripted || organizationPrimary
+      scripted || exactConnection
         ? Promise.resolve([])
         : effectiveModelRole(deps.prisma, run, "main", defaults).then(
             (role) => role.backups,
@@ -160,7 +161,9 @@ export async function startRunModel(
       primaryFailure = {
         message: error instanceof Error ? error.message : "Connect the provider again.",
         accountFailure:
-          error instanceof HostedModelCreditsRequiredError || isRetiredModelCredentialError(error),
+          error instanceof HostedModelCreditsRequiredError ||
+          error instanceof ModelConnectionGoneError ||
+          isRetiredModelCredentialError(error),
       };
       if (!terminal) retryPrimary = error;
     }

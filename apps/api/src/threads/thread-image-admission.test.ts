@@ -380,7 +380,22 @@ describe("current image send admission", () => {
       { id: "image-1", name: "notes.txt", mimeType: "text/plain", size: 4 },
     ]);
     await expect(send()).resolves.toMatchObject({ runId: "run-1" });
-    expect(tx.bot.findFirst).not.toHaveBeenCalled();
+    expect(tx.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          blocks: expect.arrayContaining([
+            {
+              kind: "file",
+              artifactId: "image-1",
+              name: "notes.txt",
+              mimeType: "text/plain",
+              size: 4,
+            },
+          ]),
+        }),
+      }),
+    );
+    expect(tx.userModelCredential.findFirst).not.toHaveBeenCalled();
   });
 
   it("rejects a mixed-capability group atomically", async () => {

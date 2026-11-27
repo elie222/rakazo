@@ -210,6 +210,7 @@ const groupTargetInclude = {
           name: true,
           color: true,
           avatarSet: true,
+          primaryRuntimePreference: true,
         },
       },
     },

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { RPCHandler } from "@orpc/server/fetch";
+import { pilotRuntimeForBot } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { MODEL_REQUIRED_SEND_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
@@ -10,10 +11,14 @@ import {
   createThreadMessage,
   provisionMessagingIdentity,
   runAsSystem,
+  runAsTenant,
+  setBotPrimaryRuntimePreference,
 } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
 import { createRouter } from "../router.js";
+import type { ThreadTarget } from "./thread-target.js";
+import { resolveThreadTarget, sendThreadMessage } from "./thread-target.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.VERIFY_DATABASE === "1" && Boolean(databaseUrl);
@@ -72,6 +77,7 @@ describe.skipIf(!enabled)("send model gate with a bot's own model (PostgreSQL)",
     };
   });
   afterEach(async () => {
+    vi.unstubAllEnvs();
     if (!actor) return;
     await system.messagingIdentity.deleteMany({ where: { userId: actor.userId } });
     await system.chatGroup.deleteMany({ where: { userId: actor.userId } });
@@ -141,6 +147,185 @@ describe.skipIf(!enabled)("send model gate with a bot's own model (PostgreSQL)",
     await expectRefused(await send({ botId, text: "disconnected" }));
     // The accepted send and the two reactions; no refused send was saved.
     expect(await userMessages(thread.id)).toBe(3);
+  });
+
+  const dmTarget = () => runAsTenant(actor, () => resolveThreadTarget(prisma, actor, { botId }));
+  const changeRuntime = (preference: string | null, expectedRevision: number) =>
+    runAsTenant(actor, () =>
+      setBotPrimaryRuntimePreference(prisma, {
+        botId,
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        preference,
+        expectedRevision,
+      }),
+    );
+  const directSend = (
+    target: ThreadTarget,
+    signedInApp: boolean,
+    mentions?: Parameters<typeof sendThreadMessage>[3]["mentions"],
+  ) =>
+    runAsTenant(actor, () =>
+      sendThreadMessage(
+        {
+          prisma,
+          events: createThreadEvents(prisma),
+          jobs: { enqueue } as never,
+          sandbox: {} as never,
+          signedInApp,
+        },
+        actor,
+        target,
+        { text: "Use the selected runtime.", clientNonce: randomUUID(), mentions },
+      ),
+    );
+
+  it.skipIf(process.platform !== "linux")(
+    "pins the exact enrolled DM runtime, account and preference revision on admission",
+    async () => {
+      vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", botId);
+      vi.stubEnv("PRIMARY_RUNTIME_PILOT_LAUNCHER", process.execPath);
+      const native = pilotRuntimeForBot(botId)!;
+      const credential = await system.userModelCredential.create({
+        data: {
+          userId: actor.userId,
+          provider: "anthropic",
+          label: "Native fixture",
+          secretId: "unused-fixture",
+        },
+      });
+      await system.bot.update({
+        where: { id: botId },
+        data: {
+          modelProvider: "anthropic",
+          modelId: "claude-sonnet-4-6",
+          modelCredentialId: credential.id,
+        },
+      });
+      await expect(changeRuntime(native, 0)).resolves.toEqual({ status: "changed", revision: 1 });
+      const result = await directSend(await dmTarget(), true);
+      expect(await system.run.findUniqueOrThrow({ where: { id: result.runId! } })).toMatchObject({
+        botId,
+        primaryRuntime: native,
+        primaryRuntimeRevision: 1,
+        modelPinned: true,
+        modelCredentialId: credential.id,
+      });
+    },
+  );
+
+  it.skipIf(process.platform !== "linux")(
+    "stores a new group runtime pin after switching away and back, without removing chat history",
+    async () => {
+      vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", botId);
+      vi.stubEnv("PRIMARY_RUNTIME_PILOT_GROUP_BOT_IDS", botId);
+      vi.stubEnv("PRIMARY_RUNTIME_PILOT_LAUNCHER", process.execPath);
+      const native = pilotRuntimeForBot(botId)!;
+      const credential = await system.userModelCredential.create({
+        data: {
+          userId: actor.userId,
+          provider: "anthropic",
+          label: "Group fixture",
+          secretId: "unused-group-fixture",
+        },
+      });
+      await system.bot.update({
+        where: { id: botId },
+        data: {
+          modelProvider: "anthropic",
+          modelId: "claude-sonnet-4-6",
+          modelCredentialId: credential.id,
+        },
+      });
+      const peer = await system.bot.create({
+        data: { spaceId: actor.spaceId, userId: actor.userId, name: "Peer", color: "primary" },
+      });
+      const group = await system.chatGroup.create({
+        data: {
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+          name: "Group",
+          members: { create: [{ botId }, { botId: peer.id }] },
+          thread: { create: { spaceId: actor.spaceId, userId: actor.userId } },
+        },
+      });
+      const mention = async () => {
+        const target = await runAsTenant(actor, () =>
+          resolveThreadTarget(prisma, actor, { groupId: group.id }),
+        );
+        const { runId } = await directSend(target, true, [{ kind: "bot", id: botId }]);
+        return system.run.findUniqueOrThrow({ where: { id: runId! } });
+      };
+      await changeRuntime(native, 0);
+      const prior = await mention();
+      expect(prior).toMatchObject({
+        botId,
+        primaryRuntime: native,
+        primaryRuntimeRevision: 1,
+        modelCredentialId: credential.id,
+      });
+      await system.run.update({ where: { id: prior.id }, data: { status: "completed" } });
+      await changeRuntime("pi", 1);
+      await changeRuntime(native, 2);
+
+      const current = await mention();
+      expect(current).toMatchObject({
+        botId,
+        primaryRuntime: native,
+        primaryRuntimeRevision: 3,
+        modelCredentialId: credential.id,
+      });
+      expect(await userMessages(prior.threadId)).toBe(2);
+    },
+  );
+
+  it("routes an enrolled bot explicitly set to Pi without steering an older native run", async () => {
+    vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", botId);
+    const native = pilotRuntimeForBot(botId)!;
+    await useModel(botId, "openrouter");
+    const { threadId } = await dmTarget();
+    const work = { spaceId: actor.spaceId, botId, threadId, userId: actor.userId };
+    const task = await system.task.create({
+      data: { ...work, prompt: "older", status: "running" },
+    });
+    const prior = await system.run.create({
+      data: {
+        ...work,
+        taskId: task.id,
+        status: "running",
+        trigger: "user",
+        primaryRuntime: native,
+      },
+    });
+    await expect(changeRuntime("pi", 0)).resolves.toEqual({ status: "changed", revision: 1 });
+    const response = await send({ botId, text: "A normal Pi send after switching" });
+    expect(response.status).toBe(200);
+    const { json } = (await response.json()) as { json: { runId: string } };
+    expect(json.runId).not.toBe(prior.id);
+    expect(await system.run.findUniqueOrThrow({ where: { id: json.runId } })).toMatchObject({
+      primaryRuntime: null,
+    });
+  });
+
+  it("rechecks the app-only gate under the DM lock when the preference changed after targeting", async () => {
+    vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", botId);
+    await changeRuntime("pi", 0);
+    const priorTarget = await dmTarget();
+    await changeRuntime(pilotRuntimeForBot(botId)!, 1);
+    await expect(directSend(priorTarget, false)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(await userMessages(priorTarget.threadId)).toBe(0);
+  });
+
+  it("rejects a saved native preference with no current enrolment rather than running Pi", async () => {
+    vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", botId);
+    await changeRuntime(pilotRuntimeForBot(botId)!, 0);
+    vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", "");
+    const target = await dmTarget();
+    await expect(directSend(target, true)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "The primary runtime pilot is not available on this deployment.",
+    });
+    expect(await userMessages(target.threadId)).toBe(0);
   });
 
   it("lets a bare stop end active work without a model, and refuses it when idle", async () => {

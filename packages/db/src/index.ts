@@ -24,6 +24,7 @@ export * from "./bots/bot-email-address.js";
 export * from "./bots/bot-email-attachments.js";
 export * from "./bots/bot-email-sends.js";
 export * from "./bots/bot-instructions.js";
+export { setBotPrimaryRuntimePreference } from "./bots/bot-primary-runtime.js";
 export * from "./bots/bot-repository.js";
 export * from "./bots/bot-update.js";
 export * from "./bots/memory-config.js";
@@ -86,6 +87,12 @@ export {
 export * from "./threads/events.js";
 export * from "./threads/message-blocks.js";
 export * from "./threads/messages.js";
+export {
+  type NativeDmCommit,
+  nativeDmProfileRevision,
+  prepareNativeDmSession,
+  pruneNativeDmSessions,
+} from "./threads/native-dm-session.js";
 export * from "./threads/thread-ask.js";
 export { botRunStatuses, primaryActiveRun } from "./threads/thread-listing.js";
 export * from "./threads/thread-reads.js";

@@ -143,6 +143,7 @@ export function threadsRoutes(ctx: RouterContext) {
     },
     startRoutines?: Parameters<typeof sendThreadMessage>[5],
     nativeSessionId?: string,
+    signedInApp = false,
   ) => {
     const setup = await modelSetup(deps, actor);
     const target = await resolveThreadTarget(deps.prisma, actor, input);
@@ -169,6 +170,7 @@ export function threadsRoutes(ctx: RouterContext) {
       {
         ...deps,
         maxAttachmentsPerMessage: deps.env.maxAttachmentsPerMessage,
+        signedInApp,
         imageAdmission: confirmingImages
           ? {
               secrets: deps.secrets,
@@ -259,7 +261,7 @@ export function threadsRoutes(ctx: RouterContext) {
         }
       }),
       send: authed.threads.send.handler(({ context, input }) =>
-        send(context.actor, input, undefined, context.nativeSessionId),
+        send(context.actor, input, undefined, context.nativeSessionId, Boolean(context.sessionId)),
       ),
       nativeCalendarPending: authed.threads.nativeCalendarPending.handler(({ context, input }) => {
         const device = calendarDevice(context, input.deviceKey);
@@ -319,7 +321,13 @@ export function threadsRoutes(ctx: RouterContext) {
         try {
           if (input.text?.trim() || input.artifactIds?.length) {
             // A saved message for this nonce is replayed before any of this runs.
-            sent = await send(actor, input, startRoutines, context.nativeSessionId);
+            sent = await send(
+              actor,
+              input,
+              startRoutines,
+              context.nativeSessionId,
+              Boolean(context.sessionId),
+            );
           } else {
             // Only the routines: they all commit or none does.
             const started = await withTransactionRetry(() =>
