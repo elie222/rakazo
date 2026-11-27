@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CALENDAR_CSS, DayView, MonthView, parseDay, WeekView } from "./calendar.js";
+import { TextLink } from "./controls.js";
 import {
   Audio,
   Avatar,
@@ -193,6 +194,17 @@ describe("media", () => {
       photo.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
     });
     expect(document.activeElement?.getAttribute("aria-label")).toBe("Enlarge B");
+  });
+
+  it("enlarges a photo inside a link without opening the link", () => {
+    render(
+      <TextLink href="https://example.com">
+        <Gallery photos={[{ src: PNG, alt: "Lobby" }]} />
+      </TextLink>,
+    );
+    click(q('button[aria-label="Enlarge Lobby"]'));
+    expect(q('[role="dialog"]')).not.toBeNull();
+    expect(posted).toEqual([]);
   });
 
   it("hands focus to the photo an arrow brings on screen, so arrow keys carry on", () => {
