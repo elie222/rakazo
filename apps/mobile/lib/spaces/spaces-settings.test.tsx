@@ -53,6 +53,7 @@ vi.mock("expo-router", () => ({
 }));
 vi.mock("react-native", () => ({
   ActivityIndicator: () => null,
+  Platform: { OS: "ios" },
   ScrollView: element("div"),
   View: element("div"),
   StyleSheet: { create: <T,>(styles: T) => styles },
@@ -114,7 +115,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("offers one Space's members under its name and a new Space, leaving settings for both", async () => {
+it("offers one Space's members under its name and a new Space, leaving settings for both and remembering the return from Members", async () => {
   state.spaces = [{ id: "space-1", name: "Personal" }];
   await render();
   expect(rows()).toEqual(["Members", "New private space"]);
@@ -127,7 +128,7 @@ it("offers one Space's members under its name and a new Space, leaving settings 
   await press("Members");
   expect(state.events).toEqual([
     "close",
-    { pathname: "/space-members", params: { spaceId: "space-1" } },
+    { pathname: "/space-members", params: { spaceId: "space-1", fromSettings: "/spaces" } },
   ]);
   state.events = [];
   await press("New private space");

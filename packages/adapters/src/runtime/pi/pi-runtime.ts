@@ -101,6 +101,7 @@ import {
   sameModelTarget,
   thinkingLevelFor,
 } from "./pi-runtime-models.js";
+import { captureTurnTranscript } from "./pi-runtime-transcript.js";
 import type { PiSessionHandle, PiSessionRecorder } from "./pi-session.js";
 import { PiJsonlSessionRecorder } from "./pi-session.js";
 import { conversationSessionId, reliableModelStream } from "./stream/pi-runtime-stream.js";
@@ -343,6 +344,12 @@ export class PiAgentRuntime implements AgentRuntime {
             initialSteering.some((item) => item.images?.length && !item.imageFileFallback),
         );
         seenSteeringIds.push(...initialSteering.map((item) => item.id));
+        // The history messages this turn's transcript stands for: its prompt and its steering.
+        // A steering continuation's source is also one of its steering messages.
+        const turnMessageIds = new Set([
+          ...(request.sourceMessageId ? [request.sourceMessageId] : []),
+          ...initialSteering.map((item) => item.messageId),
+        ]);
         // A computer-mode checkpoint was written by the computer model; keep its thinking.
         const restored = request.turnCheckpoint
           ? restoreTurnCheckpoint(
@@ -350,6 +357,8 @@ export class PiAgentRuntime implements AgentRuntime {
               mode === "computer" && computer ? computer.model : model,
             )
           : undefined;
+        if (restored?.foundConnectorTools)
+          host.foundConnectorTools = new Map(restored.foundConnectorTools);
         const history =
           restored?.messages ??
           toHistory(
@@ -756,7 +765,10 @@ export class PiAgentRuntime implements AgentRuntime {
             const steering = await request.claimSteering([...seenSteeringIds]);
             if (steering.length === 0) return update;
             seenSteeringIds.push(...steering.map((item) => item.id));
-            for (const item of steering) representedHistoryIds.add(item.messageId);
+            for (const item of steering) {
+              representedHistoryIds.add(item.messageId);
+              turnMessageIds.add(item.messageId);
+            }
             if (steering.some((item) => item.images?.length && !item.imageFileFallback))
               hasCurrentImages = true;
             const messages = steering.map((item): Message => {
@@ -813,6 +825,7 @@ export class PiAgentRuntime implements AgentRuntime {
             modelId: activeStreamTarget.model.id,
             systemPrompt,
             representedHistoryIds,
+            foundConnectorTools: host.foundConnectorTools,
           });
         host.captureCheckpoint = async (toolCallId, executionId) => {
           if (!request.onCheckpoint) return;
@@ -1339,6 +1352,25 @@ export class PiAgentRuntime implements AgentRuntime {
             streamed = request.emptyResponseText?.trim() || "No response. Try again.";
             queue.push({ type: "text", text: streamed });
           }
+        }
+        // A turn that started fresh and ended in the model's own reply is kept as it was sent.
+        // Only a turn with its person's message in history can stand in for it there.
+        if (
+          request.onTranscript &&
+          request.sourceMessageId &&
+          !restored &&
+          !budgetExceeded &&
+          !terminatedReply
+        ) {
+          const transcript = host.pausePending
+            ? undefined
+            : captureTurnTranscript(
+                sentContext?.context.messages,
+                terminalMessage,
+                [...turnMessageIds],
+                request.sourceMessageId,
+              );
+          if (transcript) request.onTranscript(transcript);
         }
         queue.push(streamed.trim() ? { type: "done", text: streamed } : { type: "done" });
       } catch (error) {

@@ -19,6 +19,7 @@ import {
 } from "../../memory/conversation-memory.js";
 import { returnBotMessageOutcome } from "../../messaging/bot-messages.js";
 import { clearRoutineBackoff } from "../../routines/routine-backoff.js";
+import { deleteSpentRoutine } from "../../routines/routine-end.js";
 import { isStrategicInitiativeRun } from "../../routines/strategic-initiative.js";
 import {
   COMPACTION_BATCH_SIZE,
@@ -34,7 +35,6 @@ import {
   runAllowsSilentEmpty,
   TOOL_STEPS_WITHOUT_RESPONSE,
 } from "../assembly/run-replies.prompt.js";
-import { deleteSpentOneShotRoutine } from "../assembly/run-routines.js";
 import {
   isNoResponseReply,
   isPlaceholderReply,
@@ -42,7 +42,7 @@ import {
   stripNoResponseReply,
   stripStrayNoResponse,
 } from "../assembly/silent-reply.js";
-import { saveLatestStepScreenshot } from "../turn/tool-step-calls.js";
+import { keptTurnTranscript, saveLatestStepScreenshot } from "../turn/tool-step-calls.js";
 import { enqueueSteeringContinuation, renewRunLease } from "./run-lifecycle.js";
 import {
   completionMarksUnread,
@@ -150,12 +150,17 @@ export async function completeRun(ctx: RunContext) {
     outcome: "completed",
     blocks,
     markUnread: !groupSilentEnd && marksUnread,
+    // Only a reply that holds the whole turn stands for it; earlier messages of this run would
+    // sit between the turn's prompt and the reply.
+    ...(reply.transcript && blocks.length > 0 && !reply.publishedMidTurnUserMessage
+      ? { transcript: keptTurnTranscript(reply.transcript, ctx.secrets) }
+      : {}),
   });
   if (!completed) return;
   ctx.stopHeartbeatAfterCompletion();
   if (run.trigger === "routine" && run.routineId) {
     await clearRoutineBackoff(deps, { routineId: run.routineId, userId: run.userId });
-    await deleteSpentOneShotRoutine(deps, {
+    await deleteSpentRoutine(deps, {
       spaceId: run.spaceId,
       routineId: run.routineId,
       userId: run.userId,

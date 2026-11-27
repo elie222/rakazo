@@ -252,7 +252,6 @@ export function ArtifactsPage() {
   return (
     <div className="flex h-full min-w-0 flex-col bg-background text-foreground/90">
       <header className="app-drag flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-3">
-        {/* This route is the window's leading edge, so Electron window controls sit in the header. */}
         {desktopBridge() ? <WindowChrome /> : null}
         <div className="flex min-w-fit flex-1 items-center gap-1">
           <IconTooltip label={t`Back`}>

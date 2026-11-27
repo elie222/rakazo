@@ -97,6 +97,7 @@ function fakeClaude(scenario: string) {
   return {
     started: () => existsSync(record),
     spawned: () => existsSync(`${record}.spawned`),
+    resumed: () => existsSync(`${record}.resumed`),
     read: () =>
       JSON.parse(readFileSync(record, "utf8")) as {
         args: string[];
@@ -235,7 +236,7 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
     ]);
   });
 
-  it("starts the unmodified CLI with its own tools, settings and sessions off", async () => {
+  it("starts the unmodified CLI with its own tools and settings off", async () => {
     const cli = fakeClaude("reply");
     await run(hello);
     const { args, cwdEntries, cwdMode } = cli.read();
@@ -258,12 +259,7 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
     expect(args).toEqual(
-      expect.arrayContaining([
-        "--strict-mcp-config",
-        "--mcp-config",
-        "--no-session-persistence",
-        "--disable-slash-commands",
-      ]),
+      expect.arrayContaining(["--strict-mcp-config", "--mcp-config", "--disable-slash-commands"]),
     );
     for (const flag of [
       "--dangerously-skip-permissions",
@@ -281,16 +277,97 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
     expect(cwdMode).toBe(0o700);
   });
 
-  it("uses a fresh empty directory for each turn and removes it afterward", async () => {
+  it("uses the same empty directory for every turn", async () => {
     const cli = fakeClaude("reply");
     await run(hello);
     const first = cli.read().cwd;
-    await vi.waitFor(() => expect(existsSync(first)).toBe(false));
     await run(hello);
-    const second = cli.read().cwd;
-    expect(second).not.toBe(first);
+    expect(cli.read().cwd).toBe(first);
     expect(cli.read().cwdEntries).toEqual([]);
-    await vi.waitFor(() => expect(existsSync(second)).toBe(false));
+  });
+
+  it("continues the CLI's session from before the last reply, and removes the session it left", async () => {
+    const config = mkdtempSync(join(tmpdir(), "rakazo-claude-config-"));
+    vi.stubEnv("CLAUDE_CONFIG_DIR", config);
+    try {
+      const first = fakeClaude("tool");
+      const reply = (await run(hello)).message;
+      const firstSession = first.read().args[first.read().args.indexOf("--session-id") + 1];
+      const result = {
+        role: "toolResult" as const,
+        toolCallId: "toolu_1",
+        toolName: "lookup",
+        content: [{ type: "text" as const, text: "Sunny" }],
+        isError: false,
+        timestamp: 3,
+      };
+      const second = fakeClaude("reply");
+      await run({ ...hello, messages: [...hello.messages, reply, result] });
+      const { args, frames } = second.read();
+      const value = (flag: string) => args[args.indexOf(flag) + 1];
+
+      expect(value("--resume")).toBe(firstSession);
+      // The reply is sent again, so the CLI's refusals to run its tool calls stay out.
+      expect(value("--resume-session-at")).toBe("before-reply-2");
+      expect(args).toContain("--fork-session");
+      expect(value("--session-id")).not.toBe(firstSession);
+      expect(frames).toEqual([
+        {
+          type: "assistant",
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool_use",
+                id: "toolu_1",
+                name: "mcp__rakazo__lookup",
+                input: { city: "Taipei" },
+              },
+            ],
+          },
+        },
+        {
+          type: "user",
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: "toolu_1",
+                content: [{ type: "text", text: "Sunny" }],
+              },
+            ],
+          },
+        },
+      ]);
+      const sessions = join(config, "projects", "-rakazo");
+      await vi.waitFor(() =>
+        expect(existsSync(join(sessions, `${firstSession}.jsonl`))).toBe(false),
+      );
+      expect(existsSync(join(sessions, `${value("--session-id")}.jsonl`))).toBe(true);
+    } finally {
+      vi.stubEnv("CLAUDE_CONFIG_DIR", undefined);
+    }
+  });
+
+  it("replays the whole conversation when the CLI cannot continue its session", async () => {
+    vi.stubEnv("CLAUDE_CONFIG_DIR", mkdtempSync(join(tmpdir(), "rakazo-claude-config-")));
+    try {
+      fakeClaude("tool");
+      const reply = (await run(hello)).message;
+      const cli = fakeClaude("lost-session");
+      const { message } = await run({
+        ...hello,
+        messages: [...hello.messages, reply, { role: "user", content: "Thanks", timestamp: 3 }],
+      });
+
+      expect(message.stopReason).toBe("stop");
+      expect(cli.resumed()).toBe(true);
+      expect(cli.read().args).not.toContain("--resume");
+      expect(cli.read().frames).toHaveLength(3);
+    } finally {
+      vi.stubEnv("CLAUDE_CONFIG_DIR", undefined);
+    }
   });
 
   it("does not launch the model after cancellation during file setup", async () => {
@@ -833,17 +910,21 @@ describe("Claude Code bridge sources", () => {
   it("never read or copy the CLI's sign-in, and name its token only for the opt-in", () => {
     // The one allowed mention: the name of the token the operator can opt in to pass through.
     const optIn = 'const OPT_IN_TOKEN_NAME = "CLAUDE_CODE_OAUTH_TOKEN";';
+    const sessionsHome = 'const CLI_HOME_FOLDER = ".claude";';
     const sources = [
       "provider-id.ts",
       "provider.ts",
       "../../../cli-models/personal-access.ts",
       "cli.ts",
       "stream.ts",
+      "sessions.ts",
     ].map((file) => {
       const source = readFileSync(fileURLToPath(new URL(`./${file}`, import.meta.url)), "utf8");
-      if (file !== "cli.ts") return source;
-      expect(source.split("\n").filter((line) => line === optIn)).toHaveLength(1);
-      return source.replace(optIn, "");
+      // The other: the folder whose saved sessions Rakazo removes once it no longer continues them.
+      const allowed = { "cli.ts": optIn, "sessions.ts": sessionsHome }[file];
+      if (!allowed) return source;
+      expect(source.split("\n").filter((line) => line === allowed)).toHaveLength(1);
+      return source.replace(allowed, "");
     });
     for (const source of sources) {
       expect(source).not.toMatch(

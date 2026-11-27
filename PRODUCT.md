@@ -49,6 +49,7 @@ A routine runs either in its chat, as a turn with the whole conversation that wa
 The bot chooses when it creates the routine: alongside for reports, digests, reminders and alerts whose prompt can say everything they need; in the chat for follow-ups that continue work the conversation is doing, such as updating a draft or fixing a deploy started there.
 A routine running alongside reads the chat's latest messages and its own earlier results, so it can say what changed instead of repeating itself, and searches the rest of the chat when it needs more.
 A routine in the chat that is still waiting after five minutes is handed to the running turn, so a run that goes on for hours does not hold it back; one that watches for changes always runs alongside, because what it read is not the user's words.
+A repeating routine or watch can end on a date: its last run before then is told it is the last, and the routine deletes itself once that run is done and says so in its chat, so a limited stretch such as "every day until Friday" is one routine rather than one per run.
 
 ## Computers
 
@@ -64,6 +65,8 @@ While a person has control the bot's screen actions are refused rather than queu
 A bot that needs a person for a sign-in, CAPTCHA, passkey or payment asks in the chat and continues when they press Done.
 Taking control of one bot's screen never blocks other bots on their own screens.
 Maintenance such as updating or resetting a computer lives in settings rather than on the screen.
+Bots get a full shell on their computer and are trusted to use it, so loops, substitutions, variables and scripts all run.
+The only commands refused are ones that reach beyond the bot's own work on a shared computer, such as stopping browser or desktop processes by name, stopping system services, or deleting the shared browser profile, because a bot cannot undo that damage to other bots, and a bot's own browser restarts by itself at its next screen action.
 
 ## Connections, skills, and plugins
 

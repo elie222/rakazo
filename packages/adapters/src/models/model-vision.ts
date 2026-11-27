@@ -1,10 +1,12 @@
 import type { Models } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { canonicalPiProviderId } from "@rakazo/contracts";
+import { agentCli, agentCliModel } from "../cli-models/agent-clis.js";
 import {
   CLAUDE_CODE_PROVIDER_ID,
   claudeCodeModel,
 } from "../providers/cli-model/claude-code/provider.js";
+import type { AcpAgentDescriptor } from "../runtime/acp/acp-agent.js";
 import { liveModelSibling, withLiveImageInput } from "../runtime/pi/models/pi-live-model.js";
 import { registerLocalProvider } from "../runtime/pi/models/pi-local-provider.js";
 import { applyPiModelCompatibility } from "../runtime/pi/models/pi-model-compat.js";
@@ -81,9 +83,22 @@ function catalogModels(): Models {
 
 function visionModel(provider: string, id: string) {
   const models = catalogModels();
-  return provider === CLAUDE_CODE_PROVIDER_ID
-    ? claudeCodeModel(id, models)
-    : models.getModel(provider, id);
+  if (provider === CLAUDE_CODE_PROVIDER_ID) return claudeCodeModel(id, models);
+  const cli = agentCli(provider);
+  return cli ? agentCliVisionModel(cli, id, models) : models.getModel(provider, id);
+}
+
+function agentCliVisionModel(cli: AcpAgentDescriptor, id: string, models: Models) {
+  // A CLI that names models `provider/model` runs ones the catalog may know, which then decides.
+  const slash = id.indexOf("/");
+  const known = slash > 0 ? models.getModel(id.slice(0, slash), id.slice(slash + 1)) : undefined;
+  const model = agentCliModel(cli, id);
+  return known && cli.acceptsImages ? { ...model, input: known.input } : model;
+}
+
+/** Whether the model an agent CLI runs sees images, through that CLI. */
+export function agentCliModelSeesImages(cli: AcpAgentDescriptor, id: string): boolean {
+  return agentCliVisionModel(cli, id, catalogModels()).input.includes("image");
 }
 
 /**

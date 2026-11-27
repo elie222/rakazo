@@ -18,11 +18,13 @@ import { SettingsGroup, SettingsRow } from "../../components/settings/SettingsRo
 import { OrganizationMembersSettings } from "../../components/spaces/OrganizationMembersSettings";
 import { useQueryUserId, useSave } from "../../lib/query/query";
 import { clearSpaceSelection, rpc, selectSpace } from "../../lib/query/rpc";
+import { SpaceRpcProvider } from "../../lib/query/space-rpc";
 import { errorText } from "../../lib/query/user-error";
 import type { Organization } from "../../lib/spaces/organizations";
 import { organizationsQuery, useOrganizations } from "../../lib/spaces/organizations";
+import { OrganizationVaultSettings } from "./OrganizationVaultSettings";
 
-export type OrganizationPage = "main" | "members" | "log";
+export type OrganizationPage = "main" | "members" | "log" | "vault";
 
 /** The organization the app is showing: its name, its members and, for its owner, renaming. */
 export function OrganizationSettingsPanel({
@@ -92,6 +94,9 @@ export function OrganizationOptionsMenu({ onActivityLog }: { onActivityLog: () =
   );
 }
 
+const settingsLinkClassName =
+  "flex min-h-15 w-full items-center justify-between gap-4 px-4 py-3 text-start text-body text-foreground last:rounded-b-xl hover:bg-accent focus-visible:bg-accent focus-visible:outline-none";
+
 function OrganizationSettings({
   organization,
   page,
@@ -145,6 +150,13 @@ function OrganizationSettings({
       />
     );
 
+  if (page === "vault" && canManageOrganizationMembers(organization))
+    return (
+      <SpaceRpcProvider spaceId={organization.defaultSpaceId}>
+        <OrganizationVaultSettings onBack={() => onPageChange("main")} />
+      </SpaceRpcProvider>
+    );
+
   // Alone in it, its owner is offered to invite someone instead of a count of one.
   const inviteFirst = organization.memberCount === 1 && canManageOrganizationMembers(organization);
   return (
@@ -196,7 +208,7 @@ function OrganizationSettings({
         </SettingsRow>
         <button
           type="button"
-          className="flex min-h-15 w-full items-center justify-between gap-4 rounded-b-xl px-4 py-3 text-start hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+          className={settingsLinkClassName}
           onClick={() => onPageChange("members")}
         >
           <span className="text-body text-foreground">
@@ -207,6 +219,19 @@ function OrganizationSettings({
             <ChevronRight aria-hidden="true" className="size-4 rtl:rotate-180" />
           </span>
         </button>
+        {canManageOrganizationMembers(organization) && (
+          <button
+            type="button"
+            className={settingsLinkClassName}
+            onClick={() => onPageChange("vault")}
+          >
+            <Trans>Shared logins</Trans>
+            <ChevronRight
+              aria-hidden="true"
+              className="size-4 text-muted-foreground rtl:rotate-180"
+            />
+          </button>
+        )}
       </SettingsGroup>
     </div>
   );

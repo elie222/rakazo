@@ -117,7 +117,11 @@ describe("connection catalog", () => {
       vi.useRealTimers();
     }
     expect(openUrl).toHaveBeenCalledWith("https://auth.example.test");
-    expect(await result).toEqual({ status: "connected", row: account("new", "connected") });
+    expect(await result).toEqual({
+      status: "connected",
+      connectionId: "new",
+      row: account("new", "connected"),
+    });
   });
 
   it("skips polling for apps that need no authorization", async () => {
@@ -128,7 +132,7 @@ describe("connection catalog", () => {
       openUrl: vi.fn(),
       signal: new AbortController().signal,
     });
-    expect(result).toEqual({ status: "connected" });
+    expect(result).toEqual({ status: "connected", connectionId: "new" });
     expect(complete).not.toHaveBeenCalled();
   });
 

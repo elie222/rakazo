@@ -94,7 +94,10 @@ export class ThirdPartyConnectorEmulator {
       const externalUserId = String(body.external_user_id ?? "");
       this.pendingUsers.add(externalUserId);
       this.records.push({ provider: "pipedream", operation: "begin" });
-      return Response.json({ connect_link_url: "https://pipedream.example.test/connect" });
+      return Response.json({
+        connect_link_url: "https://pipedream.example.test/connect",
+        expires_at: new Date(Date.now() + Number(body.expires_in ?? 14_400) * 1_000).toISOString(),
+      });
     }
     if (url.pathname.endsWith("/accounts") && method === "GET") {
       const externalUserId = url.searchParams.get("external_user_id") ?? "";

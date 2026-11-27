@@ -53,7 +53,11 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
-import { assertCompatibleDefaultChange } from "../bots/model-pins.js";
+import {
+  assertCompatibleDefaultChange,
+  disconnectedModelChoices,
+  modelDisconnectPreview,
+} from "../bots/model-pins.js";
 import { mayUsePrivateEndpoint } from "../integrations/mcp-servers.js";
 import {
   getDeploymentModelSettings,
@@ -76,6 +80,7 @@ import {
   throwIfAborted,
 } from "../models/model-credentials.js";
 import type { RouterContext } from "./context.js";
+import { organizationModelConnectionRoutes } from "./organization-model-connections.js";
 
 /** A secret store outage is answered as one the member waits out; any other failure is unchanged. */
 function secretStoreOutage(error: unknown): unknown {
@@ -160,6 +165,7 @@ export function modelsRoutes(ctx: RouterContext) {
     };
   return {
     models: {
+      organizationConnections: organizationModelConnectionRoutes(ctx),
       list: authed.models.list.handler(async ({ context }) =>
         withServingConnections(context.actor, await chatCatalog(context.actor)),
       ),
@@ -647,6 +653,9 @@ export function modelsRoutes(ctx: RouterContext) {
           throw new ORPCError("NOT_FOUND", { message: "Connection not found" });
         return { ok: true as const };
       }),
+      disconnectPreview: authed.models.disconnectPreview.handler(async ({ context, input }) =>
+        modelDisconnectPreview(deps, context.actor, input),
+      ),
       disconnect: authed.models.disconnect.handler(async ({ context, input }) => {
         // Retire pending sign-ins in every space first — the credentials are
         // account-wide, so a finishing OAuth session anywhere could otherwise
@@ -671,15 +680,12 @@ export function modelsRoutes(ctx: RouterContext) {
               if (input.credentialId && existing.length === 0) return;
               const ids = existing.map((row) => row.id);
               const lastConnection = existing.length === connections.length;
-              const roleRows = {
-                userId: context.actor.userId,
+              const roleRows = disconnectedModelChoices(
+                context.actor.userId,
                 provider,
-                OR: [
-                  { credentialId: { in: ids } },
-                  // Legacy rows without a funding pin ran on the provider's last connection.
-                  ...(lastConnection ? [{ credentialId: null, creditOfferingId: null }] : []),
-                ],
-              };
+                ids,
+                lastConnection,
+              );
               // Its models leave every purpose in the account's models and every Space's,
               // like the connection itself; the tenant scope would otherwise limit the
               // Space deletes to the active Space.
@@ -692,7 +698,6 @@ export function modelsRoutes(ctx: RouterContext) {
                 },
               );
               if (existing.length === 0) return;
-              // Credentials are account-wide, so disconnecting removes them from every Space.
               await tx.userModelCredential.deleteMany({
                 where: { userId: context.actor.userId, id: { in: ids } },
               });

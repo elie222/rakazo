@@ -53,7 +53,6 @@ export type ZipEntry = {
   compressedSize: number;
   uncompressedSize: number;
   localHeaderOffset: number;
-  /** Offset of the entry's data, past its local header. */
   dataOffset: number;
   /** The data-descriptor flag (bit 3) is set: sizes live after the data. */
   dataDescriptor: boolean;
@@ -63,7 +62,6 @@ export type ZipEntry = {
 
 /** Bounds one read so a single slice never holds a whole entry. */
 const READ_SLICE_BYTES = 16 * 1024;
-/** The central directory is parsed through windows this size. */
 const CENTRAL_DIRECTORY_WINDOW_BYTES = 64 * 1024;
 
 const crcTable = (() => {

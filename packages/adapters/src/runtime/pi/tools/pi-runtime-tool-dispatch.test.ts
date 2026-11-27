@@ -525,6 +525,7 @@ import {
 } from "../../../runs/assembly/run-replies.prompt.js";
 import { toolCompletionAuditPayload } from "../../../runs/turn/tool-completion-audit.js";
 import { serializeTurnCheckpoint } from "../../../runs/turn/turn-checkpoint.js";
+import { CATALOG_EXECUTE, lazyCatalogTools } from "../../../tools/lazy-tool-catalog.js";
 import { MISSING_TOOL_FINAL_RESPONSE_ERROR, PiAgentRuntime } from "../pi-runtime.js";
 import { providerFailureText } from "../pi-runtime-errors.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "../pi-runtime-limits.js";
@@ -1282,6 +1283,216 @@ describe("Pi connector tool dispatch", () => {
     await expect(withoutReason.run()).rejects.toThrow(
       "message_bot is not available. Use a name find_tool lists.",
     );
+  });
+
+  it("forwards unavailableToolReasons to find_tool", async () => {
+    const reason = "schedule_update is not available in routine runs.";
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    fakeAgentState.invoke = {
+      name: "find_tool",
+      args: { names: ["schedule_update"] },
+    };
+
+    for await (const _event of new PiAgentRuntime().run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "update the routine",
+        instructions: "",
+        history: [],
+        tools: [updateBotTool, scheduleCancelTool],
+        unavailableToolReasons: { schedule_update: reason },
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      {
+        operationId: "1",
+        traceId: "1",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      // Exhaust the runtime event stream so tool execution completes.
+    }
+
+    const expected = {
+      tools: [],
+      unavailable: { schedule_update: reason },
+    };
+    const result = fakeAgentState.toolResult as {
+      content: Array<{ type: string; text: string }>;
+      details: Record<string, unknown>;
+    };
+    expect(result.details).toEqual(expected);
+    expect(JSON.parse(result.content[0]!.text)).toEqual(expected);
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
+  it("runs a previously found connector tool after restoring its turn", async () => {
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    for await (const _event of new PiAgentRuntime().run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "what's on the calendar",
+        instructions: "",
+        history: [],
+        tools: [updateBotTool, scheduleCancelTool, ...lazyCatalogTools("connectors", "mcp", "MCP")],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+        turnCheckpoint: serializeTurnCheckpoint({
+          version: 1,
+          provider: "test",
+          model: "dispatch-test-model",
+          systemPrompt: "",
+          pendingToolCallId: "call-1",
+          executionMode: "sequential",
+          messages: [
+            { role: "user", content: "what's on the calendar", timestamp: 0 },
+            {
+              role: "assistant",
+              content: [
+                {
+                  type: "toolCall",
+                  id: "call-1",
+                  name: "use_tool",
+                  arguments: { name: "server-1:get_calendar", arguments: { week: "next" } },
+                },
+              ],
+              stopReason: "toolUse",
+            },
+          ] as never,
+          foundConnectorTools: [["server-1:get_calendar", "mcp"]],
+        }),
+      },
+      {
+        operationId: "1",
+        traceId: "1",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      // Exhaust the runtime event stream so tool execution completes.
+    }
+    expect(executeTool).toHaveBeenCalledWith(
+      "connectors_execute_tool",
+      { id: "server-1:get_calendar", arguments: { week: "next" } },
+      expect.any(String),
+      { connectorId: "mcp", toolName: CATALOG_EXECUTE },
+      expect.anything(),
+    );
+  });
+
+  it("refuses a guessed connector name that was never returned by find_tool", async () => {
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const searchTools = vi.fn(async () => []);
+    fakeAgentState.invoke = {
+      name: "use_tool",
+      args: { name: "get_calendar", arguments: { week: "next" } },
+    };
+    const runGuessedTool = async () => {
+      for await (const _event of new PiAgentRuntime().run(
+        {
+          botId: "b",
+          threadId: "t",
+          runId: "r",
+          prompt: "what's on the calendar",
+          instructions: "",
+          history: [],
+          tools: [
+            updateBotTool,
+            scheduleCancelTool,
+            ...lazyCatalogTools("connectors", "mcp", "MCP"),
+          ],
+          model: { provider: "test", id: "dispatch-test-model" },
+          executeTool,
+          searchTools,
+        },
+        { signal: new AbortController().signal },
+      )) {
+        // Exhaust the runtime event stream so tool execution completes.
+      }
+    };
+    await expect(runGuessedTool()).rejects.toThrow("get_calendar is not available.");
+    expect(searchTools).not.toHaveBeenCalled();
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
+  it("ignores prototype keys when looking up unavailableToolReasons in use_tool", async () => {
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    fakeAgentState.invoke = {
+      name: "use_tool",
+      args: { name: "toString", arguments: {} },
+    };
+
+    const runProto = async () => {
+      for await (const _event of new PiAgentRuntime().run(
+        {
+          botId: "b",
+          threadId: "t",
+          runId: "r",
+          prompt: "call prototype name",
+          instructions: "",
+          history: [],
+          tools: [updateBotTool, scheduleCancelTool],
+          unavailableToolReasons: {
+            schedule_update: "schedule_update is not available in routine runs.",
+          },
+          model: { provider: "test", id: "dispatch-test-model" },
+          executeTool,
+        },
+        {
+          operationId: "2",
+          traceId: "2",
+          spaceId: "w",
+          userId: "u",
+          signal: new AbortController().signal,
+        },
+      )) {
+        // Exhaust the runtime event stream so tool execution completes.
+      }
+    };
+
+    await expect(runProto()).rejects.toThrow(
+      "toString is not available. Use a name find_tool lists.",
+    );
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
+  it("keeps remember's shared flag through argument preparation", async () => {
+    const remember = builtinAgentTools.find((tool) => tool.name === "remember")!;
+    await new PiAgentRuntime()
+      .run(
+        {
+          botId: "b",
+          threadId: "t",
+          runId: "r",
+          prompt: "remember this for every bot",
+          instructions: "",
+          history: [],
+          tools: [remember],
+          model: { provider: "test", id: "dispatch-test-model" },
+          executeTool: vi.fn(async () => ({ ok: true })),
+        },
+        {
+          operationId: "1",
+          traceId: "1",
+          spaceId: "w",
+          userId: "u",
+          signal: new AbortController().signal,
+        },
+      )
+      [Symbol.asyncIterator]()
+      .next();
+    const prepare = fakeAgentState.tools.find((tool) => tool.name === "remember")!
+      .prepareArguments!;
+    const operations = [{ action: "add", content: "Invoices go to Dana." }];
+
+    expect(prepare({ shared: true, operations })).toEqual({ shared: true, operations });
   });
 
   it("runs schedule tools, remember and request_secret sequentially", async () => {

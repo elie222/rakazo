@@ -39,6 +39,7 @@ import {
 import { NativeActionButton } from "../native/native-action-button";
 import { NativeSegmentedControl } from "../native/native-segmented-control";
 import { NativeSymbol } from "../native/native-symbol";
+import { SheetBar, SheetBarClose, SheetBarConfirm } from "../native/sheet-bar";
 import { SettingsRow } from "../settings/settings-group";
 import { MenuPicker } from "../ui/menu-picker";
 import type { LoginFieldRow } from "./login-fields-editor";
@@ -280,22 +281,17 @@ export function VaultItemEditor({
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={cancel}>
       <View accessibilityViewIsModal style={[styles.sheet, sheetPadding]}>
-        <View style={styles.header}>
-          <NativeActionButton
-            disabled={submitting}
-            label={t`Cancel`}
-            onPress={cancel}
-            prominence="plain"
-          />
-          <NativeActionButton
-            disabled={!save}
-            busy={submitting}
-            fill={false}
-            label={t`Save`}
-            onPress={() => void submit()}
-            prominence={save ? "primary" : "plain"}
-          />
-        </View>
+        <SheetBar
+          leading={<SheetBarClose label={t`Cancel`} disabled={submitting} onPress={cancel} />}
+          trailing={
+            <SheetBarConfirm
+              disabled={!save}
+              busy={submitting}
+              label={t`Save`}
+              onPress={() => void submit()}
+            />
+          }
+        />
         <ScrollView
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
@@ -668,13 +664,6 @@ function createStyles() {
   const tokens = mobileTokens();
   return StyleSheet.create({
     sheet: { flex: 1, backgroundColor: tokens.background },
-    header: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      paddingHorizontal: 20,
-      paddingBottom: 12,
-    },
     content: { paddingHorizontal: 20, paddingBottom: 40, gap: 16 },
     title: { color: tokens.foreground, fontSize: 20, fontWeight: "600" },
     group: { backgroundColor: tokens.muted, borderRadius: 13, overflow: "hidden" },

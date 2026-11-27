@@ -81,9 +81,23 @@ export function normalizeWorkspacePath(value: string): string {
   return segments.join("/");
 }
 
+/**
+ * Bots see the real root in their shell, so a path already under it keeps only its tail
+ * instead of nesting the root inside itself.
+ */
+export function workspaceRelativePath(root: string, value: string): string {
+  const normalized = normalizeWorkspacePath(value);
+  const rootRelative = normalizeWorkspacePath(root);
+  if (!rootRelative) return normalized;
+  if (normalized === rootRelative) return "";
+  return normalized.startsWith(`${rootRelative}/`)
+    ? normalized.slice(rootRelative.length + 1)
+    : normalized;
+}
+
 export function workspacePath(root: string, relative: string): string {
-  const normalized = normalizeWorkspacePath(relative);
-  return normalized ? path.posix.join(root, normalized) : root;
+  const tail = workspaceRelativePath(root, relative);
+  return tail ? path.posix.join(root, tail) : root;
 }
 
 /** The workspace path bots see on every computer. */

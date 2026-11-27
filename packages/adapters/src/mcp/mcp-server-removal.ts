@@ -1,6 +1,11 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import type { Prisma } from "@rakazo/db";
-import { appendEventInTransaction, changeMessageBlocks } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  changeMessageBlocks,
+  organizationItemIn,
+  runAsSystemInTransaction,
+} from "@rakazo/db";
 
 type OwnerScope = { spaceId: string; userId: string };
 type ApprovalBlock = Extract<MessageBlock, { kind: "mcp_approval" }>;
@@ -14,10 +19,11 @@ export async function dismissMcpServerApprovals(
   tx: Prisma.TransactionClient,
   scope: OwnerScope,
   serverId: string,
+  organizationId?: string,
 ): Promise<Array<{ threadId: string; seq: number }>> {
   const messages = await tx.message.findMany({
     where: {
-      thread: { spaceId: scope.spaceId },
+      thread: organizationId ? { space: { organizationId } } : { spaceId: scope.spaceId },
       blocks: { array_contains: [{ kind: "mcp_approval", serverId }] },
     },
     select: {
@@ -25,7 +31,7 @@ export async function dismissMcpServerApprovals(
       botId: true,
       blocks: true,
       threadId: true,
-      thread: { select: { botId: true } },
+      thread: { select: { botId: true, spaceId: true } },
     },
   });
   const seqs: Array<{ threadId: string; seq: number }> = [];
@@ -40,7 +46,7 @@ export async function dismissMcpServerApprovals(
     const eventBotId = message.botId ?? message.thread?.botId;
     if (!eventBotId) continue;
     const event = await appendEventInTransaction(tx, {
-      spaceId: scope.spaceId,
+      spaceId: message.thread?.spaceId ?? scope.spaceId,
       threadId: message.threadId,
       botId: eventBotId,
       type: "thread.message.updated",
@@ -56,13 +62,20 @@ export async function dismissMcpServerApprovals(
 export async function removeMcpServerInTransaction(
   tx: Prisma.TransactionClient,
   scope: OwnerScope,
-  server: { id: string; secretId: string | null },
+  server: { id: string; secretId: string | null; organizationId?: string | null },
 ): Promise<Array<{ threadId: string; seq: number }>> {
-  const seqs = await dismissMcpServerApprovals(tx, scope, server.id);
+  const organizationId = server.organizationId;
+  const seqs = organizationId
+    ? await runAsSystemInTransaction(tx, "dismiss cards for a removed organization connector", () =>
+        dismissMcpServerApprovals(tx, scope, server.id, organizationId),
+      )
+    : await dismissMcpServerApprovals(tx, scope, server.id);
   await tx.mcpServer.delete({ where: { id: server.id } });
   // The credential may sit in the server's home space, not the one removing it.
   if (server.secretId) {
-    await tx.secret.deleteMany({ where: { id: server.secretId, userId: scope.userId } });
+    await tx.secret.deleteMany({
+      where: { id: server.secretId, OR: [{ userId: scope.userId }, organizationItemIn(scope)] },
+    });
   }
   return seqs;
 }

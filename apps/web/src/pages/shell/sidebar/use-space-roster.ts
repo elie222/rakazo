@@ -14,7 +14,11 @@ import { replaceEqualDeep } from "@tanstack/react-query";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { applyAccountCapabilities, takeInitialBootstrap } from "../../../lib/bootstrap";
+import {
+  applyAccountCapabilities,
+  peekBootstrapSeed,
+  takeInitialBootstrap,
+} from "../../../lib/bootstrap";
 import {
   initialBootstrapTarget,
   linkedBotRoute,
@@ -22,7 +26,13 @@ import {
 } from "../../../lib/bootstrap-target";
 import { markOnce } from "../../../lib/platform/performance";
 import type { ChatTarget } from "../../../lib/query/query";
-import { lastChatKey, queryClient, seedOnLeave, spaceSeedKey } from "../../../lib/query/query";
+import {
+  lastChatKey,
+  lastChatOf,
+  queryClient,
+  seedOnLeave,
+  spaceSeedKey,
+} from "../../../lib/query/query";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
 import { errorText } from "../../../lib/query/user-error";
 import { useEventListener } from "../../../lib/use-event-listener";
@@ -40,6 +50,23 @@ function routeChatListed(route: ChatRoute, bots: readonly Bot[], groups: readonl
   return route.groupId
     ? groups.some((group) => group.id === route.groupId)
     : bots.some((bot) => bot.id === route.botId);
+}
+
+/** Start a revisited Space with its last roster while fresh bootstrap data loads. */
+export function useSpaceRosterSeed(
+  userId: string | null,
+  spaceId: string | null,
+  botId: string | undefined,
+  groupId: string | undefined,
+) {
+  const [initial] = useState(() => {
+    const primed = peekBootstrapSeed(botId);
+    if (primed) return { seed: primed, startChat: undefined };
+    const seed = queryClient.getQueryData(spaceSeedKey(userId, spaceId));
+    const lastChat = queryClient.getQueryData(lastChatKey(userId, spaceId));
+    return { seed, startChat: botId || groupId ? undefined : lastChatOf(seed, lastChat) };
+  });
+  return initial;
 }
 
 /** The space's bots, groups, sections and spaces, refreshed while the shell is open. */

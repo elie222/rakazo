@@ -8,14 +8,20 @@ import { desktopDirection, desktopLocale, desktopMessages, t } from "../i18n.js"
 import { handleIpc } from "../ipc/ipc.js";
 import { dockerDownloadUrl, isDesktopSetupLink } from "../this-computer/docker-cli.js";
 import type { createAppOpener } from "../windows/app-opener.js";
-import { developmentIcon, markOnce } from "../windows/app-window.js";
+import { markOnce, windowIcon } from "../windows/app-window.js";
 import { setupWindowOptions } from "../windows/window-options.js";
 import { managedLocalOpenUrl, parseSetupInput, RAKAZO_CLOUD_URL } from "./setup-config.js";
 import { writeSetup } from "./setup-store.js";
 
 let setupSaveInProgress = false;
+let onAppReadyCallback: (() => void) | undefined;
+
+export function isSetupSaveInProgress(): boolean {
+  return setupSaveInProgress;
+}
+
 function createSetupWindow() {
-  const icon = developmentIcon();
+  const icon = windowIcon();
   const win = new BrowserWindow({
     ...setupWindowOptions(process.platform, screen.getPrimaryDisplay().workAreaSize),
     ...(icon ? { icon } : {}),
@@ -68,6 +74,7 @@ function restoreAppWindowAfterSetup() {
   clearTimeout(desktop.warmWindowTimer);
   desktop.mainWindow.show();
   desktop.mainWindow.focus();
+  if (!setupSaveInProgress) onAppReadyCallback?.();
 }
 /** Watch for a renderer crash until setup is persisted (or the switch is abandoned). */
 function watchRendererUntilCommitted(win: BrowserWindow) {
@@ -111,6 +118,8 @@ type SetupIpcDeps = {
   stopStackLeftBehind: (previousMode: DesktopSetup["mode"] | undefined) => void;
   /** Picks the stack This computer runs on, if launch left that open. */
   settleLocalStack: () => Promise<void>;
+  /** Runs once the app window is committed and setup is closed (e.g. pending deep link). */
+  onAppReady?: () => void;
 };
 
 /** The setup window's IPC. The channel map keeps a connected Rakazo server from calling any of it. */
@@ -125,7 +134,9 @@ export function registerSetupIpc({
   recoverFromCrashedSave,
   stopStackLeftBehind,
   settleLocalStack,
+  onAppReady,
 }: SetupIpcDeps) {
+  onAppReadyCallback = onAppReady;
   // Synchronous so the setup page has its language before it first paints.
   handleIpc("desktop.setup.locale", () => ({
     lang: desktopLocale(),
@@ -239,6 +250,7 @@ export function registerSetupIpc({
       }
     } finally {
       setupSaveInProgress = false;
+      if (desktop.setupWindow === null) onAppReadyCallback?.();
     }
   });
 

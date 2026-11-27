@@ -95,6 +95,22 @@ body,
   background: var(--scrollbar-hover);
 }
 
+/* Keep the page width stable if its responsive layout starts or stops overflowing. */
+@media (pointer: fine) {
+  .rk-page-preview {
+    scrollbar-gutter: stable;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) and (forced-colors: none) {
+  .rk-page-preview:not(:hover, :focus-visible, [data-scrolling]) {
+    scrollbar-color: transparent transparent;
+  }
+  .rk-page-preview:not(:hover, :focus-visible, [data-scrolling])::-webkit-scrollbar-thumb {
+    background: transparent;
+  }
+}
+
 .app-drag {
   -webkit-app-region: drag;
   user-select: none;

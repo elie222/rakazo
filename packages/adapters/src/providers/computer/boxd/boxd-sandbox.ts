@@ -50,6 +50,7 @@ import {
   shellQuote,
   workspaceCwd,
   workspacePath,
+  workspaceRelativePath,
 } from "../../../computers/screens/computer-support.js";
 import {
   INSTALL_LINUX_BROWSER,
@@ -376,7 +377,7 @@ export class BoxdSandboxProvider extends LinuxDesktopSandbox implements SandboxP
     context: AdapterContext,
   ): Promise<ComputerFileEntry[]> {
     context.signal.throwIfAborted();
-    const relative = normalizeWorkspacePath(directory);
+    const relative = workspaceRelativePath(WORKSPACE, directory);
     const entries = await this.client.machines.fs.list(
       this.id(computer),
       workspacePath(WORKSPACE, relative),

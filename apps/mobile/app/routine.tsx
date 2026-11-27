@@ -3,11 +3,16 @@ import { useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
 import { ROUTINE_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import {
+  cronFromPreset,
   defaultCronPreset,
+  defaultRoutineEndDay,
   draftFromRoutine,
   emptyRoutineDraft,
+  formatRoutineEnd,
   isOneShotRoutineCrons,
+  routineCanEnd,
   routineCopy,
+  wallClock,
 } from "@rakazo/core";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -16,6 +21,7 @@ import { useBotEmail } from "../components/bots/bot-email";
 import { GlassIconButton } from "../components/native/glass-icon-button";
 import { NativeActionButton } from "../components/native/native-action-button";
 import { RoutineEmailTrigger } from "../components/routines/routine-email-trigger";
+import { RoutineEndDate } from "../components/routines/routine-end-date";
 import { RoutineScheduleEditor } from "../components/routines/routine-schedule-editor";
 import {
   SettingsGroup,
@@ -28,7 +34,7 @@ import { GrowingTextInput } from "../components/ui/growing-text-input";
 import { MenuPickerMenu } from "../components/ui/menu-picker";
 import { errorText } from "../lib/api/user-error";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
-import { dateLocaleForUi, useUiLocale } from "../lib/i18n/i18n";
+import { useDateLocale } from "../lib/i18n/i18n";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { native, useMobileTokens } from "../lib/native/native";
 import { iosAtLeast } from "../lib/native/native-controls";
@@ -37,6 +43,7 @@ import { deviceTimeZone, routineTriggerRows, routineWebTriggers } from "../lib/r
 import type { MobileRoutineDraft } from "../lib/routines/routine-draft";
 import {
   routineDraftChanged,
+  routineDraftEventTriggered,
   routineSaveRequest,
   routineScheduleLocked,
   routineWithDraftTriggers,
@@ -167,7 +174,7 @@ function RoutineView({
 }) {
   const tokens = useMobileTokens();
   const { t } = useLingui();
-  const locale = useUiLocale();
+  const dateLocale = useDateLocale();
   const router = useRouter();
   const testRun = useSave({
     save: (_, send) => send("routines/testRun", { routineId: routine.id }),
@@ -179,7 +186,7 @@ function RoutineView({
       ? null
       : routine.scheduleDelayed
         ? t`Schedule delayed`
-        : new Date(routine.nextRunAt).toLocaleString(dateLocaleForUi(locale), {
+        : new Date(routine.nextRunAt).toLocaleString(dateLocale, {
             weekday: "short",
             month: "short",
             day: "numeric",
@@ -262,6 +269,13 @@ function RoutineView({
           <SettingsRow key={trigger} title={trigger} />
         ))}
         {nextRun ? <SettingsRow key="next" title={t`Next run`} value={nextRun} /> : null}
+        {routine.endsAt ? (
+          <SettingsRow
+            key="ends"
+            title={t`Ends`}
+            value={formatRoutineEnd(routine.endsAt, routine.timezone, dateLocale)}
+          />
+        ) : null}
       </SettingsGroup>
       <SettingsGroup>
         <SettingsRow
@@ -350,6 +364,11 @@ function RoutineEditor({
   const source = base ?? template;
   const kept = source ? routineWithDraftTriggers(source, draft) : null;
   const webTriggers = kept ? routineWebTriggers(kept) : [];
+  const draftCrons = draft.schedules.map(cronFromPreset);
+  const repeats =
+    !locked &&
+    routineCanEnd(draftCrons, Boolean(kept?.watch), routineDraftEventTriggered(draft, source));
+  const zone = draft.timezone ?? deviceTimeZone() ?? "UTC";
 
   // On Android, back leaves the form for the routine instead of leaving the routine.
   useEffect(() => {
@@ -558,6 +577,14 @@ function RoutineEditor({
                 </MenuPickerMenu>
               ))}
             </SettingsGroup>
+          ) : null}
+          {repeats ? (
+            <RoutineEndDate
+              endsOn={draft.endsOn}
+              today={wallClock(new Date(), zone).slice(0, 10)}
+              firstDay={defaultRoutineEndDay(draftCrons, zone)}
+              onChange={(endsOn) => update({ endsOn })}
+            />
           ) : null}
           {locked ? null : (
             <SettingsGroup>

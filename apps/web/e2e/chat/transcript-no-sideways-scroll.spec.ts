@@ -16,3 +16,19 @@ test("the chat never scrolls sideways, even with card actions showing in a narro
   await expect.poll(() => transcript.evaluate((node) => node.scrollLeft)).toBe(0);
   await captureScreenshot(page, testInfo, "transcript-no-sideways-scroll");
 });
+
+test("the login action sits below the site in a narrow chat", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/e2e/fixtures/gallery.html?embed&scenario=secrets");
+  const card = page
+    .getByTestId("secret-ask-card")
+    .filter({ hasText: "Sign in to the vendor portal." });
+  const site = card.getByText("portal.example.test");
+  const action = card.getByRole("button", { name: "Continue" });
+  await expect(site).toBeVisible();
+  await expect(action).toBeVisible();
+  const siteBox = await site.boundingBox();
+  const actionBox = await action.boundingBox();
+  expect(actionBox!.y).toBeGreaterThanOrEqual(siteBox!.y + siteBox!.height);
+  await captureScreenshot(page, testInfo, "secret-login-card-narrow");
+});

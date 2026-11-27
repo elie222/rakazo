@@ -29,8 +29,8 @@ export function meetingStatusLabel(status: MeetingStatus): string {
   }
 }
 
-export function meetingTime(utcMs: number): string {
-  return new Date(utcMs).toLocaleString(i18n.locale || "en", {
+export function meetingTime(utcMs: number, locale = i18n.locale || "en"): string {
+  return new Date(utcMs).toLocaleString(locale, {
     month: "short",
     day: "numeric",
     hour: "numeric",

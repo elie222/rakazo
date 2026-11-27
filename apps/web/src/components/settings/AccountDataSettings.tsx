@@ -62,9 +62,7 @@ export function AccountDataSettings({
   const error =
     !transfer.error || isIdentityConfirmationRequired(transfer.error)
       ? null
-      : transfer.input === "export"
-        ? errorText(transfer.error, t`Could not continue`)
-        : transfer.error.message;
+      : errorText(transfer.error, t`Could not continue`);
 
   function start(action: "export" | File) {
     if (pending) return;
