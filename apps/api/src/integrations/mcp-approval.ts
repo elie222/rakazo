@@ -12,6 +12,7 @@ import {
 } from "@rakazo/db";
 import { requireBotThread } from "../bots/bot-thread.js";
 import { mcpConnectedPrompt } from "../bots/hidden-turns.prompt.js";
+import { queueConnectionFollowUp } from "./connection-follow-up.js";
 
 export type McpApprovalDeps = {
   prisma: PrismaClient;
@@ -259,27 +260,10 @@ export async function queueMcpConnectedRun(
     }),
   ]);
   if (!bot || busy || !server) return null;
-  const task = await tx.task.create({
-    data: {
-      spaceId: actor.spaceId,
-      botId: input.botId,
-      threadId: thread.id,
-      userId: actor.userId,
-      prompt: mcpConnectedPrompt(server.name),
-      status: "queued",
-    },
+  return queueConnectionFollowUp(tx, actor, {
+    botId: input.botId,
+    threadId: thread.id,
+    prompt: mcpConnectedPrompt(server.name),
+    trigger: "user",
   });
-  const run = await tx.run.create({
-    data: {
-      spaceId: actor.spaceId,
-      botId: input.botId,
-      threadId: thread.id,
-      taskId: task.id,
-      userId: actor.userId,
-      status: "queued",
-      trigger: "user",
-    },
-    select: { id: true },
-  });
-  return run.id;
 }
