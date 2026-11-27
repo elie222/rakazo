@@ -62,11 +62,18 @@ async function* lines(body: ReadableStream<Uint8Array>): AsyncGenerator<string> 
 }
 
 /** The installed app's side of the page app API, with its own token. */
-export function createPageAppApi(server: string, token: string, fetcher: Fetch = fetch) {
+export function createPageAppApi(
+  server: string,
+  token: string,
+  fetcher: Fetch = fetch,
+  /** Headers the server's setup requires on every request, such as an access proxy's. */
+  serverHeaders: Record<string, string> = {},
+) {
   async function request(path: string, init: RequestInit = {}) {
     const response = await fetcher(new URL(`${PAGE_APP_API_PATH}${path}`, server), {
       ...init,
       headers: {
+        ...serverHeaders,
         authorization: `Bearer ${token}`,
         ...(init.body === undefined ? {} : { "content-type": "application/json" }),
       },
@@ -133,7 +140,9 @@ export function createPageAppApi(server: string, token: string, fetcher: Fetch =
       await request("", { method: "DELETE", signal });
     },
     runtime: async () => {
-      const response = await fetcher(new URL(PAGE_RUNTIME_PATH, server));
+      const response = await fetcher(new URL(PAGE_RUNTIME_PATH, server), {
+        headers: serverHeaders,
+      });
       if (!response.ok) throw new PageAppRequestError(response.status);
       return response.text();
     },

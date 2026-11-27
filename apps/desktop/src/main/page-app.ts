@@ -22,6 +22,7 @@ import {
   PAGE_APP_CONFIG_FILE,
   pageAppConfig,
   pageAppDataDir,
+  readPageAppHeaders,
   readPageAppToken,
   readServerOverride,
   removePageAppData,
@@ -73,7 +74,12 @@ async function removeSelf(revoked: boolean) {
 async function start() {
   startDesktopLocale(null, app.getPreferredSystemLanguages()[0] ?? app.getLocale());
   const token = await readPageAppToken(appId, appData);
-  const api = createPageAppApi(server, token ?? "", fetch);
+  const api = createPageAppApi(
+    server,
+    token ?? "",
+    fetch,
+    await readPageAppHeaders(appId, appData),
+  );
   const notifications = new Set<Notification>();
   let removing = false;
 

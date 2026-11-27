@@ -117,6 +117,49 @@ export async function readPageAppToken(appId: string, appData: string): Promise<
   }
 }
 
+const HEADERS_FILE = "headers.json";
+
+/**
+ * Headers the app's server requires on every request (an access proxy's credentials, say), kept
+ * beside the token and as private, since an app is its own process outside Rakazo's session.
+ */
+export async function writePageAppHeaders(
+  appId: string,
+  headers: Record<string, string>,
+  appData: string,
+) {
+  if (Object.keys(headers).length === 0) return;
+  await mkdir(pageAppDataDir(appId, appData), { recursive: true, mode: 0o700 });
+  await writeFile(
+    path.join(pageAppDataDir(appId, appData), HEADERS_FILE),
+    JSON.stringify(headers),
+    {
+      encoding: "utf8",
+      mode: 0o600,
+    },
+  );
+}
+
+export async function readPageAppHeaders(
+  appId: string,
+  appData: string,
+): Promise<Record<string, string>> {
+  let text: string;
+  try {
+    text = await readFile(path.join(pageAppDataDir(appId, appData), HEADERS_FILE), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw error;
+  }
+  const value: unknown = JSON.parse(text);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
+}
+
 export async function removePageAppData(appId: string, appData: string) {
   await rm(pageAppDataDir(appId, appData), { recursive: true, force: true });
 }

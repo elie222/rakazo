@@ -27,9 +27,11 @@ import {
   isPageAppIdentity,
   pageAppConfig,
   pageAppsFolder,
+  readPageAppHeaders,
   readPageAppToken,
   readServerOverride,
   removePageAppData,
+  writePageAppHeaders,
   writePageAppToken,
 } from "./page-app-files.js";
 import type { InstalledPageApp } from "./registry.js";
@@ -175,7 +177,12 @@ export function createPageAppInstaller(options: {
   const source = options.source ?? runningBundle();
   const exclusive = createOneAtATime();
 
-  async function install(request: PageAppInstallRequest, server: string): Promise<boolean> {
+  async function install(
+    request: PageAppInstallRequest,
+    server: string,
+    serverHeaders: Record<string, string> = {},
+  ): Promise<boolean> {
+    const api = createPageAppApi(server, request.token, fetch, serverHeaders);
     const config: PageAppConfig = {
       appId: request.appId,
       pageId: request.pageId,
@@ -201,6 +208,7 @@ export function createPageAppInstaller(options: {
           }),
         async (built) => {
           await writePageAppToken(request.appId, request.token, appData);
+          await writePageAppHeaders(request.appId, serverHeaders, appData);
           const target = path.join(folder, uniqueBundleName(name, await bundleNames(folder)));
           await rename(built, target);
           return target;
@@ -211,14 +219,14 @@ export function createPageAppInstaller(options: {
       // even if its first launch does not get through.
       await bestEffort(
         "mark a page app installed",
-        createPageAppApi(server, request.token).view(deadlineSignal(MARK_USED_DEADLINE_MS)),
+        api.view(deadlineSignal(MARK_USED_DEADLINE_MS)),
       );
       await bestEffort("register page app", registerWithLaunchServices(placed));
       await bestEffort("open page app", options.open(placed));
       return true;
     } catch (error) {
       // Nothing will use the token now, so it ends first, before any cleanup that could fail.
-      await revokePageAppToken(createPageAppApi(server, request.token));
+      await revokePageAppToken(api);
       if (placed !== null) await bestEffort("remove an unfinished page app", removeBundle(placed));
       await bestEffort(
         "remove an unfinished page app's data",
@@ -237,7 +245,9 @@ export function createPageAppInstaller(options: {
   /** Drops an app whose bundle is gone; until its token is revoked, the next start tries again. */
   async function forget(app: InstalledPageApp) {
     const token = await readPageAppToken(app.appId, appData);
-    if (token && !(await revokePageAppToken(createPageAppApi(app.server, token)))) return;
+    const headers = await readPageAppHeaders(app.appId, appData);
+    const api = token && createPageAppApi(app.server, token, fetch, headers);
+    if (api && !(await revokePageAppToken(api))) return;
     await removePageAppData(app.appId, appData);
     await registry.remove(app.appId);
   }
@@ -356,8 +366,11 @@ export function createPageAppInstaller(options: {
   }
 
   return {
-    install: (request: PageAppInstallRequest, server: string) =>
-      exclusive(() => install(request, server)),
+    install: (
+      request: PageAppInstallRequest,
+      server: string,
+      serverHeaders?: Record<string, string>,
+    ) => exclusive(() => install(request, server, serverHeaders)),
     uninstall: (appId: string) => exclusive(() => uninstall(appId)),
     refresh,
     /** Settles once no install, removal or update is moving a bundle. */

@@ -13,9 +13,11 @@ import {
   pageAppDataDir,
   pageAppsDataDir,
   pageAppTokenFile,
+  readPageAppHeaders,
   readPageAppToken,
   readServerOverride,
   removePageAppData,
+  writePageAppHeaders,
   writePageAppToken,
 } from "./page-app-files.js";
 import type { PageAppInstallRequest } from "./page-app-installer.js";
@@ -105,7 +107,12 @@ export function createLauncherInstaller(options: {
 }) {
   const { registry, launcher, appData } = options;
 
-  async function install(request: PageAppInstallRequest, server: string): Promise<boolean> {
+  async function install(
+    request: PageAppInstallRequest,
+    server: string,
+    serverHeaders: Record<string, string> = {},
+  ): Promise<boolean> {
+    const api = createPageAppApi(server, request.token, options.fetch, serverHeaders);
     const config: PageAppConfig = {
       appId: request.appId,
       pageId: request.pageId,
@@ -118,6 +125,7 @@ export function createLauncherInstaller(options: {
     let written: string | null = null;
     try {
       await writePageAppToken(request.appId, request.token, appData);
+      await writePageAppHeaders(request.appId, serverHeaders, appData);
       await writeConfig(config);
       written = await launcher.write({
         config,
@@ -129,13 +137,11 @@ export function createLauncherInstaller(options: {
       // even if its first launch does not get through.
       await bestEffort(
         "mark a page app installed",
-        createPageAppApi(server, request.token, options.fetch).view(
-          deadlineSignal(MARK_USED_DEADLINE_MS),
-        ),
+        api.view(deadlineSignal(MARK_USED_DEADLINE_MS)),
       );
     } catch (error) {
       // Nothing will use the token now, so it ends first, before any cleanup that could fail.
-      await revokePageAppToken(createPageAppApi(server, request.token, options.fetch));
+      await revokePageAppToken(api);
       if (written !== null)
         await bestEffort("remove an unfinished launcher", launcher.remove(written));
       await bestEffort(
@@ -171,7 +177,8 @@ export function createLauncherInstaller(options: {
    */
   async function forget(app: InstalledPageApp): Promise<boolean> {
     const token = await readPageAppToken(app.appId, appData);
-    const api = token && createPageAppApi(app.server, token, options.fetch);
+    const headers = await readPageAppHeaders(app.appId, appData);
+    const api = token && createPageAppApi(app.server, token, options.fetch, headers);
     if (api && !(await revokePageAppToken(api))) return false;
     // A running app holds files in its data folder on Windows. Without its token it is a
     // removed app's folder, which the app clears once it sees it was removed, or `refresh` does.
@@ -255,8 +262,11 @@ export function createLauncherInstaller(options: {
   // another install choosing a shortcut name, never runs in between.
   const exclusive = createOneAtATime();
   return {
-    install: (request: PageAppInstallRequest, server: string) =>
-      exclusive(() => install(request, server)),
+    install: (
+      request: PageAppInstallRequest,
+      server: string,
+      serverHeaders?: Record<string, string>,
+    ) => exclusive(() => install(request, server, serverHeaders)),
     uninstall: (appId: string) => exclusive(() => uninstall(appId)),
     refresh: () => exclusive(refresh),
     /** A launcher never moves while its app could open, so there is nothing to wait for. */
