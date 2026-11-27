@@ -26,12 +26,15 @@ const BOUNDED_OMISSION_MARKER = /(\n… \[\d+ characters not kept\] …\n)/;
  * and the next non-whitespace character are one token atom, including `\"` and `\\`. A bare `"`
  * still ends the token. Each atom is disjoint, so the scan stays linear.
  */
-const RAW_BEARER =
-  /Bearer\s+(?!\[redacted\](?!(?:\\(?![nrt"\\])|[^\s"',;&}:\]\\])))(?:\\"(?!\s*[:,}\]\r\n]|$)(?:\\[^"\r\n]|[^"\\\r\n])+(?:\\")?|"(?!\s*[:,}\]\r\n]|$)[^"\r\n]+"?|'(?!\s*[:,}\]\r\n]|$)[^'\r\n]+'?|\[redacted\](?:\\(?![nrt"\\])|[^\s"',;&}:\]\\])+|(?:\\(?![nrt"\\])|[^\s"',;&}:\]\\])+)/gi;
+const RAW_ATOM = /(?:\\(?![nrt"\\])|[^\s"',;&}:\]\\])/;
+const RAW_BEARER = new RegExp(
+  `Bearer\\s+(?!\\[redacted\\](?!${RAW_ATOM.source}))(?:\\\\"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"(?:${RAW_ATOM.source})*)?|"(?!\\s*[:,}\\]\\r\\n]|$)[^"\\r\\n]+(?:"(?:${RAW_ATOM.source})*)?|'(?!\\s*[:,}\\]\\r\\n]|$)[^'\\r\\n]+(?:'(?:${RAW_ATOM.source})*)?|\\[redacted\\](?:${RAW_ATOM.source})+|(?:${RAW_ATOM.source})+)`,
+  "gi",
+);
 
 const DECODED_ATOM = /(?:\\[^\s]|\\(?=\s|$)|[^\s"',;&}:\]\\])/;
 const DECODED_BEARER = new RegExp(
-  `Bearer\\s+(?!\\[redacted\\](?!${DECODED_ATOM.source}))(?:"(?!\\s*[:,}\\]\\r\\n]|$)[^"\\r\\n]+"?|'(?!\\s*[:,}\\]\\r\\n]|$)[^'\\r\\n]+'?|\\[redacted\\](?:${DECODED_ATOM.source})+|(?:${DECODED_ATOM.source})+)`,
+  `Bearer\\s+(?!\\[redacted\\](?!${DECODED_ATOM.source}))(?:"(?!\\s*[:,}\\]\\r\\n]|$)[^"\\r\\n]+(?:"(?:${DECODED_ATOM.source})*)?|'(?!\\s*[:,}\\]\\r\\n]|$)[^'\\r\\n]+(?:'(?:${DECODED_ATOM.source})*)?|\\[redacted\\](?:${DECODED_ATOM.source})+|(?:${DECODED_ATOM.source})+)`,
   "gi",
 );
 

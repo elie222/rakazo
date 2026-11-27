@@ -907,6 +907,10 @@ describe("tool step outcomes", () => {
       message: 'Bearer \\"fixturePrefix\\"fixtureTail',
       status: "ok",
     });
+    const quotedOpenJson = JSON.stringify({
+      message: 'Bearer "fixturePrefix"fixtureTail',
+      status: "ok",
+    });
     for (const read of [kept, replay]) {
       expect(read(plainTail)).toBe("Bearer [redacted]");
       expect(read(escapedOpen)).toBe("Bearer [redacted]");
@@ -914,6 +918,10 @@ describe("tool step outcomes", () => {
       expect(read("Bearer fixturePrefix\nNext line")).toBe("Bearer [redacted]\nNext line");
       expect(read('Authorization: "Bearer secret"')).toBe('Authorization: "Bearer [redacted]"');
       expect(JSON.parse(read(escapedOpenJson) ?? "")).toEqual({
+        message: "Bearer [redacted]",
+        status: "ok",
+      });
+      expect(JSON.parse(read(quotedOpenJson) ?? "")).toEqual({
         message: "Bearer [redacted]",
         status: "ok",
       });
@@ -954,6 +962,10 @@ describe("tool step outcomes", () => {
     expect(sanitizeError(escapedOpen)).toBe("Bearer [redacted]");
     expect(sanitizeError(escapedRun)).toBe("Bearer [redacted]");
     expect(JSON.parse(sanitizeError(escapedOpenJson))).toEqual({
+      message: "Bearer [redacted]",
+      status: "ok",
+    });
+    expect(JSON.parse(sanitizeError(quotedOpenJson))).toEqual({
       message: "Bearer [redacted]",
       status: "ok",
     });

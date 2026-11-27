@@ -1211,6 +1211,15 @@ describe("tool step history", () => {
     expect(
       redactPlainBearerTokens('Bearer \\"fixturePrefix\\"fixtureTail', { decoded: true }),
     ).toBe("Bearer [redacted]");
+    expect(redactPlainBearerTokens('Bearer "fixturePrefix"fixtureTail', { decoded: true })).toBe(
+      "Bearer [redacted]",
+    );
+    expect(redactPlainBearerTokens("Bearer 'fixturePrefix'fixtureTail", { decoded: true })).toBe(
+      "Bearer [redacted]",
+    );
+    expect(redactPlainBearerTokens('{"message":"Bearer \\"fixturePrefix\\"fixtureTail')).toBe(
+      '{"message":"Bearer [redacted]',
+    );
     expect(redactPlainBearerTokens('Bearer fixturePrefix\\\\\\"Tail', { decoded: true })).toBe(
       "Bearer [redacted]",
     );
