@@ -246,8 +246,9 @@ async function clickedCard(
     and `effect` share one serializable transaction. A card decision (one that
     passes threadId) sees `assign: false` when a dismissal already won, so that
     race does not create an assignment. Settings approval omits threadId and
-    still assigns. Cards another member's run posted stay as they are, so
-    `resolved` never starts a run for someone else's request. A decision that
+    still assigns. A card decision leaves cards another member's run posted as
+    they are, so `resolved` never starts a run for someone else's request;
+    Settings approval connects every member's card, as the bot now has the server. A decision that
     names its card is refused on another member's; one from an older client,
     without the card, is refused when only such a card is open. */
 export async function resolveMcpApprovalCards<T>(
@@ -279,7 +280,7 @@ export async function resolveMcpApprovalCards<T>(
                 othersOpenCards: false,
               }
             : await rewriteCards(tx, actor, threads, input, selectable, {
-                leaveOthersCards: true,
+                leaveOthersCards: input.threadId !== undefined,
                 include: clicked?.message,
               });
         const dismissalWon =

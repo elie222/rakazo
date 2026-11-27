@@ -220,6 +220,21 @@ describe.skipIf(!enabled)("approving an organization MCP server's card (PostgreS
     expect(await statuses([chat.cardId, own.id])).toEqual(["pending", "pending"]);
   });
 
+  it("connects every member's card when the server is approved from Settings", async () => {
+    const chat = await reconnectCard();
+    const theirs = await cardFrom(chat, otherId, "pending");
+    const asker = member(askerId);
+
+    await runAsTenant(asker, () =>
+      client(asker, { enqueue: vi.fn(async () => undefined) }).mcp.assignments.approve({
+        botId: chat.botId,
+        serverId: chat.serverId,
+      }),
+    );
+
+    expect(await statuses([chat.cardId, theirs.id])).toEqual(["connected", "connected"]);
+  });
+
   it.each([
     ["names the card", true],
     ["comes from an older client", false],
