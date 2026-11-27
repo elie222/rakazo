@@ -176,9 +176,17 @@ export function commitWatchDeliveries(
   };
   for (const { key, state } of pending) {
     if (state.full) {
-      // A later full delivery of the same watch is newer evidence. Map.set keeps the
-      // original key position, so the sequence lives on the state instead.
-      watchDeliveries.set(key, { ...state, order: take() });
+      const existing = watchDeliveries.get(key);
+      // A shortened resend re-queues the full text already accepted for this watch.
+      // That text keeps its sequence; only a different full text is a new delivery.
+      const recordedOrder =
+        existing?.full === true && existing.fullText === state.fullText
+          ? existing.order
+          : undefined;
+      watchDeliveries.set(key, {
+        ...state,
+        order: recordedOrder !== undefined ? recordedOrder : take(),
+      });
       continue;
     }
     const existing = watchDeliveries.get(key);

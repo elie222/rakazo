@@ -604,13 +604,40 @@ export function restoreTurnCheckpointEffects(
   const effects = ctx.state.effects;
   try {
     const saved = restoreTurnCheckpoint(turnCheckpoint, model);
+    const anchoredBefore =
+      Array.isArray(saved.watchOutsideText) &&
+      Array.isArray(saved.watchOutsideTextBefore) &&
+      saved.watchOutsideTextBefore.length === saved.watchOutsideText.length &&
+      saved.watchOutsideTextBefore.every((entry) => typeof entry === "number" && entry >= 0);
+    const restoredWatch: string[] = [];
+    const restoredWatchBefore: number[] = [];
     if (Array.isArray(saved.watchOutsideText)) {
-      const restoredWatch = saved.watchOutsideText.filter(
-        (entry): entry is string => typeof entry === "string" && entry.trim().length > 0,
-      );
-      if (restoredWatch.length > 0) {
-        ctx.state.tainted = true;
-        ctx.state.taintedBeyondOwnComputer = true;
+      saved.watchOutsideText.forEach((entry, index) => {
+        if (typeof entry !== "string" || entry.trim().length === 0) return;
+        restoredWatch.push(entry);
+        if (anchoredBefore) restoredWatchBefore.push(saved.watchOutsideTextBefore![index]!);
+      });
+    }
+    const replayDropsInOrder =
+      anchoredBefore && restoredWatchBefore.length === restoredWatch.length;
+    let restoredWatchCursor = 0;
+    const replayDroppedWatchBefore = (messageIndex: number) => {
+      if (!replayDropsInOrder) return;
+      while (
+        restoredWatchCursor < restoredWatch.length &&
+        restoredWatchBefore[restoredWatchCursor]! <= messageIndex
+      ) {
+        ctx.state.outsideText = appendOutsideText(
+          ctx.state.outsideText,
+          restoredWatch[restoredWatchCursor]!,
+        );
+        restoredWatchCursor += 1;
+      }
+    };
+    if (restoredWatch.length > 0) {
+      ctx.state.tainted = true;
+      ctx.state.taintedBeyondOwnComputer = true;
+      if (!replayDropsInOrder) {
         ctx.state.outsideText = appendOutsideText(ctx.state.outsideText, restoredWatch);
       }
     }
@@ -618,7 +645,9 @@ export function restoreTurnCheckpointEffects(
     // Resolve deferred `use_tool` call IDs in transcript order so a later call reusing an ID
     // cannot overwrite an earlier `task_catalog` or `schedule_list` mapping.
     const wrappedToolNames = new Map<string, string>();
-    for (const message of saved.messages) {
+    for (let messageIndex = 0; messageIndex < saved.messages.length; messageIndex += 1) {
+      replayDroppedWatchBefore(messageIndex);
+      const message = saved.messages[messageIndex]!;
       if (message.role === "assistant") {
         for (const part of message.content) {
           if (part.type !== "toolCall") continue;
@@ -653,6 +682,7 @@ export function restoreTurnCheckpointEffects(
         ctx.state.outsideText = appendOutsideText(ctx.state.outsideText, message.content);
       }
     }
+    replayDroppedWatchBefore(saved.messages.length);
     const unresolved = new Set(unresolvedTurnCheckpointCalls(saved.messages));
     const namedTools = namedAgentTools(partitionTools(ctx.tools.offered).listed);
     const available = new Set(namedTools.map((tool) => tool.name));

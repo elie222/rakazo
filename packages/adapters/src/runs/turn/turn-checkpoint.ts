@@ -45,6 +45,11 @@ export interface TurnCheckpoint {
   executionMode?: "parallel" | "sequential";
   /** Watch-check outside text accepted in this turn whose toolResult was later dropped from context. */
   watchOutsideText?: string[];
+  /**
+   * Message index before which each `watchOutsideText` entry is replayed.
+   * Absent on older checkpoints, which replay the whole list before retained results.
+   */
+  watchOutsideTextBefore?: number[];
 }
 
 export function serializeTurnCheckpoint(checkpoint: TurnCheckpoint): string {

@@ -19,21 +19,40 @@ import { computerSelection } from "./tools/pi-runtime-computer-mode.js";
  */
 const EMPTY_WATCH_DELIVERY = '{"routines":[]}';
 
+interface WatchOutsidePiece {
+  text: string;
+  /** Checkpoint message index before which this dropped slice is replayed. */
+  before: number;
+}
+
+/** Tail of `value` that fits in `maxChars` and does not start on a lone low surrogate. */
+function sliceWellFormedTail(value: string, maxChars: number): string {
+  if (maxChars <= 0) return "";
+  if (value.length <= maxChars) return value;
+  let start = value.length - maxChars;
+  const code = value.charCodeAt(start);
+  const previous = value.charCodeAt(start - 1);
+  if (code >= 0xdc00 && code <= 0xdfff && previous >= 0xd800 && previous <= 0xdbff) start += 1;
+  return value.slice(start);
+}
+
 /** Keeps the newest tail of checkpoint watch text, including the `\n` between entries. */
-function boundWatchOutsideText(entries: readonly string[]): string[] {
-  const kept: string[] = [];
+function boundWatchOutsideText(entries: readonly WatchOutsidePiece[]): WatchOutsidePiece[] {
+  const kept: WatchOutsidePiece[] = [];
   let used = 0;
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index]!;
     const separator = kept.length > 0 ? 1 : 0;
     const room = MAX_OUTSIDE_TEXT_CHARS - used - separator;
     if (room <= 0) break;
-    if (entry.length <= room) {
+    if (entry.text.length <= room) {
       kept.push(entry);
-      used += separator + entry.length;
+      used += separator + entry.text.length;
       continue;
     }
-    kept.push(entry.slice(entry.length - room));
+    const text = sliceWellFormedTail(entry.text, room);
+    if (!text) break;
+    kept.push({ text, before: entry.before });
     break;
   }
   kept.reverse();
@@ -133,20 +152,23 @@ export function buildTurnCheckpoint(input: {
     const sourceIndex = messageSourceIndexes?.[index];
     if (sourceIndex !== undefined) retainedWatchBySourceIndex.set(sourceIndex, message);
   }
-  const isRetained = (entry: WatchDeliveryState) => {
-    if (messageSourceIndexes !== undefined && entry.sourceIndex !== undefined) {
-      return retainedWatchBySourceIndex.has(entry.sourceIndex);
-    }
-    return retainedWatch.some(
-      (message) =>
-        message.toolCallId === entry.toolCallId &&
-        isRecord(message.details) &&
-        message.details.routines === entry.details.routines,
-    );
+  const retainedMessageIndex = (entry: WatchDeliveryState): number | undefined => {
+    const match =
+      messageSourceIndexes !== undefined && entry.sourceIndex !== undefined
+        ? retainedWatchBySourceIndex.get(entry.sourceIndex)
+        : retainedWatch.find(
+            (message) =>
+              message.toolCallId === entry.toolCallId &&
+              isRecord(message.details) &&
+              message.details.routines === entry.details.routines,
+          );
+    if (!match) return undefined;
+    const index = messages.indexOf(match);
+    return index === -1 ? undefined : index;
   };
-  const droppedWatchOutside: string[] = [
-    ...(input.priorWatchOutsideText ?? []).filter((entry) => entry.trim().length > 0),
-  ];
+  const droppedWatchOutside: WatchOutsidePiece[] = (input.priorWatchOutsideText ?? [])
+    .filter((entry) => entry.trim().length > 0)
+    .map((text) => ({ text, before: 0 }));
   // Collect in chronological delivery order (prior dropped -> earlier restored -> current attempt)
   // so bounded outsideText retention (`MAX_OUTSIDE_TEXT_CHARS`) keeps the newest watch evidence.
   if (input.restoredMessages) {
@@ -181,7 +203,7 @@ export function buildTurnCheckpoint(input: {
                 retained.details.routines === details.routines,
             );
       if (!retainedMatch) {
-        droppedWatchOutside.push(...restoredItems);
+        for (const text of restoredItems) droppedWatchOutside.push({ text, before: 0 });
         continue;
       }
       const retainedSet = new Set(
@@ -190,7 +212,7 @@ export function buildTurnCheckpoint(input: {
         ),
       );
       for (const value of restoredItems) {
-        if (!retainedSet.has(value)) droppedWatchOutside.push(value);
+        if (!retainedSet.has(value)) droppedWatchOutside.push({ text: value, before: 0 });
       }
     }
   }
@@ -200,27 +222,52 @@ export function buildTurnCheckpoint(input: {
       entry: WatchDeliveryState;
       text: string;
       index: number;
+      retainedAt?: number;
     }> = [];
     let insertion = 0;
     for (const entry of input.watchDeliveries.values()) {
       insertion += 1;
-      if (isRetained(entry)) continue;
+      const retainedAt = retainedMessageIndex(entry);
       if (entry.full) {
         slices.push({
           order: acceptedTextOrder(entry, 0, insertion),
           entry,
           text: entry.fullText,
           index: 0,
+          ...(retainedAt !== undefined ? { retainedAt } : {}),
         });
         continue;
       }
       entry.texts.forEach((text, index) => {
-        slices.push({ order: acceptedTextOrder(entry, index, insertion), entry, text, index });
+        slices.push({
+          order: acceptedTextOrder(entry, index, insertion),
+          entry,
+          text,
+          index,
+          ...(retainedAt !== undefined ? { retainedAt } : {}),
+        });
       });
     }
+    const retainedAnchors = new Map<number, number>();
+    for (const slice of slices) {
+      if (slice.retainedAt === undefined) continue;
+      const current = retainedAnchors.get(slice.retainedAt);
+      if (current === undefined || slice.order > current) {
+        retainedAnchors.set(slice.retainedAt, slice.order);
+      }
+    }
+    const anchors = [...retainedAnchors.entries()]
+      .map(([messageIndex, order]) => ({ messageIndex, order }))
+      .sort((left, right) => left.order - right.order || left.messageIndex - right.messageIndex);
     slices.sort((left, right) => left.order - right.order || left.index - right.index);
     for (const slice of slices) {
-      if (!slice.text.trim()) continue;
+      if (slice.retainedAt !== undefined || !slice.text.trim()) continue;
+      const nextAnchor = anchors.find((anchor) => anchor.order > slice.order);
+      const before = nextAnchor
+        ? nextAnchor.messageIndex
+        : anchors.length > 0
+          ? messages.length
+          : 0;
       const firstSlice = slice.entry.full || slice.index === 0;
       const synthetic = firstSlice
         ? {
@@ -237,16 +284,20 @@ export function buildTurnCheckpoint(input: {
           };
       for (const item of watchChecksFromToolResultMessage(synthetic, input.contextStrategy)) {
         const value = typeof item === "string" ? item : JSON.stringify(item);
-        if (value.trim()) droppedWatchOutside.push(value);
+        if (value.trim()) droppedWatchOutside.push({ text: value, before });
       }
     }
   }
-  const seenWatchOutside = new Set<string>();
+  const seenWatchOutside = new Map<string, number>();
   for (const entry of droppedWatchOutside) {
-    seenWatchOutside.delete(entry);
-    seenWatchOutside.add(entry);
+    seenWatchOutside.delete(entry.text);
+    seenWatchOutside.set(entry.text, entry.before);
   }
-  const watchOutsideText = boundWatchOutsideText([...seenWatchOutside]);
+  const boundedWatchOutside = boundWatchOutsideText(
+    [...seenWatchOutside.entries()].map(([text, before]) => ({ text, before })),
+  );
+  const watchOutsideText = boundedWatchOutside.map((entry) => entry.text);
+  const watchOutsideTextBefore = boundedWatchOutside.map((entry) => entry.before);
   const assistant = messages.findLast((message) => message.role === "assistant");
   const sequential =
     input.restoringCalls ||
@@ -288,7 +339,7 @@ export function buildTurnCheckpoint(input: {
     ...(input.foundConnectorTools?.size
       ? { foundConnectorTools: [...input.foundConnectorTools] }
       : {}),
-    ...(watchOutsideText.length > 0 ? { watchOutsideText } : {}),
+    ...(watchOutsideText.length > 0 ? { watchOutsideText, watchOutsideTextBefore } : {}),
   };
 }
 
