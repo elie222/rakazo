@@ -414,12 +414,13 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
     if (message.type() === "error") browserErrors.push(message.text());
   });
   page.on("requestfailed", (request) => {
-    // Leaving a page closes its live streams. A live signal replaces any in-flight account read.
+    // Leaving a page closes its live streams. Live signals replace in-flight account and skill reads.
     const pathname = new URL(request.url()).pathname;
     if (
       (pathname === "/rpc/notifications/subscribe" ||
         pathname === "/rpc/notifications/subscribeCalls" ||
-        pathname === "/rpc/me") &&
+        pathname === "/rpc/me" ||
+        pathname === "/rpc/agentSkills/list") &&
       request.failure()?.errorText === "net::ERR_ABORTED"
     )
       return;
