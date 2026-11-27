@@ -25,6 +25,7 @@ import {
   createChatHistoryPruner,
   createRetentionPruner,
   createSecurityEventPruner,
+  pruneNativeDmSessions,
   securityEventRetentionDays,
 } from "@rakazo/db";
 import { cliModelRuntime } from "../../cli-models/runtime.js";
@@ -440,6 +441,9 @@ export function createRunReconciler(
     reconcileAuditLog: createAuditLogReconciler(prisma, auditLogConfig()),
     reconcileChatHistoryRetention:
       chatHistoryDays === null ? undefined : createChatHistoryPruner(prisma, chatHistoryDays),
+    reconcileNativeDmRetention: createRetentionPruner("native_dm_sessions", (now) =>
+      pruneNativeDmSessions(prisma, now),
+    ),
     reconcileNativeCalendarRetention: createRetentionPruner(
       "native_calendar_requests",
       (now) => pruneExpiredNativeCalendarRequests(prisma, now),

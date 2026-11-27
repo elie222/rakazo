@@ -9,6 +9,7 @@ import {
   groupPilotEnrolled,
   groupPilotRuntimeForBot,
   notifyMemberMessage,
+  pilotDmResumeGrant,
   pilotLauncher,
   pilotRunModel,
   pilotRuntimeForBot,
@@ -534,6 +535,7 @@ export async function sendThreadMessage(
   releaseTakeover?: (runId: string) => Promise<void>,
   /** Runs saved with the message, after the thread lock and before the message is routed. */
   startRoutines?: (tx: Prisma.TransactionClient) => Promise<Array<{ id: string; status: string }>>,
+  signedInApp = false,
 ) {
   const existing = await replayExistingSend(
     deps,
@@ -879,6 +881,9 @@ export async function sendThreadMessage(
             clientNonce: sendRunClientNonce(input.clientNonce, message.id),
             sourceMessageId: message.id,
             ...pilotPin,
+            ...(pilotPin && signedInApp && !replyToMessageId && !replyQuote
+              ? { nativeDmResumeGrant: pilotDmResumeGrant(target.botId) }
+              : {}),
           },
         });
         await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });

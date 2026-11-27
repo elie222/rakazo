@@ -1,9 +1,17 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { modelRoleConnectionId } from "@rakazo/contracts";
 import { BACKGROUND_HELPER_TRIGGER, redactSecrets } from "@rakazo/core";
-import { isDatabaseUnavailable, recordUsage } from "@rakazo/db";
+import type { NativeDmCommit } from "@rakazo/db";
+import {
+  isDatabaseUnavailable,
+  nativeDmProfileRevision,
+  prepareNativeDmSession,
+  recordUsage,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { handoffToGroupBot } from "../../bots/group-handoff.js";
+import type { NativeTextSessionTurn } from "../../providers/agent-runtime/claude/text-session.js";
+import { nativeTextSessionScope } from "../../providers/agent-runtime/claude/text-session.js";
 import { isStrategicInitiativeRun } from "../../routines/strategic-initiative.js";
 import { personSpeaker } from "../../runtime/context/history-speakers.js";
 import { backgroundHelpersAllowed } from "../../tasks/background-helpers.js";
@@ -27,7 +35,12 @@ import { followUpsOffered, offeredFleetTools } from "../tools/run-tool-selection
 import { applyTool } from "../tools/run-tools.js";
 import { collectOutboundPilotText } from "./primary-outbound-handoff.js";
 import { pilotRoutineRequest } from "./primary-routine-pilot.js";
-import { loadPilotRuntime, pilotConversation, pilotGroupRequest } from "./primary-runtime-pilot.js";
+import {
+  loadPilotRuntime,
+  pilotConversation,
+  pilotDmResumeGrant,
+  pilotGroupRequest,
+} from "./primary-runtime-pilot.js";
 import { consumeRunEvents } from "./run-turn.js";
 import { claimRunSteering } from "./run-turn-images.js";
 import { appendToolCompletionAudit, toolCompletionOutcome } from "./tool-completion-audit.js";
@@ -97,32 +110,68 @@ export async function runModelTurn(
           })
         : undefined;
     const groupRequest = groupPilot && { ...groupPilot, outboundRecipient: undefined };
+    const dmRequest: AgentRunRequest | undefined =
+      run.primaryRuntime && !routineRequest && !groupRequest
+        ? {
+            ...pilotConversation(run, turn.records.thread, turn.records.bot, turn.records.messages),
+            botId: request.botId,
+            threadId: request.threadId,
+            runId,
+            sourceMessageId: request.sourceMessageId,
+            instructions: runIdentityInstruction(turn.records.bot, run.trigger),
+            model: request.model,
+            tools: [],
+            onUsage: request.onUsage,
+            secrets: request.secrets,
+          }
+        : undefined;
+    const configuredGrant = dmRequest ? pilotDmResumeGrant(run.botId) : undefined;
+    const grant = configuredGrant === run.nativeDmResumeGrant ? configuredGrant : undefined;
+    const profileRevision = grant ? nativeDmProfileRevision(turn.records.bot) : "";
+    const persistence =
+      grant && dmRequest
+        ? await prepareNativeDmSession(
+            deps.prisma,
+            {
+              runId,
+              spaceId: run.spaceId,
+              threadId: run.threadId,
+              botId: run.botId,
+              leaseOwner: workerId,
+              leaseFence: fence,
+            },
+            grant,
+            profileRevision,
+          )
+        : undefined;
+    let sessionCommit: NativeDmCommit | undefined;
+    let sessionTurn: NativeTextSessionTurn | undefined;
+    if (persistence && dmRequest) {
+      sessionTurn = {
+        mode: "new",
+        spaceId: run.spaceId,
+        ownerId: run.userId,
+        profileRevision,
+        onCandidate: (snapshot) => {
+          sessionCommit = persistence.seal(snapshot);
+        },
+      };
+      const previous = persistence.previous;
+      if (previous && previous.scope === nativeTextSessionScope(sessionTurn, dmRequest))
+        sessionTurn = { ...sessionTurn, mode: "resume", previous };
+    }
+    // An enrolled turn with unavailable storage starts fresh, never replays chat history.
+    if (grant && dmRequest) dmRequest.history = [];
     const runtimeEvents = run.primaryRuntime
       ? (
           await loadPilotRuntime(
             { ...run, primaryRuntime: run.primaryRuntime },
             request.model,
-            Boolean(turn.records.thread.groupId),
+            Boolean(groupId),
+            sessionTurn,
           )
         ).run(
-          routineRequest ??
-            groupRequest ?? {
-              ...pilotConversation(
-                run,
-                turn.records.thread,
-                turn.records.bot,
-                turn.records.messages,
-              ),
-              botId: request.botId,
-              threadId: request.threadId,
-              runId,
-              sourceMessageId: request.sourceMessageId,
-              instructions: runIdentityInstruction(turn.records.bot, run.trigger),
-              model: request.model,
-              tools: [],
-              onUsage: request.onUsage,
-              secrets: request.secrets,
-            },
+          routineRequest ?? groupRequest ?? dmRequest!,
           routineRequest || turn.records.thread.groupId
             ? { signal: runtimeContext.signal }
             : runtimeContext,
@@ -149,7 +198,10 @@ export async function runModelTurn(
       if ("error" in outcome) throw new Error(outcome.error);
       state.handedOff = true;
     }
-    await completeRun(ctx);
+    await completeRun(
+      ctx,
+      grant && pilotDmResumeGrant(run.botId) === grant ? sessionCommit : undefined,
+    );
   } catch (turnError) {
     if (await interruptedByShutdown()) return;
     let caughtError = turnError;

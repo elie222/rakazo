@@ -69,6 +69,8 @@ import {
   partialReplyClientNonce,
   RunHistoryWriteError,
 } from "./messages.js";
+import type { NativeDmCommit } from "./native-dm-session.js";
+import { commitNativeDmSession } from "./native-dm-session.js";
 import type { AnswerRunInput, PauseRunForInput, RunSecretWriter } from "./thread-ask.js";
 import { answerRunInput, pauseRunForInput } from "./thread-ask.js";
 import { clearThreadReads } from "./thread-reads.js";
@@ -189,6 +191,7 @@ export type FinalizeRunInput = FinalizeRunBase &
         /** Steps may carry their tool and kept calls; they are stored apart from the blocks. */
         blocks: MessageBlock[];
         markUnread?: boolean;
+        nativeDmSession?: NativeDmCommit;
       }
     | {
         outcome: "failed";
@@ -924,6 +927,13 @@ async function finalizeRunOnce(
           ? { markUnread: input.markUnread }
           : { clientNonce: partialReplyClientNonce(input.runId) }),
       });
+      if (
+        input.outcome === "completed" &&
+        input.nativeDmSession &&
+        replyBlocks.every((block) => block.kind === "text")
+      ) {
+        await commitNativeDmSession(tx, input, input.nativeDmSession, message.seq, message.id, now);
+      }
       const response = await appendEventInTransaction(tx, {
         spaceId: input.spaceId,
         threadId: input.threadId,

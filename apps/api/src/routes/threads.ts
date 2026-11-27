@@ -142,6 +142,7 @@ export function threadsRoutes(ctx: RouterContext) {
     },
     startRoutines?: Parameters<typeof sendThreadMessage>[5],
     nativeSessionId?: string,
+    signedInApp = false,
   ) => {
     const setup = await modelSetup(deps, actor);
     const target = await resolveThreadTarget(deps.prisma, actor, input);
@@ -187,6 +188,7 @@ export function threadsRoutes(ctx: RouterContext) {
       },
       takeoverReleaser(deps, actor, target),
       startRoutines,
+      signedInApp,
     ).catch((error: unknown) => {
       if (error instanceof AttachmentValidationError) {
         throw new ClientError("BAD_REQUEST", error.message);
@@ -258,7 +260,7 @@ export function threadsRoutes(ctx: RouterContext) {
         }
       }),
       send: authed.threads.send.handler(({ context, input }) =>
-        send(context.actor, input, undefined, context.nativeSessionId),
+        send(context.actor, input, undefined, context.nativeSessionId, Boolean(context.sessionId)),
       ),
       nativeCalendarPending: authed.threads.nativeCalendarPending.handler(({ context, input }) => {
         const device = calendarDevice(context, input.deviceKey);

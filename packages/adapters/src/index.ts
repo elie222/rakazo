@@ -227,6 +227,7 @@ export * from "./runs/lifecycle/work-activity.js";
 export {
   groupPilotEnrolled,
   groupPilotRuntimeForBot,
+  pilotDmResumeGrant,
   pilotLauncher,
   pilotRunModel,
   pilotRuntimeForBot,

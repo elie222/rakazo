@@ -103,3 +103,24 @@ columns in place; do not strip markers from pending rows.
 
 An offline SDK contract test does not establish the deployed sandbox
 boundary. Keep the feature off where that environment cannot be verified.
+
+### Optional owner DM continuity
+
+Direct-chat persistence is off unless the operator records the bot owner's explicit opt-in
+and configures the same `PRIMARY_RUNTIME_PILOT_DM_RESUME_GRANTS` on API and workers. The
+comma-separated entries are `<bot-id>=<unique-random-grant-id>`. Choose a new 16–64-character
+identifier (ASCII letters, digits, underscore or hyphen) for each new opt-in; do not reuse one.
+The owner must already have a named personal API-key connection on the bot and the bot must
+already be enabled for the text pilot. Only plain-text direct messages sent through a
+verified signed-in app session qualify. Group, routine, forwarded, quoted and key-authenticated
+API turns do not enroll.
+
+Only the latest complete native turn is available for resumption. A gap, changed profile or
+named credential, or a different grant starts a new session, without app history replay.
+If content encryption is disabled or the storage key is unavailable the turn starts fresh and
+does not write a snapshot. The encrypted snapshot is eligible for 24 hours; an hourly worker
+sweep removes expired rows. Clearing the chat or deleting either of the anchored messages
+removes the snapshot in the same database transaction. A cleared or cancelled worker cannot
+restore the row on late completion. To withdraw consent, remove the grant on API and workers,
+restart them, and clear the chat for immediate snapshot removal. A future opt-in requires a
+new grant identifier. This does not erase database backups or provider-side copies.

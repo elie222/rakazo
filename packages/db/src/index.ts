@@ -83,6 +83,12 @@ export {
 export * from "./threads/events.js";
 export * from "./threads/message-blocks.js";
 export * from "./threads/messages.js";
+export {
+  type NativeDmCommit,
+  nativeDmProfileRevision,
+  prepareNativeDmSession,
+  pruneNativeDmSessions,
+} from "./threads/native-dm-session.js";
 export * from "./threads/thread-ask.js";
 export { botRunStatuses, primaryActiveRun } from "./threads/thread-listing.js";
 export * from "./threads/thread-reads.js";

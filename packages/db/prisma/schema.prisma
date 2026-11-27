@@ -1205,6 +1205,7 @@ model Thread {
   reads                       ThreadRead[]
   messages                    Message[]
   prunedMessageNonces         PrunedMessageNonce[]
+  nativeSession               NativeDmSession?
   events                      Event[]
   tasks                       Task[]
   runs                        Run[]
@@ -1260,6 +1261,8 @@ model Message {
   /// A bot reply's tool calls as sent and returned (JSON, see ToolHistorySchema), encrypted like
   /// the blocks. Only the bot's runs read it: message reads leave it out unless they select it.
   toolHistory      String?
+  nativeSessionSource NativeDmSession? @relation("NativeDmSource")
+  nativeSessionReply  NativeDmSession? @relation("NativeDmReply")
   sourceRuns            Run[]             @relation("RunSourceMessage")
   externalTranscriptFor  ExternalMessage?
   steeringMessages SteeringMessage[]
@@ -1272,6 +1275,23 @@ model Message {
   @@index([searchTokens], type: Gin)
   // Partial index messages_tool_work_idx (bot replies that used tools) is created in SQL.
   @@map("messages")
+}
+
+/// Latest sealed snapshot for one explicitly enrolled owner chat. No client DTO reads it.
+model NativeDmSession {
+  threadId   String   @id
+  thread     Thread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sourceId   String   @unique
+  source     Message  @relation("NativeDmSource", fields: [sourceId], references: [id], onDelete: Cascade)
+  replyId    String   @unique
+  reply      Message  @relation("NativeDmReply", fields: [replyId], references: [id], onDelete: Cascade)
+  spaceId    String
+  userId     String
+  expiresAt  DateTime
+  ciphertext String  @db.Text
+
+  @@index([expiresAt])
+  @@map("native_dm_sessions")
 }
 
 /// The send nonce of a message that history retention deleted, so a replayed signed delivery
@@ -1341,6 +1361,7 @@ model Run {
   trigger              String
   // Only the opted-in direct-chat pilot sets these at enqueue time.
   primaryRuntime       String?
+  nativeDmResumeGrant  String?
   modelCredentialId    String?
   modelProvider        String?
   modelId              String?

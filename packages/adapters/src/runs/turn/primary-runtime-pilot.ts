@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { accessSync, constants } from "node:fs";
 import { isAbsolute } from "node:path";
 import type { AgentRunModel, AgentRunRequest } from "@rakazo/adapter-kit";
@@ -5,6 +6,7 @@ import { redactSecrets, resolveBotAddress } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { readMessageBlocks } from "@rakazo/db";
 import { nativeTextRuntime } from "../../providers/agent-runtime/claude/descriptor.js";
+import type { NativeTextSessionTurn } from "../../providers/agent-runtime/claude/text-session.js";
 import { primaryGroupHistory } from "./primary-group-continuity.js";
 import { outboundPilotDirective, outboundPilotEnrolled } from "./primary-outbound-handoff.js";
 import { OUTBOUND_HANDOFF_BRIEF_PROMPT } from "./primary-outbound-handoff.prompt.js";
@@ -13,6 +15,19 @@ import { OUTBOUND_HANDOFF_BRIEF_PROMPT } from "./primary-outbound-handoff.prompt
 export function pilotRuntimeForBot(botId: string, environment = process.env): string | undefined {
   const allowed = environment.PRIMARY_RUNTIME_PILOT_BOT_IDS?.split(",").map((id) => id.trim());
   return allowed?.includes(botId) ? nativeTextRuntime.id : undefined;
+}
+
+/** Set only for a bot whose owner explicitly agreed to private native continuity. */
+export function pilotDmResumeGrant(botId: string, environment = process.env) {
+  const entries = (environment.PRIMARY_RUNTIME_PILOT_DM_RESUME_GRANTS ?? "")
+    .split(",")
+    .map((entry) => entry.trim().split("="))
+    .filter(([id]) => id === botId);
+  const [entry] = entries;
+  const grant = entry?.[1];
+  return entries.length === 1 && entry?.length === 2 && /^[A-Za-z0-9_-]{16,64}$/.test(grant ?? "")
+    ? createHash("sha256").update(grant!).digest("hex")
+    : undefined;
 }
 
 /** Group enrolment is separate from the existing direct-chat rollout. */
@@ -122,6 +137,7 @@ export async function loadPilotRuntime(
   },
   model: AgentRunModel,
   groupTurn = false,
+  sessionTurn?: NativeTextSessionTurn,
 ) {
   const launcher = pilotLauncher();
   if (
@@ -157,7 +173,7 @@ export async function loadPilotRuntime(
   )
     throw new Error("The selected primary runtime or its exact API-key connection is unavailable.");
   const { createNativeTextRuntime } = await nativeTextRuntime.load();
-  return createNativeTextRuntime(launcher);
+  return createNativeTextRuntime(launcher, sessionTurn);
 }
 
 type PilotConversationMessage = Parameters<typeof readMessageBlocks>[0] & {
