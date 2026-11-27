@@ -311,6 +311,7 @@ export function AskBlock({
                 fill={false}
                 prominence="quiet"
                 onPress={() => void dismiss()}
+                style={{ alignSelf: "center" }}
               />
             ) : null}
             <NativeActionButton
