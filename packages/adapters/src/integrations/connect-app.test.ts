@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { connectApp } from "./connect-app.js";
 
 const stored = vi.hoisted(
-  () => [] as { blocks: MessageBlock[]; botId: string; clientNonce: string; runId: string }[],
+  () => [] as { blocks: MessageBlock[]; clientNonce: string; runId: string }[],
 );
 vi.mock("@rakazo/db", async (original) => ({
   ...(await original<typeof db>()),
@@ -26,10 +26,9 @@ const entry: ConnectionCatalogItem = {
 function fixture(items = [entry]) {
   const tx = {
     $executeRaw: vi.fn(),
-    run: { findFirst: vi.fn(async () => null) },
     message: {
-      findMany: vi.fn(async ({ where }: { where: { botId?: string } }) =>
-        stored.filter((message) => !where.botId || message.botId === where.botId),
+      findMany: vi.fn(async ({ where }: { where: { runId: string } }) =>
+        stored.filter((message) => message.runId === where.runId),
       ),
       findFirst: vi.fn(
         async ({ where }: { where: { clientNonce: string } }) =>
@@ -60,7 +59,6 @@ function fixture(items = [entry]) {
     context,
     target,
     catalog,
-    tx,
     call: (app: unknown = "Gmail", effect = "effect") =>
       connectApp(deps, providers, context, target, app, effect),
   };
@@ -126,42 +124,18 @@ describe("connect_app execution", () => {
     expect(stored).toHaveLength(1);
   });
 
-  it("shows a new card when another member is the only one with a pending request", async () => {
+  it("shows a new card for a later request by the same member and bot", async () => {
     const f = fixture();
     await f.call();
     await connectApp(
       f.deps,
       f.providers,
-      { ...f.context, userId: "other-user" },
-      { ...f.target, id: "other-run" },
+      f.context,
+      { ...f.target, id: "later-run" },
       "Gmail",
       "other-effect",
     );
-    expect(f.tx.run.findFirst).toHaveBeenCalledWith({
-      where: {
-        id: { in: ["run"] },
-        threadId: "chat",
-        userId: "other-user",
-        status: { notIn: ["cancelled", "failed"] },
-      },
-      select: { id: true },
-    });
-    expect(stored.map((message) => message.runId)).toEqual(["run", "other-run"]);
-  });
-
-  it("shows a card for each bot that needs the app in a group chat", async () => {
-    const f = fixture();
-    await f.call();
-    await connectApp(
-      f.deps,
-      f.providers,
-      { ...f.context, botId: "peer" },
-      { ...f.target, id: "peer-run", botId: "peer" },
-      "Gmail",
-      "peer-effect",
-    );
-    expect(stored.map((message) => message.botId)).toEqual(["bot", "peer"]);
-    expect(f.tx.run.findFirst).not.toHaveBeenCalled();
+    expect(stored.map((message) => message.runId)).toEqual(["run", "later-run"]);
   });
 });
 

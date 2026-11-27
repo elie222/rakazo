@@ -316,6 +316,7 @@ function botConnectionFixture() {
   ]);
   const card = {
     id: "requested-connection",
+    seq: 1,
     runId: "origin-run",
     botId: "bot",
     blocks: [
@@ -333,6 +334,7 @@ function botConnectionFixture() {
   });
   return {
     ...f,
+    card,
     complete: () =>
       markAppConnected(f.deps, f.actor, "bot", "calendar", "fixture", "thread", card.id),
   };
@@ -402,6 +404,37 @@ it("does not use a bot-authored source as the user's request", async () => {
   expect(tx.run.create).toHaveBeenCalledWith(
     expect.objectContaining({
       data: expect.objectContaining({ trigger: "follow_up", sourceMessageId: undefined }),
+    }),
+  );
+});
+
+it("resumes the latest request when the user authorizes from an older card", async () => {
+  const { complete, tx, card, actor } = botConnectionFixture();
+  const latest = { ...card, id: "latest-card", seq: 2, runId: "latest-run" };
+  tx.message.findMany.mockImplementation(
+    async (query?: { where: { id?: string } }) =>
+      (query?.where.id ? [card] : [card, latest]) as never,
+  );
+  tx.run.findMany.mockResolvedValue(
+    [card, latest].map((entry) => ({
+      id: entry.runId,
+      botId: "bot",
+      status: "completed",
+      trigger: "user",
+      sourceMessage: {
+        id: `source-${entry.runId}`,
+        threadId: "thread",
+        role: "user",
+        authorUserId: actor.userId,
+      },
+    })),
+  );
+
+  await complete();
+
+  expect(tx.run.create).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      data: expect.objectContaining({ sourceMessageId: "source-latest-run" }),
     }),
   );
 });

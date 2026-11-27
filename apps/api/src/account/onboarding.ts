@@ -374,24 +374,25 @@ export async function markAppConnected(
     await tx.$executeRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
     // Onboarding cards sit at the start of the chat and inline cards near the end;
     // bound both reads so a long chat is never scanned in full.
-    const select = { id: true, blocks: true, botId: true, runId: true } as const;
+    const select = { id: true, seq: true, blocks: true, botId: true, runId: true } as const;
     const first = await tx.message.findMany({
       where: { threadId: thread.id },
       select,
-      orderBy: { createdAt: "asc" },
+      orderBy: { seq: "asc" },
       take: 100,
     });
     const latest = await tx.message.findMany({
       where: { threadId: thread.id },
       select,
-      orderBy: { createdAt: "desc" },
+      orderBy: { seq: "desc" },
       take: 200,
     });
     const own = messageId
       ? await tx.message.findMany({ where: { id: messageId, threadId: thread.id }, select })
       : [];
-    // Prefer the clicked card, then the newest request for each bot.
-    const messages = [...new Map([...own, ...latest, ...first].map((m) => [m.id, m])).values()];
+    const messages = [
+      ...new Map([...own, ...latest, ...first].map((m) => [m.id, m])).values(),
+    ].sort((a, b) => b.seq - a.seq);
     const chatBots = new Set(chatBotIds);
     const runIds = messages.flatMap((message) =>
       message.botId && chatBots.has(message.botId) && message.runId ? [message.runId] : [],
@@ -437,13 +438,16 @@ export async function markAppConnected(
       ({ message, requestingBotId, origin }) =>
         message.id === messageId && requestingBotId === bot.id && origin,
     );
-    const followUps = new Map<string, string>();
+    const seenRequests = new Set<string>();
+    const followUps: string[] = [];
     const events = [];
     for (const { message, requestingBotId, origin, next } of changes) {
       if (requestingBotId !== bot.id && !confirmedRequest) continue;
+      const newest = !seenRequests.has(requestingBotId);
+      if (origin) seenRequests.add(requestingBotId);
       if (
         confirmedRequest &&
-        !followUps.has(requestingBotId) &&
+        newest &&
         origin &&
         (origin.trigger === "user" || origin.trigger === "follow_up") &&
         origin.status !== "cancelled" &&
@@ -464,7 +468,7 @@ export async function markAppConnected(
           clientNonce: `${APP_CONNECTION_FOLLOW_UP_NONCE_PREFIX}${message.id}`,
           sourceMessageId,
         });
-        followUps.set(requestingBotId, followUp);
+        followUps.push(followUp);
       }
       await tx.message.update({ where: { id: message.id }, data: { blocks: next.stored } });
       events.push(
@@ -477,7 +481,7 @@ export async function markAppConnected(
         }),
       );
     }
-    return { events, followUps: [...followUps.values()] };
+    return { events, followUps };
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   for (const event of committed.events)
     await bestEffort("notify connected app card", deps.events.notify(thread.id, event.seq));

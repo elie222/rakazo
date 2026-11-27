@@ -98,37 +98,22 @@ export async function connectApp(
       select: { id: true },
     });
     if (replayed) return null;
-    // Only recent cards count as already shown; an old one far up the chat should not block a new one.
+    // A later request needs a card tied to its own run, even when the app is the same.
     const recent = await tx.message.findMany({
-      where: { threadId: target.threadId, botId: target.botId },
-      select: { id: true, runId: true, blocks: true },
+      where: { threadId: target.threadId, runId: target.id },
+      select: { id: true, blocks: true },
       orderBy: { createdAt: "desc" },
       take: RECENT_MESSAGES,
     });
-    const pendingRuns = recent.flatMap((message) =>
-      message.runId &&
-      storedMessageBlocks(message).some(
-        (candidate) =>
-          matchesAppConnection(candidate, entry.connectorId, entry.slug, DEFAULT_CONNECTOR_ID) &&
-          candidate.status === "pending" &&
-          candidate.organizationConnectionId === block.organizationConnectionId,
-      )
-        ? [message.runId]
-        : [],
-    );
-    if (pendingRuns.includes(target.id)) return null;
-    // Each bot needs a request to resume from, and another member's request uses their account.
     if (
-      pendingRuns.length &&
-      (await tx.run.findFirst({
-        where: {
-          id: { in: pendingRuns },
-          threadId: target.threadId,
-          userId: context.userId,
-          status: { notIn: ["cancelled", "failed"] },
-        },
-        select: { id: true },
-      }))
+      recent.some((message) =>
+        storedMessageBlocks(message).some(
+          (candidate) =>
+            matchesAppConnection(candidate, entry.connectorId, entry.slug, DEFAULT_CONNECTOR_ID) &&
+            candidate.status === "pending" &&
+            candidate.organizationConnectionId === block.organizationConnectionId,
+        ),
+      )
     )
       return null;
     const message = await createThreadMessageInTransaction(tx, {
