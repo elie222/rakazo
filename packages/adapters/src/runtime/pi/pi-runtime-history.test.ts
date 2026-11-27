@@ -422,6 +422,18 @@ describe("replaying an earlier reply's tool steps", () => {
       ? content.map((part) => (part.type === "text" ? part.text : "")).join("")
       : "";
   };
+  /** Every `\n… [` is one whole omission marker, including markers that share a newline. */
+  const omissionMarkersAreWhole = (text: string) => {
+    let index = 0;
+    while (index < text.length) {
+      const at = text.indexOf("\n… [", index);
+      if (at < 0) return true;
+      const match = /^\n… \[\d{1,16} characters not kept\] …\n/.exec(text.slice(at));
+      if (!match) return false;
+      index = at + match[0].length - 1;
+    }
+    return true;
+  };
 
   it("replays stored calls with their arguments and the start of what they returned", () => {
     const messages = toHistory(history, "Next question.", undefined, OFFERED);
@@ -682,7 +694,9 @@ describe("replaying an earlier reply's tool steps", () => {
     const saved = `${"c".repeat(markerStart)}${marker}${end}`;
     expect(saved.length).toBeGreaterThan(TOOL_CALL_SAVED_TEXT_MAX_CHARS);
     const replayed = replayedCallText(saved);
-    expect(replayed).toContain(marker);
+    expect(replayed.length).toBeLessThanOrEqual(TOOL_CALL_SAVED_TEXT_MAX_CHARS);
+    expect(replayed.length).toBeLessThan(saved.length);
+    expect(omissionMarkersAreWhole(replayed)).toBe(true);
   });
 
   it("redacts a raw token whose kept head is only a prefix of the redacted placeholder", () => {
@@ -735,9 +749,100 @@ describe("replaying an earlier reply's tool steps", () => {
     expect(secondStart).toBeLessThan(headCut);
     expect(secondStart + second.length).toBeGreaterThan(headCut);
     const replayed = replayedCallText(saved);
-    expect(replayed).toContain(first);
-    expect(replayed).toContain(second);
-    expect(replayed.split(second)).toHaveLength(2);
+    expect(replayed.length).toBeLessThanOrEqual(TOOL_CALL_SAVED_TEXT_MAX_CHARS);
+    expect(replayed.length).toBeLessThan(saved.length);
+    expect(omissionMarkersAreWhole(replayed)).toBe(true);
+  });
+
+  it("does not treat a malformed JSON value as the end of a replayed credential", () => {
+    const marker = "\n… [24 characters not kept] …\n";
+    const leaked = (value: string) =>
+      replayedCallText(`{"token":"secret-head${marker}", "note": ${value}}`);
+    for (const value of ["trueish-secret-tail", "-secret-tail", "01secret-tail", "1esecret-tail"]) {
+      const replayed = leaked(value);
+      expect(replayed).toContain(marker);
+      expect(replayed).not.toContain("secret-head");
+      expect(replayed).not.toContain("secret-tail");
+    }
+    // A quote, then a bracket, is not a field. The raw tail stays redacted.
+    const bracket = replayedCallText(`{"token":"secret-head${marker}"], raw-credential-tail}`);
+    expect(bracket).not.toContain("secret-head");
+    expect(bracket).not.toContain("raw-credential-tail");
+  });
+
+  it("keeps a later field when the value after a replayed credential is real JSON", () => {
+    const marker = "\n… [24 characters not kept] …\n";
+    const values = ["true", "false", "null", "0", "12", "-2", "-0", "1.5", "1e2", "1e+2", "1E-2"];
+    for (const value of values) {
+      const replayed = replayedCallText(
+        `{"token":"secret-head${marker}", "note": ${value}, "message": "Job completed"}`,
+      );
+      expect(replayed).toContain("Job completed");
+      expect(replayed).not.toContain("secret-head");
+    }
+    const nested = replayedCallText(
+      `{"token":"secret-head${marker}", "note": {"message": "Job completed"}}`,
+    );
+    expect(nested).toContain("Job completed");
+    expect(nested).not.toContain("secret-head");
+  });
+
+  it("keeps status after a nested credential array is saved and replayed", () => {
+    const open = '[{"token":"';
+    const secret = "0123456789";
+    const tailJson = '"}], "status":"Job completed"';
+    const headCut = Math.floor(1_000 * 0.7);
+    const padLen = headCut - open.length;
+    const total = 1_010;
+    const core = `${"z".repeat(padLen)}${open}${secret}${tailJson}`;
+    const text = `${core}${"z".repeat(total - core.length)}`;
+    expect(padLen).toBeGreaterThan(0);
+    expect(secret).toHaveLength("[redacted]".length);
+    expect(text).toHaveLength(total);
+    expect(text.slice(headCut, headCut + secret.length)).toBe(secret);
+    const saved = keptToolResult(
+      {
+        name: "shell",
+        executionId: "call-1",
+        durationMs: 1,
+        result: { content: [{ type: "text", text }] },
+      },
+      [],
+    );
+    expect(saved).toContain("characters not kept");
+    expect(saved).toContain('"status":"Job completed"');
+    expect(saved).not.toContain(secret);
+    const replayed = replayedCallText(saved!);
+    expect(replayed).toContain('"status":"Job completed"');
+    expect(replayed).not.toContain(secret);
+
+    const marker = "\n… [12 characters not kept] …\n";
+    const direct = replayedCallText(`[{"token":"secret-head${marker}"}], "status":"Job completed"`);
+    expect(direct).toContain('"status":"Job completed"');
+    expect(direct).not.toContain("secret-head");
+    const spaced = replayedCallText(
+      `[{"token":"secret-head${marker}"} ] , "status": "Job completed"`,
+    );
+    expect(spaced).toContain("Job completed");
+    expect(spaced).not.toContain("secret-head");
+  });
+
+  it("stays inside the saved cap when shared omission markers grow during redaction", () => {
+    const marker = "\n… [8 characters not kept] …\n";
+    const prefix = '{"token":"qq","password":"qq","secret":"qq"}';
+    const growth = prefix.replaceAll('"qq"', '"[redacted]"').length - prefix.length;
+    const room = TOOL_CALL_SAVED_TEXT_MAX_CHARS - prefix.length;
+    let chain = marker;
+    while (chain.length + marker.length - 1 <= room - growth) chain += marker.slice(1);
+    chain += marker.slice(1);
+    const saved = `${prefix}${chain}`;
+    expect(saved.length).toBeLessThanOrEqual(TOOL_CALL_SAVED_TEXT_MAX_CHARS);
+    expect(saved.length + growth).toBeGreaterThan(TOOL_CALL_SAVED_TEXT_MAX_CHARS);
+    const replayed = replayedCallText(saved);
+    expect(replayed.length).toBeLessThanOrEqual(TOOL_CALL_SAVED_TEXT_MAX_CHARS);
+    expect(replayed.length).toBeLessThan(saved.length + growth);
+    expect(omissionMarkersAreWhole(replayed)).toBe(true);
+    expect(replayed).not.toContain('"qq"');
   });
 
   it("says in its result when a replayed call's tool is not offered now", () => {

@@ -257,24 +257,75 @@ function keyColonAt(text: string, index: number): boolean {
   return text[skipJsonSpace(text, afterKey)] === ":";
 }
 
+/** Whitespace, a comma, or a container close. A `:` is not a value delimiter. */
+function jsonDelimiter(text: string, index: number): boolean {
+  if (index >= text.length) return true;
+  const ch = text[index]!;
+  return (
+    ch === " " ||
+    ch === "\t" ||
+    ch === "\n" ||
+    ch === "\r" ||
+    ch === "," ||
+    ch === "}" ||
+    ch === "]"
+  );
+}
+
+/**
+ * Index just after a JSON number at `index`, or -1. A bare `-`, a leading zero, a trailing dot,
+ * or an exponent with no digits is not a number. The scan never steps backward.
+ */
+function jsonNumberEnd(text: string, index: number): number {
+  let pos = index;
+  if (text[pos] === "-") pos += 1;
+  const first = text[pos];
+  if (first === "0") {
+    pos += 1;
+  } else if (first !== undefined && first >= "1" && first <= "9") {
+    pos += 1;
+    while (pos < text.length && text[pos]! >= "0" && text[pos]! <= "9") pos += 1;
+  } else {
+    return -1;
+  }
+  if (text[pos] === ".") {
+    const frac = pos + 1;
+    if (frac >= text.length || text[frac]! < "0" || text[frac]! > "9") return -1;
+    pos = frac + 1;
+    while (pos < text.length && text[pos]! >= "0" && text[pos]! <= "9") pos += 1;
+  }
+  if (text[pos] === "e" || text[pos] === "E") {
+    let exp = pos + 1;
+    if (text[exp] === "+" || text[exp] === "-") exp += 1;
+    if (exp >= text.length || text[exp]! < "0" || text[exp]! > "9") return -1;
+    pos = exp + 1;
+    while (pos < text.length && text[pos]! >= "0" && text[pos]! <= "9") pos += 1;
+  }
+  return pos;
+}
+
 function jsonValueStarts(text: string, index: number): boolean {
   const at = skipJsonSpace(text, index);
   if (at >= text.length) return false;
   const ch = text[at]!;
-  if (ch === '"' || ch === "{" || ch === "[" || ch === "-") return true;
-  if (ch >= "0" && ch <= "9") return true;
-  return text.startsWith("true", at) || text.startsWith("false", at) || text.startsWith("null", at);
+  if (ch === '"' || ch === "{" || ch === "[") return true;
+  if (text.startsWith("true", at) && jsonDelimiter(text, at + 4)) return true;
+  if (text.startsWith("false", at) && jsonDelimiter(text, at + 5)) return true;
+  if (text.startsWith("null", at) && jsonDelimiter(text, at + 4)) return true;
+  const end = jsonNumberEnd(text, at);
+  return end > at && jsonDelimiter(text, end);
 }
 
 /**
- * A `"` ends a credential when the object ends or another field starts after it.
- * A comma counts only with a quoted key, a colon, and a value. A `]` does not.
+ * A `"` ends a credential when the containers close or another field starts after it.
+ * `}` and `]` may nest (`}]`), with space between them. A comma counts only with a quoted key,
+ * a colon, and a real JSON value, or with another closer. A bare `]` with no quote does not.
  */
 function authenticAfterQuote(text: string, quote: number): boolean {
   let index = skipJsonSpace(text, quote + 1);
   while (index < text.length) {
     const ch = text[index]!;
-    if (ch === "}") {
+    if (ch === "}" || ch === "]") {
       index = skipJsonSpace(text, index + 1);
       if (index >= text.length) return true;
       continue;
@@ -282,7 +333,7 @@ function authenticAfterQuote(text: string, quote: number): boolean {
     if (ch !== ",") return false;
     const at = skipJsonSpace(text, index + 1);
     if (at >= text.length) return false;
-    if (text[at] === "}") {
+    if (text[at] === "}" || text[at] === "]") {
       index = at;
       continue;
     }
@@ -493,22 +544,20 @@ function truncateBounded(cleaned: string, max: number, preserveMarkers = false):
     if (omitted <= 0) return cleaned;
     return `${head}${notKept(omitted)}${tail}`;
   }
-  // A replay cap must not slice a marker that is already in the saved text. Move a cut that
-  // lands inside one to the marker's edge, and keep that marker on one side of the new cut.
+  // Replay stays within max, including the new note. A cut inside a marker moves once, against
+  // the original cut: the head pulls back to the marker start and the tail pushes forward to the
+  // marker's trailing newline. A chain of markers that share that newline cannot walk the cut
+  // forward, so the kept text shrinks and a later marker stays whole.
+  const noteRoom = notKept(Number.MAX_SAFE_INTEGER).length;
+  const budget = Math.max(0, max - noteRoom);
+  const headCut = Math.min(Math.floor(budget * 0.7), cleaned.length);
+  const tailCut = Math.max(cleaned.length - (budget - headCut), 0);
   const spans = omissionSpans(cleaned);
-  let headEnd = Math.min(headLength, cleaned.length);
-  let tailStart = Math.max(cleaned.length - tailLength, 0);
+  let headEnd = headCut;
+  let tailStart = tailCut;
   for (const [start, end] of spans) {
-    const headInside = headEnd > start && headEnd < end;
-    const tailInside = tailStart > start && tailStart < end;
-    if (headInside && tailInside) {
-      headEnd = end;
-      tailStart = end;
-    } else if (headInside) {
-      headEnd = end;
-    } else if (tailInside) {
-      tailStart = start;
-    }
+    if (headCut > start && headCut < end) headEnd = start;
+    if (tailCut > start && tailCut < end) tailStart = end - 1;
   }
   if (tailStart < headEnd) tailStart = headEnd;
   const head = sliceWellFormed(cleaned, headEnd);
@@ -516,15 +565,26 @@ function truncateBounded(cleaned: string, max: number, preserveMarkers = false):
   if (from > 0 && from < cleaned.length) {
     const code = cleaned.charCodeAt(from);
     const prev = cleaned.charCodeAt(from - 1);
-    if (code >= 0xdc00 && code <= 0xdfff && prev >= 0xd800 && prev <= 0xdbff) from += 1;
+    if (code >= 0xdc00 && code <= 0xdfff && prev >= 0xd800 && prev <= 0xdbff) {
+      from += 1;
+      for (const [start, end] of spans) {
+        if (from > start && from < end) {
+          from = end - 1;
+          break;
+        }
+      }
+    }
   }
-  for (const [start, end] of spans) {
-    if (from > start && from < end) from = end;
-  }
-  if (from <= head.length) return cleaned;
+  if (from < head.length) from = head.length;
   const tail = cleaned.slice(from);
   const omitted = cleaned.length - head.length - tail.length;
-  if (omitted <= 0) return cleaned;
+  if (omitted <= 0) {
+    let end = Math.min(max, cleaned.length);
+    for (const [start, markerEnd] of spans) {
+      if (end > start && end < markerEnd) end = start;
+    }
+    return sliceWellFormed(cleaned, end);
+  }
   return `${head}${notKept(omitted)}${tail}`;
 }
 
