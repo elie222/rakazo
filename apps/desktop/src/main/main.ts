@@ -544,6 +544,7 @@ async function recoverFromCrashedSave(
   return message;
 }
 function reopenAppWindow(focusComposer = false) {
+  if (appOpener.busy() || isSetupSaveInProgress()) return;
   if (desktop.currentTargetUrl === null) {
     showSetupWindow(desktop.setupError);
     return;

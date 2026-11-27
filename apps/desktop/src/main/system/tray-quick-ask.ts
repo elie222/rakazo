@@ -7,27 +7,62 @@ import { desktop } from "../desktop-state.js";
 
 export const QUICK_ASK_SHORTCUT = "CommandOrControl+Shift+Space";
 
-const FOCUS_COMPOSER_SCRIPT = `(() => {
-  const input = document.querySelector('textarea[name="chat-message"]');
-  if (input instanceof HTMLElement) {
-    input.focus({ preventScroll: false });
+const FOCUS_COMPOSER_WAIT_SCRIPT = `(() => {
+  const find = () => document.querySelector('textarea[name="chat-message"]');
+  const immediate = find();
+  if (immediate instanceof HTMLElement) {
+    immediate.focus({ preventScroll: false });
     return true;
   }
-  return false;
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      observer.disconnect();
+      clearTimeout(timer);
+      resolve(ok);
+    };
+    const observer = new MutationObserver(() => {
+      const el = find();
+      if (el instanceof HTMLElement) {
+        el.focus({ preventScroll: false });
+        finish(true);
+      }
+    });
+    if (document.body) observer.observe(document.body, { childList: true, subtree: true });
+    const timer = setTimeout(() => finish(false), 2500);
+  });
 })()`;
+
+const pendingFocusWindows = new WeakSet<BrowserWindow>();
 
 export type TrayQuickAskController = {
   setUnreadCount: (count: number) => void;
   dispose: () => void;
 };
 
-/** Focuses the chat message textarea in a desktop BrowserWindow once ready. */
+/** Focuses the chat composer in a desktop window, deferring past navigation and mount. */
 export function focusDesktopComposer(win: BrowserWindow | null): void {
   if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
-  void bestEffort(
-    "focus desktop composer",
-    win.webContents.executeJavaScript(FOCUS_COMPOSER_SCRIPT),
-  );
+  const runFocus = () => {
+    if (win.isDestroyed() || win.webContents.isDestroyed()) return;
+    void bestEffort(
+      "focus desktop composer",
+      win.webContents.executeJavaScript(FOCUS_COMPOSER_WAIT_SCRIPT),
+    );
+  };
+  if (win.webContents.isLoading()) {
+    if (!pendingFocusWindows.has(win)) {
+      pendingFocusWindows.add(win);
+      win.webContents.once("did-finish-load", () => {
+        pendingFocusWindows.delete(win);
+        runFocus();
+      });
+    }
+    return;
+  }
+  runFocus();
 }
 
 export type TrayQuickAskDeps = {
@@ -73,37 +108,6 @@ export function createTrayQuickAsk(deps: TrayQuickAskDeps): TrayQuickAskControll
   let disposed = false;
   let shortcutRegistered = false;
   let tray: ReturnType<typeof createTray> | null = null;
-  let pendingFocusWindow: BrowserWindow | null = null;
-
-  function focusComposerIn(win: BrowserWindow) {
-    if (disposed || win.isDestroyed() || win.webContents.isDestroyed()) return;
-    const runFocus = () => {
-      if (disposed || win.isDestroyed() || win.webContents.isDestroyed()) return;
-      void bestEffort(
-        "focus desktop composer",
-        win.webContents.executeJavaScript(FOCUS_COMPOSER_SCRIPT).then((focused) => {
-          if (!focused && win.webContents.isLoading() && pendingFocusWindow !== win) {
-            pendingFocusWindow = win;
-            win.webContents.once("did-finish-load", () => {
-              if (pendingFocusWindow === win) pendingFocusWindow = null;
-              focusComposerIn(win);
-            });
-          }
-        }),
-      );
-    };
-    if (win.webContents.isLoading()) {
-      if (pendingFocusWindow !== win) {
-        pendingFocusWindow = win;
-        win.webContents.once("did-finish-load", () => {
-          if (pendingFocusWindow === win) pendingFocusWindow = null;
-          runFocus();
-        });
-      }
-      return;
-    }
-    runFocus();
-  }
 
   function surfaceWindow(win: BrowserWindow) {
     if (win.isMinimized()) win.restore();
@@ -126,7 +130,7 @@ export function createTrayQuickAsk(deps: TrayQuickAskDeps): TrayQuickAskControll
     }
     surfaceWindow(win);
     if (focusComposer) {
-      focusComposerIn(win);
+      focusDesktopComposer(win);
     }
   }
 
@@ -195,7 +199,6 @@ export function createTrayQuickAsk(deps: TrayQuickAskDeps): TrayQuickAskControll
     dispose() {
       if (disposed) return;
       disposed = true;
-      pendingFocusWindow = null;
       if (shortcutRegistered) {
         shortcutRegistered = false;
         void bestEffort(
