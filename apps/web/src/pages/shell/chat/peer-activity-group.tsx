@@ -9,8 +9,7 @@ import { Mail, Reply } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { AvatarStackBot } from "../../../components/ai/CollaborationMarker";
 import { MultiBotCollaborationMarker } from "../../../components/ai/CollaborationMarker";
-
-const FALLBACK_BOT_COLOR = "#64748b";
+import { FALLBACK_BOT_COLOR } from "./chat-shared";
 
 export type PeerBotLookup = (
   botId: string,

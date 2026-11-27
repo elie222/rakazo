@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { createDb, createThreadMessage, runAsSystem } from "../../../../packages/db/src/index";
+import { createDb, createThreadMessage, runAsSystem } from "@rakazo/db";
 import { captureScreenshot, completeOnboarding, rpc, signup } from "../helpers/helpers";
 
 test("collapses consecutive handoffs and peer receipts in a group chat", async ({
