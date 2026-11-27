@@ -79,7 +79,7 @@ export type ComposioClient = {
       list(query: { limit: number; cursor?: string }): Promise<{
         items: Array<{
           slug: string;
-          meta?: { description?: string };
+          meta?: { description?: unknown };
           no_auth?: boolean;
           composio_managed_auth_schemes?: string[];
         }>;
@@ -539,10 +539,11 @@ export class ComposioConnector implements ComposioProvider {
     return new Map(
       toolkits.map((toolkit) => {
         const slug = composioSlugKey(toolkit.slug);
+        const description = toolkit.meta?.description;
         return [
           slug,
           {
-            description: toolkit.meta?.description,
+            description: typeof description === "string" ? description : undefined,
             // A missing field is unknown, not "no managed sign-in".
             needsSignInSetup:
               !toolkit.no_auth &&

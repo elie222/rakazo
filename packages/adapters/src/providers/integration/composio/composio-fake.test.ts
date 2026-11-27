@@ -184,6 +184,20 @@ describe("ComposioConnector over the fake Composio client", () => {
     ]);
   });
 
+  it("omits malformed descriptions from the toolkit catalog", async () => {
+    const { fake, connector } = setup();
+    const raw = fake.getClient();
+    raw.toolkits.list = async () => ({
+      items: [{ slug: "GMAIL", meta: { description: { text: "Read email." } } }],
+    });
+    fake.getClient = () => raw;
+
+    const [app] = await connector.catalog(context(), "gmail");
+
+    expect(app?.slug).toBe("GMAIL");
+    expect(app).not.toHaveProperty("description");
+  });
+
   it("keeps catalog descriptions when sign-in metadata is unavailable", async () => {
     const client = new FakeComposioClient([
       {
