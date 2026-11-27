@@ -24,6 +24,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
   let home: ObjectAgentHomeStore;
   let email: EmailEmulator;
   let errors: unknown[];
+  let syncBilling: (customerId: string) => Promise<void>;
   let id: string;
   let docker: string;
   let now: number;
@@ -39,6 +40,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
       prisma,
       email,
       appUrl: "https://app.example.test/app",
+      syncBilling: (customerId) => syncBilling(customerId),
       onError: (error) => errors.push(error),
     })(signal);
   const travel = (days: number) => {
@@ -79,6 +81,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     home = new ObjectAgentHomeStore(root, storage, new PrismaAgentHomeRecords(system, ring()));
     email = new EmailEmulator();
     errors = [];
+    syncBilling = async () => {};
     await system.user.create({
       data: { id, name: "Alex", email: `${id}@rakazo.test`, emailVerified: true },
     });
@@ -189,6 +192,32 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     await sweep();
     expect(await objects()).toHaveLength(1);
     expect(await system.homeDeletionNotice.count({ where: { computerId: id } })).toBe(0);
+  });
+
+  it("asks the billing provider about a past plan with no payment on record", async () => {
+    await system.billingAccount.create({
+      data: {
+        organizationId: id,
+        customerId: `cus-${id}`,
+        status: "canceled",
+        subscribedAt: new Date(now - 200 * DAY),
+        endedAt: new Date(now - 5 * DAY),
+      },
+    });
+    syncBilling = async (customerId) => {
+      await system.billingAccount.update({
+        where: { customerId },
+        data: { paidAt: new Date(now - 150 * DAY) },
+      });
+    };
+    await sweep();
+    expect(errors).toEqual([]);
+    expect(sent()).toHaveLength(0);
+
+    travel(19);
+    await sweep();
+    expect(sent()).toHaveLength(1);
+    expect(sent()[0]!.text).toContain("unless you resubscribe");
   });
 
   it.each([

@@ -1,10 +1,17 @@
+import type { MessageBlock } from "@rakazo/contracts";
 import { artifactPreviewKind } from "@rakazo/contracts";
+import { isInlineImageMimeType } from "../messages/inline-image";
 
 export type ArtifactGalleryItem = {
   id: string;
   name: string;
   mimeType: string;
 };
+
+export type ImageArtifactPreviewTarget = Pick<
+  Extract<MessageBlock, { kind: "image" }>,
+  "artifactId" | "name" | "mimeType"
+>;
 
 export function isMediaArtifact(item: Pick<ArtifactGalleryItem, "mimeType">): boolean {
   const kind = artifactPreviewKind(item.mimeType);
@@ -25,7 +32,7 @@ export function mediaArtifactGallery(
   return gallery;
 }
 
-export function parseArtifactGallery(value: string | string[] | undefined): ArtifactGalleryItem[] {
+function parseGalleryItems(value: string | string[] | undefined): ArtifactGalleryItem[] {
   const raw = Array.isArray(value) ? value[0] : value;
   if (!raw) return [];
   let parsed: unknown;
@@ -43,7 +50,20 @@ export function parseArtifactGallery(value: string | string[] | undefined): Arti
       items.push({ id, name, mimeType });
     }
   }
-  return mediaArtifactGallery(items);
+  return items;
+}
+
+export function parseArtifactGallery(value: string | string[] | undefined): ArtifactGalleryItem[] {
+  return mediaArtifactGallery(parseGalleryItems(value));
+}
+
+export function parseImageArtifactGallery(
+  value: string | string[] | undefined,
+): ImageArtifactPreviewTarget[] | undefined {
+  const pictures = parseGalleryItems(value)
+    .filter(({ mimeType }) => isInlineImageMimeType(mimeType))
+    .map(({ id: artifactId, name, mimeType }) => ({ artifactId, name, mimeType }));
+  return pictures.length > 1 ? pictures : undefined;
 }
 
 export function galleryIndex(gallery: readonly ArtifactGalleryItem[], id: string): number {

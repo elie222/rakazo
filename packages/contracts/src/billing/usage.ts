@@ -86,6 +86,19 @@ export const UsageBreakdownBotSchema = z.object({
 });
 export type UsageBreakdownBot = z.infer<typeof UsageBreakdownBotSchema>;
 
+export const UsageBreakdownRoutineSchema = UsageTotalsSchema.required().extend({
+  /**
+   * Null for everything no routine started: chats, messages from other bots, background work,
+   * and the runs of a routine that was since deleted.
+   */
+  id: Id.nullable(),
+  name: z.string().nullable(),
+  /** The routine's bot, which tells two routines with one name apart. */
+  botName: z.string().nullable(),
+  runs: z.number(),
+});
+export type UsageBreakdownRoutine = z.infer<typeof UsageBreakdownRoutineSchema>;
+
 export const UsageBreakdownSchema = z.object({
   range: UsageDateRangeSchema,
   /** Each bot with usage in the range, for the bot selector. */
@@ -98,6 +111,8 @@ export const UsageBreakdownSchema = z.object({
     tokensPartial: z.boolean().optional(),
   }),
   models: z.array(UsageBreakdownModelSchema),
+  /** The selection split by the routine that started each run, largest first. */
+  routines: z.array(UsageBreakdownRoutineSchema),
   /** One point per day, or per month for an all-time history longer than two months. */
   overTimeUnit: z.enum(["day", "month"]),
   overTime: z.array(UsageBreakdownPointSchema),

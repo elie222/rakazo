@@ -376,13 +376,13 @@ it("focuses Username once the sheet has been shown", async () => {
   expect(document.activeElement).toBe(field("Username"));
 });
 
-it("shows the site right under a title capped at two lines, before the fields", async () => {
+it("shows the full title and site before the login fields", async () => {
   await render();
 
   const texts = [...container.querySelectorAll("span")];
   const title = texts.find((item) => item.textContent === "Example sign-in")!;
   const site = texts.find((item) => item.textContent === "https://login.example.test")!;
-  expect(title.dataset.lines).toBe("2");
+  expect(title.dataset.lines).toBeUndefined();
   expect(site.dataset.lines).toBeUndefined();
   expect(title.compareDocumentPosition(site) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(

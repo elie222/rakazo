@@ -1,6 +1,7 @@
 import type { ConnectedCalendarOperation } from "@rakazo/adapter-kit";
 import type { CalendarResponse } from "@rakazo/contracts";
 import { CalendarOperation, CalendarResults, calendarOperationSource } from "@rakazo/contracts";
+import { connectionIn } from "@rakazo/db";
 import { connectedContext } from "../integrations/connection-context.js";
 import type { RunContext } from "../runs/assembly/run-context.js";
 import type { ToolHandler } from "../runs/tools/run-tool-gate.js";
@@ -31,8 +32,7 @@ async function connectedCalendar(
   const rows = await deps.prisma.connection.findMany({
     where: {
       id: { in: accountId ? [accountId] : authorizedIds },
-      userId: run.userId,
-      spaceId: run.spaceId,
+      ...connectionIn(run),
       status: "connected",
     },
     orderBy: { id: "asc" },

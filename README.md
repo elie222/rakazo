@@ -143,7 +143,8 @@ Put HTTPS in front of port 5173; [docs/self-host-production.md](./docs/self-host
 covers the Caddy setup and host hardening. In the desktop app choose **Existing instance** and enter
 the `https://` address.
 
-Or [deploy on Railway](https://railway.com/new/template/rakazo-template); see the [Railway setup guide](./infra/railway/README.md).
+Or [deploy on Railway](https://railway.com/new/template/rakazo-template) ([setup guide](./infra/railway/README.md))
+or [deploy to Render](https://render.com/deploy?repo=https://github.com/elie222/rakazo) ([setup guide](./infra/render/README.md)).
 
 ## Local development (source checkout)
 
@@ -370,6 +371,7 @@ Chinese guides cover [self-hosting](./docs/zh-CN/self-host.md), [models](./docs/
 ## How Rakazo compares
 
 - [Grok Bot](https://rakazo.com/grok-bot-alternative/)
+- [Claude Duet](https://rakazo.com/claude-duet-alternative/)
 - [Muse](https://rakazo.com/muse-alternative/)
 - [Dots](https://rakazo.com/dots-alternative/)
 - [Instinct](https://rakazo.com/instinct-alternative/)
@@ -380,13 +382,13 @@ Chinese guides cover [self-hosting](./docs/zh-CN/self-host.md), [models](./docs/
 ## Thanks
 
 - [Inbox Zero](https://getinboxzero.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
-- [PromptLayer](https://promptlayer.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
 - [ConnectorMap](https://connectormap.luinbytes.dev/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
 - [CodeRabbit](https://www.coderabbit.ai/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
 - [Greptile](https://www.greptile.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
 - [Snyk](https://snyk.io/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
 - [Incredibuild](https://www.incredibuild.com/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
 - [OpenSourceAlternatives.to](https://www.opensourcealternatives.to/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
+- [Enclave](https://enclave.ai/?utm_source=github&utm_medium=referral&utm_campaign=rakazo_readme)
 
 ## Stack
 

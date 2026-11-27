@@ -8,6 +8,7 @@
     "./mermaid": "./src/mermaid.ts",
     "./model-discovery": "./src/use-compatible-model-discovery.ts",
     "./native": "./src/markdown.native.tsx",
+    "./page-state": "./src/page-state.ts",
     "./web": "./src/markdown.web.tsx"
   },
   "scripts": {
@@ -23,6 +24,7 @@
     "mermaid": "11.17.2",
     "prism-react-renderer": "2.4.1",
     "react-markdown": "10.1.0",
+    "remark-breaks": "4.0.0",
     "remark-gfm": "4.0.1",
     "remark-parse": "11.0.0",
     "unified": "11.0.5"

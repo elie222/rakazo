@@ -1,10 +1,11 @@
-import type { SecretStore } from "@rakazo/adapter-kit";
+import type { RealtimeFanout, SecretStore } from "@rakazo/adapter-kit";
 import type { Pool, PrismaClient } from "@rakazo/db";
 import type { AppEnv } from "../../env.js";
 
 export type AdminContext = AdminDbContext & {
   env: AppEnv;
   pool: Pool;
+  realtime?: RealtimeFanout;
 };
 
 export type AdminDbContext = {

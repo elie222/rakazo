@@ -26,12 +26,14 @@ import {
 import { targetRpcQuery, useSave } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
 import { settingsTarget } from "../lib/query/settings-target";
+import { useBackToSettings } from "../lib/settings/back-to-settings";
 
 /** The menu actions that share a link or email one instead of adding someone from the organization. */
 const LINK_ACTION = "link";
 const EMAIL_ACTION = "email";
 
 export default function SpaceMembersScreen() {
+  useBackToSettings();
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const appearance = useResolvedAppearance();

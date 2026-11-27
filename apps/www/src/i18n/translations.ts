@@ -21,7 +21,6 @@ export function localizedPath(englishPath: string, locale: Locale): string {
   return locale === DEFAULT_LOCALE ? englishPath : `/${locale}${englishPath}`;
 }
 
-/** The English path of any page, localized or not. */
 export function englishPath(pathname: string): string {
   const path = withTrailingSlash(pathname);
   const [, first] = path.split("/");

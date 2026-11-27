@@ -1,4 +1,9 @@
-import type { ActionApprovalRule as StoredActionApprovalRule } from "@rakazo/contracts";
+import type {
+  EffectiveApprovalTarget,
+  RpcInput,
+  RpcOutput,
+  ActionApprovalRule as StoredActionApprovalRule,
+} from "@rakazo/contracts";
 import { BUILTIN_TOOL_NAMES } from "@rakazo/contracts";
 
 export { isSecretAskBlock } from "../asks/ask-kind.js";
@@ -310,7 +315,6 @@ const OWN_STATE_RESULT_TOOLS = new Set([
   "request_secret",
   "save_memory",
   "save_page",
-  "save_shared_memory",
   "delete_shared_memory",
   "schedule_cancel",
   "schedule_create",
@@ -348,7 +352,7 @@ export function connectorReadRequiresApproval(input: {
   return input.tainted && !input.connectorTrusted;
 }
 
-const MEMORY_WRITE_TOOLS = new Set(["remember", "save_memory", "save_shared_memory"]);
+const MEMORY_WRITE_TOOLS = new Set(["remember", "save_memory"]);
 const SKILL_WRITE_TOOLS = new Set(["skill_create", "skill_update"]);
 
 /**
@@ -870,9 +874,96 @@ export function approvalRuleEffectChoices(
   return APPROVAL_RULE_EFFECTS;
 }
 
+export type AppPermissionTool = RpcOutput<"connections/tools">[number];
+export type AppToolPermission = ActionApprovalRule["effect"] | "default";
+export type AppToolPermissionChange = { key: string; permission: AppToolPermission };
+
+export function appToolPermissionChoices(mode: ApprovalMode | null | undefined) {
+  return [
+    { permission: "default", disabled: false },
+    ...APPROVAL_RULE_EFFECTS.map((permission) => ({
+      permission,
+      disabled: !approvalRuleApplies(mode, permission),
+    })),
+  ] satisfies { permission: AppToolPermission; disabled: boolean }[];
+}
+
+export function groupAppPermissionTools(tools: readonly AppPermissionTool[]) {
+  const reads: AppPermissionTool[] = [];
+  const other: AppPermissionTool[] = [];
+  for (const tool of tools) {
+    const group = connectorToolRequiresApproval(tool.name, tool.readOnly) ? other : reads;
+    group.push(tool);
+  }
+  return { reads, other };
+}
+
+export function appToolRules(rules: readonly StoredActionApprovalRule[]) {
+  return new Map(
+    rules
+      .filter((rule) => rule.matchKind === "tool")
+      .map((rule) => [rule.matchValue.toLowerCase(), rule]),
+  );
+}
+
+type AppToolPermissionRequest =
+  | { kind: "set"; input: RpcInput<"approvalRules/set"> }
+  | { kind: "remove"; input: RpcInput<"approvalRules/remove"> };
+
+export function appToolPermissionRequest(
+  { key, permission }: AppToolPermissionChange,
+  rules: ReturnType<typeof appToolRules>,
+  expectedTarget: EffectiveApprovalTarget,
+): AppToolPermissionRequest | undefined {
+  if (permission === "default") {
+    const rule = rules.get(key.toLowerCase());
+    return rule ? { kind: "remove", input: { id: rule.id, expectedTarget } } : undefined;
+  }
+  return {
+    kind: "set",
+    input: { effect: permission, matchKind: "tool", matchValue: key, expectedTarget },
+  };
+}
+
+const APP_TOOL_RULE_PREFIX = "app-tool/";
+
+export function appToolApprovalKey(route?: {
+  connectionId?: string;
+  connectorId: string;
+  resourceId?: string;
+  toolName: string;
+}): string | undefined {
+  if (!route?.connectionId || !route.resourceId) return undefined;
+  return (
+    APP_TOOL_RULE_PREFIX + JSON.stringify([route.connectorId, route.resourceId, route.toolName])
+  );
+}
+
+export function connectorToolApprovalIdentity(
+  name: string,
+  route?: Parameters<typeof appToolApprovalKey>[0],
+) {
+  const approvalName = route?.connectionId ? route.toolName : name;
+  const aliases = approvalName === name ? [] : [name];
+  const appKey = appToolApprovalKey(route);
+  if (appKey) aliases.push(appKey);
+  return { name: approvalName, aliases };
+}
+
 /** A site reads as itself; a tool, app or older category by its name. */
 export function approvalRuleLabel(rule: ActionApprovalRule): string {
-  return rule.matchKind === "site" ? rule.matchValue : humanizeToolName(rule.matchValue);
+  if (rule.matchKind === "site") return rule.matchValue;
+  if (rule.matchKind === "tool" && rule.matchValue.startsWith(APP_TOOL_RULE_PREFIX)) {
+    try {
+      const parts: unknown = JSON.parse(rule.matchValue.slice(APP_TOOL_RULE_PREFIX.length));
+      if (Array.isArray(parts) && typeof parts[1] === "string" && typeof parts[2] === "string") {
+        return `${humanizeToolName(parts[1])} · ${humanizeToolName(parts[2])}`;
+      }
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+    }
+  }
+  return humanizeToolName(rule.matchValue);
 }
 
 /** A built-in tool a person can add a rule for. */

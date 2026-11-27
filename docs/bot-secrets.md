@@ -63,7 +63,7 @@ A command variable is redacted from command output in its plain, base64 and URL-
 
 **The bot's shell reads this value.** A command variable is a convenience for the bot, not a boundary against it: the shell command the bot runs, and the code that command starts, can print, encode or send the value. Redaction stops it appearing in a result the model reads; it does not stop a permitted bot, or anything the bot runs, from using it. There is no secrecy from the bot that was given the credential, so treat a command variable as shared with that bot and save only values you would let it use unattended, scoped to what it needs.
 
-Command variables are managed in the same Vault as other reusable credentials. The request card a bot opens in a thread shows a command variable's variable name in place of a site.
+Command variables are managed in the same Vault as other reusable credentials. Open the saved variable in the Vault to see its exact environment variable name.
 
 Each variable a command is sent with is recorded as a use of it (`credential.used` in the [audit log](./self-host-audit-log.md#what-is-recorded)) and listed in its item's activity: once per variable each time a run starts or resumes, however many commands that run then runs, and once per variable for each check of a [routine](./routines.md#when-something-changes) that watches a command. The record never holds the value, and has no site, since a shell is not one. A command that is refused, or that never reaches the computer, is not a use, and neither is a run reading the variables when it starts in order to hide them from its output. A variable a bot may not use (see Managing the vault) is neither exported to its commands nor recorded.
 

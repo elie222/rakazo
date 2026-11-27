@@ -13,7 +13,8 @@ appId: com.rakazo.app
 - inputText: ${RAKAZO_ACTIVE_EMAIL}
 - tapOn: "Password"
 - inputText: ${RAKAZO_SCREENSHOT_PASSWORD}
-- hideKeyboard
+# hideKeyboard fails on newer simulators; tapping the title dismisses the keyboard everywhere.
+- tapOn: "Sign in to Rakazo"
 - tapOn: "Sign in"
 - tapOn:
     text: "Not Now"
@@ -26,5 +27,5 @@ appId: com.rakazo.app
     optional: true
 # A new account answers the signup survey before the inbox.
 - extendedWaitUntil:
-    visible: "Account|.*How did you hear about us.*"
+    visible: "Account|Settings|.*How did you hear about us.*"
     timeout: 40000

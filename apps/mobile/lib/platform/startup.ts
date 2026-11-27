@@ -7,6 +7,7 @@ type StartupStep =
   | "streaming"
   | "images"
   | "modelPicker"
+  | "enterToSend"
   | "inbox"
   | "language";
 

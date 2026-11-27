@@ -18,6 +18,7 @@ import {
   oldestIdleScreen,
   releaseAssignedScreen,
   resetManagedScreensCommand,
+  retryFailedScreenTeardown,
   screenRecentlyEnsured,
   stopExtraScreenCommand,
   teardownReleasedScreen,
@@ -170,6 +171,9 @@ async function ensureManagedScreenAttempt(
       }
     }
   }
+  await retryFailedScreenTeardown(assigned, screenKey, screenLeaseId, async (index) =>
+    runContainerCommand(container, ["bash", "-c", stopExtraScreenCommand(index, screenKey)]),
+  );
   const index = nextScreenIndex(assigned, screenKey, screenLeaseId, teamScreenLimit);
   const layout = screenPorts(index);
   const slot = assigned.get(screenKey)!;

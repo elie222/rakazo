@@ -1,6 +1,6 @@
 import type { SandboxProvider } from "@rakazo/adapter-kit";
 import type { Actor, MessageBlock } from "@rakazo/contracts";
-import { callClientNonce } from "@rakazo/core";
+import { callClientNonce, resolveComposerSendPlan } from "@rakazo/core";
 import type * as MessageQuoteModule from "@rakazo/core/message-quote";
 import { flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
@@ -1675,6 +1675,32 @@ function groupTarget() {
 }
 
 describe("sendThreadMessage", () => {
+  it("rejects a same-owner send to an enrolled native DM without an app session", async () => {
+    vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", "bot-native");
+    try {
+      const transaction = vi.fn();
+      await expect(
+        sendThreadMessage(
+          {
+            prisma: { $transaction: transaction } as unknown as PrismaClient,
+            events: {} as never,
+            jobs: {} as never,
+            sandbox: {} as never,
+          },
+          { spaceId: "space-1", userId: "owner-1" } as Actor,
+          { kind: "bot", botId: "bot-native", threadId: "thread-native" } as ThreadTarget,
+          { text: "Start a native turn", clientNonce: "fixture-nonce" },
+        ),
+      ).rejects.toMatchObject({
+        code: "FORBIDDEN",
+        message: "Use the signed-in app to message this pilot bot.",
+      });
+      expect(transaction).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it.each(["latest", "reply", "unrelated-reply"] as const)(
     "answers a waiting question through the composer (explicit older reply: %s)",
     async (scenario) => {
@@ -3134,6 +3160,7 @@ describe("sendThreadMessage", () => {
       replyTo?: { role: string; botId: string | null },
       pilotOwnerBot?: { modelProvider: string; modelId: string; modelCredentialId: string } | null,
       observation?: { assert: (tx: { message: { create: ReturnType<typeof vi.fn> } }) => void },
+      signedInApp = true,
     ) {
       let messageSeq = 0;
       let eventSeq = 0;
@@ -3215,6 +3242,7 @@ describe("sendThreadMessage", () => {
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
           sandbox: {} as never,
+          signedInApp,
         },
         { spaceId: "workspace-1", userId: "user-1" } as Actor,
         {
@@ -3302,9 +3330,14 @@ describe("sendThreadMessage", () => {
             modelId: "claude-sonnet-4-6",
             modelCredentialId: "fixture-b",
           };
+          const plan = resolveComposerSendPlan({
+            text: "@Beta what is the plan?",
+            mentions: [{ kind: "bot", id: "bot-b", name: "Beta" }],
+            hasAttachments: false,
+          });
           const { tx, created } = await sendToGroup(
-            "@Beta what is the plan?",
-            [{ kind: "bot", id: "bot-b" }],
+            plan.trimmed,
+            plan.mentionPayload,
             [],
             undefined,
             model,
@@ -3374,6 +3407,25 @@ describe("sendThreadMessage", () => {
           ).rejects.toThrow("not a group member");
         }),
     );
+
+    it("rejects a native group mention without an app session before storing the message", async () =>
+      withGroupPilot(async () => {
+        await expect(
+          sendToGroup(
+            "@Beta what is the plan?",
+            [{ kind: "bot", id: "bot-b" }],
+            [],
+            undefined,
+            {
+              modelProvider: "anthropic",
+              modelId: "claude-sonnet-4-6",
+              modelCredentialId: "fixture-b",
+            },
+            { assert: (tx) => expect(tx.message.create).not.toHaveBeenCalled() },
+            false,
+          ),
+        ).rejects.toThrow("Use the signed-in app to message this pilot bot.");
+      }));
 
     it("does not silently fall back to a regular bot turn when group enrolment is misconfigured", async () =>
       withGroupPilot(async () => {

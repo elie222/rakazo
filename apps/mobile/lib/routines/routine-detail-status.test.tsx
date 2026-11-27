@@ -61,6 +61,7 @@ vi.mock("../../components/settings/settings-group", () => ({
 }));
 vi.mock("../../components/ui/menu-picker", () => ({ MenuPickerMenu: () => null }));
 vi.mock("../../components/ui/growing-text-input", () => ({ GrowingTextInput: () => null }));
+vi.mock("../../components/routines/routine-end-date", () => ({ RoutineEndDate: () => null }));
 vi.mock("../../components/routines/routine-email-trigger", () => ({
   RoutineEmailTrigger: () => null,
 }));

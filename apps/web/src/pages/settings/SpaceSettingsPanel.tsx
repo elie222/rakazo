@@ -5,6 +5,7 @@ import { SettingsGroup, SettingsRow } from "../../components/settings/SettingsRo
 import { SpaceMembersSettings } from "../../components/spaces/SpaceMembersSettings";
 import { useSave } from "../../lib/query/query";
 import type { RpcClient } from "../../lib/query/rpc";
+import { errorText } from "../../lib/query/user-error";
 import type { SettingsSpace } from "../shell/create-delete-dialogs";
 import { DeleteSpaceDialog } from "../shell/create-delete-dialogs";
 import { SpaceSettingOverrides } from "./SpaceSettingOverrides";
@@ -51,7 +52,6 @@ export function SpaceSettingsPanel({
   function save() {
     const trimmed = draft.trim();
     if (pending) return;
-    // An empty or unchanged name keeps the current one without a request.
     if (!trimmed || trimmed === space.name) {
       setDraft(space.name);
       rename.reset();
@@ -99,7 +99,7 @@ export function SpaceSettingsPanel({
           >
             {rename.error ? (
               <p role="alert" className="pt-2 text-body-sm text-destructive">
-                {rename.error.message.trim() || t`Could not rename space`}
+                {errorText(rename.error, t`Could not rename space`)}
               </p>
             ) : null}
           </SettingsRow>

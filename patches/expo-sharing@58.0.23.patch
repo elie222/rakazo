@@ -1,0 +1,10 @@
+diff --git a/ios/SharingModule.swift b/ios/SharingModule.swift
+index eb952f1680a7a1ed2a8439e88e4473092def16bd..ebf7de02f874a1f8bf7ab1fbc323a7d9225340d7 100644
+--- a/ios/SharingModule.swift
++++ b/ios/SharingModule.swift
+@@ -93,3 +93,4 @@ public final class SharingModule: Module {
+       try UserDefaults(suiteName: appGroupId)?.removeObject(forKey: SHARE_INTO_DEFAULTS_KEY)
+-      try ShareIntoFileStore(appGroupId: appGroupId)?.removeAll()
++      // Rakazo releases individual staged files after importing or discarding them.
++      // Clearing the payload here must leave those files and any new share intact.
+     }

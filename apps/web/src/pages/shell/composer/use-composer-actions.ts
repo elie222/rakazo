@@ -20,6 +20,7 @@ import type { ComposerMention } from "@rakazo/core";
 import {
   applyThreadSendReceipt,
   attachmentsForThread,
+  canRetryRun,
   foldPeerReplies,
   inferAttachmentMimeType,
   isImageInputConfirmation,
@@ -45,6 +46,7 @@ import {
 import { canPrepareImage, prepareImage } from "../../../lib/composer/prepare-image";
 import type { PageSession } from "../../../lib/pages/pages";
 import { requestBrowserNotificationPermission } from "../../../lib/platform/browser-notifications";
+import { useSave, useSpaceQueries } from "../../../lib/query/query";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
 import { clearActiveThreadRuns, threadRunError } from "../../../lib/query/thread-events";
 import { errorText } from "../../../lib/query/user-error";
@@ -52,6 +54,10 @@ import type { PendingAttachment } from "../chat/chat-shared";
 import type { useShellNavigation } from "../use-shell-navigation";
 
 type ThreadRefresh = RefObject<(id: string) => Promise<ThreadSnapshot>>;
+
+type RetryTarget = ({ botId: string; groupId?: never } | { groupId: string; botId?: never }) & {
+  runId: string;
+};
 
 /**
  * What the composer sends and the chat actions beside it: attachments, replies, send, stop,
@@ -180,6 +186,32 @@ export function useComposerActions({
   const runError = threadRunError(activeSnapshot, dismissedRunErrorIds);
   const displayedRunError = !sendError ? runError : null;
   const displayedRunErrorId = displayedRunError ? (activeSnapshot?.run?.id ?? null) : null;
+  const runRetryable =
+    Boolean(displayedRunErrorId) && canRetryRun(activeSnapshot?.run, bootstrapMe?.userId);
+  const displayedRunErrorIdRef = useRef(displayedRunErrorId);
+  displayedRunErrorIdRef.current = displayedRunErrorId;
+  const isActiveTarget = (target: RetryTarget) =>
+    target.groupId !== undefined
+      ? activeGroupId.current === target.groupId
+      : activeBotId.current === target.botId;
+  const queries = useSpaceQueries();
+  const retrySave = useSave({
+    save: (target: RetryTarget, client) => client.threads.retry(target),
+    stale: (target) => [
+      queries.threads.get.queryKey({
+        input: target.groupId !== undefined ? { groupId: target.groupId } : { botId: target.botId },
+      }),
+    ],
+    onSaved: (_, target) => {
+      // Hide the old failure while the live retry signal refreshes the thread.
+      setDismissedRunErrorIds((current) => new Set(current).add(target.runId));
+    },
+    onFailed: (error, target) => {
+      if (isActiveTarget(target) && displayedRunErrorIdRef.current === target.runId) {
+        setSendError(errorText(error, t`Could not try again`));
+      }
+    },
+  });
   const handleRunErrorPresented = useCallback((runId: string) => {
     rememberSeenRunErrorId(runId);
   }, []);
@@ -676,6 +708,15 @@ export function useComposerActions({
     }
   }
 
+  function retryRun() {
+    const runId = displayedRunErrorId;
+    const botId = activeBotId.current;
+    const groupId = activeGroupId.current;
+    if (!runId || sendingRef.current) return;
+    if (groupId) retrySave.run({ groupId, runId });
+    else if (botId) retrySave.run({ botId, runId });
+  }
+
   return {
     activePendingAttachments,
     attachmentNotice,
@@ -709,6 +750,7 @@ export function useComposerActions({
     displayedRunErrorId,
     handleRunErrorPresented,
     dismissComposerError,
+    retryRun: runRetryable && !retrySave.pending && !sending ? retryRun : undefined,
     startFocusPrompt,
   };
 }

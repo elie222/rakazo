@@ -3,6 +3,7 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
+  expectStoredSend,
   rpc,
   signup,
 } from "../helpers/helpers";
@@ -25,6 +26,8 @@ test("a ?m= deep link jumps while the thread is streaming", async ({ page }, tes
     .filter({ hasText: targetText })
     .first();
   await expect(targetRow).toBeVisible({ timeout: 20_000 });
+  // The row shows before the server stores the send; the stored message is what a jump loads.
+  await expectStoredSend(targetRow);
   const messageId = await targetRow.getAttribute("data-message-id");
   if (!messageId) throw new Error("missing data-message-id");
 
@@ -114,6 +117,7 @@ test("the chat follows your sends and a reader at the bottom, not a reader who s
   const transcript = page.getByTestId("transcript");
   const rows = transcript.locator("[data-message-id]");
   const composer = page.getByRole("combobox", { name: /Message/ });
+  const sendButton = page.getByRole("button", { name: "Send", exact: true });
   const jumpToLatest = page.getByRole("button", { name: "Jump to latest" });
   const userBubble = (text: string) =>
     transcript.getByTestId("message-user-bubble").filter({ hasText: text });
@@ -122,6 +126,8 @@ test("the chat follows your sends and a reader at the bottom, not a reader who s
   const scrollTop = () => transcript.evaluate((el) => el.scrollTop);
   const send = async (text: string) => {
     await composer.fill(text);
+    // The composer ignores Enter while a send is in flight; an enabled Send means it takes one.
+    await expect(sendButton).toBeEnabled();
     await composer.press("Enter");
   };
   for (let item = 1; item <= 8; item++) {

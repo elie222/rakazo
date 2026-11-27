@@ -312,7 +312,12 @@ export interface ConnectionAuthProvider {
   begin(
     request: { provider: string; redirectUrl: string },
     context: AdapterContext,
-  ): Promise<{ authorizationUrl: string | null; state: string }>;
+  ): Promise<{
+    authorizationUrl: string | null;
+    state: string;
+    requiresCompletion?: boolean;
+    expiresAt?: string;
+  }>;
   complete(
     request: { state: string; code?: string },
     context: AdapterContext,
@@ -352,6 +357,22 @@ export interface ManagedConnectorProvider
     currentRef: string | null | undefined,
     excludeIds?: string[],
     spaceId?: string,
+    organizationId?: string,
+  ): Promise<string | undefined>;
+  /** Maximum lifetime of hosted links issued before expiration was stored locally. */
+  readonly legacySignInLifetimeMs?: number;
+  /** Snapshot before giving out a sign-in link that cannot identify its own remote account. */
+  listAccountsBeforeSignIn?(slug: string, context: AdapterContext): Promise<string[]>;
+  /** Prepare one owner-scoped identity lookup for a batch of account references. */
+  prepareAccountIdentityLookup?(
+    slug: string,
+    context: AdapterContext,
+  ): Promise<(ref: string) => Promise<string | undefined>>;
+  /** An upstream account identity verified using this exact authorization, when available. */
+  connectedAccountIdentity?(
+    slug: string,
+    connectionRef: string,
+    context: AdapterContext,
   ): Promise<string | undefined>;
   /** Invalidate an unfinished browser authorization by its request id. */
   cancelAuthorizationRequest?(requestId: string, context: AdapterContext): Promise<void>;

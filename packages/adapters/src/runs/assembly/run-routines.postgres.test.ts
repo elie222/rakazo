@@ -14,11 +14,11 @@ import {
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { routineTimerNonce } from "../../routines/routine-coalescing.js";
+import { deleteSpentRoutine } from "../../routines/routine-end.js";
 import { routineGroupThreadId } from "../../routines/routine-thread.js";
 import { createRunExecutor } from "../executor/executor.js";
 import { pilotRoutineRequest } from "../turn/primary-routine-pilot.js";
 import { createJobReconciler } from "../wakeups/job-reconciler.js";
-import { deleteSpentOneShotRoutine } from "./run-routines.js";
 
 const url = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
@@ -147,7 +147,15 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
           [],
         );
       await expect(request()).resolves.toMatchObject({ prompt, history: [], tools: [] });
-      await system.routine.update({ where: { id: routine.id }, data: { active: false } });
+      await system.routine.update({
+        where: { id: routine.id },
+        data: { endsAt: new Date(dueAt.getTime() - 1) },
+      });
+      await expect(request()).rejects.toThrow("no longer authorized");
+      await system.routine.update({
+        where: { id: routine.id },
+        data: { endsAt: null, active: false },
+      });
       await expect(request()).rejects.toThrow("no longer authorized");
     } finally {
       vi.unstubAllEnvs();
@@ -220,20 +228,23 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
     expect(run).toMatchObject({ modelProvider: "prov-b", modelId: "model-B", modelPinned: true });
   });
 
-  it("deletes only a spent one-time routine and keeps its run history", async () => {
+  it("deletes only a spent routine and keeps its run history", async () => {
     const spent = { crons: ["@once"], active: false, nextRunAt: null, lastRunAt: new Date() };
     const create = (data: Partial<Prisma.RoutineUncheckedCreateInput>) =>
       system.routine.create({
         data: { ...identity, name: "reminder", prompt: "remind me", ...spent, ...data },
       });
-    const [done, rescheduled, recurring, webhook, busy, paused] = await Promise.all([
-      create({}),
-      create({ active: true, nextRunAt: new Date(Date.now() + 60 * 60_000) }),
-      create({ crons: ["0 9 * * *"] }),
-      create({ webhookEnabled: true }),
-      create({}),
-      create({ lastRunAt: null }),
-    ]);
+    const [done, rescheduled, recurring, webhook, busy, paused, ended, pausedPastEnd] =
+      await Promise.all([
+        create({}),
+        create({ active: true, nextRunAt: new Date(Date.now() + 60 * 60_000) }),
+        create({ crons: ["0 9 * * *"] }),
+        create({ webhookEnabled: true }),
+        create({}),
+        create({ lastRunAt: null }),
+        create({ crons: ["0 9 * * *"], active: true, endsAt: new Date(Date.now() - 60_000) }),
+        create({ crons: ["0 9 * * *"], endsAt: new Date(Date.now() - 60_000) }),
+      ]);
     const task = await system.task.create({
       data: { ...identity, prompt: "remind me", status: "completed" },
     });
@@ -249,24 +260,24 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
     const deps = {
       prisma: system,
       events: {
+        notify: async () => undefined,
         publishSpaceChange: async (spaceId: string, kind: string) => {
           published.push(`${spaceId}:${kind}`);
         },
       },
     };
-    for (const routine of [done, rescheduled, recurring, webhook, busy, paused])
-      await deleteSpentOneShotRoutine(deps, { ...identity, routineId: routine.id });
+    const all = [done, rescheduled, recurring, webhook, busy, paused, ended, pausedPastEnd];
+    for (const routine of all)
+      await deleteSpentRoutine(deps, { ...identity, routineId: routine.id });
 
     const left = await system.routine.findMany({
-      where: {
-        id: { in: [done.id, rescheduled.id, recurring.id, webhook.id, busy.id, paused.id] },
-      },
+      where: { id: { in: all.map((routine) => routine.id) } },
       select: { id: true },
     });
     expect(left.map((row) => row.id).sort()).toEqual(
-      [rescheduled.id, recurring.id, webhook.id, busy.id, paused.id].sort(),
+      [rescheduled.id, recurring.id, webhook.id, busy.id, paused.id, pausedPastEnd.id].sort(),
     );
-    expect(published).toEqual([`${identity.spaceId}:routines`]);
+    expect(published).toEqual([`${identity.spaceId}:routines`, `${identity.spaceId}:routines`]);
     await expect(
       system.run.findUniqueOrThrow({ where: { id: finished.id }, select: { routineId: true } }),
     ).resolves.toEqual({ routineId: null });
