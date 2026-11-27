@@ -72,12 +72,9 @@ export function providerFailureText(message: unknown): string | undefined {
 }
 
 export function sanitizeSensitiveText(message: string, options?: { decoded?: boolean }) {
-  return redactPlainBearerTokens(
-    message
-      .replace(/sk-or-v1-[a-zA-Z0-9]+/g, "[redacted]")
-      .replace(/sk-[a-zA-Z0-9-]+/g, "[redacted]"),
-    options,
-  )
+  const assignmentsMasked = message
+    .replace(/sk-or-v1-[a-zA-Z0-9]+/g, "[redacted]")
+    .replace(/sk-[a-zA-Z0-9-]+/g, "[redacted]")
     .replace(/eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g, "[redacted]")
     .replace(
       /COMPOSIO_API_KEY(?:\s*[=:]\s*|\s+)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s=:]+)/gi,
@@ -88,6 +85,7 @@ export function sanitizeSensitiveText(message: string, options?: { decoded?: boo
       "$1[redacted]",
     )
     .replace(/((?:auth|authorization)\s*[=:]\s*)(?!Bearer\b)[^\s"',;&]+/gi, "$1[redacted]");
+  return redactPlainBearerTokens(assignmentsMasked, options);
 }
 
 export function sanitizeError(message: string) {

@@ -911,10 +911,17 @@ describe("tool step outcomes", () => {
       message: 'Bearer "fixturePrefix"fixtureTail',
       status: "ok",
     });
+    const adjacentBearer = 'Bearer "fixturePrefix"Bearer fixtureSecond';
+    const adjacentPassword = 'Bearer "fixturePrefix"password: fixtureSecond';
+    const adjacentJson = 'INFO Bearer "fixturePrefix"{"status":"ok"}';
     for (const read of [kept, replay]) {
       expect(read(plainTail)).toBe("Bearer [redacted]");
       expect(read(escapedOpen)).toBe("Bearer [redacted]");
       expect(read(escapedRun)).toBe("Bearer [redacted]");
+      expect(read(adjacentBearer)).toBe("Bearer [redacted]Bearer [redacted]");
+      expect(read(adjacentPassword)).not.toContain("fixtureSecond");
+      expect(read(adjacentPassword)).not.toContain("fixturePrefix");
+      expect(read(adjacentJson)).toBe('INFO Bearer [redacted]{"status":"ok"}');
       expect(read("Bearer fixturePrefix\nNext line")).toBe("Bearer [redacted]\nNext line");
       expect(read('Authorization: "Bearer secret"')).toBe('Authorization: "Bearer [redacted]"');
       expect(JSON.parse(read(escapedOpenJson) ?? "")).toEqual({
@@ -969,6 +976,10 @@ describe("tool step outcomes", () => {
       message: "Bearer [redacted]",
       status: "ok",
     });
+    expect(sanitizeError(adjacentBearer)).toBe("Bearer [redacted]Bearer [redacted]");
+    expect(sanitizeError(adjacentPassword)).not.toContain("fixtureSecond");
+    expect(sanitizeError(adjacentPassword)).not.toContain("fixturePrefix");
+    expect(sanitizeError(adjacentJson)).toBe('INFO Bearer [redacted]{"status":"ok"}');
     expect(sanitizeError('Authorization: "Bearer secret"')).toBe(
       'Authorization: "Bearer [redacted]"',
     );

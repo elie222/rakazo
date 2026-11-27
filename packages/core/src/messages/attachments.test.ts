@@ -1220,6 +1220,15 @@ describe("tool step history", () => {
     expect(redactPlainBearerTokens('{"message":"Bearer \\"fixturePrefix\\"fixtureTail')).toBe(
       '{"message":"Bearer [redacted]',
     );
+    expect(
+      redactPlainBearerTokens('Bearer "fixturePrefix"Bearer fixtureSecond', { decoded: true }),
+    ).toBe("Bearer [redacted]Bearer [redacted]");
+    expect(
+      redactPlainBearerTokens('INFO Bearer "fixturePrefix"{"status":"ok"}', { decoded: true }),
+    ).toBe('INFO Bearer [redacted]{"status":"ok"}');
+    expect(redactPlainBearerTokens('INFO Bearer "fixturePrefix"[1,2]', { decoded: true })).toBe(
+      "INFO Bearer [redacted][1,2]",
+    );
     expect(redactPlainBearerTokens('Bearer fixturePrefix\\\\\\"Tail', { decoded: true })).toBe(
       "Bearer [redacted]",
     );
