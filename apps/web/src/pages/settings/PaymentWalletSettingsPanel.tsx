@@ -2,7 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { writeSaved } from "@rakazo/core/query";
 import { Button } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Unplug } from "lucide-react";
 import { useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { SettingsGroup, SettingsRow } from "../../components/settings/SettingsRows";
@@ -104,11 +104,11 @@ export function PaymentWalletSettingsPanel({
               ) : (
                 <Button
                   size="sm"
-                  variant="ghost"
+                  variant="destructive-secondary"
                   disabled={pending}
-                  className="text-destructive hover:text-destructive"
                   onClick={() => setConfirming(true)}
                 >
+                  <Unplug data-icon="inline-start" />
                   <Trans>Disconnect</Trans>
                 </Button>
               )
