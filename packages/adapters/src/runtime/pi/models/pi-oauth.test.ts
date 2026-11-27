@@ -1501,16 +1501,16 @@ describe("kickModelCredentialRefresh", () => {
 });
 
 describe("PiOAuthLogins", () => {
-  it("keeps ChatGPT OAuth on Codex rather than plain OpenAI", () => {
-    expect(loadProviderOAuth("openai")).toBeUndefined();
+  it("supports separate ChatGPT sign-ins for the Responses and Codex providers", () => {
+    expect(loadProviderOAuth("openai")?.isSubscription).toBe(true);
     expect(loadProviderOAuth(CHATGPT_OAUTH_PROVIDER)?.isSubscription).toBe(true);
   });
 
-  it.each(["openrouter", "openai"])("rejects subscription sign-in for %s", async (provider) => {
+  it.each(["openrouter", "mistral"])("rejects subscription sign-in for %s", async (provider) => {
     const logins = new PiOAuthLogins();
     await expect(
       logins.begin({ userId: "u", spaceId: "w", provider, persist: keep }),
-    ).rejects.toThrow(/ChatGPT Plus\/Pro, Claude Pro\/Max, GitHub Copilot, and SuperGrok/);
+    ).rejects.toThrow("Subscription sign-in is not available for this provider.");
   });
 
   it("runs the anthropic auth-url flow via submitted code", async () => {
@@ -1559,6 +1559,25 @@ describe("PiOAuthLogins", () => {
       value: "claude-access",
       provider: "anthropic",
     });
+  });
+
+  it("starts the documented ChatGPT browser flow for an OpenAI Responses connection", async () => {
+    vi.stubEnv("ENCRYPTION_KEY", "a".repeat(64));
+    const logins = new PiOAuthLogins<string>();
+    const actor = { userId: "u", spaceId: "w" };
+    let loginId: string | undefined;
+    try {
+      const started = await logins.begin({ ...actor, provider: "openai", persist: keep });
+      loginId = started.loginId;
+      expect(started.mode).toBe("auth-url");
+      const url = new URL(started.verificationUri);
+      expect(url.searchParams.get("client_id")).toBe("dynamic_agent_client");
+      expect(url.searchParams.get("agent_name_hint")).toBe("Rakazo");
+      expect(url.searchParams.get("ext_agent_host_id")).toMatch(/^urn:uuid:[0-9a-f-]{36}$/);
+      expect(url.searchParams.get("resource")).toBe("https://api.openai.com/v1");
+    } finally {
+      if (loginId) await logins.cancel(loginId, actor);
+    }
   });
 
   it("passes the client's code-page choice to the provider login", async () => {

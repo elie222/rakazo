@@ -41,6 +41,41 @@ export function compatibleThinkingLevels(
 
 const THINKING_LEVELS = ["off", ...COMPATIBLE_THINKING_LEVELS] as const;
 
+/** What a subscription sign-in asks the server for: the entry's own sign-in, or the alternative it declares. */
+export function subscriptionSignInTarget(
+  selected: Pick<ModelCatalogEntry, "provider" | "id" | "thinkingLevels" | "alternativeSignIn">,
+  options: {
+    alternative: boolean;
+    credentialId: string | null;
+    thinkingLevel: string | null | undefined;
+    credentials: readonly { id: string; provider: string; authKind?: string }[];
+  },
+): {
+  provider: string;
+  modelId: string;
+  credentialId: string | null;
+  thinkingLevel: string | null;
+} {
+  const method = options.alternative ? selected.alternativeSignIn : undefined;
+  if (!method)
+    return {
+      provider: selected.provider,
+      modelId: selected.id,
+      credentialId: options.credentialId,
+      thinkingLevel: clampCatalogThinkingLevel(options.thinkingLevel, selected.thinkingLevels),
+    };
+  // Signing in again renews the saved browser connection instead of adding another.
+  const saved = options.credentials.find(
+    (entry) => entry.provider === method.provider && entry.authKind === "oauth",
+  );
+  return {
+    provider: method.provider,
+    modelId: method.modelId,
+    credentialId: saved?.id ?? null,
+    thinkingLevel: null,
+  };
+}
+
 /**
  * Map a staged effort onto the levels a model actually supports.
  * An exact match is kept. Otherwise the nearest supported effort is used

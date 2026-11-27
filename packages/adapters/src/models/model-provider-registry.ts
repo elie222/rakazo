@@ -71,6 +71,7 @@ export interface ModelProviderDefinition {
     /** A setting the account must turn on first, or the provider refuses the sign-in. */
     setup?: ModelCatalogEntry["signInSetup"];
   };
+  alternativeSignIn?: NonNullable<ModelCatalogEntry["alternativeSignIn"]>;
   /** Ids each connection supplies to route its requests. */
   routingFields?: ModelRoutingField[];
   /** A connection can ask that requests only reach endpoints that keep no prompts or replies. */
@@ -132,9 +133,18 @@ export const modelProviders = {
         note: "Workspace accounts need an admin to turn this on.",
       },
     },
+    alternativeSignIn: {
+      provider: "openai",
+      modelId: "gpt-6.1-sol",
+      mode: "auth-url",
+      loginLabel: "Sign in in browser",
+    },
   },
   openai: {
     recommendedModel: "gpt-6-luna",
+    subscriptionName: subscriptionNames.codex.message,
+    subscriptionNameId: subscriptionNames.codex.id,
+    subscriptionModel: { id: "gpt-6.1-sol", thinkingLevel: "low" },
     media: {
       images: openAIImages,
       create: ({ apiKey, imageModel }) =>
@@ -244,6 +254,14 @@ export function modelProviderDefinition(id: string): ModelProviderDefinition | u
   return Object.hasOwn(modelProviders, id)
     ? (modelProviders as Record<string, ModelProviderDefinition>)[id]
     : undefined;
+}
+
+/** A provider whose sign-in is offered only on another provider's page, so its own entry takes a key. */
+export function signsInOnlyElsewhere(id: string): boolean {
+  if (modelProviderDefinition(id)?.signIn) return false;
+  return Object.values(modelProviders as Record<string, ModelProviderDefinition>).some(
+    (definition) => definition.alternativeSignIn?.provider === id,
+  );
 }
 
 async function googleKeyWasRejected(response: Response): Promise<boolean> {

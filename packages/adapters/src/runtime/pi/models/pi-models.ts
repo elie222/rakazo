@@ -28,7 +28,10 @@ import {
   modelProviderAllowed,
   modelProviderAllowlist,
 } from "../../../models/model-provider-allowlist.js";
-import { modelProviderDefinition } from "../../../models/model-provider-registry.js";
+import {
+  modelProviderDefinition,
+  signsInOnlyElsewhere,
+} from "../../../models/model-provider-registry.js";
 import { MODEL_CONNECT_TIMEOUT_MS } from "../pi-runtime-limits.js";
 import { maximumModelCallCost } from "../usage/pi-usage.js";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
@@ -56,6 +59,7 @@ export type PiCatalogEntry = {
   authHint?: string;
   subscription: boolean;
   signIn?: ModelOAuthSignInMode;
+  alternativeSignIn?: ModelCatalogEntry["alternativeSignIn"];
   signInSetup?: ModelCatalogEntry["signInSetup"];
   reasoning?: boolean;
   thinkingLevels?: ThinkingLevel[];
@@ -259,7 +263,9 @@ function buildPiCatalog(): PiCatalogEntry[] {
     const definition = modelProviderDefinition(provider.id);
     const providerName = definition?.displayName ?? provider.name;
     const apiKey = Boolean(provider.auth.apiKey);
-    const oauthAuth = loadProviderOAuth(provider.id);
+    const oauthAuth = signsInOnlyElsewhere(provider.id)
+      ? undefined
+      : loadProviderOAuth(provider.id);
     const oauth = Boolean(oauthAuth);
     const auth: PiCatalogAuth = apiKey && oauth ? "both" : oauth ? "oauth" : "api-key";
     const signInMeta = definition?.signIn;
@@ -300,6 +306,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
           provider.id === OPENAI_COMPATIBLE_PROVIDER_ID ? "Custom server" : signInMeta?.hint,
         subscription,
         signIn: signInMeta?.mode,
+        alternativeSignIn: definition?.alternativeSignIn,
         signInSetup: signInMeta?.setup,
         reasoning: Boolean(model.reasoning),
         thinkingLevels,

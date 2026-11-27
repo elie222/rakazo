@@ -105,7 +105,11 @@ export function ConnectionControls({
         <div className="mt-5 first:mt-0">
           <SubscriptionSignInSteps
             oauth={oauth}
-            setup={selected?.signInSetup}
+            setup={
+              oauth && oauth.provider === selected?.alternativeSignIn?.provider
+                ? undefined
+                : selected?.signInSetup
+            }
             startLabel={
               credential?.authKind === "oauth" ? (
                 <Trans>Sign in again</Trans>
@@ -113,12 +117,14 @@ export function ConnectionControls({
                 (selected?.oauthLabel ?? t`Sign in`)
               )
             }
-            starting={oauthPending}
+            starting={oauthPending === "own"}
             disabled={busy}
             onStart={() => beginSelectedSubscriptionSignIn()}
             onRestart={() => {
               cancelOAuthAttempt("replaced");
-              beginSelectedSubscriptionSignIn();
+              beginSelectedSubscriptionSignIn(
+                oauth?.provider === selected?.alternativeSignIn?.provider,
+              );
             }}
             codeCopied={codeCopied}
             onCopyCode={copyOAuthCode}
@@ -127,6 +133,22 @@ export function ConnectionControls({
             onSubmitCode={() => void submitOAuthCode()}
             onPageOpened={() => reportSignInStep("page_opened")}
           />
+          {selected?.alternativeSignIn && !oauth ? (
+            <div>
+              <Button
+                variant="outline"
+                className="mt-2"
+                disabled={busy}
+                onClick={() => beginSelectedSubscriptionSignIn(true)}
+              >
+                {oauthPending === "alternative" ? (
+                  <Trans>Starting…</Trans>
+                ) : (
+                  selected.alternativeSignIn.loginLabel
+                )}
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

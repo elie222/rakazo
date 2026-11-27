@@ -6,7 +6,7 @@ import type {
   ModelSignInCancelReason,
   ThinkingLevel,
 } from "@rakazo/contracts";
-import { clampCatalogThinkingLevel } from "@rakazo/core";
+import { subscriptionSignInTarget } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
 import type { RefObject } from "react";
 import { useCallback, useRef, useState } from "react";
@@ -29,11 +29,17 @@ type SubscriptionSignInOptions = {
   makeDefault: boolean;
   scope: SettingsTarget["scope"];
   credentialIdRef: RefObject<string | null>;
+  credentials: MobileModelCredential[];
   setCredentialId: (id: string) => void;
   onSaved?: (credential: MobileModelCredential) => void;
   modelId: string;
   load: (preferred: { modelId?: string }) => Promise<unknown>;
-  finishConnecting: (connectedModelId: string, connectedCredentialId: string) => Promise<boolean>;
+  finishConnecting: (
+    connectedModelId: string,
+    connectedCredentialId: string,
+    connectedProvider?: string,
+  ) => Promise<boolean>;
+  onAlternativeSaved: () => void;
   publishFeedback: (
     anchor: "connection",
     next: { error?: string | null; notice?: string | null },
@@ -49,18 +55,21 @@ export function useSubscriptionSignIn({
   makeDefault,
   scope,
   credentialIdRef,
+  credentials,
   setCredentialId,
   onSaved,
   modelId,
   load,
   finishConnecting,
+  onAlternativeSaved,
   publishFeedback,
   clearFeedback,
 }: SubscriptionSignInOptions) {
   const { t } = useLingui();
   const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
   const [pasteCode, setPasteCode] = useState("");
-  const [oauthPending, setOauthPending] = useState(false);
+  // Which sign-in is starting, so only the button that was pressed says so.
+  const [oauthPending, setOauthPending] = useState<false | "own" | "alternative">(false);
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
   const oauthCodeSubmittingRef = useRef(false);
@@ -143,33 +152,40 @@ export function useSubscriptionSignIn({
     setOauth(null);
     // A new subscription can save a stronger model than the one the form showed.
     const savedModelId = saved.modelId ?? selected?.id ?? modelId;
-    if (await finishConnecting(savedModelId, saved.id)) return;
+    if (await finishConnecting(savedModelId, saved.id, saved.provider)) return;
+    if (saved.provider === selected?.alternativeSignIn?.provider) {
+      // The saved connection belongs to another provider, so go back to the list that shows it.
+      publishFeedback("connection", { notice: t`Subscription connected.` });
+      onAlternativeSaved();
+      return;
+    }
     await load({ modelId: savedModelId });
     if (controller.signal.aborted) return;
     publishFeedback("connection", { notice: t`Subscription connected.` });
   }
 
-  async function startSubscriptionSignIn() {
+  async function startSubscriptionSignIn(alternative = false) {
     if (!selected) return;
     clearFeedback();
-    setOauthPending(true);
+    setOauthPending(alternative ? "alternative" : "own");
     const controller = new AbortController();
     oauthAbortRef.current = controller;
     let waitingForCode = false;
+    const target = subscriptionSignInTarget(selected, {
+      alternative,
+      credentialId: credentialIdRef.current,
+      thinkingLevel,
+      credentials,
+    });
     try {
       const started = await rpc(
         "models/beginOAuth",
         {
-          provider: selected.provider,
-          modelId: selected.id,
-          thinkingLevel: clampCatalogThinkingLevel(
-            thinkingLevel,
-            selected.thinkingLevels,
-          ) as ThinkingLevel | null,
+          ...target,
+          thinkingLevel: target.thinkingLevel as ThinkingLevel | null,
           makeDefault,
           scope,
           label: selected.providerName ?? selected.provider,
-          credentialId: credentialIdRef.current,
           codePage: true,
           ...analyticsClient(),
         },

@@ -240,11 +240,13 @@ export default function ModelConnection() {
     makeDefault,
     scope: target.scope,
     credentialIdRef,
+    credentials,
     setCredentialId,
     onSaved: adoptSavedCredential,
     modelId,
     load,
     finishConnecting: finishSaved,
+    onAlternativeSaved: () => router.back(),
     publishFeedback,
     clearFeedback,
   });
@@ -321,7 +323,7 @@ export default function ModelConnection() {
   });
   const acceptsKey = selected?.auth !== "oauth";
   const subscriptionSignIn = selected?.signIn !== undefined;
-  const busy = pending !== null || oauthPending;
+  const busy = pending !== null || oauthPending !== false;
   const openAiCompatibleReady = compatibleConnectionReady({
     apiKey,
     baseUrl,
@@ -459,10 +461,11 @@ export default function ModelConnection() {
   async function finishConnecting(
     connectedModelId: string,
     connectedCredentialId: string,
+    connectedProvider = provider,
   ): Promise<boolean> {
     if (!request?.onConnected || !connectedModelId) return false;
     const next = await request.onConnected({
-      provider,
+      provider: connectedProvider,
       modelId: connectedModelId,
       credentialId: connectedCredentialId,
     });
@@ -475,8 +478,10 @@ export default function ModelConnection() {
   async function finishSaved(
     connectedModelId: string,
     connectedCredentialId: string,
+    connectedProvider = provider,
   ): Promise<boolean> {
-    if (!request?.onSaved) return finishConnecting(connectedModelId, connectedCredentialId);
+    if (!request?.onSaved)
+      return finishConnecting(connectedModelId, connectedCredentialId, connectedProvider);
     if (modelConnectionRequest(requestId) !== request) return true;
     request.onSaved(connectedCredentialId);
     router.back();
@@ -589,6 +594,7 @@ export default function ModelConnection() {
       <>
         {subscriptionSignIn &&
         signInSetup &&
+        !(oauth && oauth.provider === selected?.alternativeSignIn?.provider) &&
         (oauth || credential?.authKind !== "oauth" || credential.reconnectRequired) ? (
           <SettingsGroup>
             <SettingsRow
@@ -613,7 +619,7 @@ export default function ModelConnection() {
               {oauth.mode === "auth-url" ? (
                 <>
                   <Text style={styles.secondary}>
-                    {t`Sign in at ${ph({ host: signInHost })}, then paste the code it shows you here.`}
+                    {t`Sign in at ${ph({ host: signInHost })}, then paste the code or callback URL here.`}
                   </Text>
                   <NativeActionButton
                     fill
@@ -622,8 +628,8 @@ export default function ModelConnection() {
                     style={{ marginTop: 12 }}
                   />
                   <TextInput
-                    accessibilityLabel={t`Code from ${ph({ host: signInHost })}`}
-                    placeholder={t`Paste code`}
+                    accessibilityLabel={t`Code or callback URL from ${ph({ host: signInHost })}`}
+                    placeholder={t`Paste code or URL`}
                     placeholderTextColor={native.tertiaryLabel}
                     value={pasteCode}
                     onChangeText={setPasteCode}
@@ -662,29 +668,47 @@ export default function ModelConnection() {
                 label={oauth.mode === "device-code" ? t`Get a new code` : t`Start over`}
                 onPress={() => {
                   cancelOAuth("replaced");
-                  void startSubscriptionSignIn();
+                  void startSubscriptionSignIn(
+                    oauth.provider === selected?.alternativeSignIn?.provider,
+                  );
                 }}
                 prominence="secondary"
                 style={{ marginTop: 12 }}
               />
             </View>
           ) : credential?.authKind !== "oauth" || credential.reconnectRequired ? (
-            <NativeActionButton
-              disabled={busy}
-              fill
-              label={
-                oauthPending
-                  ? t`Starting…`
-                  : credential?.authKind === "oauth"
-                    ? t`Sign in again`
-                    : signInSetup
-                      ? t`2. Get a sign-in code`
-                      : (selected.oauthLabel ?? t`Sign in`)
-              }
-              onPress={() => void startSubscriptionSignIn()}
-              prominence={signInSetup ? "primary" : "secondary"}
-              style={{ marginTop: 12 }}
-            />
+            <>
+              <NativeActionButton
+                disabled={busy}
+                fill
+                label={
+                  oauthPending === "own"
+                    ? t`Starting…`
+                    : credential?.authKind === "oauth"
+                      ? t`Sign in again`
+                      : signInSetup
+                        ? t`2. Get a sign-in code`
+                        : (selected.oauthLabel ?? t`Sign in`)
+                }
+                onPress={() => void startSubscriptionSignIn()}
+                prominence={signInSetup ? "primary" : "secondary"}
+                style={{ marginTop: 12 }}
+              />
+              {selected?.alternativeSignIn ? (
+                <NativeActionButton
+                  disabled={busy}
+                  fill
+                  label={
+                    oauthPending === "alternative"
+                      ? t`Starting…`
+                      : selected.alternativeSignIn.loginLabel
+                  }
+                  onPress={() => void startSubscriptionSignIn(true)}
+                  prominence="secondary"
+                  style={{ marginTop: 12 }}
+                />
+              ) : null}
+            </>
           ) : null
         ) : null}
         {acceptsKey || needsRouting ? (

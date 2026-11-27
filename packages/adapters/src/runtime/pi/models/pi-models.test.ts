@@ -269,6 +269,12 @@ describe("Pi model catalog", () => {
         oauthLabel: "Sign in with ChatGPT",
         subscription: true,
         signIn: "device-code",
+        alternativeSignIn: {
+          provider: "openai",
+          modelId: "gpt-6.1-sol",
+          mode: "auth-url",
+          loginLabel: "Sign in in browser",
+        },
       });
     }
     const openai = catalog.filter((entry) => entry.provider === "openai");
@@ -280,9 +286,7 @@ describe("Pi model catalog", () => {
         subscription: false,
         billing: "Uses your OpenAI API key. Rakazo does not pay for model usage.",
       });
-      expect(entry.oauthLabel).toBeUndefined();
       expect(entry.signIn).toBeUndefined();
-      expect(entry.authHint).toBeUndefined();
     }
     const azure = catalog.filter((entry) => entry.provider === "azure");
     expect(azure.length).toBeGreaterThan(0);

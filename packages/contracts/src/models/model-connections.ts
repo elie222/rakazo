@@ -479,6 +479,15 @@ export const ModelCatalogEntrySchema = z.object({
   authHint: z.string().optional(),
   subscription: z.boolean().optional(),
   signIn: ModelOAuthSignInModeSchema.optional(),
+  /** Another sign-in method shown on this subscription's page; provider remains opaque to clients. */
+  alternativeSignIn: z
+    .object({
+      provider: z.string(),
+      modelId: z.string(),
+      mode: ModelOAuthSignInModeSchema,
+      loginLabel: z.string(),
+    })
+    .optional(),
   /** A setting the provider makes the user turn on before its sign-in can work; shown before the sign-in starts. */
   signInSetup: z
     .object({ label: z.string(), url: z.string().url(), note: z.string().optional() })

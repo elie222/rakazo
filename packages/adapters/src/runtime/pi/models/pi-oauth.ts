@@ -10,6 +10,7 @@ import { getLogger } from "@rakazo/logging";
 import { ModelProviderNotAllowedError } from "../../../models/model-provider-allowlist.js";
 import type { ModelProviderDefinition } from "../../../models/model-provider-registry.js";
 import { modelProviders } from "../../../models/model-provider-registry.js";
+import { createManualOpenAIOAuthLogin } from "../../../providers/model/openai/openai-oauth.js";
 import { logModelSignIn } from "./model-sign-in-log.js";
 import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
 import { createChatGptDeviceCodeLogin } from "./pi-chatgpt-device-code.js";
@@ -31,7 +32,12 @@ export const ANTHROPIC_OAUTH_PROVIDER = "anthropic";
 /** Providers Rakazo offers a subscription sign-in for, by id. */
 export const SUBSCRIPTION_SIGN_IN_PROVIDERS = Object.fromEntries(
   Object.entries(modelProviders as Record<string, ModelProviderDefinition>).flatMap(
-    ([id, { signIn }]) => (signIn ? [[id, signIn]] : []),
+    ([id, { signIn, alternativeSignIn }]) => [
+      ...(signIn ? [[id, signIn]] : []),
+      ...(alternativeSignIn
+        ? [[alternativeSignIn.provider, { mode: alternativeSignIn.mode }]]
+        : []),
+    ],
   ),
 ) as Record<string, NonNullable<ModelProviderDefinition["signIn"]>>;
 
@@ -248,9 +254,7 @@ export class PiOAuthLogins<T = unknown> {
     issuedAt?: Date,
   ): Promise<PiOAuthBegin> {
     if (!SUBSCRIPTION_SIGN_IN_PROVIDERS[input.provider]) {
-      throw new Error(
-        "In-app subscription sign-in is only available for ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot, and SuperGrok.",
-      );
+      throw new Error("Subscription sign-in is not available for this provider.");
     }
     if (input.signal?.aborted) {
       throw input.signal.reason ?? new Error("Sign-in cancelled.");
@@ -309,9 +313,9 @@ export class PiOAuthLogins<T = unknown> {
                   for (const signal of signals) signal.removeEventListener("abort", onAbort);
                 };
                 const onAbort = (event: Event) => {
+                  const signal = event.currentTarget as AbortSignal;
                   removeAbortListeners();
                   session.submitCode = undefined;
-                  const signal = event.currentTarget as AbortSignal;
                   reject(signal.reason ?? new Error("Sign-in cancelled."));
                 };
                 session.submitCode = (code) => {
@@ -1223,6 +1227,9 @@ function defaultLogin(
     })(interaction);
   }
   if (providerId === CHATGPT_OAUTH_PROVIDER) return createChatGptDeviceCodeLogin()(interaction);
+  if (providerId === "openai") {
+    return createManualOpenAIOAuthLogin({ verifier: options.verifier })(interaction);
+  }
   return builtinModels().login(providerId, type, interaction);
 }
 

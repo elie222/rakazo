@@ -151,15 +151,15 @@ export function SubscriptionSignInSteps({
       {
         id: "paste",
         status: "upcoming",
-        title: t`Paste the code it shows you`,
+        title: t`Paste the code or callback URL`,
         description: (
           <>
             <span className="mt-2 flex items-center gap-2">
               <Input
                 value={pasteCode}
                 onChange={(e) => onPasteCodeChange(e.target.value)}
-                aria-label={t`Code from ${host}`}
-                placeholder={t`Paste code`}
+                aria-label={t`Code or callback URL from ${host}`}
+                placeholder={t`Paste code or URL`}
                 autoComplete="off"
                 spellCheck={false}
               />

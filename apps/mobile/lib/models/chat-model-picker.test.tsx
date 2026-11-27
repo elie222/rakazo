@@ -1162,10 +1162,10 @@ describe("provider connection screen", () => {
     mocks.submitOAuthCode.mockReturnValueOnce(firstSubmit.promise);
     await renderConnection();
     await act(async () => buttonWithText("Sign in")!.click());
-    editField("Code from example.com", "first-code");
+    editField("Code or callback URL from example.com", "first-code");
     await act(async () => buttonWithText("Submit")!.click());
     await act(async () => buttonWithText("Start over")!.click());
-    editField("Code from example.com", "second-code");
+    editField("Code or callback URL from example.com", "second-code");
     await act(async () => buttonWithText("Submit")!.click());
     await act(async () => firstSubmit.reject(new Error("aborted")));
     expect(mocks.submitOAuthCode.mock.calls.map(([input]) => input)).toEqual([
