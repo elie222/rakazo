@@ -323,3 +323,27 @@ it("never marks an offline computer as bound", async () => {
   expect(host.textContent).toContain("Desk PCOffline");
   expect(host.textContent).not.toContain("Bound to bots");
 });
+
+it("toggles the desktop local web proxy when exposed by the desktop bridge", async () => {
+  vi.mocked(listUserDevices).mockResolvedValue([]);
+  const proxyState = { enabled: false, url: null as string | null };
+  const proxy = {
+    state: vi.fn(async () => ({ ...proxyState })),
+    setEnabled: vi.fn(async (enabled: boolean) => {
+      proxyState.enabled = enabled;
+      proxyState.url = enabled ? "http://127.0.0.1:43123" : null;
+      return { ...proxyState };
+    }),
+  };
+  window.rakazoDesktop = { platform: "darwin", proxy } as unknown as RakazoDesktop;
+  await renderSettings();
+  const toggle = host.querySelector<HTMLInputElement>('[data-testid="local-proxy-toggle"]')!;
+  expect(host.textContent).toContain("Route web traffic through this computer");
+  expect(toggle.checked).toBe(false);
+
+  await act(async () => toggle.click());
+  await act(flush);
+  expect(proxy.setEnabled).toHaveBeenCalledWith(true);
+  expect(toggle.checked).toBe(true);
+  expect(host.textContent).toContain("http://127.0.0.1:43123");
+});
