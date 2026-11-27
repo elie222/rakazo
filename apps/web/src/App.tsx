@@ -33,6 +33,7 @@ import {
 import {
   MCP_OAUTH_CALLBACK_PATH,
   newAccountDestination,
+  PAGE_APP_SPACE_ID,
   SLACK_INSTALL_CALLBACK_PATH,
   signInNext,
 } from "./lib/auth/sign-in-next";
@@ -119,7 +120,7 @@ function pageAppPath(pathname: string): string {
 function pageAppNext(pathname: string, search: string): string {
   const pinned = new URLSearchParams(search).get(PAGE_WEB_APP_SPACE_PARAM);
   // Only a Space id sign-in will hand back, so the redirect never loops on a malformed one.
-  const space = pinned && /^[A-Za-z0-9_-]{1,200}$/.test(pinned) ? pinned : null;
+  const space = pinned && PAGE_APP_SPACE_ID.test(pinned) ? pinned : null;
   return `${pageAppPath(pathname)}${space ? `?${PAGE_WEB_APP_SPACE_PARAM}=${space}` : ""}`;
 }
 

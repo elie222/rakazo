@@ -7,6 +7,8 @@ export const SLACK_INSTALL_CALLBACK_PATH = "/messaging/slack/callback";
 const PAGE_REVIEW_PATH = /^\/review(?:\/[A-Za-z0-9_-]{1,200})?\/?$/;
 
 // A page open on its own, as a browser installs it, in the Space it belongs to.
+/** A Space id as a page app's address carries it. */
+export const PAGE_APP_SPACE_ID = /^[A-Za-z0-9_-]{1,200}$/;
 const PAGE_APP_PATH = /^\/page\/[A-Za-z0-9_-]{1,200}(?:\?space=[A-Za-z0-9_-]{1,200})?$/;
 
 // A Space invite link, an organization invitation's Join page, or a credit code to redeem.
