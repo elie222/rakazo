@@ -1867,8 +1867,23 @@ describe("tool step outcomes", () => {
     expect(sanitizeConnectorError(new Error('Bearer "fixture"[12,34]'))).toBe(
       "Bearer [redacted][12,34]",
     );
+    expect(sanitizeConnectorError(new Error('Bearer "fixture":{"ok":true}'))).toBe(
+      'Bearer [redacted]:{"ok":true}',
+    );
     expect(sanitizeConnectorError(new Error('Bearer [redacted]{"ok":true}'))).toBe(
       'Bearer [redacted]{"ok":true}',
+    );
+    expect(
+      sanitizeConnectorError(new Error(String.raw`Bearer [redacted]password=\"[redacted]\"`)),
+    ).toBe(String.raw`Bearer [redacted]password=\"[redacted]\"`);
+    expect(sanitizeConnectorError(new Error(String.raw`Bearer "fixture":Bearer\nopaque-123`))).toBe(
+      "Bearer [redacted]:Bearer [redacted]",
+    );
+    expect(sanitizeConnectorError(new Error(String.raw`Bearer "fixture"[Bearer\nopaque-123`))).toBe(
+      "Bearer [redacted]Bearer [redacted]",
+    );
+    expect(sanitizeConnectorError(new Error(String.raw`Bearer "fixture"{Bearer\nopaque-123`))).toBe(
+      "Bearer [redacted]Bearer [redacted]",
     );
     for (const attached of [
       'Bearer "fixture"[opaque-123]',
