@@ -13,6 +13,7 @@ import { buildTurnCheckpoint } from "../pi/pi-runtime-checkpoint.js";
 import { shortenToolResultText } from "./context-selection.js";
 import type { WatchDeliveryState } from "./runtime-context.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
+import { commitWatchDeliveries } from "./watch-delivery-provenance.js";
 
 function fixture(tools: ConnectorTool[] = []) {
   return {
@@ -868,4 +869,95 @@ it("does not duplicate retained watch results into watchOutsideText when Pi prep
       checkpoint.messages.some((m) => m.role === "toolResult" && m.toolCallId === "watch-1"),
     ).toBe(true);
   }
+});
+
+it("keeps a newer accepted slice of an earlier watch after a watch delivered in between", () => {
+  const slice = (toolCallId: string, marker: string): WatchDeliveryState => {
+    const details = {
+      routines: [
+        {
+          routineId: toolCallId,
+          prompt: "Owner prompt",
+          lastCheck: {
+            checkedAt: "2026-11-25T07:00:00.000Z",
+            detail: `Alert ${marker}`,
+          },
+        },
+      ],
+    };
+    return {
+      full: false,
+      texts: [JSON.stringify(details)],
+      details,
+      toolCallId,
+    };
+  };
+  const watchDeliveries = new Map<string, WatchDeliveryState>();
+  commitWatchDeliveries(watchDeliveries, [
+    { key: "watch-a", state: slice("call-a", "alpha-old-target@outside.test") },
+  ]);
+  commitWatchDeliveries(watchDeliveries, [
+    { key: "watch-b", state: slice("call-b", "beta-target@outside.test") },
+  ]);
+  commitWatchDeliveries(watchDeliveries, [
+    { key: "watch-a", state: slice("call-a", "alpha-new-target@outside.test") },
+  ]);
+  const checkpoint = buildTurnCheckpoint({
+    stateMessages: [],
+    restoringCalls: false,
+    tools: [],
+    pendingToolCallId: "pause-order",
+    toolCallCount: 1,
+    mainModelConfig: { provider: "openai", id: "model-a" },
+    provider: "openai",
+    modelId: "model-a",
+    systemPrompt: "Fixture",
+    representedHistoryIds: new Set(),
+    watchDeliveries,
+  });
+  const markers = [
+    "alpha-old-target@outside.test",
+    "beta-target@outside.test",
+    "alpha-new-target@outside.test",
+  ];
+  const positions = markers.map((marker) =>
+    (checkpoint.watchOutsideText ?? []).findIndex((entry) => entry.includes(marker)),
+  );
+  expect(positions[0]).toBeGreaterThanOrEqual(0);
+  expect(positions[1]).toBeGreaterThan(positions[0]!);
+  expect(positions[2]).toBeGreaterThan(positions[1]!);
+});
+
+it("bounds persisted watchOutsideText to the newest tail across repeated dropped reads", () => {
+  const marker = (index: number) => `${String(index).padStart(2, "0")}-watch-target@outside.test`;
+  const chunk = (index: number) => `${marker(index)}${"q".repeat(120_000)}`;
+  let carried: string[] = [];
+  for (let index = 0; index < 5; index += 1) {
+    const checkpoint = buildTurnCheckpoint({
+      stateMessages: [],
+      restoringCalls: false,
+      tools: [],
+      pendingToolCallId: "pause-bound",
+      toolCallCount: index + 1,
+      mainModelConfig: { provider: "openai", id: "model-a" },
+      provider: "openai",
+      modelId: "model-a",
+      systemPrompt: "Fixture",
+      representedHistoryIds: new Set(),
+      priorWatchOutsideText: [...carried, chunk(index)],
+    });
+    carried = checkpoint.watchOutsideText ?? [];
+    expect(carried.join("\n").length).toBeLessThanOrEqual(MAX_OUTSIDE_TEXT_CHARS);
+  }
+  const joined = carried.join("\n");
+  expect(joined.length).toBe(MAX_OUTSIDE_TEXT_CHARS);
+  expect(joined).not.toContain(marker(0));
+  expect(joined).not.toContain(marker(1));
+  const kept = [2, 3, 4].map((index) => joined.indexOf(marker(index)));
+  expect(kept[0]).toBeGreaterThanOrEqual(0);
+  expect(kept[1]).toBeGreaterThan(kept[0]!);
+  expect(kept[2]).toBeGreaterThan(kept[1]!);
+  const first = carried[0]!;
+  const sources = [0, 1, 2, 3, 4].map(chunk);
+  expect(sources.some((entry) => entry.endsWith(first) && entry.length > first.length)).toBe(true);
 });

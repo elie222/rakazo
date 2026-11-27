@@ -8,6 +8,8 @@ export type WatchDeliveryState =
       details: Record<string, unknown>;
       toolCallId: string;
       sourceIndex?: number;
+      /** Accept sequence of this full delivery, across every watch in the run. */
+      order?: number;
     }
   | {
       full: false;
@@ -15,6 +17,8 @@ export type WatchDeliveryState =
       details: Record<string, unknown>;
       toolCallId: string;
       sourceIndex?: number;
+      /** Accept sequence of each text, parallel to `texts`. */
+      textOrders?: number[];
     };
 
 export interface PendingWatchDelivery {
@@ -146,23 +150,56 @@ export function applyWatchDeliveryProvenance(
   return { messages: changed ? annotated : messages, pending };
 }
 
+function highestDeliveryOrder(watchDeliveries: ReadonlyMap<string, WatchDeliveryState>): number {
+  let highest = 0;
+  for (const entry of watchDeliveries.values()) {
+    if (entry.full) {
+      if (entry.order !== undefined && entry.order > highest) highest = entry.order;
+    } else {
+      for (const order of entry.textOrders ?? []) {
+        if (order > highest) highest = order;
+      }
+    }
+  }
+  return highest;
+}
+
 export function commitWatchDeliveries(
   watchDeliveries: Map<string, WatchDeliveryState> | undefined,
   pending: readonly PendingWatchDelivery[],
 ): void {
   if (!watchDeliveries || pending.length === 0) return;
+  let next = highestDeliveryOrder(watchDeliveries);
+  const take = () => {
+    next += 1;
+    return next;
+  };
   for (const { key, state } of pending) {
     if (state.full) {
-      watchDeliveries.set(key, state);
+      // A later full delivery of the same watch is newer evidence. Map.set keeps the
+      // original key position, so the sequence lives on the state instead.
+      watchDeliveries.set(key, { ...state, order: take() });
       continue;
     }
     const existing = watchDeliveries.get(key);
     if (existing?.full) continue;
     if (!existing) {
-      watchDeliveries.set(key, { ...state, texts: [...state.texts] });
-    } else {
-      for (const value of state.texts) {
-        if (!existing.texts.includes(value)) existing.texts.push(value);
+      watchDeliveries.set(key, {
+        ...state,
+        texts: [...state.texts],
+        textOrders: state.texts.map(() => take()),
+      });
+      continue;
+    }
+    const textOrders =
+      existing.textOrders && existing.textOrders.length === existing.texts.length
+        ? existing.textOrders
+        : existing.texts.map(() => take());
+    existing.textOrders = textOrders;
+    for (const value of state.texts) {
+      if (!existing.texts.includes(value)) {
+        existing.texts.push(value);
+        textOrders.push(take());
       }
     }
   }

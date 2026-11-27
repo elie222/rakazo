@@ -2,6 +2,7 @@ import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { Context, Message } from "@earendil-works/pi-ai";
 import type { AgentContextStrategy, AgentRunModel } from "@rakazo/adapter-kit";
 import { isRecord } from "@rakazo/core";
+import { MAX_OUTSIDE_TEXT_CHARS } from "../../approvals/review-target-sources.js";
 import { watchChecksFromToolResultMessage } from "../../runs/assembly/watch-outside-text.js";
 import type { ComputerModeCheckpoint, TurnCheckpoint } from "../../runs/turn/turn-checkpoint.js";
 import {
@@ -10,6 +11,40 @@ import {
 } from "../../runs/turn/turn-checkpoint.js";
 import type { WatchDeliveryState } from "../context/runtime-context.js";
 import { computerSelection } from "./tools/pi-runtime-computer-mode.js";
+
+/**
+ * Delivered text with no watch checks. A later slice of the same watch is passed as an extra
+ * delivery beside it, so extraction uses that slice alone and does not fall through to the
+ * full routines.
+ */
+const EMPTY_WATCH_DELIVERY = '{"routines":[]}';
+
+/** Keeps the newest tail of checkpoint watch text, including the `\n` between entries. */
+function boundWatchOutsideText(entries: readonly string[]): string[] {
+  const kept: string[] = [];
+  let used = 0;
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index]!;
+    const separator = kept.length > 0 ? 1 : 0;
+    const room = MAX_OUTSIDE_TEXT_CHARS - used - separator;
+    if (room <= 0) break;
+    if (entry.length <= room) {
+      kept.push(entry);
+      used += separator + entry.length;
+      continue;
+    }
+    kept.push(entry.slice(entry.length - room));
+    break;
+  }
+  kept.reverse();
+  return kept;
+}
+
+function acceptedTextOrder(entry: WatchDeliveryState, index: number, insertion: number): number {
+  const explicit = entry.full ? entry.order : entry.textOrders?.[index];
+  if (explicit !== undefined) return explicit;
+  return insertion * 1_000_000 + index;
+}
 
 export const ANSWERED_ON_RESUME = new Set(["ask_user", "request_takeover"]);
 
@@ -160,20 +195,45 @@ export function buildTurnCheckpoint(input: {
     }
   }
   if (input.watchDeliveries) {
+    const slices: Array<{
+      order: number;
+      entry: WatchDeliveryState;
+      text: string;
+      index: number;
+    }> = [];
+    let insertion = 0;
     for (const entry of input.watchDeliveries.values()) {
+      insertion += 1;
       if (isRetained(entry)) continue;
-      const synthetic = entry.full
+      if (entry.full) {
+        slices.push({
+          order: acceptedTextOrder(entry, 0, insertion),
+          entry,
+          text: entry.fullText,
+          index: 0,
+        });
+        continue;
+      }
+      entry.texts.forEach((text, index) => {
+        slices.push({ order: acceptedTextOrder(entry, index, insertion), entry, text, index });
+      });
+    }
+    slices.sort((left, right) => left.order - right.order || left.index - right.index);
+    for (const slice of slices) {
+      if (!slice.text.trim()) continue;
+      const firstSlice = slice.entry.full || slice.index === 0;
+      const synthetic = firstSlice
         ? {
-            details: { ...entry.details, contextBeforeUseText: entry.fullText },
-            content: [{ type: "text", text: entry.fullText }],
+            details: { ...slice.entry.details, contextBeforeUseText: slice.text },
+            content: [{ type: "text" as const, text: slice.text }],
           }
         : {
             details: {
-              ...entry.details,
-              ...(entry.texts[0] !== undefined ? { contextBeforeUseText: entry.texts[0] } : {}),
-              ...(entry.texts.length > 1 ? { contextDeliveredTexts: entry.texts } : {}),
+              ...slice.entry.details,
+              contextBeforeUseText: EMPTY_WATCH_DELIVERY,
+              contextDeliveredTexts: [slice.text],
             },
-            content: [{ type: "text", text: entry.texts[0] ?? "" }],
+            content: [{ type: "text" as const, text: EMPTY_WATCH_DELIVERY }],
           };
       for (const item of watchChecksFromToolResultMessage(synthetic, input.contextStrategy)) {
         const value = typeof item === "string" ? item : JSON.stringify(item);
@@ -186,7 +246,7 @@ export function buildTurnCheckpoint(input: {
     seenWatchOutside.delete(entry);
     seenWatchOutside.add(entry);
   }
-  const watchOutsideText = [...seenWatchOutside];
+  const watchOutsideText = boundWatchOutsideText([...seenWatchOutside]);
   const assistant = messages.findLast((message) => message.role === "assistant");
   const sequential =
     input.restoringCalls ||
