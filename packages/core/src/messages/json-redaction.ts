@@ -30,18 +30,24 @@ const ADJACENT_CREDENTIAL_START =
   /(?:Bearer\s|(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:])/;
 const JSON_CONTAINER_LINE_START =
   /(?:\{\s*(?:["}]|$)|\[\s*(?:["{[\]]|(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)(?=[\s,\]]|$)))/;
+const RAW_JSON_CONTAINER_START =
+  /(?:\{(?:\s|\\[nrt])*(?:\\*"|\}|$)|\[(?:\s|\\[nrt])*(?:\\*"|[{[\]]|(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)(?=\s|\\[nrt]|[,\]$])))/;
+const RAW_SPLITTING_CREDENTIAL_KEY =
+  /[\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*(?::\s*\S|=(?:\s+\S|["'[]\S|\\[nrt"\\]|\S*[\]}":',;&]))/;
+const DECODED_SPLITTING_CREDENTIAL_KEY =
+  /[\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*(?::\s*\S|=(?:\s+\S|["'[]\S|\S*[\]}":',;&]))/;
 const RAW_DEFERRED_BEARER_FOLLOWS = new RegExp(
-  `Bearer(?:[^\\S\\r\\n]+(?!(?:\\S*Bearer\\s+\\S|[\\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\\s*(?::|=(?=\\s|["',;&}\\]]|\\\\[nrt"\\\\]|$))))\\S|\\s+(?!(?:${JSON_CONTAINER_LINE_START.source}|\\S*Bearer\\s+\\S|[\\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\\s*(?::|=(?=\\s|["',;&}\\]]|\\\\[nrt"\\\\]|$))))\\S)`,
+  `Bearer(?:[^\\S\\r\\n]+(?!(?:\\S*Bearer(?:\\s|\\\\[nrt])+\\S|${RAW_SPLITTING_CREDENTIAL_KEY.source}))\\S|\\s+(?!(?:${JSON_CONTAINER_LINE_START.source}|\\S*Bearer(?:\\s|\\\\[nrt])+\\S|${RAW_SPLITTING_CREDENTIAL_KEY.source}))\\S|(?:\\\\[nrt])+(?!(?:${RAW_JSON_CONTAINER_START.source}|\\S*Bearer(?:\\s|\\\\[nrt])+\\S|${RAW_SPLITTING_CREDENTIAL_KEY.source}))[^\\s"',;&}:\\]\\\\])`,
 );
 const DECODED_DEFERRED_BEARER_FOLLOWS = new RegExp(
-  `Bearer(?:[^\\S\\r\\n]+(?!(?:\\S*Bearer\\s+\\S|[\\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\\s*(?::|=(?=\\s|["',;&}\\]]|$))))\\S|\\s+(?!(?:${JSON_CONTAINER_LINE_START.source}|\\S*Bearer\\s+\\S|[\\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\\s*(?::|=(?=\\s|["',;&}\\]]|$))))\\S)`,
+  `Bearer(?:[^\\S\\r\\n]+(?!(?:\\S*Bearer\\s+\\S|${DECODED_SPLITTING_CREDENTIAL_KEY.source}))\\S|\\s+(?!(?:${JSON_CONTAINER_LINE_START.source}|\\S*Bearer\\s+\\S|${DECODED_SPLITTING_CREDENTIAL_KEY.source}))\\S)`,
 );
 const RAW_ATOM = /(?:\\(?![nrt"\\])|[^\s"',;&}:\]\\])/;
 const RAW_SUFFIX_ATOM = new RegExp(
   `(?:(?!${ADJACENT_CREDENTIAL_START.source})(?:\\\\(?![nrt"\\\\])|[^\\s"',;&}{[\\]:\\\\]))`,
 );
 const RAW_BEARER = new RegExp(
-  `Bearer\\s+(?!${RAW_DEFERRED_BEARER_FOLLOWS.source}|\\[redacted\\](?!${RAW_SUFFIX_ATOM.source}))(?:\\\\"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"${RAW_SUFFIX_ATOM.source}*)?|"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${RAW_SUFFIX_ATOM.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'\\\\\\r\\n])+(?:'${RAW_SUFFIX_ATOM.source}*)?|\\[redacted\\]${RAW_SUFFIX_ATOM.source}+|(?:${RAW_ATOM.source})+)`,
+  `Bearer\\s+(?!${RAW_DEFERRED_BEARER_FOLLOWS.source}|${RAW_SPLITTING_CREDENTIAL_KEY.source}|\\[redacted\\](?!${RAW_SUFFIX_ATOM.source}))(?:\\\\"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"${RAW_SUFFIX_ATOM.source}*)?|"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${RAW_SUFFIX_ATOM.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'"\\\\\\r\\n])+(?:'${RAW_SUFFIX_ATOM.source}*)?|\\[redacted\\]${RAW_SUFFIX_ATOM.source}+|(?:${RAW_ATOM.source})+)`,
   "gi",
 );
 
@@ -50,14 +56,105 @@ const DECODED_SUFFIX_ATOM = new RegExp(
   `(?:(?!${ADJACENT_CREDENTIAL_START.source})(?:\\\\[^\\s]|\\\\(?=\\s|$)|[^\\s"',;&}{[\\]:\\\\]))`,
 );
 const DECODED_BEARER = new RegExp(
-  `Bearer\\s+(?!${DECODED_DEFERRED_BEARER_FOLLOWS.source}|\\[redacted\\](?!${DECODED_SUFFIX_ATOM.source}))(?:"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${DECODED_SUFFIX_ATOM.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'\\\\\\r\\n])+(?:'${DECODED_SUFFIX_ATOM.source}*)?|\\[redacted\\]${DECODED_SUFFIX_ATOM.source}+|(?:${DECODED_ATOM.source})+)`,
+  `Bearer\\s+(?!${DECODED_DEFERRED_BEARER_FOLLOWS.source}|${DECODED_SPLITTING_CREDENTIAL_KEY.source}|\\[redacted\\](?!${DECODED_SUFFIX_ATOM.source}))(?:"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${DECODED_SUFFIX_ATOM.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'\\\\\\r\\n])+(?:'${DECODED_SUFFIX_ATOM.source}*)?|\\[redacted\\]${DECODED_SUFFIX_ATOM.source}+|(?:${DECODED_ATOM.source})+)`,
   "gi",
 );
+
+const ESCAPED_WS_BEARER_RE = /Bearer(?:\\[nrt])+/gi;
+const ESCAPED_BEARER_NEXT_STICKY = /Bearer(?:\s|\\[nrt])+/iy;
+const RAW_JSON_CONTAINER_STICKY = new RegExp(RAW_JSON_CONTAINER_START.source, "y");
+const RAW_SPLITTING_CREDENTIAL_STICKY = new RegExp(RAW_SPLITTING_CREDENTIAL_KEY.source, "iy");
+const RAW_SUFFIX_ATOM_STICKY = new RegExp(RAW_SUFFIX_ATOM.source, "y");
+
+function isRawJsonEscapeBreak(text: string, pos: number): boolean {
+  if (text[pos] !== "\\") return false;
+  const next = text[pos + 1];
+  return next === "n" || next === "r" || next === "t" || next === '"' || next === "\\";
+}
+
+/**
+ * Linear scan for `Bearer` followed by JSON-escaped whitespace (`\n`, `\r`, `\t`) in raw text,
+ * bounded to the enclosing JSON string so unclosed quotes and sibling fields stay intact.
+ */
+function redactRawEscapedWhitespaceBearers(text: string): string {
+  if (!text.includes("\\")) return text;
+  ESCAPED_WS_BEARER_RE.lastIndex = 0;
+  let out = "";
+  let cursor = 0;
+  for (
+    let match = ESCAPED_WS_BEARER_RE.exec(text);
+    match !== null;
+    match = ESCAPED_WS_BEARER_RE.exec(text)
+  ) {
+    const start = match.index;
+    const valueStart = start + match[0].length;
+    if (valueStart >= text.length) break;
+    // Skip when the backslash before the escape is itself escaped (`Bearer\\n`).
+    if (text[valueStart] === '"' || /\s/.test(text[valueStart]!)) continue;
+    ESCAPED_BEARER_NEXT_STICKY.lastIndex = valueStart;
+    if (ESCAPED_BEARER_NEXT_STICKY.test(text)) continue;
+    RAW_JSON_CONTAINER_STICKY.lastIndex = valueStart;
+    if (RAW_JSON_CONTAINER_STICKY.test(text)) continue;
+    RAW_SPLITTING_CREDENTIAL_STICKY.lastIndex = valueStart;
+    if (RAW_SPLITTING_CREDENTIAL_STICKY.test(text)) continue;
+    if (text.startsWith("[redacted]", valueStart)) {
+      RAW_SUFFIX_ATOM_STICKY.lastIndex = valueStart + 10;
+      if (!RAW_SUFFIX_ATOM_STICKY.test(text)) continue;
+    }
+    let end = valueStart;
+    if (text[valueStart] === "\\" && text[valueStart + 1] === '"') {
+      let cur = valueStart + 2;
+      while (cur < text.length) {
+        const ch = text[cur]!;
+        if (ch === "\n" || ch === "\r" || ch === '"') break;
+        if (ch === "\\") {
+          const next = text[cur + 1];
+          if (next === '"') {
+            cur += 2;
+            break;
+          }
+          if (next === "n" || next === "r") break;
+          cur += next === undefined ? 1 : 2;
+          continue;
+        }
+        cur += 1;
+      }
+      end = cur;
+    } else if (text[valueStart] === "'") {
+      let cur = valueStart + 1;
+      while (cur < text.length) {
+        const ch = text[cur]!;
+        if (ch === "\n" || ch === "\r" || ch === '"') break;
+        if (ch === "\\") {
+          const next = text[cur + 1];
+          if (next === "n" || next === "r" || next === '"') break;
+          cur += next === undefined ? 1 : 2;
+          continue;
+        }
+        cur += 1;
+        if (ch === "'") break;
+      }
+      end = cur;
+    } else {
+      while (end < text.length) {
+        const ch = text[end]!;
+        if (/[\s"',;&}:\]]/.test(ch) || isRawJsonEscapeBreak(text, end)) break;
+        end += 1;
+      }
+    }
+    if (end <= valueStart) continue;
+    out += `${text.slice(cursor, start)}Bearer [redacted]`;
+    cursor = end;
+    ESCAPED_WS_BEARER_RE.lastIndex = cursor;
+  }
+  return cursor === 0 ? text : out + text.slice(cursor);
+}
 
 export function redactPlainBearerTokens(text: string, options?: { decoded?: boolean }): string {
   const pattern = options?.decoded ? DECODED_BEARER : RAW_BEARER;
   pattern.lastIndex = 0;
-  return text.replace(pattern, "Bearer [redacted]");
+  const masked = text.replace(pattern, "Bearer [redacted]");
+  return options?.decoded ? masked : redactRawEscapedWhitespaceBearers(masked);
 }
 
 function blackBoxTokenRanges(

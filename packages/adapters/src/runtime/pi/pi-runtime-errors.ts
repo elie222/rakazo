@@ -239,9 +239,22 @@ function defersToNextCredentialKey(
   return pos < text.length;
 }
 
-function scanQuotedValueEnd(text: string, open: number): number {
+function scanQuotedValueEnd(text: string, open: number, decoded: boolean): number {
   const quote = text[open];
   if (quote !== '"' && quote !== "'") return -1;
+  if (!decoded && quote === '"') {
+    let probe = open + 1;
+    while (probe < text.length && /\s/.test(text[probe]!)) probe += 1;
+    if (
+      probe >= text.length ||
+      text[probe] === "," ||
+      text[probe] === "}" ||
+      text[probe] === "]" ||
+      text[probe] === ":"
+    ) {
+      return -1;
+    }
+  }
   let cur = open + 1;
   while (cur < text.length) {
     const ch = text[cur]!;
@@ -251,6 +264,7 @@ function scanQuotedValueEnd(text: string, open: number): number {
       continue;
     }
     if (ch === quote) return cur + 1;
+    if (!decoded && quote === "'" && ch === '"') return -1;
     cur += 1;
   }
   return -1;
@@ -336,7 +350,7 @@ function redactComposioRegexAssignments(text: string, decoded: boolean): string 
       COMPOSIO_KEY_PREFIX_RE.lastIndex = cursor;
       continue;
     }
-    const quotedEnd = scanQuotedValueEnd(text, valueStart);
+    const quotedEnd = scanQuotedValueEnd(text, valueStart, decoded);
     if (quotedEnd >= 0) {
       out += `${text.slice(cursor, start)}COMPOSIO_API_KEY=[redacted]`;
       cursor = quotedEnd;

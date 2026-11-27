@@ -1640,10 +1640,44 @@ describe("tool step outcomes", () => {
       "Bearer Bearer [redacted]]",
     );
     const rawEscapedBracketed = JSON.stringify({ msg: "Bearer Bearer\n[opaque-123]", sibling: 7 });
-    expect(JSON.parse(sanitizeError(rawEscapedBracketed))).toEqual({
-      msg: "Bearer Bearer [redacted]]",
+    for (const read of [kept, replay, sanitizeError, sanitizeSensitiveText]) {
+      expect(JSON.parse(read(rawEscapedBracketed) ?? "")).toEqual({
+        msg: "Bearer Bearer [redacted]]",
+        sibling: 7,
+      });
+    }
+    for (const sep of ["\n", "\t", "\r\n"]) {
+      const wrapped = JSON.stringify({ msg: `Bearer${sep}opaque-123`, sibling: 7 });
+      expect(JSON.parse(sanitizeSensitiveText(wrapped))).toEqual({
+        msg: "Bearer [redacted]",
+        sibling: 7,
+      });
+    }
+    const rawUnclosedSingleQuote = JSON.stringify({
+      msg: "Bearer Bearer 'opaque-123",
       sibling: 7,
     });
+    expect(JSON.parse(sanitizeSensitiveText(rawUnclosedSingleQuote))).toEqual({
+      msg: "Bearer Bearer [redacted]",
+      sibling: 7,
+    });
+    const rawEmptyComposio = JSON.stringify({
+      msg: "Bearer Bearer COMPOSIO_API_KEY=",
+      sibling: 7,
+    });
+    expect(JSON.parse(sanitizeSensitiveText(rawEmptyComposio))).toEqual({
+      msg: "Bearer [redacted] COMPOSIO_API_KEY=",
+      sibling: 7,
+    });
+    const adjacentAuthPlaceholder = JSON.stringify({
+      msg: "Bearer Bearer auth=[redacted]opaque-123",
+      sibling: 7,
+    });
+    for (const read of [kept, replay, sanitizeError, sanitizeSensitiveText]) {
+      const parsed = JSON.parse(read(adjacentAuthPlaceholder) ?? "");
+      expect(parsed.sibling).toBe(7);
+      expect(parsed.msg).not.toContain("opaque-123");
+    }
     const rawEscapedSecretBreak = JSON.stringify({
       msg: "Bearer Bearer secret=\nopaque-123",
       sibling: 7,
@@ -1673,10 +1707,12 @@ describe("tool step outcomes", () => {
       expect(parsed.msg).not.toContain("opaque-123");
     }
     const wrappedBearerSecret = JSON.stringify({ msg: "Bearer\nsecret: opaque-123", sibling: 7 });
-    expect(JSON.parse(sanitizeSensitiveText(wrappedBearerSecret))).toEqual({
-      msg: "Bearer\nsecret: [redacted]",
-      sibling: 7,
-    });
+    for (const read of [kept, replay, sanitizeError, sanitizeSensitiveText]) {
+      expect(JSON.parse(read(wrappedBearerSecret) ?? "")).toEqual({
+        msg: "Bearer\nsecret: [redacted]",
+        sibling: 7,
+      });
+    }
     const literalBackslashBearer = JSON.stringify({
       msg: String.raw`auth=Bearer\nopaque-123`,
       sibling: 7,
