@@ -7954,17 +7954,17 @@ msgstr "要対応"
 msgid "Needs input"
 msgstr "入力が必要"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/plugin-catalog.ts
+msgid "Needs sign-in"
+msgstr "ログインが必要"
+
 #: apps/mobile/components/cards/AppConnectCard.tsx
 #: apps/mobile/components/integrations/integration-detail.tsx
 #: apps/web/src/pages/plugins/connector-detail.tsx
 #: apps/web/src/pages/shell/chat/message-cards.tsx
 msgid "Needs sign-in"
 msgstr ""
-
-#. js-lingui-explicit-id
-#: packages/i18n/src/plugin-catalog.ts
-msgid "Needs sign-in"
-msgstr "ログインが必要"
 
 #: packages/i18n/src/activity.ts
 msgid "Needs takeover"

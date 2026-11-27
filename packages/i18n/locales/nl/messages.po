@@ -7954,17 +7954,17 @@ msgstr "Heeft aandacht nodig"
 msgid "Needs input"
 msgstr "Heeft invoer nodig"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/plugin-catalog.ts
+msgid "Needs sign-in"
+msgstr "Aanmelding nodig"
+
 #: apps/mobile/components/cards/AppConnectCard.tsx
 #: apps/mobile/components/integrations/integration-detail.tsx
 #: apps/web/src/pages/plugins/connector-detail.tsx
 #: apps/web/src/pages/shell/chat/message-cards.tsx
 msgid "Needs sign-in"
 msgstr ""
-
-#. js-lingui-explicit-id
-#: packages/i18n/src/plugin-catalog.ts
-msgid "Needs sign-in"
-msgstr "Aanmelding nodig"
 
 #: packages/i18n/src/activity.ts
 msgid "Needs takeover"
