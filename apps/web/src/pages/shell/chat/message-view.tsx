@@ -58,6 +58,7 @@ import {
   McpApprovalCard,
 } from "./message-cards";
 import { MessageHoverActions } from "./message-hover-actions";
+import { HandoffGroupRow } from "./peer-activity-group";
 import { RoutineEventRow } from "./routine-event-row";
 
 export const MessageView = memo(function MessageView({
@@ -364,18 +365,13 @@ export const MessageView = memo(function MessageView({
           }
           if (isToolActivityBlock(block)) return null;
           if (block.kind === "handoff") {
-            const from = memberName?.(block.fromBotId) ?? t`bot`;
-            const to = memberName?.(block.toBotId) ?? t`bot`;
             return (
-              <div
+              <HandoffGroupRow
                 key={i}
-                className="flex items-center justify-center gap-2 py-1 text-body text-muted-foreground"
-              >
-                <span>
-                  ↪ {to} ← {from}
-                </span>
-                <span>{block.text}</span>
-              </div>
+                messages={[{ ...message, blocks: [block] }]}
+                memberName={memberName}
+                peerBot={peerBot}
+              />
             );
           }
           if (block.kind === "bot_message_sent" || block.kind === "bot_message_received") {

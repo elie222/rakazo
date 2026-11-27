@@ -63,6 +63,7 @@ import { TimeSeparator, UnreadDivider } from "./chat-context";
 import type { GalleryImage } from "./image-gallery";
 import { galleryImageKey, ImageGalleryProvider } from "./image-gallery";
 import { MessageView } from "./message-view";
+import { groupTranscriptItems, HandoffGroupRow, PeerReceiptGroupRow } from "./peer-activity-group";
 import { QuoteSelectionButton } from "./quote-selection-button";
 import { useReplyAnnouncement } from "./use-reply-announcement";
 
@@ -311,6 +312,11 @@ export const Transcript = memo(function Transcript({
       item.kind === "voiceChat" || messageHasVisibleBlocks(item.message.blocks, showToolActivity),
   );
   const shownItems = showTail ? items.slice(-FIRST_FRAME_ROWS) : items;
+  const { items: groupedItems, anchorOf: groupedAnchorOf } = groupTranscriptItems(
+    shownItems,
+    exchanges,
+    showToolActivity,
+  );
   const continuedSenderIds = continuedSenderMessageIds(shownItems, separatorIds, unreadDividerId);
   const workingLabel =
     liveActivityLine(messages) ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Thinking…`);
@@ -507,9 +513,11 @@ export const Transcript = memo(function Transcript({
   useLayoutEffect(() => {
     if (!scrollRequest || scrolledJump.current === scrollRequest.nonce) return;
     const element = scrollRef.current;
-    const row = element?.querySelector(
-      `[data-message-id="${CSS.escape(exchanges.lineOf.get(scrollRequest.messageId) ?? scrollRequest.messageId)}"]`,
-    );
+    const targetId =
+      groupedAnchorOf.get(scrollRequest.messageId) ??
+      exchanges.lineOf.get(scrollRequest.messageId) ??
+      scrollRequest.messageId;
+    const row = element?.querySelector(`[data-message-id="${CSS.escape(targetId)}"]`);
     if (!element || !row) return;
     scrolledJump.current = scrollRequest.nonce;
     previewWheelTop.current = null;
@@ -532,7 +540,14 @@ export const Transcript = memo(function Transcript({
       { duration: 1200 },
     );
     onScrollRequestHandled();
-  }, [messages, scrollRequest, scrollRef, onScrollRequestHandled, exchanges.lineOf]);
+  }, [
+    messages,
+    scrollRequest,
+    scrollRef,
+    onScrollRequestHandled,
+    exchanges.lineOf,
+    groupedAnchorOf,
+  ]);
 
   const followedRequest = useRef(followRequest);
   useLayoutEffect(() => {
@@ -699,7 +714,7 @@ export const Transcript = memo(function Transcript({
               {t`Load earlier messages`}
             </Button>
           ) : null}
-          {shownItems.map((item) => {
+          {groupedItems.map((item) => {
             if (item.kind === "voiceChat") {
               return (
                 <div key={item.key}>
@@ -722,6 +737,47 @@ export const Transcript = memo(function Transcript({
                     onCallBack={onCallBack}
                   />
                 </div>
+              );
+            }
+            if (item.kind === "handoffGroup") {
+              const first = item.firstMessage;
+              return (
+                <Fragment key={item.key}>
+                  {separatorIds.has(first.id) ? (
+                    <TimeSeparator createdAt={first.createdAt} locale={i18n.locale || "en"} />
+                  ) : null}
+                  {item.messages.some((msg) => msg.id === unreadDividerId) ? (
+                    <UnreadDivider afterSeparator={separatorIds.has(first.id)} />
+                  ) : null}
+                  <div data-message-id={first.id} className="relative">
+                    <HandoffGroupRow
+                      messages={item.messages}
+                      memberName={memberName}
+                      peerBot={peerBot}
+                    />
+                  </div>
+                </Fragment>
+              );
+            }
+            if (item.kind === "peerReceiptGroup") {
+              const first = item.firstMessage;
+              return (
+                <Fragment key={item.key}>
+                  {separatorIds.has(first.id) ? (
+                    <TimeSeparator createdAt={first.createdAt} locale={i18n.locale || "en"} />
+                  ) : null}
+                  {item.entries.some((entry) => entry.message.id === unreadDividerId) ? (
+                    <UnreadDivider afterSeparator={separatorIds.has(first.id)} />
+                  ) : null}
+                  <div data-message-id={first.id} className="relative">
+                    <PeerReceiptGroupRow
+                      entries={item.entries}
+                      groupContext={"groupId" in artifactTarget}
+                      peerBot={peerBot}
+                      onOpenPeerMessages={onOpenPeerMessages}
+                    />
+                  </div>
+                </Fragment>
               );
             }
             const message = item.message;
