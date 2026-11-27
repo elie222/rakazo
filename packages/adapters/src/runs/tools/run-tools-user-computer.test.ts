@@ -399,6 +399,8 @@ describe("botChainFromOwner", () => {
     userId: string;
     spaceId: string;
     sourceMessageId: string | null;
+    botId: string;
+    delegatedFromRunId: string | null;
     bot: { userId: string };
     thread: { groupId: string | null };
     routine: { watch: unknown } | null;
@@ -420,6 +422,17 @@ describe("botChainFromOwner", () => {
         findUnique: async ({ where }: { where: { id: string } }) => {
           runReads(where.id);
           return runs.get(where.id) ?? null;
+        },
+        // How loadRunOrigin finds the conversation that started a helper.
+        findFirst: async ({ where }: { where: { id: string; botId: string } }) => {
+          const run = runs.get(where.id);
+          return run && run.botId === where.botId
+            ? {
+                ...run,
+                status: "completed",
+                sourceMessage: run.sourceMessageId ? { id: run.sourceMessageId } : null,
+              }
+            : null;
         },
       },
       steeringMessage: {
@@ -460,12 +473,15 @@ describe("botChainFromOwner", () => {
         groupId: string;
         routine: { watch: unknown } | null;
         prompt: string;
+        delegatedFromRunId: string;
       }>,
     ) =>
       runs.set(id, {
         id,
         trigger: run.trigger,
         sourceMessageId: run.sourceMessageId,
+        botId: "bot-sender",
+        delegatedFromRunId: run.delegatedFromRunId ?? null,
         userId: run.userId ?? "user-1",
         spaceId: run.spaceId ?? "space-1",
         bot: { userId: run.botOwner ?? "user-1" },
@@ -509,6 +525,34 @@ describe("botChainFromOwner", () => {
     c.fromSender({ trigger: "user", sourceMessageId: "owner-1" });
     c.ownerMessage("owner-1");
     await expect(c.check()).resolves.toBe(true);
+  });
+
+  it("passes through a run that picked up a helper's result, as the conversation that started it", async () => {
+    const c = chain();
+    c.fromSender({
+      trigger: "helper_result",
+      sourceMessageId: "card-1",
+      delegatedFromRunId: "run-0",
+    });
+    c.senderRun("run-0", { trigger: "user", sourceMessageId: "owner-1" });
+    c.ownerMessage("owner-1");
+    await expect(c.check()).resolves.toBe(true);
+  });
+
+  it.each([
+    { refuses: "started by a webhook", origin: "webhook", steered: undefined },
+    { refuses: "that took in webhook text", origin: "user", steered: "webhook" },
+  ])("refuses a helper result $refuses", async ({ origin, steered }) => {
+    const c = chain();
+    c.fromSender({
+      trigger: "helper_result",
+      sourceMessageId: "card-1",
+      delegatedFromRunId: "run-0",
+    });
+    c.senderRun("run-0", { trigger: origin, sourceMessageId: "owner-1" });
+    c.ownerMessage("owner-1");
+    if (steered) c.steered.set("run-1", steered);
+    await expect(c.check()).resolves.toBe(false);
   });
 
   it("passes through two of the owner's bots in a row", async () => {
