@@ -255,8 +255,8 @@ export function createPageAppInstaller(options: {
     if (!existsSync(app.bundlePath)) {
       // Renamed in its folder, it is found there; moved anywhere else, Spotlight may know.
       const moved =
-        (await installedBundles(home)).find((found) => found.appId === app.appId)?.bundlePath ??
-        (await findBundle(pageAppBundleId(app.appId), home ?? os.homedir()));
+        (await installedBundles(appData, home)).find((found) => found.appId === app.appId)
+          ?.bundlePath ?? (await findBundle(pageAppBundleId(app.appId), home ?? os.homedir()));
       if (moved) await registry.put({ ...app, bundlePath: moved });
       else await forget(app);
       return;
