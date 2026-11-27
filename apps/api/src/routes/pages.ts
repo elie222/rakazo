@@ -106,7 +106,13 @@ export function pagesRoutes(ctx: RouterContext) {
         removePage(pageDeps(), context.actor, input.pageId),
       ),
       ask: authed.pages.ask.handler(async function* ({ context, input }) {
-        yield* askFromPage({ ...deps, codexCatalog }, context.actor, input, context.signal);
+        yield* askFromPage(
+          { ...deps, codexCatalog },
+          context.actor,
+          input,
+          context.signal,
+          context.stillAuthorized,
+        );
       }),
     },
   };

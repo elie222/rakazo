@@ -30,6 +30,8 @@ export async function* askFromPage(
   actor: Actor,
   input: PageAskInput & { pageId: string },
   signal?: AbortSignal,
+  /** For a signed-in session: the stream ends as other session streams do once it is not. */
+  stillAuthorized?: () => Promise<boolean>,
 ): AsyncGenerator<PageAskEvent> {
   const page = await deps.prisma.page.findFirst({
     where: { id: input.pageId, spaceId: actor.spaceId, userId: actor.userId },
@@ -54,6 +56,8 @@ export async function* askFromPage(
     ...chat,
     text: pageReply(input.text, [], page).text,
     clientNonce,
+    // In a group, the bot that made the page answers for it.
+    ...(page.groupId && page.botId ? { mentions: [{ kind: "bot" as const, id: page.botId }] } : {}),
   });
   yield { kind: "working" };
   const own = await ownSentTask(deps.prisma, actor, {
@@ -76,7 +80,7 @@ export async function* askFromPage(
   try {
     if (task && !taskSettled(task.status)) {
       const events = withHeartbeats(
-        { signal: wait },
+        { signal: wait, stillAuthorized },
         (follow) => deps.events.follow(target.threadId, cursor, follow),
         (event) => TASK_EVENTS.has(event.type),
       );
