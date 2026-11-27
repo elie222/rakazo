@@ -43,6 +43,9 @@ describe("desktopEntry", () => {
 describe("applicationsDir", () => {
   it("follows XDG_DATA_HOME and falls back to the user's local share folder", () => {
     expect(applicationsDir({ XDG_DATA_HOME: "/data" }, "/home/a")).toBe("/data/applications");
+    expect(applicationsDir({ XDG_DATA_HOME: "data" }, "/home/a")).toBe(
+      "/home/a/.local/share/applications",
+    );
     expect(applicationsDir({}, "/home/a")).toBe("/home/a/.local/share/applications");
   });
 });

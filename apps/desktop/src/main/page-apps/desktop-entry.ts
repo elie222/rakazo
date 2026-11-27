@@ -8,7 +8,12 @@ export function desktopFileName(appId: string): string {
 }
 
 export function applicationsDir(env: NodeJS.ProcessEnv, home = os.homedir()): string {
-  return path.join(env.XDG_DATA_HOME || path.join(home, ".local", "share"), "applications");
+  // The base directory spec says a relative path is invalid and to be ignored.
+  const data = env.XDG_DATA_HOME;
+  return path.join(
+    data && path.isAbsolute(data) ? data : path.join(home, ".local", "share"),
+    "applications",
+  );
 }
 
 /** A value of the Desktop Entry spec's string type. */

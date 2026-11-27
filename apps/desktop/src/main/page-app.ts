@@ -48,11 +48,10 @@ if (launchedId !== null) adoptLauncherIdentity(appId);
 registerPageAppScheme();
 
 /**
- * Removes this app. Its data goes only with a revoked token: otherwise a Mac app waits in the
- * Trash, and a launcher's app stays installed, for the revoke to be tried again.
+ * Removes this app. Its data goes only with a revoked token: otherwise its token stays, and
+ * Rakazo, finding the bundle or launcher gone, tries the revoke again on its next start.
  */
 async function removeSelf(revoked: boolean) {
-  if (launchedId !== null && !revoked) return app.exit(0);
   // An app whose bundle or launcher could not be removed stays usable: its data goes only
   // once that is gone.
   const removal =

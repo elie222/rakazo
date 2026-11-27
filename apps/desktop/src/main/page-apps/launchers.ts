@@ -108,6 +108,15 @@ export function launcherIcon(appId: string, appData: string): string {
   );
 }
 
+/** Whether a shortcut starts this app; one that cannot be read is someone else's. */
+function ownShortcut(shortcut: string, argument: string): boolean {
+  try {
+    return shell.readShortcutLink(shortcut).args === argument;
+  } catch {
+    return false;
+  }
+}
+
 /** Removes the launcher of an app that uninstalls itself, wherever Rakazo put it. */
 export async function removeOwnLauncher(appId: string, appData: string) {
   if (process.platform !== "win32") {
@@ -120,6 +129,6 @@ export async function removeOwnLauncher(appId: string, appData: string) {
   for (const name of await readdir(folder)) {
     if (!name.endsWith(".lnk")) continue;
     const shortcut = path.join(folder, name);
-    if (shell.readShortcutLink(shortcut).args === argument) await rm(shortcut, { force: true });
+    if (ownShortcut(shortcut, argument)) await rm(shortcut, { force: true });
   }
 }
