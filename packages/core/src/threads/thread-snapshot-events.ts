@@ -12,6 +12,7 @@ import {
 } from "../messages/events.js";
 import { mergeThreadHistory, upsertMessageById } from "../messages/message-pages.js";
 import { payloadAuthor, replyMetadata } from "../messages/message-replies.js";
+import { isFeedbackReceiptMessage } from "../messages/message-text.js";
 import {
   BACKGROUND_HELPER_TRIGGER,
   isActive,
@@ -361,7 +362,7 @@ function reduce(prev: LiveThreadSnapshot, event: ThreadSnapshotEvent): LiveThrea
     const replacedSubagentIds = new Set(
       blocks.filter((block) => block.kind === "subagent").map((block) => block.agentId),
     );
-    const { remaining } = takeLiveMessage(prev.messages, progressMessageId(event));
+    const { previous: live, remaining } = takeLiveMessage(prev.messages, progressMessageId(event));
     // A live subagent placeholder gives way to the saved card; the saved card itself stays put.
     const without = remaining.filter(
       (message) => message.id === id || !replacedSubagent(message, replacedSubagentIds),
@@ -378,10 +379,13 @@ function reduce(prev: LiveThreadSnapshot, event: ThreadSnapshotEvent): LiveThrea
     const activeRuns = answeredHelper
       ? activeThreadRuns(prev).filter((run) => run.id !== requestRunId)
       : prev.activeRuns;
+    const messages = upsertMessageById(without, next);
+    // A receipt is posted mid-turn. The streamed reply keeps growing below it.
+    if (live && isFeedbackReceiptMessage(blocks)) messages.push(live);
     return {
       ...prev,
       cursor,
-      messages: upsertMessageById(without, next),
+      messages,
       activeRuns,
       run: answeredHelper && prev.run?.id === requestRunId ? (activeRuns?.[0] ?? null) : prev.run,
     };

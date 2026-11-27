@@ -260,6 +260,7 @@ export function blocksToAgentHistorySegments(blocks: MessageBlock[]): AgentHisto
 
 function blockHistoryText(block: MessageBlock): string {
   if (block.kind === "text") return block.text;
+  if (block.kind === "feedback_receipt") return JSON.stringify({ ...block, status: "submitted" });
   // The tools a reply used, and what the bot wrote before each, are kept out of its text;
   // without them a later turn cannot tell what it already did.
   if (block.kind === "steps") return toolStepsHistoryText(block.steps);
