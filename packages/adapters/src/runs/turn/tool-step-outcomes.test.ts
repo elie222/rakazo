@@ -1646,12 +1646,34 @@ describe("tool step outcomes", () => {
         sibling: 7,
       });
     }
-    for (const sep of ["\n", "\t", "\r\n"]) {
+    for (const sep of ["\n", "\t", "\r\n", "\n ", " \n"]) {
       const wrapped = JSON.stringify({ msg: `Bearer${sep}opaque-123`, sibling: 7 });
       expect(JSON.parse(sanitizeSensitiveText(wrapped))).toEqual({
         msg: "Bearer [redacted]",
         sibling: 7,
       });
+    }
+    const rawPlaceholderSuffix = JSON.stringify({
+      msg: "Bearer\n[redacted]opaque-123",
+      sibling: 7,
+    });
+    expect(JSON.parse(sanitizeSensitiveText(rawPlaceholderSuffix))).toEqual({
+      msg: "Bearer [redacted]",
+      sibling: 7,
+    });
+    const rawTrailingBackslashComposio = JSON.stringify({
+      msg: "Bearer COMPOSIO_API_KEY=\\",
+      sibling: 7,
+    });
+    expect(JSON.parse(sanitizeSensitiveText(rawTrailingBackslashComposio)).sibling).toBe(7);
+    const paddedBearerSecretComma = JSON.stringify({
+      msg: "Bearer opaque-123secret=, retrying",
+      sibling: 7,
+    });
+    for (const read of [kept, replay, sanitizeError, sanitizeSensitiveText]) {
+      const parsed = JSON.parse(read(paddedBearerSecretComma) ?? "");
+      expect(parsed.sibling).toBe(7);
+      expect(parsed.msg).not.toContain("opaque-123");
     }
     const rawUnclosedSingleQuote = JSON.stringify({
       msg: "Bearer Bearer 'opaque-123",
@@ -1666,9 +1688,37 @@ describe("tool step outcomes", () => {
       sibling: 7,
     });
     expect(JSON.parse(sanitizeSensitiveText(rawEmptyComposio))).toEqual({
-      msg: "Bearer [redacted] COMPOSIO_API_KEY=",
+      msg: "Bearer Bearer [redacted]",
       sibling: 7,
     });
+    const rawBareEmptyComposio = JSON.stringify({
+      msg: "COMPOSIO_API_KEY=",
+      sibling: 7,
+    });
+    expect(JSON.parse(sanitizeSensitiveText(rawBareEmptyComposio))).toEqual({
+      msg: "COMPOSIO_API_KEY=",
+      sibling: 7,
+    });
+    const rawQuotedDeferredBearers = [
+      'Bearer Bearer\n"opaque-123"',
+      "Bearer Bearer\n'opaque-123'",
+      'Bearer\n"a"opaque-123',
+      "Bearer\n'a'opaque-123",
+      'Bearer secret= "opaque-123"',
+      "Bearer secret=\n opaque-123",
+      'Bearer secret=\n"opaque-123"',
+      "Bearer Bearer auth=foo}opaque-123",
+      "Bearer Bearer auth=foo:opaque-123",
+      "Bearer Bearer auth=foo\\opaque-123",
+    ];
+    for (const msg of rawQuotedDeferredBearers) {
+      const payload = JSON.stringify({ msg, sibling: 7 });
+      for (const read of [kept, replay, sanitizeError, sanitizeSensitiveText]) {
+        const parsed = JSON.parse(read(payload) ?? "");
+        expect(parsed.sibling).toBe(7);
+        expect(parsed.msg).not.toContain("opaque-123");
+      }
+    }
     const adjacentAuthPlaceholder = JSON.stringify({
       msg: "Bearer Bearer auth=[redacted]opaque-123",
       sibling: 7,
@@ -1683,7 +1733,7 @@ describe("tool step outcomes", () => {
       sibling: 7,
     });
     expect(JSON.parse(sanitizeSensitiveText(rawEscapedSecretBreak))).toEqual({
-      msg: "Bearer [redacted] secret=[redacted]",
+      msg: "Bearer [redacted] secret=\n[redacted]",
       sibling: 7,
     });
     const rawEscapedQuotedSecret = JSON.stringify({
@@ -1765,6 +1815,11 @@ describe("tool step outcomes", () => {
         msg: `${"Bearer\n".repeat(16_000)}fixtureTok`,
       });
       expect(sanitizeSensitiveText(repeatedEscapedBearer)).toContain("Bearer");
+      const repeatedEscapedAssignments = JSON.stringify({
+        msg: "Bearer\nsecret=word".repeat(16_000),
+        sibling: 7,
+      });
+      expect(JSON.parse(sanitizeSensitiveText(repeatedEscapedAssignments)).sibling).toBe(7);
     });
     expect(
       sanitizeConnectorError(new Error(JSON.stringify({ msg: "Bearer Bearer\nopaque-123" }))),

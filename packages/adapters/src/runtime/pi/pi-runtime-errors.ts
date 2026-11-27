@@ -110,7 +110,8 @@ const PREFIXED_CREDENTIAL_KEY_STICKY = new RegExp(
   "iy",
 );
 const BEARER_FOLLOWS_STICKY = /\\*[^\s\w"']?["']?Bearer\s+\S/iy;
-const COMPOSIO_KEY_PREFIX_RE = /COMPOSIO_API_KEY(?:\\+")?(?:\s*[=:]\s*|\s+)(?:\\+")?/gi;
+const COMPOSIO_KEY_PREFIX_RE =
+  /COMPOSIO_API_KEY(?:\\(?:\\\\)*")?(?:\s*[=:]\s*|\s+)(?:\\(?:\\\\)*")?/gi;
 const SECRET_ASSIGNMENT_KEY_RE = /(?:api[_-]?key|access[_-]?token|password|secret)\s*[=:]\s*/gi;
 const AUTH_ASSIGNMENT_KEY_RE = /(?:auth|authorization)\s*[=:]\s*/gi;
 
@@ -210,7 +211,8 @@ function defersToNextCredentialKey(
   ws: string,
   requireSpaceAfterSep: boolean,
 ): boolean {
-  const crossedLine = ws.includes("\n") || ws.includes("\r");
+  const crossedLine =
+    ws.includes("\n") || ws.includes("\r") || ws.includes("\\n") || ws.includes("\\r");
   const keyRe = crossedLine ? PREFIXED_CREDENTIAL_KEY_STICKY : BARE_CREDENTIAL_KEY_STICKY;
   keyRe.lastIndex = valueStart;
   const keyMatch = keyRe.exec(text);
@@ -387,8 +389,15 @@ function redactGenericAssignmentsByPattern(
   let cursor = 0;
   for (let match = pattern.exec(text); match !== null; match = pattern.exec(text)) {
     const start = match.index;
-    const valueStart = start + match[0].length;
+    let valueStart = start + match[0].length;
     if (valueStart >= text.length) break;
+    let ws = trailingWhitespaceAfterSeparator(match[0]);
+    if (!decoded && isJsonEscapedSpace(text, valueStart)) {
+      const afterEscapedWs = skipSpaceOrJsonEscapedSpace(text, valueStart);
+      ws += text.slice(valueStart, afterEscapedWs);
+      valueStart = afterEscapedWs;
+      if (valueStart >= text.length) break;
+    }
     if (startsWithBearer(text, valueStart)) continue;
     if (
       text.startsWith("[redacted]", valueStart) &&
@@ -396,7 +405,6 @@ function redactGenericAssignmentsByPattern(
     ) {
       continue;
     }
-    const ws = trailingWhitespaceAfterSeparator(match[0]);
     if (defersToNextCredentialKey(text, valueStart, ws, true)) continue;
     if (!decoded && text[valueStart] === "\\" && text[valueStart + 1] === '"') {
       const closeAt = scanEscapedDoubleQuotedEnd(text, valueStart);
