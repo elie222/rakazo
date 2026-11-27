@@ -8,7 +8,10 @@ import {
   PageIconColorSchema,
   PageImageSourceSchema,
 } from "@rakazo/contracts";
-import { PAGE_RUNTIME_PATH } from "@rakazo/core";
+import { deadlineSignal, PAGE_RUNTIME_PATH } from "@rakazo/core";
+
+const REVOKE_DEADLINE_MS = 15_000;
+
 import { getLogger } from "@rakazo/logging";
 
 const strings = (value: unknown): string[] =>
@@ -113,8 +116,8 @@ export function createPageAppApi(server: string, token: string, fetcher: Fetch =
         if (line.startsWith("data:")) yield;
       }
     },
-    revoke: async () => {
-      await request("", { method: "DELETE" });
+    revoke: async (signal?: AbortSignal) => {
+      await request("", { method: "DELETE", signal });
     },
     runtime: async () => {
       const response = await fetcher(new URL(PAGE_RUNTIME_PATH, server));
@@ -132,7 +135,7 @@ export type PageAppApi = ReturnType<typeof createPageAppApi>;
  */
 export async function revokePageAppToken(api: PageAppApi): Promise<boolean> {
   try {
-    await api.revoke();
+    await api.revoke(deadlineSignal(REVOKE_DEADLINE_MS));
     return true;
   } catch (error) {
     if (error instanceof PageAppRequestError && (error.status === 401 || error.status === 404))
