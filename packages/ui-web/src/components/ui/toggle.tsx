@@ -12,6 +12,10 @@ const toggleVariants = cva(
       variant: {
         default: "bg-transparent",
         outline: "border border-input bg-transparent",
+        // An option in a segmented track. `background` sits below `muted` in dark mode, so the
+        // selected option takes a lighter fill there to read as raised.
+        segmented:
+          "bg-transparent text-body-sm aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm dark:aria-pressed:bg-input/50",
       },
       size: {
         default:

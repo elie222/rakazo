@@ -62,7 +62,8 @@ export async function connectApp(
       row.connectorId === entry.connectorId &&
       row.externalId.toLowerCase() === entry.slug.toLowerCase(),
   );
-  const shared = matching?.find((row) => row.organizationId);
+  const sharedAccounts = matching?.filter((row) => row.organizationId) ?? [];
+  const shared = sharedAccounts[0];
   const orgOnly = shared && !matching?.some((row) => !row.organizationId);
   const checkShared =
     orgOnly && provider
@@ -75,7 +76,10 @@ export async function connectApp(
         )
       : undefined;
   const reconnect = orgOnly
-    ? checkShared?.({ provider: entry.slug, providerRef: shared.providerRef ?? null })
+    ? checkShared &&
+      sharedAccounts.every((row) =>
+        checkShared({ provider: entry.slug, providerRef: row.providerRef ?? null }),
+      )
     : entry.connected && ((await provider?.needsReconnect?.(context, entry.slug)) ?? false);
   if (entry.connected && !reconnect)
     return {

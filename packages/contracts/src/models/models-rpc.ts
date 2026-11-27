@@ -25,6 +25,7 @@ import {
   ModelSettingsSaveSchema,
   modelChoiceListSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  OrganizationModelConnectInputSchema,
 } from "./model-connections.js";
 import { ModelHeadersSchema } from "./model-headers.js";
 import {
@@ -52,16 +53,17 @@ const OrganizationModelConnectionSchema = z.object({
 export const modelsRpc = {
   models: {
     organizationConnections: {
+      available: oc.output(
+        z.object({
+          connections: z.array(OrganizationModelConnectionSchema),
+          selectedId: Id.nullable(),
+          canManage: z.boolean(),
+        }),
+      ),
+      select: oc.input(z.object({ id: Id.nullable() })).output(z.object({ ok: z.literal(true) })),
       list: oc.input(z.object({})).output(z.array(OrganizationModelConnectionSchema)),
       create: oc
-        .input(
-          ModelConnectInputSchema.safeExtend({
-            apiKey: z.string().trim().min(8),
-            modelId: z.string().trim().min(1).max(512),
-            label: ModelConnectionLabelSchema,
-            credentialId: z.never().optional(),
-          }),
-        )
+        .input(OrganizationModelConnectInputSchema)
         .output(OrganizationModelConnectionSchema),
       remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
     },

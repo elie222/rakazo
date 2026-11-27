@@ -10,16 +10,19 @@ export function SettingsGroup({
   "data-testid": testId,
 }: {
   title?: ReactNode;
-  /** One control for the whole group, at the end of its title. */
+  /** One control for the whole group, at the end of its title row (shown even without a title). */
   action?: ReactNode;
   children: ReactNode;
   "data-testid"?: string;
 }) {
   return (
     <section data-testid={testId}>
-      {title ? (
-        <div className="mb-2 flex items-center justify-between gap-3 px-1">
-          <h3 className="text-body font-medium text-foreground">{title}</h3>
+      {title || action ? (
+        // Inset by the group's border and row padding, so the title starts where row text does.
+        <div className="mx-px mb-2 flex items-center justify-end gap-3 px-4">
+          {title ? (
+            <h3 className="me-auto text-body font-medium text-foreground">{title}</h3>
+          ) : null}
           {action}
         </div>
       ) : null}

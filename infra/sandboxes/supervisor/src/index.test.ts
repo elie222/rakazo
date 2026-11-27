@@ -870,7 +870,11 @@ describe("sandbox supervisor input containment", () => {
         ),
       ).rejects.toThrow("browser still running");
 
-      expect(assigned.get("writer")).toEqual({ index: 0, releasing: true });
+      expect(assigned.get("writer")).toEqual({
+        index: 0,
+        releasing: true,
+        idleAt: expect.any(Number),
+      });
       expect(nextScreenIndex(assigned, "researcher")).toBe(1);
       expect(releaseAssignedScreen(assigned, "writer")).toBe(0);
 

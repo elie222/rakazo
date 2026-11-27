@@ -6,8 +6,9 @@ import { runAsSystem, runAsTenant } from "../database/row-security.js";
 import { assertNameFreeWhereAvailable } from "./name-claims.js";
 import {
   managedOrganizationId,
-  mcpServerIn,
+  organizationModelConnectionIn,
   organizationServerAt,
+  personalOrOrganizationItemIn,
   serverSecretIn,
 } from "./organization-items.js";
 
@@ -37,7 +38,7 @@ describe.skipIf(!enabled)("an organization's MCP servers (PostgreSQL)", () => {
       secrets: (await prisma.secret.findMany({ where: { id: secretId } })).length,
       servers: (
         await prisma.mcpServer.findMany({
-          where: { id: serverId, ...mcpServerIn({ spaceId, userId }) },
+          where: { id: serverId, ...personalOrOrganizationItemIn({ spaceId, userId }) },
         })
       ).length,
       serverSecrets: (
@@ -142,6 +143,49 @@ describe.skipIf(!enabled)("an organization's MCP servers (PostgreSQL)", () => {
     const nothing = { rows: 0, secrets: 0, servers: 0, serverSecrets: 0 };
     expect(await reachable(team, guest)).toEqual(nothing);
     expect(await reachable(outsiderSpace, outsider)).toEqual(nothing);
+  });
+
+  it("authorizes an organization model only for the selecting Space member", async () => {
+    await runAsSystem("organization model fixture", async () => {
+      const connection = await prisma.organizationModelConnection.create({
+        data: {
+          organizationId,
+          provider: "example-provider",
+          modelId: "example-model",
+          label: "Team model",
+          secretId: "fixture",
+          ciphertext: "sealed",
+        },
+      });
+      await prisma.spaceMember.update({
+        where: { spaceId_userId: { spaceId: memberOwn, userId: member } },
+        data: { organizationModelConnectionId: connection.id },
+      });
+      const resolve = (spaceId: string, userId: string) =>
+        prisma.organizationModelConnection.findFirst({
+          where: {
+            id: connection.id,
+            ...organizationModelConnectionIn({ spaceId, userId }, connection.id),
+          },
+          select: { id: true },
+        });
+      expect(await resolve(memberOwn, member)).toEqual({ id: connection.id });
+      expect(await resolve(team, member)).toBeNull();
+      expect(await resolve(team, guest)).toBeNull();
+      expect(await resolve(outsiderSpace, outsider)).toBeNull();
+      await prisma.member.updateMany({
+        where: { userId: member, organizationId },
+        data: { role: "guest" },
+      });
+      try {
+        expect(await resolve(memberOwn, member)).toBeNull();
+      } finally {
+        await prisma.member.updateMany({
+          where: { userId: member, organizationId },
+          data: { role: "member" },
+        });
+      }
+    });
   });
 
   it("is managed by the organization's admins alone", async () => {

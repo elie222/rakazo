@@ -128,15 +128,17 @@ export class BillingEmulator implements BillingProvider {
   async changeByokPlan(
     customerId: string,
     subscriptionId: string,
-    { from, to }: { from: BillingByokPlan; to: BillingByokPlan },
+    { from, to, resume = false }: { from: BillingByokPlan; to: BillingByokPlan; resume?: boolean },
   ) {
     const subscriptions = this.forCustomer(customerId);
     const plan = subscriptions.find((s) => s.subscriptionId === subscriptionId);
     if (
       !plan ||
       plan.priceId !== BYOK_PRICE_ID ||
-      (plan.status !== "active" && plan.status !== "trialing") ||
-      plan.cancelAtPeriodEnd ||
+      (resume
+        ? plan.status !== "trialing"
+        : plan.status !== "active" && plan.status !== "trialing") ||
+      Boolean(plan.cancelAtPeriodEnd) !== resume ||
       plan.byokTier !== from.tier ||
       plan.byokInterval !== from.interval ||
       plan.byokPriceCents !== from.amountCents ||
@@ -146,6 +148,7 @@ export class BillingEmulator implements BillingProvider {
     plan.byokTier = to.tier;
     plan.byokPriceCents = to.amountCents;
     plan.byokInterval = to.interval;
+    plan.cancelAtPeriodEnd = false;
     if (plan.status === "trialing" || to.interval === from.interval) return true;
     plan.currentPeriodStartsAt = new Date(this.now());
     plan.currentPeriodEndsAt = new Date(

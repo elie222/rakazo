@@ -1,16 +1,21 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import {
+  Id,
+  IsoDate,
   PAGE_IMAGE_PREFIX,
   PAGE_IMAGES_MAX,
+  PAGE_LIST_MAX_LIMIT,
   PAGE_TITLE_MAX_LENGTH,
   PageTitleSchema,
 } from "@rakazo/contracts";
 import {
   CARD_TITLE_ESCAPED_CHARACTERS,
   containsSecret,
+  escapeSearchWildcards,
   redactSecrets,
   textEditsGiven,
 } from "@rakazo/core";
+import type { Prisma } from "@rakazo/db";
 import {
   isUniqueViolation,
   pageImageNames,
@@ -23,8 +28,10 @@ import {
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { checkPageSource, PAGE_KIT_GUIDE } from "@rakazo/page-kit/validate";
+import { z } from "zod";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "../../approvals/approval-ask.js";
 import { argumentGiven } from "../../bots/update-bot-patch.js";
+import { TOOL_RESULT_TEXT_LIMIT } from "../../runtime/pi/pi-runtime-limits.js";
 import { editText } from "../../tools/text-edits.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { markReadOutsideContent, neverAsks } from "../assembly/run-context.js";
@@ -45,13 +52,67 @@ import {
  * A bot reaches its own pages and its group's pages, from any of its chats or routines; another
  * bot's page answers as if it did not exist, since its source may hold that chat's text.
  */
-function reachablePage(ctx: RunContext, pageId: string) {
+function reachablePages(ctx: RunContext) {
   const { run, bot, thread } = ctx;
   return {
-    id: pageId,
     spaceId: run.spaceId,
     userId: run.userId,
     OR: thread.groupId ? [{ botId: bot.id }, { groupId: thread.groupId }] : [{ botId: bot.id }],
+  };
+}
+
+function reachablePage(ctx: RunContext, pageId: string) {
+  return { id: pageId, ...reachablePages(ctx) };
+}
+
+const PageListCursor = z.object({ pageId: Id, updatedAt: IsoDate });
+
+async function listPages(ctx: RunContext, args: Record<string, unknown>) {
+  const query =
+    typeof args.query === "string" ? args.query.trim().slice(0, PAGE_TITLE_MAX_LENGTH) : "";
+  let afterCursor: Prisma.PageWhereInput | undefined;
+  if (argumentGiven(args.cursor)) {
+    const cursor = PageListCursor.safeParse(args.cursor);
+    if (!cursor.success) return { error: "Pass nextCursor from the previous page list." };
+    const updatedAt = new Date(cursor.data.updatedAt);
+    afterCursor = {
+      OR: [{ updatedAt: { lt: updatedAt } }, { updatedAt, id: { lt: cursor.data.pageId } }],
+    };
+  }
+  const rows = await ctx.deps.prisma.page.findMany({
+    where: {
+      ...reachablePages(ctx),
+      ...(query ? { title: { contains: escapeSearchWildcards(query), mode: "insensitive" } } : {}),
+      ...(afterCursor ? { AND: afterCursor } : {}),
+    },
+    select: { id: true, title: true, visibility: true, updatedAt: true },
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    take: PAGE_LIST_MAX_LIMIT + 1,
+  });
+  const pages = [];
+  let serializedPagesLength = 0;
+  for (const row of rows.slice(0, PAGE_LIST_MAX_LIMIT)) {
+    const pageId = row.id;
+    const updatedAt = row.updatedAt.toISOString();
+    const page = { pageId, title: row.title, updatedAt, ...pageSharingHint(row.visibility) };
+    const length = serializedPagesLength + JSON.stringify(page).length + Number(pages.length > 0);
+    // Reserve space for continuation, including when the result budget is what ends this batch.
+    const envelopeLength = JSON.stringify({ pages: [], nextCursor: { pageId, updatedAt } }).length;
+    if (length + envelopeLength > TOOL_RESULT_TEXT_LIMIT) break;
+    pages.push(page);
+    serializedPagesLength = length;
+  }
+  const last = pages.at(-1);
+  if (pages.length)
+    await markReadOutsideContent(
+      ctx,
+      pages.map((page) => page.title),
+    );
+  return {
+    ...(rows.length > pages.length && last
+      ? { nextCursor: { pageId: last.pageId, updatedAt: last.updatedAt } }
+      : {}),
+    pages,
   };
 }
 
@@ -140,7 +201,7 @@ export async function holdSharedPageSave(
   const { approvedVersion: _version, approvedVisibility: _visibility, ...args } = request.args;
   request.args = args;
   request.effectRequest = args;
-  if (args.help === true || !argumentGiven(args.pageId)) return undefined;
+  if (args.help === true || args.list === true || !argumentGiven(args.pageId)) return undefined;
   const hasTitle = argumentGiven(args.title);
   if (!argumentGiven(args.source) && !editsGiven(args) && !hasTitle && !imagesGiven(args))
     return undefined;
@@ -207,6 +268,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, thread } = ctx;
   const { args } = call;
   if (args.help === true) return { guide: PAGE_KIT_GUIDE };
+  if (args.list === true) return listPages(ctx, args);
   const pageId = argumentGiven(args.pageId) ? String(args.pageId) : undefined;
   const hasSource = argumentGiven(args.source);
   const hasEdits = editsGiven(args);

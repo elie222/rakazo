@@ -51,6 +51,8 @@ export const zhCN: Messages = {
   photos: { other: "{count} 张照片" },
   slideOf: "第 {n} 张，共 {total} 张",
   showPhoto: "显示第 {n} 张照片",
+  previousPhoto: "上一张照片",
+  nextPhoto: "下一张照片",
   view: "查看",
   viewTitle: "查看{title}",
   rated: "评分 {rating}/5",

@@ -212,9 +212,13 @@ export function ConnectedApps({
             key={install.id}
             params={pluginParamsFor(install)}
             summary={
-              servers.length === 1 ? t`1 connector` : t`${ph({ count: servers.length })} connectors`
+              install.organization
+                ? t`Organization`
+                : servers.length === 1
+                  ? t`1 connector`
+                  : t`${ph({ count: servers.length })} connectors`
             }
-            signIn={servers.some(mcpServerNeedsSignIn)}
+            signIn={install.manageable !== false && servers.some(mcpServerNeedsSignIn)}
             onOpenPlugin={onOpenPlugin}
           />
         );

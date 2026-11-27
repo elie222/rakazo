@@ -60,7 +60,8 @@ listed there, including banks created by another app using that prefix.
 
 Remote MCP servers and installed API / GraphQL connectors default to public HTTPS. The deployment
 owner can attach one on localhost, the same LAN, or a Docker network. Set
-`MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker to allow these for every user. Cloud
+`MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker to allow these for every user. It also
+lets bots send [saved credentials](./bot-secrets.md) to HTTPS origins on private addresses. Cloud
 metadata addresses stay blocked. Leave the flag unset on public installs.
 
 Remote MCP servers that use OAuth normally register Rakazo with their provider on the first

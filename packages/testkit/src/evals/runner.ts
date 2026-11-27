@@ -1264,6 +1264,11 @@ export async function runTrial(
       "memory/list",
       { scope: "user" },
     );
+    const pages = await prisma.page.findMany({
+      where: { botId },
+      orderBy: { createdAt: "asc" },
+      select: { title: true, currentVersion: true },
+    });
     const routines = await prisma.routine.findMany({
       where: { botId },
       select: { name: true, prompt: true, crons: true, active: true, inChat: true },
@@ -1319,6 +1324,7 @@ export async function runTrial(
       calls: services.calls,
       subjectBotId: botId,
       apps: Object.fromEntries(apps.map((service) => [service.kind, service])),
+      pages,
       routines,
       routinesCreated,
       memory: memories.map((m) => m.content).join("\n"),

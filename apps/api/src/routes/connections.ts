@@ -25,10 +25,12 @@ import {
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { connectionCreatedEvent } from "../auth/security-audit.js";
 import {
-  beginConnection,
   completeConnection,
-  connectionContext,
   reconnectOrganizationConnection,
+} from "../integrations/connection-complete.js";
+import {
+  beginConnection,
+  connectionContext,
   revokeConnection,
 } from "../integrations/connection-flows.js";
 import {

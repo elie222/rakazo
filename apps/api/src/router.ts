@@ -16,6 +16,7 @@ import type {
   CodexLiveCatalog,
   ConnectorRegistry,
   createPageRevisions,
+  EncryptedSecretStore,
   FaviconResolver,
   IntegrationProviderSettings,
   McpConnector,
@@ -29,6 +30,7 @@ import type {
   PlanLimitsReader,
   PluginRepoFetcher,
   PluginTextReader,
+  ProtectedBrowserLauncher,
   ProviderCatalogCache,
   PushTokenStore,
   RemoteConnectorDependencies,
@@ -106,6 +108,10 @@ export interface RouterDeps {
   memoryProviders: MemoryProviderResolver;
   home: AgentHomeStore;
   secrets: SecretStore;
+  organizationLoginBrowser?: {
+    launch: ProtectedBrowserLauncher;
+    encryption: EncryptedSecretStore;
+  };
   oauthLogins: PiOAuthLogins<ModelCredential>;
   /** Live Codex catalog seam; defaults to the shared per-process cache. */
   codexCatalog?: CodexLiveCatalog;

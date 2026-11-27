@@ -214,7 +214,7 @@ function InstalledPluginRow({
   servers: McpServer[];
   onOpen: (selection: PluginSelection) => void;
 }) {
-  const signInNeeded = servers.some(mcpServerNeedsSignIn);
+  const signInNeeded = install.manageable !== false && servers.some(mcpServerNeedsSignIn);
   return (
     <div data-testid="installed-plugin" className={`${ROW_SHELL} ${ROW_HOVER}`}>
       <button type="button" className={ROW_BUTTON} onClick={() => onOpen(selection)}>
@@ -226,7 +226,13 @@ function InstalledPluginRow({
           </span>
         </span>
       </button>
-      <AvailabilityLabel availability={install.availability} />
+      {install.organization ? (
+        <span className="text-body-sm text-muted-foreground">
+          <Trans>Organization</Trans>
+        </span>
+      ) : (
+        <AvailabilityLabel availability={install.availability} />
+      )}
       {signInNeeded ? (
         <Button variant="secondary" size="sm" onClick={() => onOpen(selection)}>
           <Trans>Sign in</Trans>

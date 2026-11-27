@@ -34,7 +34,6 @@ export function ByokIntervalToggle({
 }) {
   const { t } = useLingui();
   const savings = byokYearlySavingsPercent(monthlyCents, annualCents);
-  const segment = "h-7 px-3 text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm";
   return (
     <ToggleGroup
       aria-label={t`Billing period`}
@@ -43,12 +42,14 @@ export function ByokIntervalToggle({
         if (next) onChange(ByokIntervalSchema.parse(next));
       }}
       spacing={1}
-      className="shrink-0 rounded-lg bg-foreground/5 p-1"
+      variant="segmented"
+      size="sm"
+      className="shrink-0 data-[variant=segmented]:bg-foreground/5"
     >
-      <ToggleGroupItem value="month" className={segment}>
+      <ToggleGroupItem value="month">
         <Trans>Monthly</Trans>
       </ToggleGroupItem>
-      <ToggleGroupItem value="year" className={segment}>
+      <ToggleGroupItem value="year">
         <Trans>Yearly</Trans>
         {savings > 0 ? <span className="text-success">−{savings}%</span> : null}
       </ToggleGroupItem>

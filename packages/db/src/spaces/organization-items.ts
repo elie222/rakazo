@@ -1,8 +1,9 @@
+import { ClientError } from "@rakazo/core";
 import { GUEST_ROLE, LIVE_ORGANIZATION } from "../billing/billing.js";
 import type { PrismaClient } from "../database/client.js";
 import type { Prisma } from "../generated/prisma/client.js";
 import { availableInSpace, itemSecretIn } from "./availability.js";
-import { organizationRole } from "./organization-members.js";
+import { lockOrganizationMembers, organizationRole } from "./organization-members.js";
 
 type Scope = { spaceId: string; userId: string };
 
@@ -22,13 +23,38 @@ export function organizationItemIn(scope: Scope) {
   };
 }
 
+export function organizationModelConnectionIn(scope: Scope, selectedId?: string) {
+  return {
+    organization: {
+      AND: [
+        LIVE_ORGANIZATION,
+        {
+          spaces: {
+            some: {
+              id: scope.spaceId,
+              deletingAt: null,
+              memberships: {
+                some: {
+                  userId: scope.userId,
+                  member: { role: { not: GUEST_ROLE } },
+                  ...(selectedId ? { organizationModelConnectionId: selectedId } : {}),
+                },
+              },
+            },
+          },
+        },
+      ],
+    },
+  };
+}
+
 /** The managed app connections available to a member in this Space. */
 export function connectionIn(scope: Scope) {
   return { OR: [{ spaceId: scope.spaceId, userId: scope.userId }, organizationItemIn(scope)] };
 }
 
 /** The MCP servers a member's agents can use in this Space: their own and the organization's. */
-export function mcpServerIn(scope: Scope) {
+export function personalOrOrganizationItemIn(scope: Scope) {
   return { OR: [availableInSpace(scope), organizationItemIn(scope)] };
 }
 
@@ -59,11 +85,36 @@ export async function managedOrganizationId(
   return member && organizationRole(member.role) !== "member" ? space.organizationId : null;
 }
 
+/** Hold authorization through an organization item write. */
+export async function lockManagedOrganization(tx: Prisma.TransactionClient, scope: Scope) {
+  const space = await tx.space.findUnique({
+    where: { id: scope.spaceId },
+    select: { organizationId: true },
+  });
+  if (!space) return null;
+  await lockOrganizationMembers(tx, space.organizationId);
+  const [live] = await tx.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "spaces"
+    WHERE "organizationId" = ${space.organizationId} AND "isDefault" AND "deletingAt" IS NULL
+    FOR SHARE
+  `;
+  return live ? managedOrganizationId(tx, scope) : null;
+}
+
 /** The MCP servers a member can change: their own and, for an admin, the organization's. */
-export function mcpServerManagedIn(scope: Scope, organizationId: string | null) {
+export function personalOrManagedOrganizationItemIn(scope: Scope, organizationId: string | null) {
   return {
     OR: [availableInSpace(scope), ...(organizationId ? [{ organizationId }] : [])],
   };
+}
+
+export async function requireManagedOrganizationId(
+  db: Pick<PrismaClient, "space" | "member">,
+  scope: Scope,
+) {
+  const id = await managedOrganizationId(db, scope);
+  if (!id) throw new ClientError("FORBIDDEN", "Only organization admins can share items.");
+  return id;
 }
 
 /**

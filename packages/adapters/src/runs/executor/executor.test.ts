@@ -4,7 +4,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { BACKGROUND_HELPER_TRIGGER, isOwnerStartedRun, ONCE_ROUTINE_CRON } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { RunHistoryWriteError } from "@rakazo/db";
+import { personalOrOrganizationItemIn, RunHistoryWriteError } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { parseUpdateBotPatch } from "../../bots/update-bot-patch.js";
@@ -1387,9 +1387,11 @@ async function continuePinnedRoutineRun(
   const enqueue = vi.fn(async () => undefined);
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
   const append = vi.fn(async () => undefined);
+  const { spaceMember, ...runPrisma } = pinnedRoutineRunPrisma(modelId, options.trigger);
   const prisma: Record<string, unknown> = {
-    ...pinnedRoutineRunPrisma(modelId, options.trigger),
+    ...runPrisma,
     ...compatiblePrismaParts("space-model", plaintext),
+    spaceMember,
   };
   prisma.$transaction = vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma));
   const executor = compatibleExecutor(prisma, plaintext, {
@@ -1519,7 +1521,7 @@ describe("userTurnInstructions", () => {
     "Send progress updates only when the work will take minutes — long computer tasks or multi-step jobs — never for quick replies and never to announce that you are starting. The one exception: once you are working in a browser or on a desktop on a task that will take a few minutes, tell the person right away with message_user that it will take a while. Even then send at most a few brief updates (a sentence or two each), not one per tool call, and do not narrate routine steps. Thinking stays private. message_user is capped at 500 characters and will be silently cut off if you exceed it \u2014 never put your final answer, a report, or any long-form deliverable in it. Always put the complete final answer in your normal reply, never split across message_user calls, and never assume a message_user update already delivered your content.";
   const stableTail = [
     'For charts and data visualization, use the render_plot tool: it renders bar, line, scatter, histogram, heatmap, faceted and many more chart types from a JSON spec and attaches the PNG to the chat. Call render_plot with {"help": true} before your first chart to read the full guide.',
-    'For a dashboard, report, tracker or comparison, build a page with save_page (call it with {"help": true} first for the kit guide). To change a page, pass its pageId with edits or new source instead of making a new page. In your reply, mention the page by its title; never paste its source.',
+    'For a dashboard, report, tracker or comparison, build a page with save_page (call it with {"help": true} first for the kit guide). To change a page, pass its pageId with edits or new source instead of making a new page. {"list": true} lists your pages with their pageIds. In your reply, mention the page by its title; never paste its source.',
     "When the user asks you to add or connect an MCP server (and gives you its details), use add_mcp_server. When add_mcp_server posts an approval card, end with one short sentence asking the user to approve it. You will be told when they connect it.",
     "Never print API keys, access tokens, or secret values. Prefer tools over claiming you already did the work.",
     "Treat pagination cursors as opaque: copy the returned continuation value exactly, never calculate or guess it. When the tool reports no next page, stop; if a cursor is rejected, recheck the last successful result before retrying.",
@@ -2825,9 +2827,11 @@ description: Prepare standup notes
     expect(createdPrompt).toContain("Use skill: Daily standup");
     expect(createdPrompt).toContain("Summarize wins");
     expect(createdPrompt).not.toMatch(/@Daily standup/);
-    // Routines run as their owner: only the owner's skills, and the claim names the owner.
+    // A routine resolves skills and claims the run as its owner.
     expect(prisma.agentSkill.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ userId: "user-1" }) }),
+      expect.objectContaining({
+        where: personalOrOrganizationItemIn({ userId: "user-1", spaceId: "ws-1" }),
+      }),
     );
     expect(claim).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ userId: "user-1" }) }),

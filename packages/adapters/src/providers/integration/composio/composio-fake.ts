@@ -331,6 +331,9 @@ export class FakeComposioClient implements ComposioClient {
           return refused(`Toolkit for ${tool} is not enabled in this session`);
         }
         const pinned = toolkit ? (config.connectedAccounts?.[toolkit] ?? []) : [];
+        if (options?.account && config.multiAccount?.enable !== true) {
+          return refused("The 'account' parameter is not supported for this project");
+        }
         if (options?.account && !pinned.includes(options.account)) {
           return refused(`Account ${options.account} is not available in this session`);
         }

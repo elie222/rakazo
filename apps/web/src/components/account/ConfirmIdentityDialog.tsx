@@ -7,8 +7,9 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  Field,
+  FieldLabel,
   Input,
-  Label,
 } from "@rakazo/ui-web";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -104,10 +105,10 @@ export function ConfirmIdentityDialog({
           }}
         >
           {security?.hasPassword ? (
-            <div>
-              <Label htmlFor="confirm-identity-password">
+            <Field>
+              <FieldLabel htmlFor="confirm-identity-password">
                 <Trans>Password</Trans>
-              </Label>
+              </FieldLabel>
               <Input
                 id="confirm-identity-password"
                 type="password"
@@ -116,7 +117,7 @@ export function ConfirmIdentityDialog({
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
               />
-            </div>
+            </Field>
           ) : security ? (
             <>
               {identityConfirmationProviders(security).map((provider) => (
@@ -148,10 +149,10 @@ export function ConfirmIdentityDialog({
                 </Button>
               ))}
               {security.emailDeletion && sent ? (
-                <div>
-                  <Label htmlFor="confirm-identity-code">
+                <Field>
+                  <FieldLabel htmlFor="confirm-identity-code">
                     <Trans>Code</Trans>
-                  </Label>
+                  </FieldLabel>
                   <Input
                     id="confirm-identity-code"
                     inputMode="numeric"
@@ -160,7 +161,7 @@ export function ConfirmIdentityDialog({
                     value={code}
                     onChange={(event) => setCode(event.target.value)}
                   />
-                </div>
+                </Field>
               ) : null}
               {/* Stays available after sending, as a code expires and locks after three tries. */}
               {security.emailDeletion ? (

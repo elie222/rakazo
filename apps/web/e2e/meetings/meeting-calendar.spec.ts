@@ -4,10 +4,6 @@ import { captureScreenshot, completeOnboarding, signup } from "../helpers/helper
 test("a recurring meeting is scheduled and one occurrence can be skipped", async ({
   page,
 }, testInfo) => {
-  test.skip(
-    process.env.MEETING_PROVIDER !== "emulator",
-    "Set MEETING_PROVIDER=emulator to exercise the calendar provider and its OAuth flow.",
-  );
   await signup(page, `calendar-${Date.now()}@rakazo.test`, "password12", "Calendar Tester");
   await completeOnboarding(page);
 
