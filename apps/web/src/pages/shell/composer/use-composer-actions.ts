@@ -404,6 +404,8 @@ export function useComposerActions({
       const initialBotTarget = activeBotId.current;
       const initialGroupTarget = activeGroupId.current;
       if ((!initialBotTarget && !initialGroupTarget) || sending) return false;
+      const originStillOpen = () =>
+        activeBotId.current === initialBotTarget && activeGroupId.current === initialGroupTarget;
       const editsAtSend = draftEdits.current;
       // The reply this send carries, read from the ref so a callback that outlived
       // a re-pick of the same message still carries the armed one; a reply picked
@@ -497,7 +499,7 @@ export function useComposerActions({
           );
           setAttachmentNotice(null);
           if (reroutedToGroup && groupTarget) {
-            navigate(`/app/g/${groupTarget}`);
+            if (originStillOpen()) navigate(`/app/g/${groupTarget}`);
             return true;
           }
           // The routine is saved; live events reconcile a failed refresh.
@@ -595,7 +597,7 @@ export function useComposerActions({
         // Refresh sidebar status even when a bot→group reroute navigates away below.
         void refreshBots().catch(() => undefined);
         if (reroutedToGroup && groupTarget) {
-          navigate(`/app/g/${groupTarget}`);
+          if (originStillOpen()) navigate(`/app/g/${groupTarget}`);
           return true;
         }
         if (groupTarget && activeGroupId.current === groupTarget) setAttachmentNotice(null);
@@ -612,12 +614,7 @@ export function useComposerActions({
           message: errorText(error, t`Failed to send message`),
           imageConfirmation: confirmation,
         };
-        if (
-          reroutedToGroup &&
-          groupTarget &&
-          activeBotId.current === initialBotTarget &&
-          activeGroupId.current === initialGroupTarget
-        ) {
+        if (reroutedToGroup && originStillOpen()) {
           setSendFailure(failure);
         } else if (groupTarget && activeGroupId.current === groupTarget) {
           setSendFailure(failure);
