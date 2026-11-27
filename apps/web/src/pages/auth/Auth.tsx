@@ -38,12 +38,19 @@ const fieldClass = "mt-2";
 const CODE_LENGTH = 6;
 export const submitClass = "mt-3 w-full";
 
-export function AuthPage({ mode }: { mode: AuthMode }) {
+export function AuthPage({
+  mode,
+  at,
+}: {
+  mode: AuthMode;
+  /** Where the form lives when another screen shows it in place of sign-in's own address. */
+  at?: string;
+}) {
   const { t } = useLingui();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const chooserPath = mode === "up" ? "/sign-up" : "/sign-in";
+  const chooserPath = at ?? (mode === "up" ? "/sign-up" : "/sign-in");
   const emailStep = location.pathname === `${chooserPath}/email`;
   const next = signInNext(searchParams.get("next"));
   // Switching between sign-in and sign-up keeps where the person was going.

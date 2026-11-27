@@ -2,7 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { LinkFavicons } from "@rakazo/chat-ui/web";
 import { LinkFaviconsContext, RemoteImagesContext } from "@rakazo/chat-ui/web";
-import { mobileMcpOAuthReturnUrl } from "@rakazo/contracts";
+import { mobileMcpOAuthReturnUrl, PAGE_WEB_APP_SPACE_PARAM } from "@rakazo/contracts";
 import { analyticsScreen } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import {
@@ -110,10 +110,23 @@ const linkFavicons: LinkFavicons = {
   load: (origin) => rpc.links.favicon({ origin }),
 };
 
+/** A page app's own address, whichever of its sign-in steps is showing. */
+function pageAppPath(pathname: string): string {
+  return pathname.replace(/\/email$/, "");
+}
+
+/** Where sign-in returns a page app: its own address, with the Space it is pinned to. */
+function pageAppNext(pathname: string, search: string): string {
+  const pinned = new URLSearchParams(search).get(PAGE_WEB_APP_SPACE_PARAM);
+  // Only a Space id sign-in will hand back, so the redirect never loops on a malformed one.
+  const space = pinned && /^[A-Za-z0-9_-]{1,200}$/.test(pinned) ? pinned : null;
+  return `${pageAppPath(pathname)}${space ? `?${PAGE_WEB_APP_SPACE_PARAM}=${space}` : ""}`;
+}
+
 /** The page app's own address with itself as where sign-in returns, keeping its Space. */
 function pageAppSignIn(pathname: string, search: string): string {
   const params = new URLSearchParams(search);
-  params.set("next", pathname);
+  params.set("next", pageAppNext(pathname, search));
   return `${pathname}?${params}`;
 }
 
@@ -253,20 +266,27 @@ function SessionApp() {
               />
               <Route path="/reset-password" element={<PasswordResetPage />} />
               <Route path="/p/:slugToken" element={<SharedPagePage />} />
-              <Route
-                path="/page/:pageId"
-                element={
-                  user ? (
-                    <PageAppPage />
-                  ) : next === pathname ? (
-                    // Signed out, sign-in happens right here: an installed page app's window keeps
-                    // only its own page in scope, and the sign-in page is outside it.
-                    <AuthPage key="page-app" mode="in" />
-                  ) : (
-                    <Navigate to={pageAppSignIn(pathname, search)} replace />
-                  )
-                }
-              />
+              {["/page/:pageId", "/page/:pageId/email"].map((path) => (
+                <Route
+                  key={path}
+                  path={path}
+                  element={
+                    user ? (
+                      pathname.endsWith("/email") ? (
+                        <Navigate to={`${pageAppPath(pathname)}${search}`} replace />
+                      ) : (
+                        <PageAppPage />
+                      )
+                    ) : next === pageAppNext(pathname, search) ? (
+                      // Signed out, sign-in happens right here: an installed page app's window
+                      // keeps only its own page in scope, and the sign-in page is outside it.
+                      <AuthPage key="page-app" mode="in" at={pageAppPath(pathname)} />
+                    ) : (
+                      <Navigate to={pageAppSignIn(pathname, search)} replace />
+                    )
+                  }
+                />
+              ))}
               <Route
                 path="/review/:pageId?"
                 element={
