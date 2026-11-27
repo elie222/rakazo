@@ -110,6 +110,13 @@ const linkFavicons: LinkFavicons = {
   load: (origin) => rpc.links.favicon({ origin }),
 };
 
+/** The page app's own address with itself as where sign-in returns, keeping its Space. */
+function pageAppSignIn(pathname: string, search: string): string {
+  const params = new URLSearchParams(search);
+  params.set("next", pathname);
+  return `${pathname}?${params}`;
+}
+
 export function App() {
   const loadRemoteImages = remoteImagesPreference.use();
   return (
@@ -251,11 +258,12 @@ function SessionApp() {
                 element={
                   user ? (
                     <PageAppPage />
+                  ) : next === pathname ? (
+                    // Signed out, sign-in happens right here: an installed page app's window keeps
+                    // only its own page in scope, and the sign-in page is outside it.
+                    <AuthPage key="page-app" mode="in" />
                   ) : (
-                    <Navigate
-                      to={`/sign-in?next=${encodeURIComponent(pathname + search)}`}
-                      replace
-                    />
+                    <Navigate to={pageAppSignIn(pathname, search)} replace />
                   )
                 }
               />
