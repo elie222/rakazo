@@ -407,8 +407,19 @@ function isClosedJsonStringToken(token: string): boolean {
   return slashes % 2 === 0;
 }
 
+function isPrecededByAssignmentSeparator(raw: string, index: number): boolean {
+  let end = index - 1;
+  while (end >= 0 && isJsonWhitespace(raw[end])) end -= 1;
+  return end >= 0 && (raw[end] === ":" || raw[end] === "=");
+}
+
 function followsJsonStringToken(raw: string, end: number, closed: boolean): boolean {
-  if (!closed) return end >= raw.length || !isPrecededByBearer(raw, end);
+  if (!closed) {
+    return (
+      end >= raw.length ||
+      (!isPrecededByBearer(raw, end) && !isPrecededByAssignmentSeparator(raw, end))
+    );
+  }
   if (end >= raw.length) return true;
   const ch = raw[end]!;
   // Accept whitespace and structural or sentence punctuation (such as `. HTTP 400`, `;`, `)`,

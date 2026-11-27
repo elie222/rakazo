@@ -72,7 +72,7 @@ export const TOOL_CALL_SAVED_TEXT_MAX_CHARS =
 
 /** Assignment scan, then the shared text sanitizer. Used on decoded JSON strings and plain gaps. */
 function redactDecodedToolText(value: string, options?: { decoded?: boolean }): string {
-  return sanitizeSensitiveText(redactComposioApiKeyAssignments(value), options);
+  return sanitizeSensitiveText(value, options);
 }
 
 function cleanToolText(text: string, secrets: string[], honorOmissionMarker = false): string {

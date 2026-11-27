@@ -56,24 +56,21 @@ function isComposioLabel(text: string, start: number, end: number): boolean {
   );
 }
 
-/** True when `pos` opens `Bearer <non-whitespace>`, so the Bearer pass should redact the token. */
-function startsWithBearerToken(text: string, pos: number): boolean {
-  if (!startsWithIgnoreCase(text, "bearer", pos)) return false;
-  let next = pos + 6;
+/**
+ * True when `pos` opens a word ending in `Bearer` (bare, escaped, or preceded by opening
+ * punctuation such as `“` or `[`) followed by whitespace and a non-whitespace token.
+ */
+function defersToBearerPass(text: string, pos: number): boolean {
+  let wordEnd = pos;
+  while (wordEnd < text.length && !isWhitespace(text[wordEnd])) wordEnd += 1;
+  if (wordEnd - pos < 6) return false;
+  const bearerStart = wordEnd - 6;
+  if (!startsWithIgnoreCase(text, "bearer", bearerStart)) return false;
+  if (bearerStart > pos && isIdentifierCode(text.charCodeAt(bearerStart - 1))) return false;
+  let next = wordEnd;
   if (!isWhitespace(text[next])) return false;
   while (next < text.length && isWhitespace(text[next])) next += 1;
   return next < text.length;
-}
-
-/** True when `pos` opens `Bearer <token>` or an escaped-quote form such as `\"Bearer <token>`. */
-function defersToBearerPass(text: string, pos: number): boolean {
-  if (startsWithBearerToken(text, pos)) return true;
-  let quote = pos;
-  while (quote < text.length && text[quote] === "\\") quote += 1;
-  if (quote > pos && (text[quote] === '"' || text[quote] === "'")) {
-    return startsWithBearerToken(text, quote + 1);
-  }
-  return false;
 }
 
 /** A `"` preceded by an odd number of backslashes is an escape, not the start of a string. */
@@ -112,7 +109,7 @@ function quotedKeyValue(
   if (scanned.closed) {
     return { interiorStart: pos + 1, interiorEnd: scanned.end - 1, resume: scanned.end };
   }
-  if (startsWithBearerToken(text, pos + 1)) return undefined;
+  if (defersToBearerPass(text, pos + 1)) return undefined;
   let end = pos + 1;
   while (end < text.length && !isWhitespace(text[end])) end += 1;
   return { interiorStart: pos + 1, interiorEnd: end, resume: end };
@@ -143,7 +140,7 @@ function assignmentValueEnd(text: string, open: number): number {
       if (ch === "\n" || ch === "\r") break;
       index += 1;
     }
-    if (startsWithBearerToken(text, open + 1)) return -1;
+    if (defersToBearerPass(text, open + 1)) return -1;
     let end = open;
     while (end < text.length && !isWhitespace(text[end])) end += 1;
     return end > open ? end : -1;
@@ -213,7 +210,7 @@ export function redactComposioApiKeyAssignments(text: string): string {
     }
     pos += 1;
     while (isWhitespace(text[pos])) pos += 1;
-    if (defersToBearerPass(text, pos)) {
+    if (text[pos] !== '"' && text[pos] !== "'" && defersToBearerPass(text, pos)) {
       index = pos;
       continue;
     }

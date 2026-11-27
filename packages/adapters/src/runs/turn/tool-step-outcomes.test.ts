@@ -1359,7 +1359,7 @@ describe("tool step outcomes", () => {
     }
   });
 
-  it("redacts escaped-quote Bearer values after COMPOSIO_API_KEY without breaking closed quotes", () => {
+  it("redacts escaped-quote and backslash Bearer values after COMPOSIO_API_KEY", () => {
     const kept = (text: string) =>
       keptToolResult({ ...base, result: { content: [{ type: "text", text }] } }, []);
     const replay = (text: string) =>
@@ -1368,6 +1368,7 @@ describe("tool step outcomes", () => {
       String.raw`export COMPOSIO_API_KEY=\"Bearer opaque-123\"`,
       String.raw`msg="see COMPOSIO_API_KEY=\"Bearer opaque-123\""`,
       String.raw`{"cmd":"COMPOSIO_API_KEY=\\"Bearer opaque-123\\""}`,
+      String.raw`COMPOSIO_API_KEY=\Bearer opaque-123`,
     ];
     for (const input of escapedCases) {
       for (const read of [kept, replay, sanitizeError, sanitizeSensitiveText]) {
@@ -1376,6 +1377,52 @@ describe("tool step outcomes", () => {
         expect(out).toContain("Bearer [redacted]");
       }
     }
+  });
+
+  it("redacts Bearer values preceded by typographic quotes or brackets after credential keys", () => {
+    const kept = (text: string) =>
+      keptToolResult({ ...base, result: { content: [{ type: "text", text }] } }, []);
+    const replay = (text: string) =>
+      bounded(text, TOOL_CALL_SAVED_TEXT_MAX_CHARS, [], { replaySaved: true });
+    const cases = [
+      "Authorization: \u201cBearer opaque-123\u201d",
+      "Authorization:[Bearer opaque-123]",
+      "password=\u201cBearer opaque-123\u201d",
+      "COMPOSIO_API_KEY: \u201cBearer opaque-123\u201d",
+      JSON.stringify({ msg: "Authorization: \u201cBearer opaque-123\u201d" }),
+    ];
+    for (const input of cases) {
+      for (const read of [kept, replay, sanitizeError, sanitizeSensitiveText]) {
+        const out = read(input) ?? "";
+        expect(out).not.toContain("opaque-123");
+        expect(out).toContain("Bearer [redacted]");
+      }
+    }
+  });
+
+  it("redacts credential assignments split across a line break inside an unclosed quoted token", () => {
+    const kept = (text: string) =>
+      keptToolResult({ ...base, result: { content: [{ type: "text", text }] } }, []);
+    const replay = (text: string) =>
+      bounded(text, TOOL_CALL_SAVED_TEXT_MAX_CHARS, [], { replaySaved: true });
+    const cases = [
+      '{"error":"invalid config: password:\n  opaque-123"}',
+      'Error: "api_key=\nopaque-123"',
+      '{"a":"password:\nopaque-123","b":1}',
+    ];
+    for (const input of cases) {
+      for (const read of [kept, replay, sanitizeError]) {
+        const out = read(input) ?? "";
+        expect(out).not.toContain("opaque-123");
+        expect(out).toContain("[redacted]");
+      }
+    }
+  });
+
+  it("redacts JSON-quoted and closed-quoted COMPOSIO_API_KEY values in sanitizeSensitiveText", () => {
+    expect(sanitizeSensitiveText('{"COMPOSIO_API_KEY":"opaque-123"}')).toBe(
+      '{"COMPOSIO_API_KEY":"[redacted]"}',
+    );
     expect(sanitizeSensitiveText('COMPOSIO_API_KEY="Bearer secret with spaces"')).toBe(
       "COMPOSIO_API_KEY=[redacted]",
     );

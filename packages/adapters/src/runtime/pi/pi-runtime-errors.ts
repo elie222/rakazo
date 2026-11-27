@@ -101,30 +101,31 @@ function redactJwts(text: string): string {
 }
 
 export function sanitizeSensitiveText(message: string, options?: { decoded?: boolean }) {
-  const assignmentsMasked = message
+  const bearerMasked = redactPlainBearerTokens(message, options);
+  const composioMasked = redactComposioApiKeyAssignments(bearerMasked);
+  const assignmentsMasked = composioMasked
     .replace(/sk-or-v1-[a-zA-Z0-9]+/g, "[redacted]")
     .replace(/sk-[a-zA-Z0-9-]+/g, "[redacted]")
     .replace(
-      /COMPOSIO_API_KEY(?:\s*[=:]\s*|\s+)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|(?!\\*["']?Bearer\s+\S)[^\s=:]+)/gi,
+      /COMPOSIO_API_KEY(?:\s*[=:]\s*|\s+)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|(?!\\*[^\s\w"']?["']?Bearer\s+\S)[^\s=:]+)/gi,
       "COMPOSIO_API_KEY=[redacted]",
     )
     .replace(
-      /((?:api[_-]?key|access[_-]?token|password|secret)\s*[=:]\s*)(?!\\*["']?Bearer\s+\S)[^\s"',;&]+/gi,
+      /((?:api[_-]?key|access[_-]?token|password|secret)\s*[=:]\s*)(?!\\*[^\s\w"']?["']?Bearer\s+\S)[^\s"',;&]+/gi,
       "$1[redacted]",
     )
     .replace(
-      /((?:auth|authorization)\s*[=:]\s*)(?!\\*["']?Bearer\s+\S)[^\s"',;&]+/gi,
+      /((?:auth|authorization)\s*[=:]\s*)(?!\\*[^\s\w"']?["']?Bearer\s+\S)[^\s"',;&]+/gi,
       "$1[redacted]",
     );
-  return redactJwts(redactPlainBearerTokens(assignmentsMasked, options));
+  return redactJwts(assignmentsMasked);
 }
 
 export function sanitizeError(message: string) {
   // Scan assignments before the JSON walker. The walker splits a label from its quoted value,
   // and the value would otherwise stay visible. Decoded pieces use the same assignment scan.
   const assigned = redactCredentialJsonFields(redactComposioApiKeyAssignments(message), false);
-  const redact = (value: string) =>
-    sanitizeSensitiveText(redactComposioApiKeyAssignments(value), { decoded: true });
+  const redact = (value: string) => sanitizeSensitiveText(value, { decoded: true });
   return redactJsonStringsAndPlainText(assigned, redact, redact);
 }
 
