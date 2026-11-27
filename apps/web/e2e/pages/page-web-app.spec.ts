@@ -25,12 +25,17 @@ test("a page opens on its own window, ready to install as an app", async ({ page
     page.waitForEvent("popup"),
     page.getByRole("button", { name: "Install app" }).click(),
   ]);
-  await expect(app).toHaveURL(/\/page\/[^/?]+\?space=/);
+  await expect(app).toHaveURL(/\/page\/[^/?]+(?:\?space=[^&]+)?$/);
   await expect(app).toHaveTitle(title);
   const manifest = await app.locator('link[rel="manifest"]').getAttribute("href");
-  expect(manifest).toMatch(/^\/api\/v1\/pages\/[^/]+\/app\.webmanifest\?space=/);
+  expect(manifest).toMatch(/^\/api\/v1\/pages\/[^/]+\/app\.webmanifest/);
   const response = await app.request.get(manifest!);
-  expect(await response.json()).toMatchObject({ name: title, display: "standalone" });
+  // The installed app opens in the page's own Space whatever is selected when it starts.
+  expect(await response.json()).toMatchObject({
+    name: title,
+    display: "standalone",
+    start_url: expect.stringMatching(/^\/page\/[^/?]+\?space=[^&]+$/),
+  });
   await expect(
     app
       .locator(`iframe[title="${title}"]`)
