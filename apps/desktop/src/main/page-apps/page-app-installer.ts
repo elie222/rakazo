@@ -38,6 +38,7 @@ const MAX_ICON_ENTRIES = 12;
 /** Where bundles are made before they appear in the apps folder, on the same volume. */
 const STAGING = ".staging";
 const SET_ASIDE = ".previous.app";
+const RETIRED = ".retired.app";
 
 export type PageAppInstallRequest = {
   appId: string;
@@ -210,10 +211,7 @@ export function createPageAppInstaller(options: {
       return true;
     } catch (error) {
       // Nothing will use the token now, so it ends first, before any cleanup that could fail.
-      await bestEffort(
-        "revoke an unfinished page app",
-        createPageAppApi(server, request.token).revoke(),
-      );
+      await revokePageAppToken(createPageAppApi(server, request.token));
       if (placed !== null) await bestEffort("remove an unfinished page app", removeBundle(placed));
       await bestEffort(
         "remove an unfinished page app's data",
@@ -275,7 +273,9 @@ export function createPageAppInstaller(options: {
         // one whose earlier bundle still runs from where it was set aside.
         if ((await runningAppPids(app.bundlePath)).length > 0) return;
         if ((await runningAppPids(old)).length > 0) return;
+        if ((await runningAppPids(retired(app.appId))).length > 0) return;
         await removeBundle(old);
+        await removeBundle(retired(app.appId));
         await rename(app.bundlePath, old);
         try {
           await rename(next, app.bundlePath);
@@ -283,13 +283,17 @@ export function createPageAppInstaller(options: {
           await rename(old, app.bundlePath);
           throw error;
         }
+        // The swap is done: the old bundle is no longer one to put back, only one to remove.
+        await rename(old, retired(app.appId));
       },
     );
   }
 
-  /** Where an app's previous bundle waits after an update, until nothing runs from it. */
+  /** Where an app's bundle waits while an update swaps in its replacement. */
   const setAside = (appId: string) =>
     path.join(pageAppsFolder(home), STAGING, `${appId}${SET_ASIDE}`);
+  /** Where it waits once the swap is done, until nothing runs from it. */
+  const retired = (appId: string) => path.join(pageAppsFolder(home), STAGING, `${appId}${RETIRED}`);
 
   /**
    * Clears what earlier runs left in the staging folder: an unfinished build goes, and a bundle
@@ -301,10 +305,12 @@ export function createPageAppInstaller(options: {
     const apps = await registry.list();
     for (const name of await bundleNames(staging)) {
       const entry = path.join(staging, name);
-      const app = name.endsWith(SET_ASIDE)
-        ? apps.find((each) => setAside(each.appId) === entry)
-        : undefined;
-      if (app && !existsSync(app.bundlePath)) {
+      const app = apps.find(
+        (each) => setAside(each.appId) === entry || retired(each.appId) === entry,
+      );
+      // Only a swap cut off before its replacement arrived puts the old bundle back; a retired one
+      // never returns, even when the app has since been removed.
+      if (app && entry === setAside(app.appId) && !existsSync(app.bundlePath)) {
         await rename(entry, app.bundlePath);
         continue;
       }

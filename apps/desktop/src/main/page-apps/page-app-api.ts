@@ -11,6 +11,7 @@ import {
 import { deadlineSignal, PAGE_RUNTIME_PATH } from "@rakazo/core";
 
 const REVOKE_DEADLINE_MS = 15_000;
+const CHANGES_SILENCE_MS = 60_000;
 
 import { getLogger } from "@rakazo/logging";
 
@@ -110,10 +111,22 @@ export function createPageAppApi(server: string, token: string, fetcher: Fetch =
     },
     /** Resolves each time the page changes, until the stream ends. */
     changes: async function* (signal: AbortSignal): AsyncGenerator<void> {
-      const response = await request("/changes", { signal });
-      if (!response.body) return;
-      for await (const line of lines(response.body)) {
-        if (line.startsWith("data:")) yield;
+      // The server writes at least a heartbeat every 25 seconds; a stream silent for longer has
+      // gone half-open (after sleep or a network change) and is ended so the app reconnects.
+      const silent = new AbortController();
+      let timer = setTimeout(() => silent.abort(), CHANGES_SILENCE_MS);
+      try {
+        const response = await request("/changes", {
+          signal: AbortSignal.any([signal, silent.signal]),
+        });
+        if (!response.body) return;
+        for await (const line of lines(response.body)) {
+          clearTimeout(timer);
+          timer = setTimeout(() => silent.abort(), CHANGES_SILENCE_MS);
+          if (line.startsWith("data:")) yield;
+        }
+      } finally {
+        clearTimeout(timer);
       }
     },
     revoke: async (signal?: AbortSignal) => {
