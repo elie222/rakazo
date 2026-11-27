@@ -43,6 +43,17 @@ function parsedJson(text: string): unknown {
   }
 }
 
+/** The config an app keeps in its data folder, when it is there and names that app. */
+async function readLauncherConfig(appId: string, appData: string): Promise<PageAppConfig | null> {
+  const text = await bestEffort(
+    "read a page app's config",
+    readFile(path.join(pageAppDataDir(appId, appData), PAGE_APP_CONFIG_FILE), "utf8"),
+  );
+  const config = text ? pageAppConfig(parsedJson(text)) : null;
+  if (config?.appId !== appId) return null;
+  return { ...config, server: readServerOverride(appId, appData) ?? config.server };
+}
+
 /**
  * The apps found by their data folders: each one holding a token and a config, with the launcher
  * that starts it. A registry that was lost or broken is rebuilt from these.
@@ -61,15 +72,9 @@ export async function launcherApps(
   const found: InstalledPageApp[] = [];
   for (const appId of folders) {
     if (!PAGE_APP_ID.test(appId) || !existsSync(pageAppTokenFile(appId, appData))) continue;
-    const text = await bestEffort(
-      "read a page app's config",
-      readFile(path.join(pageAppDataDir(appId, appData), PAGE_APP_CONFIG_FILE), "utf8"),
-    );
-    const config = text ? pageAppConfig(parsedJson(text)) : null;
-    const bundlePath = config?.appId === appId ? await launcher.find(appId) : null;
-    // The server an app was moved to wins over the one it was made with.
-    const server = config ? (readServerOverride(appId, appData) ?? config.server) : null;
-    if (config && server && bundlePath) found.push({ ...config, server, bundlePath });
+    const config = await readLauncherConfig(appId, appData);
+    const bundlePath = config ? await launcher.find(appId) : null;
+    if (config && bundlePath) found.push({ ...config, bundlePath });
   }
   return found;
 }
@@ -163,7 +168,11 @@ export function createLauncherInstaller(options: {
     for (const found of await launcherApps(appData, launcher))
       if (!known.has(found.appId)) await registry.put(found);
     const installed = new Set<string>();
-    for (const app of await registry.list()) {
+    for (const listed of await registry.list()) {
+      // A launcher the person renamed or moved is followed, not taken for a removed app.
+      const moved = existsSync(listed.bundlePath) ? null : await launcher.find(listed.appId);
+      const app = moved ? { ...listed, bundlePath: moved } : listed;
+      if (moved) await registry.put(app);
       if (existsSync(app.bundlePath)) {
         installed.add(app.appId);
         await bestEffort(
@@ -181,7 +190,13 @@ export function createLauncherInstaller(options: {
     }
     for (const appId of folders) {
       if (!PAGE_APP_ID.test(appId) || installed.has(appId)) continue;
-      if (existsSync(pageAppTokenFile(appId, appData))) continue;
+      // A folder no record or launcher claims is left by an install cut off midway: a token in
+      // it is revoked through its config's server, and one without a config is unusable anyway.
+      const config = await readLauncherConfig(appId, appData);
+      if (config && existsSync(pageAppTokenFile(appId, appData))) {
+        await bestEffort("forget an unfinished page app", forget({ ...config, bundlePath: "" }));
+        continue;
+      }
       await bestEffort("remove page app data", removePageAppData(appId, appData));
     }
   }

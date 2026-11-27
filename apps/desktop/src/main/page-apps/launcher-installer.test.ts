@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -43,8 +43,10 @@ function setup(write?: PageAppLauncher["write"]) {
     repoint: vi.fn(async () => undefined),
     remove: vi.fn(async () => undefined),
     find: async (appId) => {
-      const shortcut = path.join(appData, `${appId}.lnk`);
-      return existsSync(shortcut) ? shortcut : null;
+      const name = (await readdir(appData)).find(
+        (file) => file.startsWith(appId) && file.endsWith(".lnk"),
+      );
+      return name ? path.join(appData, name) : null;
     },
   };
   const open = vi.fn(async () => undefined);
@@ -124,6 +126,20 @@ describe("createLauncherInstaller", () => {
       expect.objectContaining({ method: "DELETE" }),
     );
     expect(apps).toEqual([]);
+  });
+
+  it("follows a launcher the person renamed instead of removing its app", async () => {
+    const { installer, fetch } = setup();
+    await installer.install(request("app1"), SERVER);
+    await rename(path.join(appData, "app1.lnk"), path.join(appData, "app1 renamed.lnk"));
+    await installer.refresh();
+    expect(apps).toEqual([
+      expect.objectContaining({ bundlePath: path.join(appData, "app1 renamed.lnk") }),
+    ]);
+    expect(fetch).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ method: "DELETE" }),
+    );
   });
 
   it("takes back an installed app whose record was lost", async () => {
