@@ -17,10 +17,11 @@ fi
 APP_DIR="${RAKAZO_DEPLOY_DIR:-/srv/rakazo}"
 [[ "${APP_DIR}" == /* ]] || { echo "RAKAZO_DEPLOY_DIR must be an absolute path" >&2; exit 1; }
 COMPOSE_FILE="infra/compose/docker-compose.prod.yml"
-# CI allows 140 minutes: 5m pull + 15m fallback build + 5m start + ~1m of health retries + 8m
-# rollback, which only pulls or builds when the previous image is gone, + up to 50m (the worker's
-# stop_grace_period) twice: for a worker an earlier deploy left draining, then for this one's. The
-# replaced API's few minutes of draining run alongside the worker's.
+# CI allows 140 minutes: 5m pull + 15m fallback build + a few minutes to start the new containers
+# one at a time + ~1m of health retries + 8m rollback, which only pulls or builds when the previous
+# image is gone, + up to 50m (the worker's stop_grace_period) twice: for a worker an earlier deploy
+# left draining, then for this one's, whose old workers drain side by side. The replaced APIs' few
+# minutes of draining run alongside the workers'.
 PULL_TIMEOUT="${RAKAZO_DEPLOY_PULL_TIMEOUT:-5m}"
 BUILD_TIMEOUT="${RAKAZO_DEPLOY_BUILD_TIMEOUT:-15m}"
 UP_TIMEOUT="${RAKAZO_DEPLOY_UP_TIMEOUT:-5m}"
@@ -121,16 +122,32 @@ container_healthy() {
   return 1
 }
 
-# Starts the given number of new containers of a service beside the running ones and waits for
-# their health checks.
-start_beside() {
-  local service="$1" running="$2" count="$3" new container
-  compose "${UP_TIMEOUT}" up -d --no-deps --no-recreate \
-    --scale "${service}=$(($(wc -w <<<"${running}") + count))" "${service}"
-  new="$(compose 1m ps --all --quiet "${service}" | grep -vxF "${running}")"
-  for container in ${new}; do
-    container_healthy "${container}"
+# Starts one more container of a service beside all of its others, draining ones included, and
+# waits for its health check. Compose would start a drained container that has exited, and remove
+# the newest ones if the count fell short, so it only creates the new one here.
+start_one() {
+  local service="$1" all new
+  all="$(compose 1m ps --all --quiet "${service}")"
+  compose "${UP_TIMEOUT}" up -d --no-deps --no-recreate --no-start \
+    --scale "${service}=$(($(wc -w <<<"${all}") + 1))" "${service}"
+  new="$(compose 1m ps --all --quiet "${service}" | grep -vxF "${all}")"
+  sudo docker start "${new}" >/dev/null
+  container_healthy "${new}"
+}
+
+# Replaces the given API or worker containers one at a time: each new one starts beside the rest
+# and the old one it replaces retires once it is healthy, so the host never runs more than one
+# container beyond the configured count that takes work. Retired ones may still be draining meanwhile.
+replace_one_by_one() {
+  local service="$1" count="$2" old i
+  # shellcheck disable=SC2206 # one container ID per word
+  old=($3)
+  for ((i = 0; i < count; i++)); do
+    start_one "${service}"
+    if ((i < ${#old[@]})); then "retire_${service}" "${old[i]}"; fi
   done
+  # Fewer replicas than before: the rest retire too.
+  for ((; i < ${#old[@]}; i++)); do "retire_${service}" "${old[i]}"; done
 }
 
 # A replaced worker is not stopped like the web container. It stops claiming jobs and finishes the
@@ -207,6 +224,10 @@ retire_api() {
   done
 }
 
+retire_worker() {
+  drain_containers "$1" SIGTERM
+}
+
 replace_worker() {
   local live
   live="$(service_containers worker live)"
@@ -223,13 +244,12 @@ replace_worker() {
   if [[ -z "${live}" ]]; then
     compose "${UP_TIMEOUT}" up -d --no-deps --wait worker
   else
-    start_beside worker "${live}" "${WORKER_REPLICAS}"
-    drain_containers "${live}" SIGTERM
+    replace_one_by_one worker "${WORKER_REPLICAS}" "${live}"
   fi
 }
 
-# Replaces the API, web and worker without a gap: new containers start beside the running
-# ones, and the old ones stop only once those pass their health checks. Caddy dials whichever container
+# Replaces the API, web and worker without a gap: each new container starts beside the running
+# ones, and the old one it replaces stops only once it passes its health check. Caddy dials whichever container
 # answers, so requests keep flowing through a deploy. The old API and worker end the turns they
 # were executing or, past RUN_DRAIN_MS, hand them back. Every other service is then reconciled
 # normally; the replaced containers already match the new configuration and stay as they are.
@@ -260,10 +280,9 @@ roll_out() {
       continue
     fi
     if [[ "${service}" == api ]]; then
-      start_beside api "${old}" "${API_REPLICAS}"
-      retire_api "${old}"
+      replace_one_by_one api "${API_REPLICAS}" "${old}"
     else
-      start_beside "${service}" "${old}" 1
+      start_one "${service}"
       stop_containers "${old}"
     fi
   done

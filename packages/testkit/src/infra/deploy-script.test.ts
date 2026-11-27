@@ -7,16 +7,20 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 const repoRoot = path.resolve(import.meta.dirname, "../../../..");
 const COMPOSE = "docker compose --env-file .env -f infra/compose/docker-compose.prod.yml";
 const APP_IMAGE = "ghcr.example.test/rakazo/app:local";
-// Each rolled service gains a new container, which must pass its health check before the old
-// one stops; the rest of the stack is reconciled afterwards.
+// Each rolled service gains one new container at a time, which must pass its health check before
+// the old one it replaces stops; the rest of the stack is reconciled afterwards.
 const RESTART_POLICIES =
   "docker inspect --format {{.Id}} {{.HostConfig.RestartPolicy.Name}} {{.State.Running}}";
 const DRAIN_SIGNAL =
   'docker inspect --format {{index .Config.Labels "org.rakazo.run-drain-signal"}}';
-const startBeside = (service: string) => [
-  `${COMPOSE} up -d --no-deps --no-recreate --scale ${service}=2 ${service}`,
+const health = (name: string) =>
+  `docker inspect --format {{.State.Status}}{{if .State.Health}} {{.State.Health.Status}}{{end}} ${name}`;
+const startOne = (service: string, scale = 2, name = `${service}-new`) => [
   `${COMPOSE} ps --all --quiet ${service}`,
-  `docker inspect --format {{.State.Status}}{{if .State.Health}} {{.State.Health.Status}}{{end}} ${service}-new`,
+  `${COMPOSE} up -d --no-deps --no-recreate --no-start --scale ${service}=${scale} ${service}`,
+  `${COMPOSE} ps --all --quiet ${service}`,
+  `docker start ${name}`,
+  health(name),
 ];
 const rolloutSteps = (revision: string) => [
   // The image the running API uses, restored if the deploy fails.
@@ -38,12 +42,12 @@ const rolloutSteps = (revision: string) => [
   `${COMPOSE} ps --all --quiet api`,
   `${RESTART_POLICIES} api-old`,
   `${COMPOSE} ps --all --quiet api`,
-  ...startBeside("api"),
+  ...startOne("api"),
   `${DRAIN_SIGNAL} api-old`,
   "docker update --restart no api-old",
   "docker kill --signal SIGUSR2 api-old",
   `${COMPOSE} ps --all --quiet web`,
-  ...startBeside("web"),
+  ...startOne("web"),
   "docker stop --time 30 web-old",
   "docker rm web-old",
   // The old worker is told to finish its jobs instead of being stopped.
@@ -51,7 +55,7 @@ const rolloutSteps = (revision: string) => [
   `${RESTART_POLICIES} worker-old`,
   `${COMPOSE} ps --all --quiet worker`,
   `${RESTART_POLICIES} worker-old`,
-  ...startBeside("worker"),
+  ...startOne("worker"),
   "docker update --restart no worker-old",
   "docker kill --signal SIGTERM worker-old",
   `${COMPOSE} up -d --no-deps --remove-orphans web`,
@@ -109,7 +113,7 @@ function rollout(commands: string[]) {
       (line) =>
         / (config|build|up|ps) /.test(`${line} `) ||
         line.includes(" run --rm -T -e RAKAZO_DEPLOYED_MIGRATIONS=") ||
-        /^docker (inspect|stop|rm|update|kill|wait) /.test(line),
+        /^docker (inspect|stop|rm|update|kill|wait|start) /.test(line),
     );
 }
 
@@ -164,13 +168,14 @@ if [[ "$1" == pull && -n "\${FAIL_PULL:-}" ]]; then exit 1; fi
 if [[ "$*" == *" images -q" ]]; then echo sha256:running; fi
 if [[ "$1" == tag && -n "\${FAIL_TAG:-}" ]]; then exit 1; fi
 # Containers as "<name> <restart policy> <state>", named after their service. Each rolled service
-# starts with one, --scale adds new ones, and EXTRA_WORKER and EXTRA_API add one an earlier deploy
-# drained.
+# starts with one (two API and worker containers with TWO_OLD), --scale adds new ones, and
+# EXTRA_WORKER and EXTRA_API add one an earlier deploy drained.
 containers="$COMMAND_LOG.containers"
 if [[ ! -e "$containers" ]]; then
   : >"$containers"
   [[ -z "\${STOPPED_API:-}" ]] || echo "api-stopped unless-stopped exited" >"$containers"
   [[ -n "\${FRESH:-}" ]] || printf '%s unless-stopped running\n' api-old web-old worker-old >>"$containers"
+  [[ -z "\${TWO_OLD:-}" ]] || printf '%s unless-stopped running\n' api-old2 worker-old2 >>"$containers"
   [[ -z "\${EXTRA_WORKER:-}" ]] || echo "worker-older no \${EXTRA_WORKER}" >>"$containers"
   [[ -z "\${EXTRA_API:-}" ]] || echo "api-older no \${EXTRA_API}" >>"$containers"
 fi
@@ -697,7 +702,7 @@ describe("production deploy script", () => {
     const drained = commands.indexOf("docker kill --signal SIGUSR2 api-old");
     const removed = commands.indexOf("docker rm api-old");
     const restored = commands.lastIndexOf(
-      `${COMPOSE} up -d --no-deps --no-recreate --scale api=2 api`,
+      `${COMPOSE} up -d --no-deps --no-recreate --no-start --scale api=2 api`,
     );
     expect(drained).toBeGreaterThan(-1);
     expect(commands.slice(drained, removed + 1)).toContain("docker stop --time 30 api-old");
@@ -712,35 +717,42 @@ describe("production deploy script", () => {
     );
   });
 
-  it("starts the configured number of API and worker containers beside the old ones", () => {
+  it("replaces the API and worker containers one at a time", () => {
     const deploy = fixture();
     write(
       path.join(deploy.checkout, ".env"),
       "RAKAZO_HOST=app.example.test\nRAKAZO_API_REPLICAS=2\nRAKAZO_WORKER_REPLICAS=3\n",
     );
     commit(deploy.upstream, "next");
-    expect(deploy.run().status).toBe(0);
+    expect(deploy.run({ TWO_OLD: "1" }).status).toBe(0);
     const commands = rollout(deploy.commands());
-    const health = (name: string) =>
-      `docker inspect --format {{.State.Status}}{{if .State.Health}} {{.State.Health.Status}}{{end}} ${name}`;
-    const apiStarted = commands.indexOf(
-      `${COMPOSE} up -d --no-deps --no-recreate --scale api=3 api`,
-    );
-    expect(commands.slice(apiStarted + 2, apiStarted + 5)).toEqual([
-      health("api-new"),
-      health("api-newx"),
+    const steps = (expected: string[]) => {
+      const first = commands.indexOf(expected[1]!) - 1;
+      return commands.slice(first, first + expected.length);
+    };
+    // Each old one retires once its replacement is healthy, and still counts toward the scale
+    // while it drains, so Compose adds exactly one container each time.
+    const api = [
+      ...startOne("api", 3),
       `${DRAIN_SIGNAL} api-old`,
-    ]);
-    expect(commands).toContain(`${COMPOSE} up -d --no-deps --no-recreate --scale web=2 web`);
-    const workerStarted = commands.indexOf(
-      `${COMPOSE} up -d --no-deps --no-recreate --scale worker=4 worker`,
-    );
-    expect(commands.slice(workerStarted + 2, workerStarted + 6)).toEqual([
-      health("worker-new"),
-      health("worker-newx"),
-      health("worker-newxx"),
+      "docker update --restart no api-old",
+      "docker kill --signal SIGUSR2 api-old",
+      ...startOne("api", 4, "api-newx"),
+      `${DRAIN_SIGNAL} api-old2`,
+      "docker update --restart no api-old2",
+      "docker kill --signal SIGUSR2 api-old2",
+    ];
+    expect(steps(api)).toEqual(api);
+    const worker = [
+      ...startOne("worker", 3),
       "docker update --restart no worker-old",
-    ]);
+      "docker kill --signal SIGTERM worker-old",
+      ...startOne("worker", 4, "worker-newx"),
+      "docker update --restart no worker-old2",
+      "docker kill --signal SIGTERM worker-old2",
+      ...startOne("worker", 5, "worker-newxx"),
+    ];
+    expect(steps(worker)).toEqual(worker);
   });
 
   it("refuses a replica count below one before deploying", () => {
