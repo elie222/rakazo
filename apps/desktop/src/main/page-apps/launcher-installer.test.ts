@@ -1,0 +1,103 @@
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { PageAppLauncher } from "./launcher-installer.js";
+import { createLauncherInstaller } from "./launcher-installer.js";
+import { pageAppDataDir, pageAppsDataDir } from "./page-app-files.js";
+import type { InstalledPageApp } from "./registry.js";
+
+const TOKEN = `rkpa_${"a".repeat(43)}`;
+const SERVER = "https://rakazo.example.com";
+
+let appData: string;
+let apps: InstalledPageApp[];
+const registry = {
+  list: async () => apps,
+  put: async (app: InstalledPageApp) => {
+    apps = [...apps.filter((each) => each.appId !== app.appId), app];
+  },
+  remove: async (appId: string) => {
+    apps = apps.filter((each) => each.appId !== appId);
+  },
+};
+
+beforeEach(async () => {
+  appData = await mkdtemp(path.join(tmpdir(), "rakazo-launchers-"));
+  apps = [];
+});
+afterEach(async () => {
+  await rm(appData, { recursive: true, force: true });
+});
+
+function setup(write?: PageAppLauncher["write"]) {
+  const launcher: PageAppLauncher = {
+    write: write ?? (async ({ config }) => path.join(appData, `${config.appId}.lnk`)),
+    repoint: vi.fn(async () => undefined),
+    remove: vi.fn(async () => undefined),
+  };
+  const open = vi.fn(async () => undefined);
+  const fetch = vi.fn(async () => new Response(null, { status: 204 }));
+  const installer = createLauncherInstaller({ registry, launcher, open, appData, fetch });
+  return { installer, launcher, open, fetch };
+}
+
+const request = (appId: string) => ({
+  appId,
+  pageId: "page1",
+  title: "Deals",
+  token: TOKEN,
+  icon: new Map([[256, Buffer.from("png")]]),
+});
+
+describe("createLauncherInstaller", () => {
+  it("keeps the app's config and private token in its data folder, then starts it", async () => {
+    const { installer, open } = setup();
+    await installer.install(request("app1"), SERVER);
+    const dataDir = pageAppDataDir("app1", appData);
+    expect(JSON.parse(await readFile(path.join(dataDir, "page-app.json"), "utf8"))).toEqual({
+      appId: "app1",
+      pageId: "page1",
+      title: "Deals",
+      server: SERVER,
+    });
+    expect(await readFile(path.join(dataDir, "token"), "utf8")).toBe(TOKEN);
+    if (process.platform !== "win32")
+      expect((await stat(path.join(dataDir, "token"))).mode & 0o777).toBe(0o600);
+    expect(apps.map((app) => app.bundlePath)).toEqual([path.join(appData, "app1.lnk")]);
+    expect(open).toHaveBeenCalledWith("app1");
+  });
+
+  it("leaves nothing behind when the launcher cannot be written", async () => {
+    const { installer } = setup(async () => {
+      throw new Error("no shortcut");
+    });
+    await expect(installer.install(request("app1"), SERVER)).rejects.toThrow("no shortcut");
+    expect(existsSync(pageAppDataDir("app1", appData))).toBe(false);
+    expect(apps).toEqual([]);
+  });
+
+  it("removes the launcher and data and revokes the token on uninstall", async () => {
+    const { installer, launcher, fetch } = setup();
+    await installer.install(request("app1"), SERVER);
+    expect(await installer.uninstall("app1")).toBe(true);
+    expect(launcher.remove).toHaveBeenCalledWith(path.join(appData, "app1.lnk"));
+    const [url, init] = fetch.mock.calls[0] as unknown as [URL, RequestInit];
+    expect([String(url), init.method]).toEqual([`${SERVER}/api/v1/page-app`, "DELETE"]);
+    expect(existsSync(pageAppDataDir("app1", appData))).toBe(false);
+    expect(apps).toEqual([]);
+  });
+
+  it("clears data a removed app left behind, never an installed app's", async () => {
+    const { installer } = setup();
+    await installer.install(request("app1"), SERVER);
+    const left = pageAppDataDir("gone1", appData);
+    await mkdir(left, { recursive: true });
+    await writeFile(path.join(left, "Cookies"), "");
+    await installer.refresh();
+    expect(existsSync(left)).toBe(false);
+    expect(existsSync(pageAppDataDir("app1", appData))).toBe(true);
+    expect(existsSync(pageAppsDataDir(appData))).toBe(true);
+  });
+});

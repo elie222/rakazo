@@ -16,6 +16,7 @@ import {
   setPageAppMenu,
 } from "./page-apps/app/page-app-window.js";
 import { runningBundle } from "./page-apps/bundle-builder.js";
+import { adoptLauncherIdentity, launcherIcon, removeOwnLauncher } from "./page-apps/launchers.js";
 import { createPageAppApi } from "./page-apps/page-app-api.js";
 import {
   PAGE_APP_CONFIG_FILE,
@@ -24,28 +25,43 @@ import {
   readPageAppToken,
   removePageAppData,
 } from "./page-apps/page-app-files.js";
+import { launchedPageAppId } from "./page-apps/page-app-launch.js";
 import { systemWindowBackground } from "./windows/window-options.js";
 
+/** Set when a Windows or Linux launcher started Rakazo as this app; macOS apps are bundles. */
+const launchedId = launchedPageAppId(process.argv, process.platform);
+const appData = app.getPath("appData");
 const config = pageAppConfig(
-  JSON.parse(readFileSync(path.join(process.resourcesPath, PAGE_APP_CONFIG_FILE), "utf8")),
+  JSON.parse(
+    readFileSync(
+      path.join(
+        launchedId === null ? process.resourcesPath : pageAppDataDir(launchedId, appData),
+        PAGE_APP_CONFIG_FILE,
+      ),
+      "utf8",
+    ),
+  ),
 );
-if (!config) throw new Error("This page app's config is not usable.");
+if (!config || (process.platform !== "darwin" && config.appId !== launchedId))
+  throw new Error("This page app's config is not usable.");
 const { appId, pageId, title, server } = config;
 
 app.setName(title);
-app.setPath("userData", pageAppDataDir(appId));
+app.setPath("userData", pageAppDataDir(appId, appData));
+if (launchedId !== null) adoptLauncherIdentity(appId);
 registerPageAppScheme();
 
-/** Moves this app to the Trash and forgets its data; its token is already revoked or gone. */
+/** Removes this app and forgets its data; its token is already revoked or gone. */
 async function removeSelf() {
-  await bestEffort("trash page app", shell.trashItem(runningBundle()));
-  await bestEffort("remove page app data", removePageAppData(appId));
+  if (launchedId === null) await bestEffort("trash page app", shell.trashItem(runningBundle()));
+  else await bestEffort("remove page app launcher", removeOwnLauncher(appId, appData));
+  await bestEffort("remove page app data", removePageAppData(appId, appData));
   app.exit(0);
 }
 
 async function start() {
   startDesktopLocale(null, app.getPreferredSystemLanguages()[0] ?? app.getLocale());
-  const token = await readPageAppToken(appId);
+  const token = await readPageAppToken(appId, appData);
   const api = createPageAppApi(server, token ?? "", fetch);
   const notifications = new Set<Notification>();
   let removing = false;
@@ -58,7 +74,7 @@ async function start() {
     removing = true;
     const { response } = await showDialog({
       message: t("{name} was removed.", { name: title }),
-      buttons: [t("Move to Trash"), t("Quit")],
+      buttons: [launchedId === null ? t("Move to Trash") : t("Uninstall"), t("Quit")],
       defaultId: 0,
       cancelId: 1,
       noLink: true,
@@ -147,7 +163,10 @@ async function start() {
   handleIpc("desktop.pageApp.ready", () => controller.screen());
   handleIpc("desktop.pageApp.message", (_event, data) => controller.message(data));
   servePageApp(controller.frameDocument);
-  win = await createPageAppWindow(title);
+  win = await createPageAppWindow(
+    title,
+    launchedId === null ? undefined : launcherIcon(appId, appData),
+  );
   desktop.pageAppWindow = win;
   win.on("closed", () => app.quit());
   win.on("focus", () => controller.refresh());

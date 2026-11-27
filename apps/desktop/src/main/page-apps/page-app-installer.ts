@@ -17,6 +17,7 @@ import {
 } from "./bundle-builder.js";
 import { pageAppBundleId, pageAppName, uniqueBundleName } from "./bundle-name.js";
 import { ICNS_SIZES, isSquarePng, writeIcns } from "./icns.js";
+import { ICO_SIZES } from "./ico.js";
 import { createPageAppApi } from "./page-app-api.js";
 import type { PageAppConfig } from "./page-app-files.js";
 import {
@@ -30,6 +31,7 @@ import {
 import type { InstalledPageApp } from "./registry.js";
 
 const MAX_ICON_BASE64 = 4 * 1024 * 1024;
+const ICON_SIZES = new Set([...ICNS_SIZES, ...ICO_SIZES]);
 /** Where bundles are made before they appear in the apps folder, on the same volume. */
 const STAGING = ".staging";
 
@@ -56,7 +58,7 @@ export function pageAppInstallRequest(value: unknown): PageAppInstallRequest | n
   const pngs = new Map<number, Buffer>();
   for (const entry of icon as unknown[]) {
     const { size, png } = (entry ?? {}) as { size?: unknown; png?: unknown };
-    if (typeof size !== "number" || !ICNS_SIZES.includes(size)) continue;
+    if (typeof size !== "number" || !ICON_SIZES.has(size)) continue;
     if (typeof png !== "string" || png.length > MAX_ICON_BASE64) return null;
     const bytes = Buffer.from(png, "base64");
     if (!isSquarePng(bytes, size)) return null;
@@ -126,10 +128,11 @@ export function createPageAppInstaller(options: {
   /** Opens a bundle as an app. */
   open: (bundle: string) => Promise<void>;
   version: string;
+  appData: string;
   home?: string;
   source?: string;
 }) {
-  const { registry, home } = options;
+  const { registry, home, appData } = options;
   const source = options.source ?? runningBundle();
 
   async function install(request: PageAppInstallRequest, server: string): Promise<boolean> {
@@ -156,7 +159,7 @@ export function createPageAppInstaller(options: {
             config,
           }),
         async (built) => {
-          await writePageAppToken(request.appId, request.token, home);
+          await writePageAppToken(request.appId, request.token, appData);
           const taken = await bundleNames(folder);
           if (previous) taken.delete(path.basename(previous.bundlePath));
           if (previous && existsSync(previous.bundlePath)) await remove(previous.bundlePath);
@@ -171,7 +174,7 @@ export function createPageAppInstaller(options: {
       return true;
     } catch (error) {
       if (placed !== null) await removeBundle(placed);
-      if (!previous) await removePageAppData(request.appId, home);
+      if (!previous) await removePageAppData(request.appId, appData);
       throw error;
     }
   }
@@ -186,9 +189,9 @@ export function createPageAppInstaller(options: {
     const app = (await registry.list()).find((entry) => entry.appId === appId);
     if (!app) return false;
     if (existsSync(app.bundlePath)) await remove(app.bundlePath);
-    const token = await readPageAppToken(appId, home);
+    const token = await readPageAppToken(appId, appData);
     if (token) await bestEffort("revoke page app", createPageAppApi(app.server, token).revoke());
-    await removePageAppData(appId, home);
+    await removePageAppData(appId, appData);
     await registry.remove(appId);
     return true;
   }
