@@ -4,7 +4,9 @@ import type * as db from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { connectApp } from "./connect-app.js";
 
-const stored = vi.hoisted(() => [] as { blocks: MessageBlock[]; clientNonce: string }[]);
+const stored = vi.hoisted(
+  () => [] as { blocks: MessageBlock[]; clientNonce: string; runId: string }[],
+);
 vi.mock("@rakazo/db", async (original) => ({
   ...(await original<typeof db>()),
   createThreadMessageInTransaction: vi.fn(async (_tx, input) => {
@@ -24,6 +26,7 @@ const entry: ConnectionCatalogItem = {
 function fixture(items = [entry]) {
   const tx = {
     $executeRaw: vi.fn(),
+    run: { findFirst: vi.fn(async () => null) },
     message: {
       findMany: vi.fn(async () => stored),
       findFirst: vi.fn(
@@ -55,6 +58,7 @@ function fixture(items = [entry]) {
     context,
     target,
     catalog,
+    tx,
     call: (app: unknown = "Gmail", effect = "effect") =>
       connectApp(deps, providers, context, target, app, effect),
   };
@@ -118,6 +122,29 @@ describe("connect_app execution", () => {
     await f.call();
     await f.call("gmail", "another-effect");
     expect(stored).toHaveLength(1);
+  });
+
+  it("shows a new card when another member is the only one with a pending request", async () => {
+    const f = fixture();
+    await f.call();
+    await connectApp(
+      f.deps,
+      f.providers,
+      { ...f.context, userId: "other-user" },
+      { ...f.target, id: "other-run" },
+      "Gmail",
+      "other-effect",
+    );
+    expect(f.tx.run.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: { in: ["run"] },
+        threadId: "chat",
+        userId: "other-user",
+        status: { notIn: ["cancelled", "failed"] },
+      },
+      select: { id: true },
+    });
+    expect(stored.map((message) => message.runId)).toEqual(["run", "other-run"]);
   });
 });
 

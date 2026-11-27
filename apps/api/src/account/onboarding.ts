@@ -1,4 +1,6 @@
+import type { JobPublisher } from "@rakazo/adapter-kit";
 import type { ConnectorRegistry } from "@rakazo/adapters";
+import { wakeRun } from "@rakazo/adapters";
 import type { Actor, ConnectionCatalogItem, MessageBlock } from "@rakazo/contracts";
 import { appConnectCard, connectedAppBlock, matchAppCatalog } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -11,7 +13,10 @@ import {
   storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { requireBotThread } from "../bots/bot-thread.js";
+import { appConnectedPrompt } from "../bots/hidden-turns.prompt.js";
+import { queueConnectionFollowUp } from "../integrations/connection-follow-up.js";
 import { resolveThreadTarget } from "../threads/thread-target.js";
 
 /**
@@ -307,7 +312,7 @@ export async function chooseFocus(
 }
 
 export async function markAppConnected(
-  deps: OnboardingDeps,
+  deps: OnboardingDeps & { jobs: Pick<JobPublisher, "enqueue"> },
   actor: Actor,
   botId: string,
   provider: string,
@@ -358,12 +363,12 @@ export async function markAppConnected(
     : null;
   if (organizationConnectionId ? !shared : !entry?.connected) return;
   const target = { spaceId: actor.spaceId, botId: bot.id, threadId: thread.id };
-  const updates = await deps.prisma.$transaction(async (tx) => {
+  const committed = await deps.prisma.$transaction(async (tx) => {
     // Two authorizations may finish together on an onboarding message with multiple cards.
     await tx.$executeRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
     // Onboarding cards sit at the start of the chat and inline cards near the end;
     // bound both reads so a long chat is never scanned in full.
-    const select = { id: true, blocks: true } as const;
+    const select = { id: true, blocks: true, botId: true, runId: true } as const;
     const first = await tx.message.findMany({
       where: { threadId: thread.id },
       select,
@@ -380,8 +385,28 @@ export async function markAppConnected(
       ? await tx.message.findMany({ where: { id: messageId, threadId: thread.id }, select })
       : [];
     const messages = [...new Map([...first, ...latest, ...own].map((m) => [m.id, m])).values()];
+    const runIds = messages.flatMap((message) =>
+      message.botId === bot.id && message.runId ? [message.runId] : [],
+    );
+    const ownedRuns = runIds.length
+      ? await tx.run.findMany({
+          where: {
+            id: { in: runIds },
+            spaceId: actor.spaceId,
+            userId: actor.userId,
+            botId: bot.id,
+            threadId: thread.id,
+          },
+          select: { id: true, status: true, trigger: true },
+        })
+      : [];
+    const runs = new Map(ownedRuns.map((run) => [run.id, run]));
+    let followUpRunId: string | undefined;
     const events = [];
     for (const message of messages) {
+      if (message.botId && message.botId !== bot.id) continue;
+      const origin = message.runId ? runs.get(message.runId) : undefined;
+      if (message.runId && !origin) continue;
       const next = changeMessageBlocks(message, (block) => {
         if (block.kind === "app_connect" && block.organizationConnectionId !== shared?.id)
           return block;
@@ -393,6 +418,23 @@ export async function markAppConnected(
         );
       });
       if (!next) continue;
+      if (
+        message.id === messageId &&
+        !bot.archivedAt &&
+        origin &&
+        (origin.trigger === "user" || origin.trigger === "follow_up") &&
+        origin.status !== "cancelled" &&
+        origin.status !== "failed"
+      ) {
+        followUpRunId = await queueConnectionFollowUp(tx, actor, {
+          botId: bot.id,
+          threadId: thread.id,
+          prompt: appConnectedPrompt(entry?.name ?? provider),
+          // Authorization opens the app. The automatic turn still uses normal approval rules
+          // for work recovered from history.
+          trigger: "follow_up",
+        });
+      }
       await tx.message.update({ where: { id: message.id }, data: { blocks: next.stored } });
       events.push(
         await appendEventInTransaction(tx, {
@@ -402,9 +444,11 @@ export async function markAppConnected(
         }),
       );
     }
-    return events;
+    return { events, followUpRunId };
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
-  for (const event of updates) await deps.events.notify(thread.id, event.seq);
+  for (const event of committed.events)
+    await bestEffort("notify connected app card", deps.events.notify(thread.id, event.seq));
+  if (committed.followUpRunId) await wakeRun(deps.jobs, committed.followUpRunId);
 }
 
 function capitalize(value: string): string {

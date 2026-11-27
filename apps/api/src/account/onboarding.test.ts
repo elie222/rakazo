@@ -18,6 +18,11 @@ function fixture(catalog: unknown[]) {
   posted.length = 0;
   const tx = {
     $executeRaw: vi.fn(),
+    task: { create: vi.fn(async () => ({ id: "follow-up-task" })) },
+    run: {
+      findMany: vi.fn(async () => [] as { id: string; status: string; trigger: string }[]),
+      create: vi.fn(async () => ({ id: "follow-up-run" })),
+    },
     message: {
       findMany: vi.fn(async () => [{ id: "choice", blocks: [{ kind: "choice", answerId: null }] }]),
       update: vi.fn(),
@@ -29,12 +34,13 @@ function fixture(catalog: unknown[]) {
       $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(tx)),
     },
     events: { notify: vi.fn() },
+    jobs: { enqueue: vi.fn() },
     connectors: {
       defaultConnectorId: "first-connector",
       managedProviders: () => [{ catalog: async () => catalog }],
       managed: vi.fn(() => ({ catalog: async () => catalog })),
     },
-  } as unknown as Parameters<typeof chooseFocus>[0];
+  } as unknown as Parameters<typeof markAppConnected>[0];
   const actor = {
     userId: "user",
     spaceId: "space",
@@ -298,4 +304,73 @@ it("updates the authorized card's own message even outside the bounded scan", as
     where: { id: "middle" },
     data: { blocks: [{ ...card, status: "connected" }] },
   });
+  expect(tx.run.create).not.toHaveBeenCalled();
+});
+
+function botConnectionFixture() {
+  const f = fixture([
+    { connectorId: "fixture", slug: "calendar", name: "Calendar", connected: true },
+  ]);
+  const card = {
+    id: "requested-connection",
+    runId: "origin-run",
+    botId: "bot",
+    blocks: [
+      {
+        kind: "app_connect",
+        connectorId: "fixture",
+        provider: "calendar",
+        status: "pending",
+      },
+    ],
+  };
+  f.tx.message.findMany.mockResolvedValue([card] as never);
+  f.tx.message.update.mockImplementation(async ({ data }) => {
+    card.blocks = data.blocks;
+  });
+  return {
+    ...f,
+    complete: () =>
+      markAppConnected(f.deps, f.actor, "bot", "calendar", "fixture", "thread", card.id),
+  };
+}
+
+it("starts one follow-up for the same user and chat when a bot's card connects", async () => {
+  const { complete, deps, tx, actor } = botConnectionFixture();
+  tx.run.findMany.mockResolvedValue([{ id: "origin-run", status: "completed", trigger: "user" }]);
+  await complete();
+  await complete();
+  expect(tx.run.findMany).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: {
+        id: { in: ["origin-run"] },
+        botId: "bot",
+        threadId: "thread",
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+      },
+    }),
+  );
+  expect(tx.run.create).toHaveBeenCalledExactlyOnceWith({
+    data: {
+      botId: "bot",
+      threadId: "thread",
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      taskId: "follow-up-task",
+      trigger: "follow_up",
+      status: "queued",
+    },
+    select: { id: true },
+  });
+  expect(deps.jobs.enqueue).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ name: "run.continue", payload: { runId: "follow-up-run" } }),
+  );
+});
+
+it("leaves another member's connection card pending", async () => {
+  const { complete, tx } = botConnectionFixture();
+  await complete();
+  expect(tx.message.update).not.toHaveBeenCalled();
+  expect(tx.run.create).not.toHaveBeenCalled();
 });

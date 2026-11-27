@@ -101,19 +101,34 @@ export async function connectApp(
     // Only recent cards count as already shown; an old one far up the chat should not block a new one.
     const recent = await tx.message.findMany({
       where: { threadId: target.threadId },
-      select: { id: true, blocks: true },
+      select: { id: true, runId: true, blocks: true },
       orderBy: { createdAt: "desc" },
       take: RECENT_MESSAGES,
     });
-    if (
-      recent.some((message) =>
-        storedMessageBlocks(message).some(
-          (candidate) =>
-            matchesAppConnection(candidate, entry.connectorId, entry.slug, DEFAULT_CONNECTOR_ID) &&
-            candidate.status === "pending" &&
-            candidate.organizationConnectionId === block.organizationConnectionId,
-        ),
+    const pendingRuns = recent.flatMap((message) =>
+      message.runId &&
+      storedMessageBlocks(message).some(
+        (candidate) =>
+          matchesAppConnection(candidate, entry.connectorId, entry.slug, DEFAULT_CONNECTOR_ID) &&
+          candidate.status === "pending" &&
+          candidate.organizationConnectionId === block.organizationConnectionId,
       )
+        ? [message.runId]
+        : [],
+    );
+    if (pendingRuns.includes(target.id)) return null;
+    // Another Space member's request uses their account. Only reuse a card this user can resolve.
+    if (
+      pendingRuns.length &&
+      (await tx.run.findFirst({
+        where: {
+          id: { in: pendingRuns },
+          threadId: target.threadId,
+          userId: context.userId,
+          status: { notIn: ["cancelled", "failed"] },
+        },
+        select: { id: true },
+      }))
     )
       return null;
     const message = await createThreadMessageInTransaction(tx, {

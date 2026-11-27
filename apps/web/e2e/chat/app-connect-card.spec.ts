@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import type { ThreadSnapshot } from "@rakazo/contracts";
 import {
   activeBotId,
   captureScreenshot,
@@ -30,8 +31,27 @@ test("a bot connects an app inline in a normal chat", async ({ page }, testInfo)
     );
     await captureScreenshot(page, testInfo, `web-pending-${theme}`);
   }
+  const before = await rpc<ThreadSnapshot>(page, "threads/get", { botId });
+  const originRun = before.messages.find((message) =>
+    message.blocks.some((block) => block.kind === "app_connect" && block.status === "pending"),
+  )?.runId;
+  expect(originRun).toBeTruthy();
   await card.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(card.getByText("Connected", { exact: true })).toBeVisible();
+  const beforeIds = new Set(before.messages.map((message) => message.id));
+  await expect
+    .poll(async () => {
+      const after = await rpc<ThreadSnapshot>(page, "threads/get", { botId });
+      return after.messages.some(
+        (message) =>
+          !beforeIds.has(message.id) &&
+          message.role === "bot" &&
+          message.runId &&
+          message.runId !== originRun &&
+          message.blocks.some((block) => block.kind === "text"),
+      );
+    })
+    .toBe(true);
   await page.reload();
   await expect(card.getByText("Connected", { exact: true })).toBeVisible();
   for (const theme of ["light", "dark"]) {
