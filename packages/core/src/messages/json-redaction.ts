@@ -542,22 +542,30 @@ function plainRedactionMatchesByLine(
   return joined === whole;
 }
 
-function endsWithBearerAndSpace(text: string): boolean {
-  let end = text.length;
-  while (end > 0) {
-    const ch = text[end - 1];
-    if (ch !== " " && ch !== "\t" && ch !== "\n" && ch !== "\r" && ch !== "\f" && ch !== "\v") {
-      break;
-    }
-    end -= 1;
+function lineEndsWithBearer(line: string): boolean {
+  let end = line.length;
+  while (end > 0 && /\s/.test(line[end - 1]!)) end -= 1;
+  if (end < 6) return false;
+  return line.slice(end - 6, end).toLowerCase() === "bearer";
+}
+
+function afterTrailingBearer(
+  parts: readonly string[],
+  stretchStart: number,
+  index: number,
+): boolean {
+  for (let before = index - 2; before >= stretchStart; before -= 2) {
+    const line = parts[before]!;
+    if (/\S/.test(line)) return lineEndsWithBearer(line);
   }
-  if (end === text.length || end < 6) return false;
-  return text.slice(end - 6, end).toLowerCase() === "bearer";
+  return false;
 }
 
 /**
  * Redact standalone JSON object/array lines intact while running whole-stretch redaction on the
  * non-JSON stretches between them so an empty credential key cannot consume the next line's `{`.
+ * A container line right after a line ending in `Bearer` (across any blank/whitespace lines)
+ * stays in the stretch so cross-line Bearer redaction still sees it.
  */
 function redactAroundJsonLines(
   parts: readonly string[],
@@ -566,12 +574,18 @@ function redactAroundJsonLines(
 ): string {
   let out = "";
   let stretch = "";
+  let stretchStart = 0;
   for (let index = 0; index < parts.length; index += 2) {
     const line = parts[index]!;
     const separator = parts[index + 1] ?? "";
-    if (!endsWithBearerAndSpace(stretch) && /^\s*[{[]/.test(line) && parseJsonSpans(line)) {
+    if (
+      /^\s*[{[]/.test(line) &&
+      parseJsonSpans(line) &&
+      !afterTrailingBearer(parts, stretchStart, index)
+    ) {
       if (stretch) out += redactStretch(stretch);
       stretch = "";
+      stretchStart = index + 2;
       out += `${redactJsonLine(line)}${separator}`;
     } else {
       stretch += `${line}${separator}`;

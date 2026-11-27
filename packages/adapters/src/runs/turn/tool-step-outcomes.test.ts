@@ -1512,6 +1512,25 @@ describe("tool step outcomes", () => {
         'password:\n{"ok":true}\nclient_id=abc',
       );
     }
+  });
+
+  it("keeps a container JSON line attached to a trailing Bearer line on failed tool errors", () => {
+    const failed = (text: string) => keptToolResult({ ...base, error: new Error(text) }, []);
     expect(failed('COMPOSIO_API_KEY: "Bearer\n["opaque-123"]')).toBe("COMPOSIO_API_KEY=[redacted]");
+    expect(failed('COMPOSIO_API_KEY: "Bearer\t\r\n["opaque-123"]')).toBe(
+      "COMPOSIO_API_KEY=[redacted]",
+    );
+    expect(failed('COMPOSIO_API_KEY: "Bearer\n\u00A0\n["opaque-123"]')).toBe(
+      "COMPOSIO_API_KEY=[redacted]",
+    );
+  });
+
+  it("keeps multiline JSON fallback linear on large non-JSON stretches", () => {
+    const largeStretch = `password:\n${"line ok\n".repeat(100_000)}{"ok":true}`;
+    expectLinearTime(() => {
+      const redacted = sanitizeError(largeStretch);
+      expect(redacted).toContain('{"ok":true}');
+      expect(redacted).toContain("password:\n[redacted]");
+    });
   });
 });
