@@ -2,10 +2,14 @@ import { t } from "@lingui/core/macro";
 import type { AgentSkillCatalogEntry, RpcPath } from "@rakazo/contracts";
 import type { ComposerMention, resolveComposerSendPlan } from "@rakazo/core";
 import {
+  abortableDelay,
+  errorStatus,
   isImageInputConfirmation,
   isModelRequiredSendError,
   isServerUnreachable,
+  retryDelayMs,
 } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { RpcOptions, rpc } from "../../api/api";
 import type { PickedAttachment } from "../../composer/pick-attachments";
@@ -162,6 +166,22 @@ function isListed(attempt: SendAttempt) {
   return !memoryOnly.has(attempt) || writtenFiles.has(attempt);
 }
 let running: Promise<void> | undefined;
+let rateLimitWait: { controller: AbortController; force: boolean } | undefined;
+
+function pauseForRateLimit(error: unknown) {
+  const wait = { controller: new AbortController(), force: pendingForce === true };
+  rateLimitWait = wait;
+  pendingForce = null;
+  void bestEffort(
+    "resume rate-limited outbox",
+    abortableDelay(retryDelayMs(error, 1_000), wait.controller.signal).then(() => {
+      if (rateLimitWait !== wait) return;
+      rateLimitWait = undefined;
+      return sendWaitingMessages(wait.force);
+    }),
+  );
+}
+
 /** A retry that arrived while a drain was in progress, run once that drain stops. */
 let pendingForce: boolean | null = null;
 const watchers = new Set<() => void>();
@@ -339,6 +359,8 @@ export function clearUnsentSends() {
   removed.clear();
   echoes.clear();
   pendingForce = null;
+  rateLimitWait?.controller.abort();
+  rateLimitWait = undefined;
   diskReadable = true;
   clearPending = !tryDisk(() => {
     config?.disk.clear();
@@ -377,6 +399,10 @@ export function subscribeDelivered(listener: (attempt: SendAttempt) => void) {
   };
 }
 export function sendWaitingMessages(force = false): Promise<void> {
+  if (rateLimitWait) {
+    rateLimitWait.force ||= force;
+    return Promise.resolve();
+  }
   if (running) {
     pendingForce = pendingForce === true || force;
     return running;
@@ -426,9 +452,13 @@ export function sendWaitingMessages(force = false): Promise<void> {
             requeue(attempt);
             continue;
           }
-          const detail = error as { status?: number; cause?: { status?: number } } | null;
-          const status = detail?.status;
-          const sendStatus = status ?? detail?.cause?.status;
+          const status = errorStatus(error);
+          const responseError =
+            status === undefined && error && typeof error === "object" && "cause" in error
+              ? error.cause
+              : error;
+          const sendStatus = errorStatus(responseError);
+          if (sendStatus === 429) pauseForRateLimit(responseError);
           // A password change revokes the token before its replacement arrives; the send waits
           // for the new session. Any other 401 is refused as usual.
           const offline =
