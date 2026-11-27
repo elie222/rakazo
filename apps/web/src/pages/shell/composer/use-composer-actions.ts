@@ -115,6 +115,13 @@ export function useComposerActions({
   const [sending, setSending] = useState(false);
   const [pendingSends, setPendingSends] = useState<PendingSend[]>([]);
   const activeThreadKey = inGroup ? groupId : activeId;
+  // Reselecting the same chat starts a new selection.
+  const chatSelection = useRef({ threadKey: activeThreadKey, inGroup });
+  if (
+    chatSelection.current.threadKey !== activeThreadKey ||
+    chatSelection.current.inGroup !== inGroup
+  )
+    chatSelection.current = { threadKey: activeThreadKey, inGroup };
   const activeMessages = activeSnapshot?.messages;
   // A send stays shown until the chat holds its stored message, whichever update brings it;
   // a seq that lands after its message arrived is checked against the messages already here.
@@ -404,8 +411,8 @@ export function useComposerActions({
       const initialBotTarget = activeBotId.current;
       const initialGroupTarget = activeGroupId.current;
       if ((!initialBotTarget && !initialGroupTarget) || sending) return false;
-      const originStillOpen = () =>
-        activeBotId.current === initialBotTarget && activeGroupId.current === initialGroupTarget;
+      const selectionAtSend = chatSelection.current;
+      const originStillOpen = () => chatSelection.current === selectionAtSend;
       const editsAtSend = draftEdits.current;
       // The reply this send carries, read from the ref so a callback that outlived
       // a re-pick of the same message still carries the armed one; a reply picked
