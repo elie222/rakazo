@@ -542,6 +542,19 @@ function plainRedactionMatchesByLine(
   return joined === whole;
 }
 
+function endsWithBearerAndSpace(text: string): boolean {
+  let end = text.length;
+  while (end > 0) {
+    const ch = text[end - 1];
+    if (ch !== " " && ch !== "\t" && ch !== "\n" && ch !== "\r" && ch !== "\f" && ch !== "\v") {
+      break;
+    }
+    end -= 1;
+  }
+  if (end === text.length || end < 6) return false;
+  return text.slice(end - 6, end).toLowerCase() === "bearer";
+}
+
 /**
  * Redact standalone JSON object/array lines intact while running whole-stretch redaction on the
  * non-JSON stretches between them so an empty credential key cannot consume the next line's `{`.
@@ -556,7 +569,7 @@ function redactAroundJsonLines(
   for (let index = 0; index < parts.length; index += 2) {
     const line = parts[index]!;
     const separator = parts[index + 1] ?? "";
-    if (/^\s*[{[]/.test(line) && parseJsonSpans(line)) {
+    if (!endsWithBearerAndSpace(stretch) && /^\s*[{[]/.test(line) && parseJsonSpans(line)) {
       if (stretch) out += redactStretch(stretch);
       stretch = "";
       out += `${redactJsonLine(line)}${separator}`;

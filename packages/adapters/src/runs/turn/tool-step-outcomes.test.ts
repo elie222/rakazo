@@ -1475,6 +1475,10 @@ describe("tool step outcomes", () => {
     }
     const rawJson = String.raw`{"log":"{\"COMPOSIO_API_KEY\":\"opaque-123\"}"}`;
     expect(sanitizeSensitiveText(rawJson)).not.toContain("opaque-123");
+    const escapedQuotedBearer = String.raw`COMPOSIO_API_KEY=\""Bearer abc opaque-123 def"`;
+    for (const read of [kept, replay, failed, sanitizeError, sanitizeSensitiveText]) {
+      expect(read(escapedQuotedBearer)).toBe("COMPOSIO_API_KEY=[redacted]");
+    }
   });
 
   it("redacts multiline bare credential assignments alongside a JSON line", () => {
@@ -1503,6 +1507,11 @@ describe("tool step outcomes", () => {
     for (const read of [kept, replay, failed, sanitizeError]) {
       expect(read(emptyKey)).toBe(emptyKey);
       expect(read(chainedKey)).toBe('client_id=abc\nclient_secret=\n{"access_token":"[redacted]"}');
+      expect(read('password:\n[tok]\n{"ok":true}')).toBe('password:\n[redacted]\n{"ok":true}');
+      expect(read('password:\n{"ok":true}\nclient_id=abc')).toBe(
+        'password:\n{"ok":true}\nclient_id=abc',
+      );
     }
+    expect(failed('COMPOSIO_API_KEY: "Bearer\n["opaque-123"]')).toBe("COMPOSIO_API_KEY=[redacted]");
   });
 });
