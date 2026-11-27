@@ -75,10 +75,11 @@ function PageApp({ pageId, spaceId }: { pageId: string; spaceId: string | null }
   });
   usePageAppHead(pageId, spaceId, data?.title);
 
+  // Busy or unreachable keeps the page being read; deleted or no longer theirs does not.
   const failed = page.isError && data === undefined;
   const code = errorCode(page.error);
   const notice =
-    failed && (code === "NOT_FOUND" || code === "FORBIDDEN") ? (
+    page.isError && (code === "NOT_FOUND" || code === "FORBIDDEN") ? (
       <PageNotice
         title={t`This page isn't available`}
         detail={t`It may have been deleted, or it belongs to someone else.`}
