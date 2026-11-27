@@ -31,7 +31,7 @@ const ADJACENT_CREDENTIAL_START =
 const JSON_CONTAINER_LINE_START =
   /(?:\{\s*(?:["}]|$)|\[\s*(?:["{[\]]|(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)(?=[\s,\]]|$)))/;
 const RAW_DEFERRED_BEARER_FOLLOWS = new RegExp(
-  `Bearer(?:[^\\S\\r\\n]+(?!(?:\\S*Bearer(?:\\s|\\\\[nrt])+\\S|[\\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\\s*(?::|=(?=\\s|["',;&}\\]]|\\\\[nrt"\\\\]|$))))\\S|(?:\\s|\\\\[nrt])+(?!(?:${JSON_CONTAINER_LINE_START.source}|\\S*Bearer(?:\\s|\\\\[nrt])+\\S|[\\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\\s*(?::|=(?=\\s|["',;&}\\]]|\\\\[nrt"\\\\]|$))))[^\\s"\\\\]|(?:\\s|\\\\[nrt])+(?!(?:${JSON_CONTAINER_LINE_START.source}|\\S*Bearer(?:\\s|\\\\[nrt])+\\S))\\\\(?![nrt"\\\\]))`,
+  `Bearer(?:[^\\S\\r\\n]+(?!(?:\\S*Bearer\\s+\\S|[\\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\\s*(?::|=(?=\\s|["',;&}\\]]|\\\\[nrt"\\\\]|$))))\\S|\\s+(?!(?:${JSON_CONTAINER_LINE_START.source}|\\S*Bearer\\s+\\S|[\\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\\s*(?::|=(?=\\s|["',;&}\\]]|\\\\[nrt"\\\\]|$))))\\S)`,
 );
 const DECODED_DEFERRED_BEARER_FOLLOWS = new RegExp(
   `Bearer(?:[^\\S\\r\\n]+(?!(?:\\S*Bearer\\s+\\S|[\\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\\s*(?::|=(?=\\s|["',;&}\\]]|$))))\\S|\\s+(?!(?:${JSON_CONTAINER_LINE_START.source}|\\S*Bearer\\s+\\S|[\\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\\s*(?::|=(?=\\s|["',;&}\\]]|$))))\\S)`,
@@ -41,7 +41,7 @@ const RAW_SUFFIX_ATOM = new RegExp(
   `(?:(?!${ADJACENT_CREDENTIAL_START.source})(?:\\\\(?![nrt"\\\\])|[^\\s"',;&}{[\\]:\\\\]))`,
 );
 const RAW_BEARER = new RegExp(
-  `Bearer(?:\\s|\\\\[nrt])+(?!${RAW_DEFERRED_BEARER_FOLLOWS.source}|\\[redacted\\](?!${RAW_SUFFIX_ATOM.source}))(?:\\\\"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"${RAW_SUFFIX_ATOM.source}*)?|"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${RAW_SUFFIX_ATOM.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'\\\\\\r\\n])+(?:'${RAW_SUFFIX_ATOM.source}*)?|\\[redacted\\]${RAW_SUFFIX_ATOM.source}+|(?:${RAW_ATOM.source})+)`,
+  `Bearer\\s+(?!${RAW_DEFERRED_BEARER_FOLLOWS.source}|\\[redacted\\](?!${RAW_SUFFIX_ATOM.source}))(?:\\\\"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"${RAW_SUFFIX_ATOM.source}*)?|"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${RAW_SUFFIX_ATOM.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'\\\\\\r\\n])+(?:'${RAW_SUFFIX_ATOM.source}*)?|\\[redacted\\]${RAW_SUFFIX_ATOM.source}+|(?:${RAW_ATOM.source})+)`,
   "gi",
 );
 

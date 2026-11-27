@@ -109,10 +109,10 @@ const PREFIXED_CREDENTIAL_KEY_STICKY = new RegExp(
   `[\\w-]*${CREDENTIAL_KEY_WORD}(?=[^A-Za-z0-9_-]|$)`,
   "iy",
 );
-const BEARER_FOLLOWS_STICKY = /\\*[^\s\w"']?["']?Bearer(?:\s|\\[nrt])+\S/iy;
+const BEARER_FOLLOWS_STICKY = /\\*[^\s\w"']?["']?Bearer\s+\S/iy;
 const COMPOSIO_KEY_PREFIX_RE = /COMPOSIO_API_KEY(?:\\+")?(?:\s*[=:]\s*|\s+)(?:\\+")?/gi;
-const GENERIC_ASSIGNMENT_KEY_RE =
-  /(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:]\s*/gi;
+const SECRET_ASSIGNMENT_KEY_RE = /(?:api[_-]?key|access[_-]?token|password|secret)\s*[=:]\s*/gi;
+const AUTH_ASSIGNMENT_KEY_RE = /(?:auth|authorization)\s*[=:]\s*/gi;
 
 function isJsonEscapedSpace(text: string, index: number): boolean {
   return (
@@ -210,7 +210,6 @@ function defersToNextCredentialKey(
   ws: string,
   requireSpaceAfterSep: boolean,
 ): boolean {
-  if (ws.length === 0) return false;
   const crossedLine = ws.includes("\n") || ws.includes("\r");
   const keyRe = crossedLine ? PREFIXED_CREDENTIAL_KEY_STICKY : BARE_CREDENTIAL_KEY_STICKY;
   keyRe.lastIndex = valueStart;
@@ -218,6 +217,7 @@ function defersToNextCredentialKey(
   if (!keyMatch) return false;
   BARE_CREDENTIAL_KEY_STICKY.lastIndex = valueStart;
   const isBare = BARE_CREDENTIAL_KEY_STICKY.test(text);
+  if (ws.length === 0 && !isBare) return false;
   let pos = valueStart + keyMatch[0].length;
   while (pos < text.length && text[pos] !== "\n" && text[pos] !== "\r" && /\s/.test(text[pos]!)) {
     pos += 1;
@@ -231,7 +231,7 @@ function defersToNextCredentialKey(
     sameLineSpace += 1;
   }
   if (pos < text.length && text[pos] !== "\n" && text[pos] !== "\r") {
-    if (!requireSpaceAfterSep) return true;
+    if (!requireSpaceAfterSep) return ws.length > 0;
     return sameLineSpace > 0 || text[pos] === '"' || text[pos] === "'";
   }
   if (!crossedLine || !isBare) return false;
@@ -251,6 +251,43 @@ function scanQuotedValueEnd(text: string, open: number): number {
       continue;
     }
     if (ch === quote) return cur + 1;
+    cur += 1;
+  }
+  return -1;
+}
+
+/**
+ * End of a closed single-line quoted value (`"..."` or `'...'`), or -1. In raw mode a single-quoted
+ * scan stops before an unescaped `"` and a double-quoted scan rejects an opening `"` that looks
+ * like the closing delimiter of an outer JSON string (`","`, `"}`, `"]`).
+ */
+function scanSingleLineQuotedValueEnd(text: string, open: number, decoded: boolean): number {
+  const quote = text[open];
+  if (quote !== '"' && quote !== "'") return -1;
+  if (!decoded && quote === '"') {
+    let probe = open + 1;
+    while (probe < text.length && /\s/.test(text[probe]!)) probe += 1;
+    if (
+      probe >= text.length ||
+      text[probe] === "," ||
+      text[probe] === "}" ||
+      text[probe] === "]" ||
+      text[probe] === ":"
+    ) {
+      return -1;
+    }
+  }
+  let cur = open + 1;
+  while (cur < text.length) {
+    const ch = text[cur]!;
+    if (ch === "\n" || ch === "\r") return -1;
+    if (ch === "\\") {
+      if (cur + 1 >= text.length || text[cur + 1] === "\n" || text[cur + 1] === "\r") return -1;
+      cur += 2;
+      continue;
+    }
+    if (ch === quote) return cur + 1;
+    if (!decoded && quote === "'" && ch === '"') return -1;
     cur += 1;
   }
   return -1;
@@ -278,7 +315,7 @@ function scanEscapedDoubleQuotedEnd(text: string, open: number): number {
   return -1;
 }
 
-function redactComposioRegexAssignments(text: string): string {
+function redactComposioRegexAssignments(text: string, decoded: boolean): string {
   COMPOSIO_KEY_PREFIX_RE.lastIndex = 0;
   let out = "";
   let cursor = 0;
@@ -310,7 +347,14 @@ function redactComposioRegexAssignments(text: string): string {
     const ws = trailingWhitespaceAfterSeparator(match[0]);
     if (defersToNextCredentialKey(text, valueStart, ws, false)) continue;
     let end = valueStart;
-    while (end < text.length && !/[\s=:]/.test(text[end]!)) end += 1;
+    while (end < text.length && !/[\s=:]/.test(text[end]!)) {
+      if (!decoded && text[end] === '"') {
+        let slashes = 0;
+        while (end - 1 - slashes >= valueStart && text[end - 1 - slashes] === "\\") slashes += 1;
+        if (slashes % 2 === 0) break;
+      }
+      end += 1;
+    }
     if (end === valueStart) continue;
     out += `${text.slice(cursor, start)}COMPOSIO_API_KEY=[redacted]`;
     cursor = end;
@@ -319,15 +363,15 @@ function redactComposioRegexAssignments(text: string): string {
   return cursor === 0 ? text : out + text.slice(cursor);
 }
 
-function redactGenericAssignments(text: string, decoded: boolean): string {
-  GENERIC_ASSIGNMENT_KEY_RE.lastIndex = 0;
+function redactGenericAssignmentsByPattern(
+  text: string,
+  pattern: RegExp,
+  decoded: boolean,
+): string {
+  pattern.lastIndex = 0;
   let out = "";
   let cursor = 0;
-  for (
-    let match = GENERIC_ASSIGNMENT_KEY_RE.exec(text);
-    match !== null;
-    match = GENERIC_ASSIGNMENT_KEY_RE.exec(text)
-  ) {
+  for (let match = pattern.exec(text); match !== null; match = pattern.exec(text)) {
     const start = match.index;
     const valueStart = start + match[0].length;
     if (valueStart >= text.length) break;
@@ -345,7 +389,7 @@ function redactGenericAssignments(text: string, decoded: boolean): string {
       if (closeAt >= 0) {
         out += `${text.slice(cursor, valueStart)}\\"[redacted]\\"`;
         cursor = closeAt + 2;
-        GENERIC_ASSIGNMENT_KEY_RE.lastIndex = cursor;
+        pattern.lastIndex = cursor;
         continue;
       }
       let end = valueStart + 2;
@@ -359,7 +403,17 @@ function redactGenericAssignments(text: string, decoded: boolean): string {
       }
       out += `${text.slice(cursor, valueStart)}\\"[redacted]`;
       cursor = end;
-      GENERIC_ASSIGNMENT_KEY_RE.lastIndex = cursor;
+      pattern.lastIndex = cursor;
+      continue;
+    }
+    if (text[valueStart] === '"' || text[valueStart] === "'") {
+      const quote = text[valueStart]!;
+      const quoteEnd = scanSingleLineQuotedValueEnd(text, valueStart, decoded);
+      if (quoteEnd > valueStart + 2) {
+        out += `${text.slice(cursor, valueStart)}${quote}[redacted]${quote}`;
+        cursor = quoteEnd;
+        pattern.lastIndex = cursor;
+      }
       continue;
     }
     let end = valueStart;
@@ -372,20 +426,28 @@ function redactGenericAssignments(text: string, decoded: boolean): string {
     if (end === valueStart) continue;
     out += `${text.slice(cursor, valueStart)}[redacted]`;
     cursor = end;
-    GENERIC_ASSIGNMENT_KEY_RE.lastIndex = cursor;
+    pattern.lastIndex = cursor;
   }
   return cursor === 0 ? text : out + text.slice(cursor);
 }
 
 export function sanitizeSensitiveText(message: string, options?: { decoded?: boolean }) {
+  const decoded = options?.decoded === true;
   const bearerMasked = redactPlainBearerTokens(message, options);
   const composioMasked = redactComposioApiKeyAssignments(bearerMasked);
   const keyMasked = composioMasked
     .replace(/sk-or-v1-[a-zA-Z0-9]+/g, "[redacted]")
     .replace(/sk-[a-zA-Z0-9-]+/g, "[redacted]");
-  const assignmentsMasked = redactGenericAssignments(
-    redactComposioRegexAssignments(keyMasked),
-    options?.decoded === true,
+  const composioRegexMasked = redactComposioRegexAssignments(keyMasked, decoded);
+  const secretMasked = redactGenericAssignmentsByPattern(
+    composioRegexMasked,
+    SECRET_ASSIGNMENT_KEY_RE,
+    decoded,
+  );
+  const assignmentsMasked = redactGenericAssignmentsByPattern(
+    secretMasked,
+    AUTH_ASSIGNMENT_KEY_RE,
+    decoded,
   );
   return redactJwts(assignmentsMasked);
 }

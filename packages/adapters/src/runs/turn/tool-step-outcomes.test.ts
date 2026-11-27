@@ -1639,17 +1639,71 @@ describe("tool step outcomes", () => {
     expect(sanitizeConnectorError(new Error("Bearer Bearer\n[opaque-123]"))).toBe(
       "Bearer Bearer [redacted]]",
     );
-    const rawEscapedBracketed = JSON.stringify({ msg: "Bearer Bearer\n[opaque-123]" });
-    expect(JSON.parse(sanitizeSensitiveText(rawEscapedBracketed))).toEqual({
+    const rawEscapedBracketed = JSON.stringify({ msg: "Bearer Bearer\n[opaque-123]", sibling: 7 });
+    expect(JSON.parse(sanitizeError(rawEscapedBracketed))).toEqual({
       msg: "Bearer Bearer [redacted]]",
+      sibling: 7,
     });
-    const rawEscapedSecretBreak = JSON.stringify({ msg: "Bearer Bearer secret=\nopaque-123" });
-    expect(sanitizeSensitiveText(rawEscapedSecretBreak)).toBe(
-      '{"msg":"Bearer [redacted] secret=[redacted]"}',
-    );
-    const rawEscapedQuotedSecret = JSON.stringify({ msg: 'Bearer Bearer secret="opaque-123"' });
-    expect(JSON.parse(sanitizeSensitiveText(rawEscapedQuotedSecret))).toEqual({
-      msg: 'Bearer [redacted] secret="[redacted]"',
+    const rawEscapedSecretBreak = JSON.stringify({
+      msg: "Bearer Bearer secret=\nopaque-123",
+      sibling: 7,
+    });
+    expect(JSON.parse(sanitizeSensitiveText(rawEscapedSecretBreak))).toEqual({
+      msg: "Bearer [redacted] secret=[redacted]",
+      sibling: 7,
+    });
+    const rawEscapedQuotedSecret = JSON.stringify({
+      msg: 'Bearer Bearer secret="opaque-123"',
+      sibling: 7,
+    });
+    for (const read of [kept, replay, sanitizeError, sanitizeSensitiveText]) {
+      expect(JSON.parse(read(rawEscapedQuotedSecret) ?? "")).toEqual({
+        msg: 'Bearer [redacted] secret="[redacted]"',
+        sibling: 7,
+      });
+    }
+    expect(JSON.parse(failed(rawEscapedQuotedSecret) ?? "")).toEqual({
+      msg: "Bearer Bearer [redacted]",
+      sibling: 7,
+    });
+    const adjacentAuthSecret = JSON.stringify({ msg: "auth=secret: opaque-123", sibling: 7 });
+    for (const read of [kept, replay, failed, sanitizeError, sanitizeSensitiveText]) {
+      const parsed = JSON.parse(read(adjacentAuthSecret) ?? "");
+      expect(parsed.sibling).toBe(7);
+      expect(parsed.msg).not.toContain("opaque-123");
+    }
+    const wrappedBearerSecret = JSON.stringify({ msg: "Bearer\nsecret: opaque-123", sibling: 7 });
+    expect(JSON.parse(sanitizeSensitiveText(wrappedBearerSecret))).toEqual({
+      msg: "Bearer\nsecret: [redacted]",
+      sibling: 7,
+    });
+    const literalBackslashBearer = JSON.stringify({
+      msg: String.raw`auth=Bearer\nopaque-123`,
+      sibling: 7,
+    });
+    for (const read of [kept, replay, sanitizeError]) {
+      const parsed = JSON.parse(read(literalBackslashBearer) ?? "");
+      expect(parsed.sibling).toBe(7);
+      expect(parsed.msg).not.toContain("opaque-123");
+    }
+    const rawSingleQuotedBearer = JSON.stringify({ msg: "Bearer\n'opaque-123", sibling: 7 });
+    expect(JSON.parse(sanitizeSensitiveText(rawSingleQuotedBearer)).sibling).toBe(7);
+    const repeatedComposioJson = JSON.stringify({
+      msg: "COMPOSIO_API_KEY COMPOSIO_API_KEY=opaque-123",
+      sibling: 7,
+    });
+    const repeatedComposioParsed = JSON.parse(sanitizeSensitiveText(repeatedComposioJson));
+    expect(repeatedComposioParsed.sibling).toBe(7);
+    expect(repeatedComposioParsed.msg).not.toContain("opaque-123");
+    const rawEmbeddedArray = JSON.stringify({ msg: 'Bearer Bearer\n["ok",12]', sibling: 7 });
+    expect(JSON.parse(sanitizeSensitiveText(rawEmbeddedArray))).toEqual({
+      msg: 'Bearer [redacted]\n["ok",12]',
+      sibling: 7,
+    });
+    const rawEmptySecretJson = JSON.stringify({ msg: "secret=", other: "val" });
+    expect(JSON.parse(sanitizeSensitiveText(rawEmptySecretJson))).toEqual({
+      msg: "secret=",
+      other: "val",
     });
     const rawPlaceholderJson = JSON.stringify({ msg: 'auth=[redacted]{"ok":true}' });
     expect(JSON.parse(sanitizeSensitiveText(rawPlaceholderJson))).toEqual({
@@ -1671,6 +1725,10 @@ describe("tool step outcomes", () => {
       const out = sanitizeSensitiveText(indented);
       expect(out).not.toContain("fixtureTok");
       expect(out).toContain("client_secret: [redacted]");
+      const repeatedEscapedBearer = JSON.stringify({
+        msg: `${"Bearer\n".repeat(16_000)}fixtureTok`,
+      });
+      expect(sanitizeSensitiveText(repeatedEscapedBearer)).toContain("Bearer");
     });
     expect(
       sanitizeConnectorError(new Error(JSON.stringify({ msg: "Bearer Bearer\nopaque-123" }))),
