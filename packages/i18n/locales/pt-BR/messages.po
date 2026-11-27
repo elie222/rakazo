@@ -8862,7 +8862,7 @@ msgstr "Opções da organização"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Organization override for this Space"
-msgstr "Ajuste da organização para este Espaço"
+msgstr "Modelo da organização para este Espaço"
 
 #: apps/mobile/components/inbox/organization-menu.tsx
 msgid "Organization settings"

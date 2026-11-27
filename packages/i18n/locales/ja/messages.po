@@ -8862,7 +8862,7 @@ msgstr "組織のオプション"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Organization override for this Space"
-msgstr "このスペースの組織設定"
+msgstr "このスペースの組織モデル"
 
 #: apps/mobile/components/inbox/organization-menu.tsx
 msgid "Organization settings"
