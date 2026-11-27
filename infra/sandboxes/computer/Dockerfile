@@ -1,7 +1,7 @@
 # The bot browser: chromium by default, or BROWSER=chrome (Google Chrome, amd64
 # only) or BROWSER=brave (installed below).
 ARG BROWSER=chromium
-FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS capture-builder
+FROM debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0 AS capture-builder
 COPY apt-security.sh /tmp/apt-security.sh
 RUN /tmp/apt-security.sh && rm -f /tmp/apt-security.sh
 RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends \
@@ -22,7 +22,7 @@ RUN cc -O3 -fPIC -shared -Wall -Wextra -Werror -o librakazo-xcapture.so xcapture
 # Only that key goes into the keyring apt trusts for the Google Chrome
 # repository. Other builds never contact Google; the empty file they get is
 # removed below.
-FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS chrome-keyring
+FROM debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0 AS chrome-keyring
 ARG BROWSER
 COPY apt-security.sh /tmp/apt-security.sh
 RUN set -eux; \
@@ -42,7 +42,7 @@ RUN set -eux; \
   gpg --batch --export "$fingerprint" > /google-chrome.gpg; \
   gpg --batch --show-keys --with-colons /google-chrome.gpg | grep -qx "fpr:::::::::$fingerprint:"
 
-FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
+FROM debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0
 COPY apt-security.sh /tmp/apt-security.sh
 RUN /tmp/apt-security.sh
 # Dev tools let bots clone repos and fetch artifacts; containers run uid 1000
