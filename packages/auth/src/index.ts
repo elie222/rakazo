@@ -182,6 +182,12 @@ function signsOutEverywhere(path: string, body: unknown): boolean {
   return path === "/change-password" && isRecord(body) && body.revokeOtherSessions === true;
 }
 
+/** Runs every cleanup even when one fails, then reports the first failure. */
+async function allThenThrow(work: readonly (Promise<unknown> | undefined)[]) {
+  const failed = (await Promise.allSettled(work)).find((outcome) => outcome.status === "rejected");
+  if (failed) throw failed.reason;
+}
+
 function revokePageApps(prisma: PrismaClient, userId: string) {
   return runAsSystem("revoke page apps with every sign-in", () =>
     prisma.pageApp.deleteMany({ where: { userId } }),
@@ -877,13 +883,15 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             }
             const previous = replacedSession(ctx);
             if (previous) {
-              await runAsSystem("move page apps to the replacing sign-in", () =>
-                prisma.pageApp.updateMany({
-                  where: { sessionId: previous.id },
-                  data: { sessionId: session.id },
-                }),
-              );
-              await env.afterReplaceSession?.(previous, session);
+              await allThenThrow([
+                runAsSystem("move page apps to the replacing sign-in", () =>
+                  prisma.pageApp.updateMany({
+                    where: { sessionId: previous.id },
+                    data: { sessionId: session.id },
+                  }),
+                ),
+                env.afterReplaceSession?.(previous, session),
+              ]);
             }
           },
         },
@@ -900,10 +908,12 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             }
             if (replacedSession(ctx)?.id !== session.id) {
               // A page app ends with the sign-in it was installed through, as a paired computer does.
-              await runAsSystem("end page apps with their sign-in", () =>
-                prisma.pageApp.deleteMany({ where: { sessionId: session.id } }),
-              );
-              await env.afterDeleteSession?.(session);
+              await allThenThrow([
+                runAsSystem("end page apps with their sign-in", () =>
+                  prisma.pageApp.deleteMany({ where: { sessionId: session.id } }),
+                ),
+                env.afterDeleteSession?.(session),
+              ]);
             }
           },
         },
