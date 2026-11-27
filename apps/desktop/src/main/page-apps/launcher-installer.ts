@@ -174,6 +174,17 @@ export function createLauncherInstaller(options: {
       const moved = existsSync(listed.bundlePath) ? null : await launcher.find(listed.appId);
       const app = moved ? { ...listed, bundlePath: moved } : listed;
       if (moved) await registry.put(app);
+      // A launcher whose app has no token and no config left belongs to an app that removed
+      // itself, even one a rewrite raced back into place: it goes with its record.
+      if (
+        existsSync(app.bundlePath) &&
+        !existsSync(pageAppTokenFile(app.appId, appData)) &&
+        !(await readLauncherConfig(app.appId, appData))
+      ) {
+        await bestEffort("remove a removed app's launcher", launcher.remove(app.bundlePath));
+        await registry.remove(app.appId);
+        continue;
+      }
       if (existsSync(app.bundlePath)) {
         installed.add(app.appId);
         await bestEffort(

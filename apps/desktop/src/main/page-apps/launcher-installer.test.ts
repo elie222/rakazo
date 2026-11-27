@@ -152,6 +152,15 @@ describe("createLauncherInstaller", () => {
     ]);
   });
 
+  it("drops a launcher left behind by an app that removed itself", async () => {
+    const { installer, launcher } = setup();
+    await installer.install(request("app1"), SERVER);
+    await rm(pageAppDataDir("app1", appData), { recursive: true });
+    await installer.refresh();
+    expect(launcher.remove).toHaveBeenCalledWith(path.join(appData, "app1.lnk"));
+    expect(apps).toEqual([]);
+  });
+
   it("forgets an app that uninstalled itself and clears what it left", async () => {
     const { installer } = setup();
     await installer.install(request("app1"), SERVER);
