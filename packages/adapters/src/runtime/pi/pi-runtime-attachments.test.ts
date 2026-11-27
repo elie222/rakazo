@@ -138,7 +138,10 @@ describe("Pi runtime attachments", () => {
       {
         role: "user",
         content: [
-          { type: "text", text: "[image: ticket.png]" },
+          {
+            type: "text",
+            text: "[image from an earlier message; already seen]\n[image: ticket.png]",
+          },
           {
             type: "image",
             data: Buffer.from([1, 2, 3]).toString("base64"),
