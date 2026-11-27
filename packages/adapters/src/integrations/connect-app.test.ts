@@ -4,7 +4,9 @@ import type * as db from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { connectApp } from "./connect-app.js";
 
-const stored = vi.hoisted(() => [] as { blocks: MessageBlock[]; clientNonce: string }[]);
+const stored = vi.hoisted(
+  () => [] as { blocks: MessageBlock[]; clientNonce: string; runId: string }[],
+);
 vi.mock("@rakazo/db", async (original) => ({
   ...(await original<typeof db>()),
   createThreadMessageInTransaction: vi.fn(async (_tx, input) => {
@@ -25,7 +27,9 @@ function fixture(items = [entry]) {
   const tx = {
     $executeRaw: vi.fn(),
     message: {
-      findMany: vi.fn(async () => stored),
+      findMany: vi.fn(async ({ where }: { where: { runId: string } }) =>
+        stored.filter((message) => message.runId === where.runId),
+      ),
       findFirst: vi.fn(
         async ({ where }: { where: { clientNonce: string } }) =>
           stored.find((message) => message.clientNonce === where.clientNonce) ?? null,
@@ -118,6 +122,20 @@ describe("connect_app execution", () => {
     await f.call();
     await f.call("gmail", "another-effect");
     expect(stored).toHaveLength(1);
+  });
+
+  it("shows a new card for a later request by the same member and bot", async () => {
+    const f = fixture();
+    await f.call();
+    await connectApp(
+      f.deps,
+      f.providers,
+      f.context,
+      { ...f.target, id: "later-run" },
+      "Gmail",
+      "other-effect",
+    );
+    expect(stored.map((message) => message.runId)).toEqual(["run", "later-run"]);
   });
 });
 

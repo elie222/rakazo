@@ -35,6 +35,8 @@ it("bounds the titles pages send out by the cap a saved title has", () => {
       visibility: "private",
       currentVersion: 1,
       pinned: false,
+      icon: null,
+      iconColor: null,
       createdAt: at,
       updatedAt: at,
     }).success;

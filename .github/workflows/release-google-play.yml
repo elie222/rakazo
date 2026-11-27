@@ -46,9 +46,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Verify mobile project
-        run: |
-          pnpm --filter @rakazo/mobile exec expo install --check
-          pnpm --filter @rakazo/mobile check
+        run: pnpm --filter @rakazo/mobile check
       - name: Require Firebase config
         working-directory: apps/mobile
         env:

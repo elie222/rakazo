@@ -412,6 +412,7 @@ export async function claimRun(
     spaceId: string;
     botId: string;
     trigger: string;
+    clientNonce: string | null;
     status: string;
     checkpoint: string | null;
     leaseFence: number;

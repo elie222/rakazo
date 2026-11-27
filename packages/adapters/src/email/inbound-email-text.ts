@@ -10,10 +10,10 @@ function limitBody(text: string, max = INBOUND_EMAIL_TEXT_MAX_CHARS): string {
   return text.length > max ? `${sliceWellFormed(text, max)}\n[…]` : text;
 }
 
-export function inboundEmailBodyText(
+export async function inboundEmailBodyText(
   plainText: string | undefined,
   rawHtml: string | undefined,
-): { text: string; wholeText: string; modelText: string } {
+): Promise<{ text: string; wholeText: string; modelText: string }> {
   const plain = plainText?.trim();
   // The stored body and mail deduplication keep the original bounded text.
   if (plain) {
@@ -24,7 +24,7 @@ export function inboundEmailBodyText(
     };
   }
   if (!rawHtml) return { text: "", wholeText: "", modelText: "" };
-  const { text, filteredText } = htmlTextWithOmissions(
+  const { text, filteredText } = await htmlTextWithOmissions(
     rawHtml.slice(0, MAX_BODY_SCAN_CHARS),
     SIGNATURE_SELECTOR,
   );

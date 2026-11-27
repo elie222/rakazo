@@ -168,6 +168,11 @@ export function createBackgroundJobHandlers(deps: {
     "page.revise": async ({ requestId }, _execution, attempt) => {
       await deps.pageRevisionWork?.(requestId, attempt);
     },
+    "page.app-unused": async ({ appId }) => {
+      await runAsSystem("remove an unused page app", () =>
+        deps.prisma.pageApp.deleteMany({ where: { id: appId, lastUsedAt: null } }),
+      );
+    },
     "run.continue": asOwner(run, async (payload, execution, { spaceId }) => {
       try {
         if (execution)

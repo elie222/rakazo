@@ -391,12 +391,12 @@ describe("readInboundEmail", () => {
     expect(email.key).toBe(short.key);
   });
 
-  it("marks an HTML body whose markup was longer than is read", () => {
+  it("marks an HTML body whose markup was longer than is read", async () => {
     const paragraph = "<p>Stock is steady.</p>";
-    const { wholeText } = inboundEmailBodyText(undefined, paragraph.repeat(10_000));
+    const { wholeText } = await inboundEmailBodyText(undefined, paragraph.repeat(10_000));
 
     expect(wholeText.endsWith("\n[…]")).toBe(true);
-    expect(inboundEmailBodyText(undefined, paragraph).wholeText).toBe("Stock is steady.");
+    expect((await inboundEmailBodyText(undefined, paragraph)).wholeText).toBe("Stock is steady.");
   });
 
   it("refuses mail with more parts than real mail has", async () => {

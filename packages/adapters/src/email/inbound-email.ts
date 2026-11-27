@@ -156,7 +156,7 @@ export async function readInboundEmail(
     values("precedence").some((value) => ["bulk", "junk", "list"].includes(value)) ||
     fieldCount("list-id") > 0;
 
-  const { text, wholeText, modelText } = inboundEmailBodyText(email.text, email.html);
+  const { text, wholeText, modelText } = await inboundEmailBodyText(email.text, email.html);
   const fromName =
     email.from && !email.from.group && email.from.address?.trim().toLowerCase() === sender
       ? email.from.name

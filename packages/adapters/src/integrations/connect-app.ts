@@ -98,9 +98,9 @@ export async function connectApp(
       select: { id: true },
     });
     if (replayed) return null;
-    // Only recent cards count as already shown; an old one far up the chat should not block a new one.
+    // A later request needs a card tied to its own run, even when the app is the same.
     const recent = await tx.message.findMany({
-      where: { threadId: target.threadId },
+      where: { threadId: target.threadId, runId: target.id },
       select: { id: true, blocks: true },
       orderBy: { createdAt: "desc" },
       take: RECENT_MESSAGES,

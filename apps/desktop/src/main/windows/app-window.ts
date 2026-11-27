@@ -14,6 +14,7 @@ import {
 import { appWindowTargets, desktop } from "../desktop-state.js";
 import { t, withDetail } from "../i18n.js";
 import { handleIpc } from "../ipc/ipc.js";
+import { PAGE_APPS_ARGUMENT, pageAppsSupported } from "../page-apps/page-apps-support.js";
 import {
   probeFailureMessage,
   safeExternalUrl,
@@ -331,6 +332,7 @@ export function createWindow(url: string, partition: string | null) {
       // seen them run a few times, so the launch right after an update is fast too.
       v8CacheOptions: "bypassHeatCheck",
       ...(partition === null ? {} : { partition }),
+      ...(pageAppsSupported() ? { additionalArguments: [PAGE_APPS_ARGUMENT] } : {}),
     },
   });
   if (saved?.maximized === true && !saved.fullScreen) win.maximize();

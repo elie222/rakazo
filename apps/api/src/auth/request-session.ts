@@ -49,23 +49,25 @@ export function requestSessions({ auth, prisma }: { auth: Auth; prisma: PrismaCl
       c.header("set-cookie", cookie, { append: true });
     }
   };
-  const requestSession = async (request: Request, disableRefresh = false) => {
+  const requestSession = async (
+    request: Request,
+    disableRefresh = false,
+    spaceId = request.headers.get("x-rakazo-space-id"),
+  ) => {
     // The bearer plugin turns a signed `Authorization: Bearer` into the session cookie.
     const session = await readSession(request, disableRefresh);
     if (!session?.user) return null;
     const actor = await actorFromMembership(
-      requireMembership(
-        prisma,
-        session.user,
-        request.headers.get("x-rakazo-space-id"),
-        session.session,
-      ),
+      requireMembership(prisma, session.user, spaceId, session.session),
     );
     return actor && { actor, sessionId: session.session.id };
   };
-  /** The signed-in member, added to the request's log context; null answers 401. */
-  const sessionActor = async (request: Request) => {
-    const actor = (await requestSession(request))?.actor ?? null;
+  /**
+   * The signed-in member, added to the request's log context; null answers 401. A request the
+   * browser makes itself carries no Space header, so its route may name the Space instead.
+   */
+  const sessionActor = async (request: Request, spaceId?: string | null) => {
+    const actor = (await requestSession(request, false, spaceId ?? undefined))?.actor ?? null;
     if (actor) enrichLogContext({ "user.id": actor.userId, "space.id": actor.spaceId });
     return actor;
   };

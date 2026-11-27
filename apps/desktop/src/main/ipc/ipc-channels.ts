@@ -1,4 +1,5 @@
 import type { RakazoDesktop, RakazoSetup } from "@rakazo/contracts";
+import type { PageAppShell } from "../page-apps/app/page-app-shell.js";
 
 /**
  * The window whose own page may call a channel. Its main frame only, and for an app window
@@ -6,7 +7,7 @@ import type { RakazoDesktop, RakazoSetup } from "@rakazo/contracts";
  * takes the window a server switch is replacing: only for a channel whose handler acts on
  * the window that sent the call and on nothing else.
  */
-export type IpcWindow = "app" | "appOrReplaced" | "setup";
+export type IpcWindow = "app" | "appOrReplaced" | "setup" | "pageApp";
 
 type BridgeMethod = (...args: never[]) => unknown;
 
@@ -61,6 +62,10 @@ const setupPage = <Method extends BridgeMethod>(refused: Refused<Method>): IpcCh
   from: "setup",
   refused,
 });
+/** The shell of an installed page app's window, never the page in its frame. */
+const pageAppShell = <Method extends BridgeMethod>(
+  refused: Refused<Method>,
+): IpcChannel<Method> => ({ from: "pageApp", refused });
 /** `sendSync` cannot reject, so a refused caller reads null and the preload supplies English. */
 const setupPageSync = <Method extends BridgeMethod>(): IpcChannel<Method> & { sync: true } => ({
   from: "setup",
@@ -92,6 +97,10 @@ export const ipcChannels = {
   "desktop.monitoring.enabled": appPage<Desktop["monitoring"]["enabled"]>(false),
   "desktop.oauth.cancel": appPage<NonNullable<Desktop["oauth"]["cancel"]>>(undefined),
   "desktop.oauth.open": appPage<NonNullable<Desktop["oauth"]["open"]>>(REJECTS),
+  "desktop.pageApps.install": appPage<Desktop["pageApps"]["install"]>(false),
+  "desktop.pageApps.installed": appPage<Desktop["pageApps"]["installed"]>([]),
+  "desktop.pageApps.open": appPage<Desktop["pageApps"]["open"]>(false),
+  "desktop.pageApps.uninstall": appPage<Desktop["pageApps"]["uninstall"]>(false),
   "desktop.passkeys.rpIds": appPage<Desktop["passkeys"]["rpIds"]>([]),
   "desktop.server.change": appPage<Desktop["server"]["change"]>(undefined),
   "desktop.speech.abort": appPage<Desktop["speech"]["abort"]>(undefined),
@@ -109,6 +118,8 @@ export const ipcChannels = {
     fullScreen: false,
   }),
   "desktop.window.toggleMaximize": ownWindow<Desktop["window"]["toggleMaximize"]>(undefined),
+  "desktop.pageApp.message": pageAppShell<PageAppShell["message"]>(null),
+  "desktop.pageApp.ready": pageAppShell<PageAppShell["ready"]>(null),
   "desktop.setup.locale": setupPageSync<() => RakazoSetup["locale"]>(),
   "desktop.setup.openLink": setupPage<RakazoSetup["openLink"]>(undefined),
   "desktop.setup.quit": setupPage<RakazoSetup["quit"]>(undefined),

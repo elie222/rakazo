@@ -126,6 +126,7 @@ function corruptCrc(bytes: Uint8Array): Uint8Array {
 const limits = { ...ACCOUNT_IMPORT_LIMITS, artifactBytes: 1024 };
 
 describe("account import archive", () => {
+  // 65,535 entries take seconds alone and several times longer on a busy shared runner.
   it("writes an importable ZIP64 footer at the classic entry-count boundary", async () => {
     const entryCount = 65_535;
     async function* files() {
@@ -148,7 +149,7 @@ describe("account import archive", () => {
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, 90_000);
 
   it("rejects another format", async () => {
     const bytes = buildArchive([

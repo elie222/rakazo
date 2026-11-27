@@ -163,6 +163,61 @@ describe("ComposioConnector over the fake Composio client", () => {
     ]);
   });
 
+  it("carries toolkit descriptions from later metadata pages into the app catalog", async () => {
+    const client = new FakeComposioClient([
+      { slug: "OTHER", name: "Other", logo: null, noAuth: false },
+      {
+        slug: "EXAMPLE_MCP",
+        name: "Example",
+        description: "Organize your files.",
+        logo: null,
+        noAuth: false,
+      },
+    ]);
+    const raw = client.getClient();
+    const list = raw.toolkits.list;
+    raw.toolkits.list = (query) => list({ ...query, limit: 1 });
+    client.getClient = () => raw;
+
+    await expect(new ComposioConnector({ client }).catalog(context(), "example")).resolves.toEqual([
+      expect.objectContaining({ slug: "EXAMPLE_MCP", description: "Organize your files." }),
+    ]);
+  });
+
+  it("omits malformed descriptions from the toolkit catalog", async () => {
+    const { fake, connector } = setup();
+    const raw = fake.getClient();
+    raw.toolkits.list = async () => ({
+      items: [{ slug: "GMAIL", meta: { description: { text: "Read email." } } }],
+    });
+    fake.getClient = () => raw;
+
+    const [app] = await connector.catalog(context(), "gmail");
+
+    expect(app?.slug).toBe("GMAIL");
+    expect(app).not.toHaveProperty("description");
+  });
+
+  it("keeps catalog descriptions when sign-in metadata is unavailable", async () => {
+    const client = new FakeComposioClient([
+      {
+        slug: "EXAMPLE_MCP",
+        name: "Example",
+        description: "Organize your files.",
+        logo: null,
+        noAuth: false,
+        needsSignInSetup: true,
+      },
+    ]);
+    client.authConfigs.list = async () => {
+      throw new Error("Unavailable");
+    };
+
+    await expect(new ComposioConnector({ client }).catalog(context())).resolves.toEqual([
+      expect.objectContaining({ slug: "EXAMPLE_MCP", description: "Organize your files." }),
+    ]);
+  });
+
   it("hides apps nobody can sign in to until the project sets up their auth", async () => {
     const fake = new FakeComposioClient([
       { slug: "GMAIL", name: "Gmail", logo: null, noAuth: false },

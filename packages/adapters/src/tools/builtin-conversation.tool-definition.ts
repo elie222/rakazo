@@ -6,6 +6,7 @@ import {
   GenerateSecretInput,
   LOGIN_FIELD_LIMIT,
   MEMORY_INDEX_PATH,
+  PAGE_ICON_COLORS,
   PAGE_LIST_MAX_LIMIT,
   SecretAskPurpose,
   SecretHttpRequest,
@@ -271,6 +272,11 @@ export const conversationTools: ConnectorTool[] = [
             required: ["find", "replace"],
           },
         },
+        icon: {
+          type: "string",
+          description: "The page's app icon: one of the kit's icon names. Set it on a new page.",
+        },
+        iconColor: { type: "string", enum: [...PAGE_ICON_COLORS] },
         images: {
           type: "object",
           description:
