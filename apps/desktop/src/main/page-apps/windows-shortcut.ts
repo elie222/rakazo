@@ -8,7 +8,8 @@ export function startMenuFolder(appData: string): string {
   return path.join(appData, "Microsoft", "Windows", "Start Menu", "Programs", "Rakazo Apps");
 }
 
-const RESERVED = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
+/** Device names Windows reserves, alone or before any extension. */
+const RESERVED = /^(con|prn|aux|nul|com\d|lpt\d)(\..*)?$/i;
 
 /** An app name as a Windows file name, which also refuses these characters and trailing dots. */
 export function windowsFileName(name: string): string {

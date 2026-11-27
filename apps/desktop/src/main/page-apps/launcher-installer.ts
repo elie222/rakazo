@@ -99,17 +99,22 @@ export function createLauncherInstaller(options: {
     return true;
   }
 
-  /** Points launchers at Rakazo again if it moved, and clears data left by removed apps. */
+  /**
+   * Points launchers at Rakazo again if it moved, and clears what removed apps left behind,
+   * including an app that uninstalled itself: its launcher and token are gone.
+   */
   async function refresh() {
-    const apps = await registry.list();
-    for (const app of apps) {
-      if (!existsSync(app.bundlePath)) continue;
-      await bestEffort(
-        "repoint page app",
-        launcher.repoint(app, pageAppDataDir(app.appId, appData)),
-      );
+    const installed = new Set<string>();
+    for (const app of await registry.list()) {
+      if (existsSync(app.bundlePath)) {
+        installed.add(app.appId);
+        await bestEffort(
+          "repoint page app",
+          launcher.repoint(app, pageAppDataDir(app.appId, appData)),
+        );
+      } else if (existsSync(pageAppTokenFile(app.appId, appData))) installed.add(app.appId);
+      else await registry.remove(app.appId);
     }
-    const installed = new Set(apps.map((app) => app.appId));
     let folders: string[];
     try {
       folders = await readdir(pageAppsDataDir(appData));

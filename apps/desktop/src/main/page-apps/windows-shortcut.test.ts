@@ -26,6 +26,7 @@ describe("windowsFileName", () => {
     expect(windowsFileName('Q3 <deals> "now"? *|')).toBe("Q3 -deals- -now-- --");
     expect(windowsFileName("Notes...")).toBe("Notes");
     expect(windowsFileName("con")).toBe("con_");
+    expect(windowsFileName("CON.txt")).toBe("CON.txt_");
     expect(windowsFileName("...")).toBe("Page");
   });
 });

@@ -31,14 +31,12 @@ function windowsLauncher(appData: string): PageAppLauncher {
       await writeFile(path.join(dataDir, WINDOWS_ICON), writeIco(icon));
       await mkdir(folder, { recursive: true });
       const taken = new Set(await readdir(folder));
-      if (previous) {
-        taken.delete(path.basename(previous));
-        await rm(previous, { force: true });
-      }
+      if (previous) taken.delete(path.basename(previous));
       const name = uniqueBundleName(windowsFileName(pageAppName(config.title)), taken, ".lnk");
       const shortcut = path.join(folder, name);
       if (!shell.writeShortcutLink(shortcut, details(config, dataDir)))
         throw new Error("The shortcut could not be written.");
+      if (previous && previous !== shortcut) await rm(previous, { force: true });
       return shortcut;
     },
     repoint: async (installed, dataDir) => {

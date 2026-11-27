@@ -100,4 +100,15 @@ describe("createLauncherInstaller", () => {
     expect(existsSync(pageAppDataDir("app1", appData))).toBe(true);
     expect(existsSync(pageAppsDataDir(appData))).toBe(true);
   });
+
+  it("forgets an app that uninstalled itself and clears what it left", async () => {
+    const { installer } = setup();
+    await installer.install(request("app1"), SERVER);
+    const dataDir = pageAppDataDir("app1", appData);
+    await rm(path.join(dataDir, "token"));
+    await writeFile(path.join(dataDir, "Cookies"), "");
+    await installer.refresh();
+    expect(apps).toEqual([]);
+    expect(existsSync(dataDir)).toBe(false);
+  });
 });
