@@ -110,6 +110,8 @@ function mcpFetch(
     ttlMs?: number;
     /** Send `tools/list_changed` ahead of the next tool call's result. */
     announceListChanged?: boolean;
+    /** Custom `tools/call` result payload. */
+    callResult?: Record<string, unknown>;
   },
   expectedUrl = "https://mcp.example.test/mcp",
 ) {
@@ -174,7 +176,7 @@ function mcpFetch(
       const reply = {
         jsonrpc: "2.0",
         id: message.id,
-        result: { content: [{ type: "text", text: "ok" }] },
+        result: state.callResult ?? { content: [{ type: "text", text: "ok" }] },
       };
       if (!state.announceListChanged) return Response.json(reply);
       state.announceListChanged = false;
@@ -4266,6 +4268,76 @@ it.each([
       [false, undefined],
     ]);
     expect(Boolean(tools[0]?.batch?.outgoingDrafts?.GMAIL_SEND_EMAIL)).toBe(hasDrafts);
+  } finally {
+    await connector.close();
+  }
+});
+
+it("drops a text block that repeats structuredContent while keeping errors intact", async () => {
+  const payload = { id: "page-1", text: "Full page content" };
+  const state = {
+    failNext: false,
+    initializations: 0,
+    callResult: {
+      content: [{ type: "text", text: JSON.stringify(payload) }],
+      structuredContent: payload,
+    } as Record<string, unknown>,
+  };
+  vi.stubGlobal("fetch", mcpFetch(state));
+  const connector = new McpConnector(
+    {
+      mcpServer: NO_SHARED_SERVERS,
+      botMcpServer: {
+        findMany: vi.fn(async () => [ASSIGNMENT]),
+        findFirst: vi.fn(async () => ASSIGNMENT),
+      },
+    } as never,
+    new EncryptedSecretStore("fake-key"),
+    { network: TEST_NETWORK },
+  );
+  const context = {
+    operationId: "test",
+    traceId: "test",
+    spaceId: "w1",
+    userId: "u1",
+    botId: "bot-1",
+    signal: new AbortController().signal,
+  };
+  try {
+    const [tool] = await connector.discoverTools(context);
+    const run = async () => {
+      const events = [];
+      for await (const event of connector.execute(
+        { tool: tool!.name, args: {}, executionId: "call-1", route: tool!.route },
+        context,
+      )) {
+        events.push(event);
+      }
+      return events;
+    };
+
+    expect(await run()).toEqual([
+      {
+        type: "result",
+        data: { content: [], structuredContent: payload },
+      },
+    ]);
+
+    state.callResult = {
+      content: [{ type: "text", text: JSON.stringify(payload) }],
+      structuredContent: payload,
+      isError: true,
+    };
+    expect(await run()).toEqual([
+      {
+        type: "result",
+        data: {
+          content: [{ type: "text", text: JSON.stringify(payload) }],
+          structuredContent: payload,
+          isError: true,
+        },
+      },
+    ]);
   } finally {
     await connector.close();
   }

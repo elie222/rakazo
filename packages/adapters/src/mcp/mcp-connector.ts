@@ -79,6 +79,7 @@ import {
 import { reportExpiredMcpSignIn } from "./mcp-reconnect-card.js";
 import type { McpServerHealthUpdate } from "./mcp-server-health.js";
 import { needsMcpOAuthClient, recordMcpServerHealth } from "./mcp-server-health.js";
+import { withoutDuplicatedStructuredText } from "./mcp-structured-text.js";
 import { mcpToolAllowed } from "./mcp-tool-permissions.js";
 import { McpSession, mcpStdioRefusal } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
@@ -793,7 +794,19 @@ export class McpConnector implements ConnectorProvider {
         });
       });
       const secrets = [...(material ? oauthMaterialSecrets(material) : []), ...launchSecrets];
-      yield { type: "result", data: redactConnectorPayload(result, secrets) };
+      const deduplicatedContent = withoutDuplicatedStructuredText(
+        result.content,
+        result.structuredContent,
+        result.isError === true,
+      );
+      const modelResult =
+        deduplicatedContent === result.content ||
+        (Array.isArray(deduplicatedContent) &&
+          Array.isArray(result.content) &&
+          deduplicatedContent.length === result.content.length)
+          ? result
+          : { ...result, content: deduplicatedContent };
+      yield { type: "result", data: redactConnectorPayload(modelResult, secrets) };
       const app = await readMcpApp(
         assignment.server.name,
         call.withApp ? call.route.appResourceUri : undefined,
