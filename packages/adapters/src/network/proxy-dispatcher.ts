@@ -35,6 +35,14 @@ export function createCheckedProxyDispatcher(
   connectTimeout?: number,
   responseTimeouts?: Pick<Agent.Options, "headersTimeout" | "bodyTimeout">,
   limits?: Pick<Agent.Options, "keepAliveTimeout" | "keepAliveMaxTimeout">,
+  tls?: {
+    rejectUnauthorized: boolean;
+    ca?: readonly string[];
+    /** Pin certificate checks on an https gateway reached through CONNECT. */
+    secureRequest?: boolean;
+    /** Pin certificate checks on an https proxy. */
+    secureProxy?: boolean;
+  },
 ): Dispatcher {
   const { env } = process;
   const proxies = [env.http_proxy ?? env.HTTP_PROXY, env.https_proxy ?? env.HTTPS_PROXY];
@@ -45,8 +53,17 @@ export function createCheckedProxyDispatcher(
   const connectByHostname = parseProxyConnectHostPatterns(
     env.RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS,
   );
+  // Present only when the caller captured a policy. Other callers keep Node's live defaults.
+  const pinned =
+    tls === undefined
+      ? undefined
+      : {
+          rejectUnauthorized: tls.rejectUnauthorized,
+          ...(tls.ca === undefined ? {} : { ca: [...tls.ca] }),
+        };
   const connect = {
     ...(connectTimeout === undefined ? {} : { timeout: connectTimeout }),
+    ...pinned,
     lookup: createAddressCheckedLookup(resolve, validate),
   };
   if (!proxies.some(Boolean)) return new Agent({ ...responseTimeouts, ...limits, connect });
@@ -54,6 +71,8 @@ export function createCheckedProxyDispatcher(
     ...responseTimeouts,
     ...limits,
     connect,
+    ...(pinned && tls?.secureRequest ? { requestTls: pinned } : {}),
+    ...(pinned && tls?.secureProxy ? { proxyTls: pinned } : {}),
     ...(connectTimeout === undefined ? {} : { connectTimeout }),
     proxyTunnel: true,
     clientFactory: (origin, options) => {

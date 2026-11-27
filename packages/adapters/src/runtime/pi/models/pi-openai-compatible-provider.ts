@@ -55,10 +55,12 @@ import { splitLeadingThinkBlock } from "../stream/pi-think-tags.js";
 import { guardToolCallNames } from "../tools/pi-tool-call-guard.js";
 import {
   borrowCompatibleTransport,
+  captureGatewayTlsPolicy,
   closeOpenAiCompatibleTransports,
   compatibleTransportKey,
   compatibleTransportLimits,
   releaseCompatibleResponse,
+  selectedHttpsProxy,
 } from "./pi-compatible-transport-pool.js";
 import { REASONING_THINKING_LEVELS } from "./pi-local-provider.js";
 
@@ -313,6 +315,9 @@ export function createOpenAiCompatibleFetch(
     const route = isPrivateOpenAiCompatibleHostname(hostname) ? "direct" : "proxy";
     // Local model servers stay on the direct route; public endpoints honor HTTP(S)_PROXY.
     // The dispatcher is shared for this origin and policy. A new socket still runs lookup.
+    // Trust is captured with the pool key. The dial happens after this function yields,
+    // and it must not follow a trust-store or verification change made in that gap.
+    const tls = captureGatewayTlsPolicy();
     const borrowed = borrowCompatibleTransport(
       compatibleTransportKey({
         origin: url.origin,
@@ -321,14 +326,20 @@ export function createOpenAiCompatibleFetch(
         modelStream: opts?.modelStream === true,
         connectTimeout,
         resolve,
+        tls,
       }),
-      () =>
-        route === "direct"
+      () => {
+        const pinned = {
+          rejectUnauthorized: tls.rejectUnauthorized,
+          ...(tls.ca === undefined ? {} : { ca: [...tls.ca] }),
+        };
+        return route === "direct"
           ? new Agent({
               ...responseTimeouts,
               ...compatibleTransportLimits(),
               connect: {
                 timeout: connectTimeout,
+                ...pinned,
                 ...(ipVersion(hostname) === 0
                   ? { lookup: createOpenAiCompatibleLookup(url, resolve, opts) }
                   : {}),
@@ -340,7 +351,13 @@ export function createOpenAiCompatibleFetch(
               connectTimeout,
               responseTimeouts,
               compatibleTransportLimits(),
-            ),
+              {
+                ...pinned,
+                secureRequest: url.protocol === "https:",
+                secureProxy: selectedHttpsProxy(url.origin, route),
+              },
+            );
+      },
     );
     // Node's fetch rejects this package Agent. Use its matching fetch;
     // a caller-supplied fetch stays in charge.

@@ -26,8 +26,8 @@ type PooledTransport = {
   lastUsed: number;
   retired: boolean;
   /**
-   * Fingerprint of the default CA store when this HTTPS dispatcher was opened.
-   * Absent for plain HTTP and when certificate checks are disabled.
+   * Fingerprint of the default CA store when this dispatcher checks certificates.
+   * Absent for plain HTTP with no HTTPS proxy, and when certificate checks are off.
    */
   caFingerprint?: string;
   idle?: ReturnType<typeof setTimeout>;
@@ -41,11 +41,26 @@ type PooledTransport = {
  */
 let caSnapshot: readonly string[] | undefined;
 let caFingerprint: string | undefined;
-/** Trust fingerprint last used for a verified HTTPS borrow. */
+/** Trust fingerprint last used for a borrow that checks certificates. */
 let pooledCaFingerprint: string | undefined;
 
-function defaultCaFingerprint(): string {
-  const certificates = getCACertificates("default");
+/** Verification flag and default CA list captured with a pool key. */
+export type GatewayTlsPolicy = {
+  rejectUnauthorized: boolean;
+  /** Omitted when certificate checks are off, so the dial does not pin a trust store. */
+  ca?: readonly string[];
+};
+
+/**
+ * Read the process TLS policy once. The socket opens later, after lookup can
+ * yield, and must keep this policy rather than whatever the process says then.
+ */
+export function captureGatewayTlsPolicy(): GatewayTlsPolicy {
+  if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === "0") return { rejectUnauthorized: false };
+  return { rejectUnauthorized: true, ca: getCACertificates("default") };
+}
+
+function fingerprintCertificates(certificates: readonly string[]): string {
   if (certificates === caSnapshot && caFingerprint !== undefined) return caFingerprint;
   const hash = createHash("sha256");
   for (const certificate of certificates) {
@@ -57,11 +72,94 @@ function defaultCaFingerprint(): string {
   return caFingerprint;
 }
 
-/** Empty when this origin does not check certificates, so those sockets stay pooled. */
-function verifiedHttpsCaFingerprint(origin: string): string {
-  if (!origin.startsWith("https:")) return "";
-  if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === "0") return "";
-  return defaultCaFingerprint();
+function proxyEnv(name: "http_proxy" | "https_proxy"): string | undefined {
+  const value = process.env[name] ?? process.env[name.toUpperCase()];
+  return value ? value : undefined;
+}
+
+function requestTarget(
+  origin: string,
+): { protocol: string; hostname: string; port: number } | undefined {
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return undefined;
+  }
+  let hostname = url.hostname.toLowerCase();
+  if (hostname.startsWith("[") && hostname.endsWith("]")) hostname = hostname.slice(1, -1);
+  if (hostname.length > 1 && hostname.endsWith(".")) hostname = hostname.slice(0, -1);
+  const port =
+    Number.parseInt(url.port, 10) ||
+    (url.protocol === "https:" ? 443 : url.protocol === "http:" ? 80 : 0);
+  return { protocol: url.protocol, hostname, port };
+}
+
+/** Same host and port rules undici uses for NO_PROXY. */
+function noProxyBypasses(hostname: string, port: number): boolean {
+  const raw = process.env.no_proxy ?? process.env.NO_PROXY ?? "";
+  if (raw === "") return false;
+  for (const entry of raw.split(/[,\s]/)) {
+    if (entry === "") continue;
+    const parsed = noProxyEntry(entry);
+    if (parsed.port !== 0 && parsed.port !== port) continue;
+    if (parsed.hostname === "*") return true;
+    if (!parsed.wildcard && hostname === parsed.hostname) return true;
+    if (hostname.endsWith(`.${parsed.hostname}`)) return true;
+  }
+  return false;
+}
+
+function noProxyEntry(entry: string): { hostname: string; port: number; wildcard: boolean } {
+  const wildcard = entry.charCodeAt(0) === 42;
+  const ipv6 = /^\[(.+)\]:(\d+)$/.exec(entry);
+  let hostname = entry;
+  let port = 0;
+  if (ipv6) {
+    hostname = ipv6[1] ?? "";
+    port = Number(ipv6[2]);
+  } else {
+    const unbracketed = entry.replace(/^\[(.+)\]$/, "$1");
+    const colonCount = unbracketed.split(":").length - 1;
+    const hostPort = colonCount === 1 ? /^(.+):(\d+)$/.exec(unbracketed) : null;
+    hostname = hostPort?.[1] ?? unbracketed;
+    port = hostPort ? Number(hostPort[2]) : 0;
+  }
+  hostname = hostname
+    .replace(/^\*?\./, "")
+    .replace(/^(.+)\.$/, "$1")
+    .toLowerCase();
+  return { hostname, port, wildcard };
+}
+
+/**
+ * True when the request dials an HTTPS proxy. A direct route, a NO_PROXY host,
+ * and an unset proxy do not. An https origin with no HTTPS_PROXY uses HTTP_PROXY.
+ */
+export function selectedHttpsProxy(origin: string, route: "direct" | "proxy"): boolean {
+  if (route !== "proxy") return false;
+  const target = requestTarget(origin);
+  if (!target || noProxyBypasses(target.hostname, target.port)) return false;
+  const httpProxy = proxyEnv("http_proxy");
+  const httpsProxy = proxyEnv("https_proxy");
+  const selected = target.protocol === "https:" ? (httpsProxy ?? httpProxy) : httpProxy;
+  if (!selected) return false;
+  try {
+    return new URL(selected).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/** Empty when this socket does not check certificates, so it stays pooled across CA changes. */
+function verifiedCaFingerprint(
+  origin: string,
+  route: "direct" | "proxy",
+  tls: GatewayTlsPolicy,
+): string {
+  if (!tls.rejectUnauthorized || tls.ca === undefined) return "";
+  if (!origin.startsWith("https:") && !selectedHttpsProxy(origin, route)) return "";
+  return fingerprintCertificates(tls.ca);
 }
 
 const transports = new Map<string, PooledTransport>();
@@ -95,7 +193,8 @@ export function compatibleTransportLimits(): Pick<
  * Identity of one reusable dispatcher. The checked lookup is closed over the
  * resolver and the address policy, so a different resolver, proxy, timeout or
  * origin must not inherit a socket pinned for someone else. The last field is
- * the default CA fingerprint for verified HTTPS, and empty otherwise.
+ * the default CA fingerprint when the gateway or its HTTPS proxy checks
+ * certificates, and empty otherwise.
  */
 export function compatibleTransportKey(input: {
   origin: string;
@@ -104,9 +203,10 @@ export function compatibleTransportKey(input: {
   modelStream: boolean;
   connectTimeout: number;
   resolve: ResolveHostname;
+  tls: GatewayTlsPolicy;
 }): string {
   const env = process.env;
-  const ca = verifiedHttpsCaFingerprint(input.origin);
+  const ca = verifiedCaFingerprint(input.origin, input.route, input.tls);
   return [
     input.route,
     input.origin,
