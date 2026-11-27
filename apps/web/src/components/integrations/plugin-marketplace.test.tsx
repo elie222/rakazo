@@ -5,6 +5,10 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("../../lib/spaces/organizations", () => ({
+  useOrganizations: () => ({ organizations: [], activeOrganizationId: null }),
+}));
+
 const api = vi.hoisted(() => ({
   preview: vi.fn(),
   install: vi.fn(),
@@ -190,6 +194,13 @@ describe("plugin detail", () => {
     expect(api.approve).not.toHaveBeenCalled();
   });
 
+  it("lets a member install a personal copy from the catalog when the organization has one", async () => {
+    await render({ install: { ...install, organization: true, manageable: false } });
+    await click("Connect");
+    expect(api.install).toHaveBeenCalledWith(expect.objectContaining({ kind: "plugin" }));
+    expect(api.install.mock.calls[0]?.[0]).not.toHaveProperty("organization");
+  });
+
   it("shows a rejected install without claiming it was added", async () => {
     api.install.mockRejectedValue(new Error("Plugin content changed"));
     await render();
@@ -299,7 +310,14 @@ describe("plugin detail", () => {
 
   it("opens an installed plugin skill's saved instructions", async () => {
     api.skills.mockResolvedValue([
-      { id: "skill-db-1", name: "skill-1", source: "plugin", description: "", readOnly: true },
+      {
+        id: "skill-db-1",
+        installId: install.id,
+        name: "skill-1",
+        source: "plugin",
+        description: "",
+        readOnly: true,
+      },
     ]);
     api.skill.mockResolvedValue({ content: "Follow the plugin steps." });
     await render({ install, servers: [server] });
@@ -516,7 +534,7 @@ describe("integration fallback icons", () => {
   it("names each Add button after its app and hides the decorative initial", async () => {
     const item = { connectorId: "gm", slug: "gmail", name: "Gmail" } as never;
     const context = {
-      connections: { itemConnected: () => false, pending: null, connect: vi.fn() },
+      connections: { connections: [], itemConnected: () => false, pending: null, connect: vi.fn() },
       pluginForApp: new Map(),
       onOpenApp: vi.fn(),
       onOpenDetail: vi.fn(),

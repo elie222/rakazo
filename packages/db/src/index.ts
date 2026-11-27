@@ -68,6 +68,7 @@ export * from "./spaces/external-conversations.js";
 export * from "./spaces/groups.js";
 export * from "./spaces/name-claims.js";
 export * from "./spaces/organization-changes.js";
+export * from "./spaces/organization-items.js";
 export * from "./spaces/organization-members.js";
 export * from "./spaces/organizations.js";
 export * from "./spaces/space-changes.js";

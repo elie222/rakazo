@@ -450,6 +450,7 @@ describeBreakdown("usage.breakdown", () => {
     ["Asia/Rangoon", 6.5],
     ["Asia/Saigon", 7],
     ["America/Indianapolis", -5],
+    ["Europe/Kiev", 2],
   ])("cuts today and day buckets at midnight in %s", async (timezone, hours) => {
     vi.setSystemTime(new Date("2026-01-31T09:59:30.000Z"));
     const offset = hours * 60 * 60 * 1000;

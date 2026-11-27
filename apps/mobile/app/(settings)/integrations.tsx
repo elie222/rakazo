@@ -5,11 +5,13 @@ import { SUBMIT_PLUGIN_URL } from "@rakazo/contracts";
 import {
   addedMcpEndpoints,
   browsablePlugins,
+  browseMcpPresets,
   buildFeaturedConnectorTiles,
   CONNECTION_CATALOG_PAGE_SIZE,
   catalogItemAccounts,
   catalogItemKey,
-  featuredMcpPresets,
+  catalogWithOrganizationConnections,
+  connectionSharingOrganization,
   filterConnectionCatalogItems,
   filterPluginBrands,
   filterPlugins,
@@ -20,7 +22,7 @@ import {
   pluginCategories,
 } from "@rakazo/core";
 import { pluginCategoryLabel } from "@rakazo/i18n/plugin-catalog";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -45,14 +47,15 @@ import { NativeActionButton } from "../../components/native/native-action-button
 import { NativeMenuPicker } from "../../components/native/native-menu-picker";
 import { Chevron } from "../../components/ui/row-accessories";
 import { selectedSpaceId } from "../../lib/api/api";
+import { useLiveStream } from "../../lib/api/roster-signals";
 import { errorText } from "../../lib/api/user-error";
 import { loadLastBotId } from "../../lib/inbox/last-bot";
 import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
 import {
   gitImportParams,
   hasPluginConnector,
+  installedPluginParams,
   managedPluginParams,
-  pluginParams,
 } from "../../lib/integrations/plugin-marketplace";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { useThemedStyles } from "../../lib/native/native";
@@ -60,6 +63,7 @@ import { useHeaderSearch, useScreenHeader } from "../../lib/navigation/screen-he
 import { openExternalUrl } from "../../lib/platform/open-url";
 import { queryClient, rpcQuery } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
+import { activeOrganization, useOrganizations } from "../../lib/spaces/organizations";
 
 export default function Integrations() {
   const sideInsets = useSideInsets();
@@ -68,6 +72,7 @@ export default function Integrations() {
   const { app: appToOpen } = useLocalSearchParams<{ app?: string }>();
   const styles = useThemedStyles(createIntegrationsStyles);
   const { t } = useLingui();
+  useLiveStream(useIsFocused());
   const { width } = useWindowDimensions();
   const catalogColumns = width >= 480 ? 2 : 1;
   const [query, setQuery] = useState("");
@@ -100,6 +105,9 @@ export default function Integrations() {
       return listRead.queryFn(context);
     },
   };
+  const organizationName = connectionSharingOrganization(
+    activeOrganization(useOrganizations().data),
+  );
   const serversRead = rpcQuery("mcp/servers/list");
   const installsRead = rpcQuery("capabilities/list");
   const presetsRead = rpcQuery("capabilities/sourcePresets");
@@ -133,8 +141,11 @@ export default function Integrations() {
     toolsRead.queryKey.slice(0, -1),
   ];
 
-  const catalog = catalogQuery.data ?? [];
   const connections = connectionsQuery.data ?? [];
+  const catalog = useMemo(
+    () => catalogWithOrganizationConnections(catalogQuery.data ?? [], connectionsQuery.data ?? []),
+    [catalogQuery.data, connectionsQuery.data],
+  );
   const catalogReady = catalogQuery.data !== undefined && connectionsQuery.data !== undefined;
   const mcpServers = serversQuery.data ?? [];
   const installs = installsQuery.data ?? [];
@@ -198,6 +209,7 @@ export default function Integrations() {
     setOauthServerId,
     captureFocus,
     onStart: () => closeDetail(),
+    organizationName,
   });
   const pending = accountPending ?? sourcePending;
   const loadFailure = catalogQuery.error ?? connectionsQuery.error;
@@ -246,7 +258,7 @@ export default function Integrations() {
   const directPresets =
     category || !directReady
       ? []
-      : featuredMcpPresets(sourcePresets, query).filter(
+      : browseMcpPresets(sourcePresets, query).filter(
           ({ name }) => !catalog.some((item) => item.name.toLowerCase() === name.toLowerCase()),
         );
   const showFeatured = !query.trim();
@@ -309,10 +321,7 @@ export default function Integrations() {
   }
 
   function installedParams(install: CapabilityInstall): PluginParams {
-    const entry = pluginEntries.find((row) => row.installedSource === install.source);
-    return entry
-      ? pluginParams(entry)
-      : { source: install.source, installedSource: install.source, name: install.name };
+    return installedPluginParams(install, pluginEntries);
   }
 
   function openDetail(item: ConnectionCatalogItem) {
@@ -334,14 +343,19 @@ export default function Integrations() {
     const key = catalogItemKey(item);
     const connected = itemConnected(item);
     const connecting = pending === key;
-    if (connected) return <ConnectionStatus state="connected" />;
+    if (connected) {
+      const accounts = catalogItemAccounts(connections, item);
+      if (item.connected || accounts.some((row) => row.status === "connected"))
+        return <ConnectionStatus state="connected" />;
+      return <ConnectionStatus state="needs_sign_in" />;
+    }
     return (
       <NativeActionButton
         accessibilityLabel={t`Connect ${ph({ name: label })}`}
         disabled={connecting}
         fill={false}
         label={connecting ? t`Working…` : t`Connect`}
-        onPress={() => connect(item)}
+        onPress={() => (organizationName ? openDetail(item) : connect(item))}
         prominence="secondary"
       />
     );
@@ -358,6 +372,9 @@ export default function Integrations() {
           <Text numberOfLines={1} style={styles.title}>
             {label}
           </Text>
+          {catalogItemAccounts(connections, item).some((row) => row.organization) ? (
+            <Text style={styles.secondary}>{t`Organization`}</Text>
+          ) : null}
           {item.chatApp && !connected ? (
             <Text style={styles.secondary}>
               {t`Tools for your bot.`}{" "}
@@ -517,7 +534,9 @@ export default function Integrations() {
 
             {detailItem ? (
               <IntegrationDetail
+                key={catalogItemKey(detailItem)}
                 item={detailItem}
+                organizationName={organizationName}
                 accounts={catalogItemAccounts(connections, detailItem)}
                 pending={pending}
                 labelDrafts={labelDrafts}
@@ -529,7 +548,7 @@ export default function Integrations() {
                 onUninstall={() => uninstall(detailItem)}
                 onRename={renameAccount}
                 onRevoke={revokeAccount}
-                onConnect={() => connect(detailItem)}
+                onConnect={(target) => connect(detailItem, target)}
                 onOpenChatApp={() => router.push("/messaging")}
               />
             ) : (

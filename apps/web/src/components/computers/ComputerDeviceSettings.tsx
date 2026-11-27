@@ -167,10 +167,10 @@ export function ComputerDeviceSettings() {
           control={
             <Button
               variant="ghost"
-              size="icon-sm"
+              size="icon"
               aria-label={t`Remove ${device.name}`}
               disabled={pending}
-              className="text-destructive hover:text-destructive"
+              className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive active:bg-destructive/20 dark:hover:bg-destructive/20 dark:active:bg-destructive/30"
               onClick={() =>
                 change.run({
                   action: () => removeUserDevice(device.deviceId),

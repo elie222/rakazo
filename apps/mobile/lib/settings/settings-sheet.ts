@@ -9,6 +9,7 @@ const settingsScreens = new Set([
   "billing",
   "account",
   "ai-data-sharing",
+  "app-icon",
   "approval-rule-add",
   "approvals",
   "archived-bots",

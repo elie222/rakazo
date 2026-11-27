@@ -439,18 +439,32 @@ export function renameRoutineSkillMentions(
   prompt: string,
   renames: ReadonlyMap<string, string>,
 ): string {
-  const names = [...renames.keys()].sort((a, b) => b.length - a.length);
-  if (names.length === 0) return prompt;
-  const next = new Map([...renames].map(([from, to]) => [from.toLowerCase(), to]));
-  return prompt.replace(
-    new RegExp(
-      `(^|${ROUTINE_SKILL_LEAD})@(${names.map(escapeRegExp).join("|")})${ROUTINE_SKILL_END}`,
-      "gi",
-    ),
-    (match, lead: string, name: string) => {
-      const to = next.get(name.toLowerCase());
-      return to ? `${lead}@${to}` : match;
-    },
+  const pattern = routineSkillMentionPattern([...renames.keys()]);
+  if (!pattern) return prompt;
+  const next = new Map(
+    [...renames].map(([from, to]) => [from.trim().toLowerCase(), from === to ? undefined : to]),
+  );
+  return prompt.replace(pattern, (match, lead: string, name: string) => {
+    const to = next.get(name.toLowerCase());
+    return to ? `${lead}@${to}` : match;
+  });
+}
+
+/** Lists each reference in prompt order, including repeats, for checking a rewrite. */
+export function routineSkillMentionSequence(prompt: string, names: string[]): string[] {
+  const pattern = routineSkillMentionPattern(names);
+  return pattern ? Array.from(prompt.matchAll(pattern), (match) => match[2]!) : [];
+}
+
+function routineSkillMentionPattern(names: string[]): RegExp | undefined {
+  const sorted = names
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  if (sorted.length === 0) return undefined;
+  return new RegExp(
+    `(^|${ROUTINE_SKILL_LEAD})@(${sorted.map(escapeRegExp).join("|")})${ROUTINE_SKILL_END}`,
+    "gi",
   );
 }
 

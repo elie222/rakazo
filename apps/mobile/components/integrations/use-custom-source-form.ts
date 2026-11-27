@@ -7,7 +7,12 @@ import { useRef, useState } from "react";
 import { errorText } from "../../lib/api/user-error";
 import { captureSessionScope } from "../../lib/api/verified-scope";
 import { useSave } from "../../lib/query/query";
-import type { AddCustomOption, SourceAuth, SourceKind } from "./add-custom-integration";
+import type {
+  AddCustomOption,
+  SourceAuth,
+  SourceKind,
+  SourceOwner,
+} from "./add-custom-integration";
 
 /**
  * The Integrations screen's Add custom flow: what it offers, the GitHub or source form's fields,
@@ -20,6 +25,7 @@ export function useCustomSourceForm({
   setOauthServerId,
   captureFocus,
   onStart,
+  organizationName,
 }: {
   sourcePresets: McpSourcePreset[];
   /** What an added source makes out of date. */
@@ -30,6 +36,8 @@ export function useCustomSourceForm({
   captureFocus: () => () => boolean;
   /** Called as the form opens. */
   onStart: () => void;
+  /** The organization the member may add an MCP server for, as its owner or an admin. */
+  organizationName: string | null;
 }) {
   const { t } = useLingui();
   const [gitUrl, setGitUrl] = useState("");
@@ -41,6 +49,7 @@ export function useCustomSourceForm({
   const [credential, setCredential] = useState("");
   const [sourceAuth, setSourceAuth] = useState<SourceAuth>("none");
   const [authHeader, setAuthHeader] = useState("x-api-key");
+  const [owner, setOwner] = useState<SourceOwner>("me");
   // Bumped whenever the form opens or closes, so an add only closes the form it was sent from.
   const formOpened = useRef(0);
 
@@ -63,6 +72,18 @@ export function useCustomSourceForm({
         sourceAuth === "header"
           ? { type: "header", name: authHeader.trim() }
           : { type: sourceAuth === "bearer" ? "bearer" : "none" };
+      if (kind === "mcp" && owner === "organization" && organizationName) {
+        const secret = credential.trim();
+        const created = await send("mcp/servers/createForOrganization", {
+          ...customMcpServerInput(displayName, url),
+          ...(sourceAuth === "bearer" && secret ? { secret } : {}),
+          ...(sourceAuth === "header" && secret
+            ? { headers: { [authHeader.trim()]: secret } }
+            : {}),
+        });
+        closeAfterAdding();
+        return sourceAuth === "oauth" ? { serverId: created.id, focused } : null;
+      }
       if (sourceAuth === "oauth") {
         const created = await send("mcp/servers/create", customMcpServerInput(displayName, url));
         closeAfterAdding();
@@ -128,6 +149,7 @@ export function useCustomSourceForm({
     setCredential("");
     setSourceAuth(preset?.signIn ? "oauth" : preset ? "bearer" : "none");
     setAuthHeader("x-api-key");
+    setOwner("me");
   }
 
   function startAdding(option: AddCustomOption | undefined) {
@@ -172,6 +194,9 @@ export function useCustomSourceForm({
       setAuthHeader,
       credential,
       setCredential,
+      organizationName: sourceKind === "mcp" ? organizationName : null,
+      owner,
+      setOwner,
       onAdd: () => {
         if (!sourceKind) return;
         add.reset();

@@ -31,6 +31,8 @@ export interface TurnCheckpoint {
   pendingToolCallId: string;
   messages: Message[];
   historyMessageIds?: string[];
+  /** Connector tool IDs shown by find_tool and the connector that owns each one. */
+  foundConnectorTools?: [id: string, connectorId: string][];
   /** The instructions the saved system prompt was built from; own writes resume guarding on it. */
   ownInstructionsBaseline?: string;
   /** Executor-assigned occurrences include canonical arguments and the paused call. */
@@ -71,7 +73,16 @@ export function restoreTurnCheckpoint(
     typeof checkpoint.provider !== "string" ||
     typeof checkpoint.model !== "string" ||
     typeof checkpoint.pendingToolCallId !== "string" ||
-    !Array.isArray(checkpoint.messages)
+    !Array.isArray(checkpoint.messages) ||
+    (checkpoint.foundConnectorTools !== undefined &&
+      (!Array.isArray(checkpoint.foundConnectorTools) ||
+        !checkpoint.foundConnectorTools.every(
+          (entry) =>
+            Array.isArray(entry) &&
+            entry.length === 2 &&
+            typeof entry[0] === "string" &&
+            typeof entry[1] === "string",
+        )))
   ) {
     throw new Error("Unsupported turn checkpoint");
   }

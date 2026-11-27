@@ -1,6 +1,9 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { AppIcon } from "@rakazo/contracts";
+import { DEFAULT_APP_ICON } from "@rakazo/contracts";
+import { requestDeadline, withAbort } from "@rakazo/core";
 import type { Session } from "electron";
 import { app, BrowserWindow, Menu, nativeTheme, net, screen, session, shell } from "electron";
 import {
@@ -10,6 +13,7 @@ import {
 } from "../auth/oauth-callback.js";
 import { appWindowTargets, desktop } from "../desktop-state.js";
 import { t, withDetail } from "../i18n.js";
+import { handleIpc } from "../ipc/ipc.js";
 import {
   probeFailureMessage,
   safeExternalUrl,
@@ -17,6 +21,12 @@ import {
   servesBundledRenderer,
   sessionPartitionForServerUrl,
 } from "../setup/setup-config.js";
+import {
+  appIconFile,
+  createAppIconSetHandler,
+  currentAppIcon,
+  loadAppIcon,
+} from "../system/app-icon.js";
 import { reportDesktopError } from "../system/monitoring.js";
 import { LAUNCH_CHECK_DELAY_MS } from "../updates/auto-update.js";
 import type { AppDocumentState } from "./app-document-state.js";
@@ -61,10 +71,39 @@ export function markOnce(name: string) {
   if (performance.getEntriesByName(name).length === 0) performance.mark(name);
 }
 /** Dock/taskbar icon for unpackaged launches; packaged builds get theirs from electron-builder. */
-export function developmentIcon() {
+function developmentIcon() {
   if (app.isPackaged) return undefined;
   const icon = path.join(app.getAppPath(), "assets", developmentIconFile(process.platform));
   return existsSync(icon) ? icon : undefined;
+}
+function appIconsDir() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "app-icons")
+    : path.join(app.getAppPath(), "assets", "app-icons");
+}
+function applyAppIcon(icon: AppIcon) {
+  const file = appIconFile(appIconsDir(), icon, process.platform);
+  if (process.platform === "darwin") app.dock?.setIcon(file);
+  else for (const win of BrowserWindow.getAllWindows()) win.setIcon(file);
+}
+/** Before any window opens, so the first one already wears the saved icon. */
+export async function startAppIcon(userDataDir: string) {
+  await loadAppIcon(userDataDir);
+  const icon = windowIcon();
+  if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);
+  handleIpc("desktop.appIcon.get", currentAppIcon, currentAppIcon);
+  handleIpc(
+    "desktop.appIcon.set",
+    createAppIconSetHandler(userDataDir, applyAppIcon, (error) =>
+      reportDesktopError(error, "desktop.ipc"),
+    ),
+  );
+}
+/** The icon the person picked, else the development icon for unpackaged launches. */
+export function windowIcon() {
+  const icon = currentAppIcon();
+  if (icon === DEFAULT_APP_ICON) return developmentIcon();
+  return appIconFile(appIconsDir(), icon, process.platform);
 }
 function sessionPartitionKey(targetUrl: string) {
   return sessionPartitionForServerUrl(targetUrl);
@@ -99,13 +138,29 @@ export async function resolveSessionForTarget(targetUrl: string) {
     } catch {
       // Continue with a storage probe when the profile looks pre-partition.
     }
-    if (defaultSessionProfileExists() && (await defaultSessionHasOriginData(origin))) {
-      try {
-        await writeFile(legacyDefaultSessionFlag(partition), new Date().toISOString(), "utf8");
-      } catch {
-        // Flag is best-effort; still stay on the default session this launch.
+    if (defaultSessionProfileExists()) {
+      const originData = await defaultSessionHasOriginData(origin);
+      if (originData === "present") {
+        try {
+          await writeFile(legacyDefaultSessionFlag(partition), new Date().toISOString(), "utf8");
+        } catch {
+          // Flag is best-effort; still stay on the default session this launch.
+        }
+        return { partition: null, value: session.defaultSession };
       }
-      return { partition: null, value: session.defaultSession };
+      if (originData === "unknown") {
+        // The probe did not read the default profile. Keep an isolated partition
+        // that already has this origin's cookies; otherwise stay on the default
+        // session without recording a legacy flag.
+        const isolated = session.fromPartition(partition);
+        try {
+          const cookies = await isolated.cookies.get({ url: origin });
+          if (cookies.length > 0) return { partition, value: isolated };
+        } catch {
+          // The partition's cookies could not be read; its session is undetermined.
+        }
+        return { partition: null, value: session.defaultSession };
+      }
     }
   }
   return { partition, value: session.fromPartition(partition) };
@@ -120,8 +175,13 @@ function defaultSessionProfileExists() {
     existsSync(path.join(root, "Cache Storage"))
   );
 }
-/** Page storage in the default session means a pre-partition install for this origin. */
-async function defaultSessionHasOriginData(origin: string): Promise<boolean> {
+/**
+ * Page storage in the default session means a pre-partition install for this origin.
+ * "unknown" means the probe timed out or its window closed before it could read storage.
+ */
+async function defaultSessionHasOriginData(
+  origin: string,
+): Promise<"present" | "absent" | "unknown"> {
   const probe = new BrowserWindow({
     show: false,
     width: 1,
@@ -135,9 +195,14 @@ async function defaultSessionHasOriginData(origin: string): Promise<boolean> {
   // Increment only after construction succeeds so a throw cannot leave the
   // counter stuck > 0 and permanently block quit on Windows/Linux.
   desktop.liveProbeWindows++;
+  const cancel = new AbortController();
+  probe.once("closed", () => cancel.abort());
+  const deadline = requestDeadline(PROBE_TIMEOUT_MS, "Session probe timed out.", cancel.signal);
   try {
-    await probe.loadURL(origin);
-    return (await probe.webContents.executeJavaScript(`(async () => {
+    await withAbort(probe.loadURL(origin), deadline.signal);
+    if (probe.isDestroyed()) return "unknown";
+    const hasData = await withAbort(
+      probe.webContents.executeJavaScript(`(async () => {
       if (localStorage.length > 0 || sessionStorage.length > 0) return true;
       if (typeof indexedDB !== "undefined" && indexedDB.databases) {
         try {
@@ -152,11 +217,18 @@ async function defaultSessionHasOriginData(origin: string): Promise<boolean> {
         } catch {}
       }
       return false;
-    })()`)) as boolean;
+    })()`),
+      deadline.signal,
+    );
+    return hasData === true ? "present" : "absent";
   } catch {
-    return false;
+    return deadline.signal.aborted || probe.isDestroyed() ? "unknown" : "absent";
   } finally {
-    if (!probe.isDestroyed()) probe.destroy();
+    deadline.dispose();
+    if (!probe.isDestroyed()) {
+      probe.webContents.stop();
+      probe.destroy();
+    }
     desktop.liveProbeWindows--;
   }
 }
@@ -233,7 +305,7 @@ function rememberWindowBounds(win: BrowserWindow) {
 }
 export function createWindow(url: string, partition: string | null) {
   markOnce("rk:main:window-create-start");
-  const icon = developmentIcon();
+  const icon = windowIcon();
   // A window being replaced may have moved within the save delay; record it so this one opens there.
   if (desktop.mainWindow && !desktop.mainWindow.isDestroyed()) saveWindowBounds(desktop.mainWindow);
   const saved = savedWindowBounds();
@@ -286,11 +358,15 @@ export function createWindow(url: string, partition: string | null) {
     if (shouldOpenInAppPopup(appOrigin, childUrl, frameName)) {
       // An MCP server signs in through a jar of its own so accounts never mix.
       const mcpServerId = mcpOAuthPopupServerId(frameName);
+      const icon = windowIcon();
       return {
         action: "allow",
-        overrideBrowserWindowOptions: oauthPopupWindowOptions(
-          mcpServerId === null ? partition : mcpOAuthPartition(url, mcpServerId),
-        ),
+        overrideBrowserWindowOptions: {
+          ...oauthPopupWindowOptions(
+            mcpServerId === null ? partition : mcpOAuthPartition(url, mcpServerId),
+          ),
+          ...(icon ? { icon } : {}),
+        },
       };
     }
     const external = safeExternalUrl(childUrl);

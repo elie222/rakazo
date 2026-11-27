@@ -8,10 +8,10 @@ import { SUBMIT_PLUGIN_URL } from "@rakazo/contracts";
 import type { CatalogMcpServer } from "@rakazo/core";
 import {
   addedMcpEndpoints,
+  browseMcpPresets,
   CONNECTION_CATALOG_PAGE_SIZE,
   catalogItemKey,
   catalogMcpServers,
-  featuredMcpPresets,
   isRecommendedPlugin,
   managedAppFor,
   OTHER_PLUGINS,
@@ -91,7 +91,7 @@ export function PluginBrowse({
   const presets =
     category || !directReady
       ? []
-      : featuredMcpPresets(sourcePresets, term).filter(
+      : browseMcpPresets(sourcePresets, term).filter(
           ({ name }) => !managedNames.has(name.toLowerCase()),
         );
   const remoteMatches =

@@ -13,6 +13,7 @@ COPY --chmod=755 package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs .
 RUN corepack install && pnpm --version >/dev/null && chmod -R a+rX "${COREPACK_HOME}"
 COPY --chmod=755 patches patches
 COPY --chmod=755 apps/api/package.json apps/api/
+COPY --chmod=755 apps/cli/package.json apps/cli/
 COPY --chmod=755 apps/desktop/package.json apps/desktop/
 COPY --chmod=755 apps/mobile/package.json apps/mobile/
 COPY --chmod=755 apps/web/package.json apps/web/

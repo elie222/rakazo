@@ -19,6 +19,7 @@ import {
   releaseComputerExecutionLease,
   renewComputerExecutionLease,
   replaceComputer,
+  waitForRunComputerLease,
 } from "./computer-lifecycle.js";
 import {
   performComputerUpdate,
@@ -1137,6 +1138,72 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
     await expect(acquireComputerExecutionLease(prisma, otherInput)).resolves.toMatchObject({
       runId: other.id,
       fence: recovered!.fence + 1,
+    });
+  });
+
+  it("leaves a free computer to a person's waiting run before background work", async () => {
+    const { spaceId, botId, threadId, userId } = identity;
+    await prisma.run.updateMany({
+      where: { botId, status: "running" },
+      data: { status: "completed" },
+    });
+    await prisma.computerExecutionLease.updateMany({
+      where: { computerId, botId },
+      data: { expiresAt: new Date(0) },
+    });
+    const task = await prisma.task.create({
+      data: { spaceId, botId, threadId, userId, prompt: "fixture", status: "running" },
+    });
+    const working = (trigger: string, workerId: string) =>
+      prisma.run.create({
+        data: {
+          spaceId,
+          botId,
+          threadId,
+          userId,
+          taskId: task.id,
+          status: "running",
+          trigger,
+          leaseOwner: workerId,
+          leaseFence: 1,
+          leaseExpiresAt: new Date(Date.now() + 60_000),
+        },
+      });
+    const person = await working("user", "worker-person");
+    const routine = await working("routine", "worker-routine");
+    const personInput = {
+      computerId,
+      botId,
+      runId: person.id,
+      workerId: "worker-person",
+      runFence: 1,
+    };
+    const routineInput = { ...personInput, runId: routine.id, workerId: "worker-routine" };
+
+    const boot = await acquireComputerExecutionLease(prisma, {
+      computerId,
+      botId,
+      runId: "boot:x",
+    });
+    const stopWaiting = new AbortController();
+    const personWait = waitForRunComputerLease(prisma, personInput, stopWaiting.signal);
+    await vi.waitFor(async () => {
+      const row = await prisma.run.findUniqueOrThrow({ where: { id: person.id } });
+      expect(row.computerUseStartedAt).not.toBeNull();
+    });
+    stopWaiting.abort();
+    await expect(personWait).rejects.toThrow();
+    await releaseComputerExecutionLease(prisma, boot);
+
+    await expect(acquireComputerExecutionLease(prisma, routineInput)).rejects.toBeInstanceOf(
+      ComputerBusyError,
+    );
+    const personLease = await acquireComputerExecutionLease(prisma, personInput);
+    expect(personLease).toMatchObject({ runId: person.id });
+    await releaseComputerExecutionLease(prisma, personLease);
+    await prisma.run.update({ where: { id: person.id }, data: { status: "completed" } });
+    await expect(acquireComputerExecutionLease(prisma, routineInput)).resolves.toMatchObject({
+      runId: routine.id,
     });
   });
 });

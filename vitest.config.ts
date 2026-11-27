@@ -16,6 +16,7 @@ const include = [
   "apps/mobile/plugins/**/*.test.js",
   "apps/api/src/**/*.test.ts",
   "apps/worker/src/**/*.test.ts",
+  "apps/cli/src/**/*.test.ts",
 ];
 
 // Package scripts run from their own folder, so paths resolve from the repo root, not the cwd.
@@ -31,8 +32,8 @@ const processes: string[] = JSON.parse(
 // graph; the rest share one per worker, which skips re-importing the same modules for every file.
 // Spies, stubbed envs and globals, and fake timers are undone before each test (see `test` below
 // and pin-test-env.ts), so files that only use those share too.
-// Files that replace prototype methods or start a `@hono/node-server` listener (which replaces
-// `globalThis.Response` unless `overrideGlobalObjects: false` is set) keep a fresh graph as well.
+// Files that replace prototype methods or reference `@hono/node-server` directly keep a fresh
+// graph too. By default, starting a Hono listener replaces the global Request and Response.
 // The model catalog is built once per process from the model env vars, so files that stub them
 // stay isolated too. Database runs give every file its own database, so they never share.
 const mutatesSharedState =

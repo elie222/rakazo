@@ -121,12 +121,20 @@ export function SavedServerRow({
         style={({ pressed }) => [styles.rowLink, pressed && styles.dimmed]}
       >
         <ConnectorIcon name={server.name} size={LOGO_SIZE} />
-        <Text numberOfLines={1} style={[styles.title, styles.grow]}>
-          {server.name}
-        </Text>
+        <View style={styles.grow}>
+          <Text numberOfLines={1} style={styles.title}>
+            {server.name}
+          </Text>
+          {server.organization ? (
+            <Text numberOfLines={1} style={styles.secondary}>
+              {t`Organization`}
+            </Text>
+          ) : null}
+        </View>
         <ConnectionStatus state={state} />
       </Pressable>
-      {server.enabled &&
+      {server.manageable !== false &&
+      server.enabled &&
       state !== "connected" &&
       state !== "needs_client" &&
       (server.oauthStatus === "reconnect" || server.id === oauthServerId) ? (
@@ -204,9 +212,13 @@ export function ConnectedApps({
             key={install.id}
             params={pluginParamsFor(install)}
             summary={
-              servers.length === 1 ? t`1 connector` : t`${ph({ count: servers.length })} connectors`
+              install.organization
+                ? t`Organization`
+                : servers.length === 1
+                  ? t`1 connector`
+                  : t`${ph({ count: servers.length })} connectors`
             }
-            signIn={servers.some(mcpServerNeedsSignIn)}
+            signIn={install.manageable !== false && servers.some(mcpServerNeedsSignIn)}
             onOpenPlugin={onOpenPlugin}
           />
         );

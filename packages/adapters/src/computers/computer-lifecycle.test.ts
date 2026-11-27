@@ -4404,7 +4404,10 @@ it("fails a changed computer once instead of retrying it as a transient error", 
   }));
   await expect(
     waitForRunComputerLease(
-      { bot: { findUnique } } as unknown as PrismaClient,
+      {
+        bot: { findUnique },
+        run: { updateMany: vi.fn(async () => ({ count: 1 })) },
+      } as unknown as PrismaClient,
       { computerId: "original", botId: "bot", runId: "run", workerId: "worker", runFence: 1 },
       new AbortController().signal,
     ),

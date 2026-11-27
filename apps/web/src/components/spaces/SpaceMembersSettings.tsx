@@ -17,7 +17,7 @@ import {
   toast,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { Copy, Link, Mail, MoreHorizontal, UserPlus } from "lucide-react";
+import { Copy, Link, LogOut, Mail, MoreHorizontal, UserPlus } from "lucide-react";
 import { useRef, useState } from "react";
 import { spaceQueries, useQueryUserId, useSave } from "../../lib/query/query";
 import { errorText } from "../../lib/query/user-error";
@@ -221,11 +221,11 @@ export function SpaceMembersSettings({
     </div>
   ) : (
     <Button
-      variant="ghost"
+      variant="destructive-secondary"
       size="sm"
-      className="text-destructive hover:text-destructive"
       onClick={() => openConfirm({ kind: "leave", spaceId: space.id })}
     >
+      <LogOut data-icon="inline-start" />
       <Trans>Leave space</Trans>
     </Button>
   );

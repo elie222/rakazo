@@ -112,7 +112,10 @@ export function organizationRole(role: string): OrganizationRole {
 }
 
 /** Serializes one organization's membership changes, so each check holds until it commits. */
-async function lockOrganizationMembers(tx: Prisma.TransactionClient, organizationId: string) {
+export async function lockOrganizationMembers(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+) {
   await lockKey(tx, `organization-members:${organizationId}`);
 }
 
