@@ -496,6 +496,28 @@ describe("Stripe billing HTTP boundary", () => {
     expect(portalRequest.form["flow_data[type]"]).toBeUndefined();
   });
 
+  it("prefers an uncancelled live subscription over a newer canceling subscription", async () => {
+    const { wire, provider } = setup();
+    const { customerId } = await provider.createCustomer(owner);
+    await seedHistory(wire, provider, customerId, ["active", "active"]);
+    const [first, second] = wire.subscriptions;
+    second!.cancel_at_period_end = true;
+
+    await expect(provider.getCustomerSubscription(customerId)).resolves.toMatchObject({
+      subscriptionId: first!.id,
+      cancelAtPeriodEnd: false,
+    });
+    await provider.createPortal({
+      customerId,
+      returnUrl: urls.successUrl,
+      flow: "cancel",
+    });
+    const portalRequest = wire.requests.at(-1)!;
+    expect(portalRequest.path).toBe("/v1/billing_portal/sessions");
+    expect(portalRequest.form["flow_data[type]"]).toBe("subscription_cancel");
+    expect(portalRequest.form["flow_data[subscription_cancel][subscription]"]).toBe(first!.id);
+  });
+
   it("replays a saved 500 to retries of the same call, and a later call starts fresh", async () => {
     const { wire, provider } = setup();
     wire.failures.push({ status: 500, message: "boom" });

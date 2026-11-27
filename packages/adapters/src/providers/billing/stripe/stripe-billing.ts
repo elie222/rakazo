@@ -28,6 +28,7 @@ import {
 import { readBoundedJsonResponse } from "@rakazo/core";
 import { z } from "zod";
 import { stripeInvoiceRefund } from "./stripe-invoice-refund.js";
+import { createStripePortal } from "./stripe-portal.js";
 
 export const STRIPE_API_VERSION = "2026-09-30.endive";
 const WEBHOOK_TOLERANCE_SECONDS = 300;
@@ -55,7 +56,6 @@ const priceSchema = z.object({
   }),
 });
 const idSchema = z.object({ id: z.string().min(1) });
-const urlSchema = z.object({ url: z.string().min(1) });
 const checkoutSessionSchema = z.object({ id: z.string().min(1), url: z.string().min(1) });
 const subscriptionSchema = z.object({
   id: z.string(),
@@ -745,40 +745,24 @@ export class StripeBillingProvider implements BillingProvider {
   }
 
   async createPortal(input: { customerId: string; returnUrl: string; flow?: "cancel" }) {
-    const base = {
-      customer: input.customerId,
-      return_url: input.returnUrl,
-    };
-    if (input.flow === "cancel") {
-      const chosen = pickStripeSubscription(await this.listLiveSubscriptions(input.customerId));
-      const cancelable =
-        chosen &&
-        grantsAccess(chosen.status) &&
-        !chosen.subscription.cancel_at_period_end &&
-        chosen.subscription.cancel_at == null;
-      if (cancelable) {
-        try {
-          const session = urlSchema.parse(
-            await this.request("POST", "/v1/billing_portal/sessions", {
-              ...base,
-              flow_data: {
-                type: "subscription_cancel",
-                subscription_cancel: { subscription: chosen.subscription.id },
-              },
-            }),
-          );
-          return { url: session.url };
-        } catch (error) {
-          // Fall back to the general portal when the Stripe portal config omits cancel flows.
-          if (!(error instanceof StripeRequestError && error.type === "invalid_request_error"))
-            throw error;
-        }
-      }
-    }
-    const session = urlSchema.parse(
-      await this.request("POST", "/v1/billing_portal/sessions", base),
+    return createStripePortal(
+      {
+        request: (method, path, params) => this.request(method, path, params),
+        pickCancelCandidate: async (customerId) => {
+          const chosen = pickStripeSubscription(await this.listLiveSubscriptions(customerId));
+          return chosen
+            ? {
+                id: chosen.subscription.id,
+                grantsAccess: grantsAccess(chosen.status),
+                cancelAtPeriodEnd: chosen.cancelAtPeriodEnd,
+              }
+            : null;
+        },
+        isInvalidRequestError: (error) =>
+          error instanceof StripeRequestError && error.type === "invalid_request_error",
+      },
+      input,
     );
-    return { url: session.url };
   }
 
   async getCustomerSubscription(customerId: string): Promise<BillingSubscriptionSnapshot | null> {
@@ -1047,11 +1031,14 @@ export function mapStripeSubscriptionStatus(status: string): BillingSubscription
  * (so a later ended one cannot hide it), else the newest overall.
  */
 export function pickBillingSubscription<
-  T extends { status: BillingSubscriptionStatus; created: number },
+  T extends { status: BillingSubscriptionStatus; created: number; cancelAtPeriodEnd?: boolean },
 >(subscriptions: T[]): T | undefined {
   const newestFirst = [...subscriptions].sort((a, b) => b.created - a.created);
+  const uncancelled = newestFirst.filter((s) => !s.cancelAtPeriodEnd);
   return (
+    uncancelled.find((s) => grantsAccess(s.status)) ??
     newestFirst.find((s) => grantsAccess(s.status)) ??
+    uncancelled.find((s) => holdsBillingSubscription(s.status)) ??
     newestFirst.find((s) => holdsBillingSubscription(s.status)) ??
     newestFirst[0]
   );
@@ -1063,6 +1050,8 @@ function pickStripeSubscription(subscriptions: StripeSubscription[]) {
       subscription,
       status: mapStripeSubscriptionStatus(subscription.status),
       created: subscription.created,
+      cancelAtPeriodEnd:
+        Boolean(subscription.cancel_at_period_end) || subscription.cancel_at != null,
     })),
   );
 }
