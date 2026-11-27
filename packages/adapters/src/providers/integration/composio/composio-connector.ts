@@ -14,7 +14,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { ConnectorAuthUnavailableError } from "@rakazo/adapter-kit";
 import { isVitestRuntime } from "@rakazo/core/node/test-runtime";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { collectPages, filterCatalog } from "../../../integrations/connector-catalog.js";
 import { isLazyCatalogControlRoute } from "../../../tools/lazy-tool-catalog.js";
 import { connectedCalendarProvider } from "./calendar.js";
@@ -60,6 +60,10 @@ export {
   withSharedAccessHint,
 } from "./composio-errors.js";
 export { asConnectorTools } from "./composio-tool-mapping.js";
+
+function rethrowSanitizedIntegrationError(error: unknown): never {
+  throw new Error(sanitizeIntegrationError(error));
+}
 
 type SdkSession = Awaited<ReturnType<Composio["create"]>>;
 
@@ -488,12 +492,10 @@ export class ComposioConnector implements ComposioProvider {
     const [toolkits, metadata] = await Promise.all([
       collectPages((cursor) => session.toolkits({ limit: 50, cursor })),
       // Without this lookup every app stays listed, as before.
-      this.loadToolkitMetadata().catch((error: unknown) => {
-        getLogger().warn("composio toolkit metadata lookup failed", {
-          error: sanitizeIntegrationError(error),
-        });
-        return undefined;
-      }),
+      bestEffort(
+        "load composio toolkit metadata",
+        this.loadToolkitMetadata().catch(rethrowSanitizedIntegrationError),
+      ),
     ]);
     return toolkits.map((toolkit) => {
       const details = metadata?.get(composioSlugKey(toolkit.slug));
@@ -519,15 +521,13 @@ export class ComposioConnector implements ComposioProvider {
         const page = await composio.getClient().toolkits.list({ limit: 1000, cursor });
         return { items: page.items, cursor: page.next_cursor ?? undefined };
       }),
-      collectPages(async (cursor) => {
-        const page = await composio.authConfigs.list({ limit: 100, cursor });
-        return { items: page.items, cursor: page.nextCursor ?? undefined };
-      }).catch((error: unknown) => {
-        getLogger().warn("composio sign-in setup lookup failed", {
-          error: sanitizeIntegrationError(error),
-        });
-        return undefined;
-      }),
+      bestEffort(
+        "load composio sign-in setup",
+        collectPages(async (cursor) => {
+          const page = await composio.authConfigs.list({ limit: 100, cursor });
+          return { items: page.items, cursor: page.nextCursor ?? undefined };
+        }).catch(rethrowSanitizedIntegrationError),
+      ),
     ]);
     const configured =
       authConfigs &&
