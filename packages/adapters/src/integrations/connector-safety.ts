@@ -14,8 +14,12 @@ const CONNECTOR_DECODED_BEARER_RE = new RegExp(
 const CONNECTOR_PLAIN_DEFERRED_BEARER_FOLLOWS = new RegExp(
   `Bearer(?:[^\\S\\r\\n]+(?!(?:\\s|\\\\[nrt]|\\S*Bearer(?:\\s|\\\\[nrt])+\\S))\\S|\\s+(?!(?:\\s|\\\\[nrt]|${CONNECTOR_JSON_CONTAINER_START.source}|\\S*Bearer(?:\\s|\\\\[nrt])+\\S))\\S|\\s*\\\\[nrt](?:\\s|\\\\[nrt])*(?!(?:\\s|\\\\[nrt]|${CONNECTOR_RAW_JSON_CONTAINER_START.source}|\\S*Bearer(?:\\s|\\\\[nrt])+\\S))(?:\\\\"|["']|\\\\(?![nrt"\\\\])|[^\\s"',;&}:\\]\\\\]))`,
 );
-const CONNECTOR_ADJACENT_CREDENTIAL_START =
-  /(?:Bearer(?:\s|\\[nrt])|(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:](?:\s|\\[nrt])*(?:\[redacted\]|["']\[redacted\]["']|\\(?:\\\\)*"\[redacted\]\\(?:\\\\)*")(?!(?:\\(?![nrt"\\])|[^\s"',;&}{[\]:\\])))/;
+const CONNECTOR_PLAIN_BOUNDARY_AFTER_REDACTED = new RegExp(
+  `(?=(?:$|\\s|["',;&}\\]]|\\\\[nrt"\\\\]|:?Bearer(?:\\s|\\\\[nrt])|:?${CONNECTOR_RAW_JSON_CONTAINER_START.source}))`,
+);
+const CONNECTOR_ADJACENT_CREDENTIAL_START = new RegExp(
+  `(?:Bearer(?:\\s|\\\\[nrt])|(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\\s*[=:](?:\\s|\\\\[nrt])*(?:\\[redacted\\]|["']\\[redacted\\]["']|\\\\(?:\\\\\\\\)*"\\[redacted\\]\\\\(?:\\\\\\\\)*")${CONNECTOR_PLAIN_BOUNDARY_AFTER_REDACTED.source})`,
+);
 const CONNECTOR_RAW_UNIT =
   /(?:[=:](?:\\"(?!\s*[:,}\]\r\n]|$)(?:\\[^"\r\n]|[^"\\\r\n])+(?:\\")?|"(?!\s*[:,}\]\r\n]|$)(?:\\[^\r\n]|[^"\\\r\n])+"?|'(?!\s*[:,}\]\r\n]|$)(?:\\[^\r\n]|[^'"\\\r\n])+'?)|=|:(?!\s|$|["']|\\")|\[redacted\]|\[(?!redacted\])|\\(?![nrt"\\])|[^\s"',;&}=:\]\\[])/;
 const CONNECTOR_SUFFIX_STOP = new RegExp(
@@ -25,17 +29,17 @@ const CONNECTOR_SUFFIX_UNIT = new RegExp(
   `(?:(?!:?${CONNECTOR_SUFFIX_STOP.source})${CONNECTOR_RAW_UNIT.source})`,
 );
 const CONNECTOR_PLAIN_BEARER_RE = new RegExp(
-  `Bearer\\s+(?!${CONNECTOR_PLAIN_DEFERRED_BEARER_FOLLOWS.source}|\\[redacted\\](?!${CONNECTOR_SUFFIX_UNIT.source}))(?:\\\\"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"${CONNECTOR_SUFFIX_UNIT.source}*)?|"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${CONNECTOR_SUFFIX_UNIT.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'"\\\\\\r\\n])+(?:'${CONNECTOR_SUFFIX_UNIT.source}*)?|\\[redacted\\]${CONNECTOR_SUFFIX_UNIT.source}+|(?:${CONNECTOR_RAW_UNIT.source})+)`,
+  `Bearer\\s+(?!${CONNECTOR_PLAIN_DEFERRED_BEARER_FOLLOWS.source}|\\[redacted\\](?!${CONNECTOR_SUFFIX_UNIT.source}))(?:\\\\"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"${CONNECTOR_SUFFIX_UNIT.source}*)?|"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${CONNECTOR_SUFFIX_UNIT.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'"\\\\\\r\\n])+(?:'${CONNECTOR_SUFFIX_UNIT.source}*)?|\\[redacted\\]${CONNECTOR_SUFFIX_UNIT.source}+|(?!:Bearer(?:\\s|\\\\[nrt]))${CONNECTOR_RAW_UNIT.source}(?:(?!:?Bearer(?:\\s|\\\\[nrt]))${CONNECTOR_RAW_UNIT.source})*)`,
   "gi",
 );
 const CONNECTOR_ESCAPED_WS_BEARER_RE = /Bearer\s*\\[nrt](?:\s|\\[nrt])*/gi;
-const CONNECTOR_ESCAPED_BEARER_NEXT_STICKY = /Bearer(?:\s|\\[nrt])+/iy;
+const CONNECTOR_ESCAPED_BEARER_NEXT_STICKY = /:?Bearer(?:\s|\\[nrt])+/iy;
 const CONNECTOR_RAW_JSON_CONTAINER_STICKY = new RegExp(
   CONNECTOR_RAW_JSON_CONTAINER_START.source,
   "y",
 );
-const CONNECTOR_RAW_UNIT_STICKY = new RegExp(CONNECTOR_RAW_UNIT.source, "y");
-const CONNECTOR_SUFFIX_UNIT_STICKY = new RegExp(CONNECTOR_SUFFIX_UNIT.source, "y");
+const CONNECTOR_RAW_UNIT_STICKY = new RegExp(CONNECTOR_RAW_UNIT.source, "iy");
+const CONNECTOR_SUFFIX_UNIT_STICKY = new RegExp(CONNECTOR_SUFFIX_UNIT.source, "iy");
 
 function consumeConnectorSuffix(text: string, from: number): number {
   let cur = from;
@@ -124,6 +128,8 @@ function redactConnectorEscapedWhitespaceBearers(text: string): string {
       end = closed ? consumeConnectorSuffix(text, cur) : cur;
     } else {
       while (end < text.length) {
+        CONNECTOR_ESCAPED_BEARER_NEXT_STICKY.lastIndex = end;
+        if (CONNECTOR_ESCAPED_BEARER_NEXT_STICKY.test(text)) break;
         CONNECTOR_RAW_UNIT_STICKY.lastIndex = end;
         if (!CONNECTOR_RAW_UNIT_STICKY.test(text)) break;
         end = CONNECTOR_RAW_UNIT_STICKY.lastIndex;

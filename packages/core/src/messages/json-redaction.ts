@@ -76,7 +76,7 @@ const ESCAPED_WS_BEARER_RE = /Bearer\s*\\[nrt](?:\s|\\[nrt])*/gi;
 const ESCAPED_BEARER_NEXT_STICKY = /Bearer(?:\s|\\[nrt])+/iy;
 const RAW_JSON_CONTAINER_STICKY = new RegExp(RAW_JSON_CONTAINER_START.source, "y");
 const RAW_SPLITTING_CREDENTIAL_STICKY = new RegExp(RAW_SPLITTING_CREDENTIAL_KEY.source, "iy");
-const RAW_SUFFIX_ATOM_STICKY = new RegExp(RAW_SUFFIX_ATOM.source, "y");
+const RAW_SUFFIX_ATOM_STICKY = new RegExp(RAW_SUFFIX_ATOM.source, "iy");
 
 function isRawJsonEscapeBreak(text: string, pos: number): boolean {
   if (text[pos] !== "\\") return false;
