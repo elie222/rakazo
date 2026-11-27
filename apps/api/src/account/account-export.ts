@@ -24,6 +24,12 @@ import {
 import { getLogger } from "@rakazo/logging";
 import { Zip, ZipDeflate } from "fflate";
 import type { Hono } from "hono";
+import { isAccountHomePath } from "./account-home-path.js";
+import {
+  MAX_ARCHIVE_ENTRIES,
+  MAX_CENTRAL_DIRECTORY_BYTES,
+  withZip64EntryCount,
+} from "./account-zip-format.js";
 
 export type AccountExportStores = {
   artifacts: Pick<ArtifactStore, "get">;
@@ -37,7 +43,7 @@ const encoder = new TextEncoder();
 const RECORD_CHUNK_BYTES = 64 * 1024;
 /** Files go to deflate in slices this size, so the archive limit is checked between them. */
 const FILE_SLICE_BYTES = 1024 * 1024;
-/** fflate writes no Zip64 records, so an archive must stay under 4 GiB; this leaves headroom. */
+/** Keep file offsets and sizes within 32 bits. The ZIP64 footer extends only the entry count. */
 export const ACCOUNT_EXPORT_MAX_ARCHIVE_BYTES = 2 ** 32 - 64 * 1024 * 1024;
 
 /**
@@ -55,20 +61,31 @@ export function zipStream(
   let finished = false;
   let failure: Error | null = null;
   let written = 0;
+  let entries = 0;
+  let directoryBytes = 0;
   zip.ondata = (error, chunk, final) => {
     if (error) failure = error;
     else {
-      written += chunk.length;
+      const bytes = final ? withZip64EntryCount(chunk, entries) : chunk;
+      written += bytes.length;
       if (written > maxBytes) failure = new Error("Account export exceeds the zip size limit");
-      if (chunk.length) output.push(chunk);
+      if (bytes.length) output.push(bytes);
       if (final) finished = true;
     }
   };
   async function* steps(): AsyncGenerator<void> {
     for await (const file of files) {
+      entries++;
+      // The writer adds a 46-byte directory header and a UTF-8 name per entry.
+      directoryBytes += 46 + Buffer.byteLength(file.path);
+      if (entries > MAX_ARCHIVE_ENTRIES || directoryBytes > MAX_CENTRAL_DIRECTORY_BYTES)
+        throw new Error("Account export has too many files or file names that are too long");
+      let fileBytes = 0;
       const entry = new ZipDeflate(file.path, { level: 6 });
       zip.add(entry);
       for await (const chunk of file.data) {
+        fileBytes += chunk.length;
+        if (fileBytes >= 0xffffffff) throw new Error("A file exceeds the export ZIP size limit");
         for (let offset = 0; offset < chunk.length; offset += FILE_SLICE_BYTES) {
           entry.push(chunk.subarray(offset, offset + FILE_SLICE_BYTES));
           yield;
@@ -163,6 +180,7 @@ export async function* accountArchiveFiles(
         );
       } catch (error) {
         options.signal?.throwIfAborted();
+        if (error instanceof ObjectStorageUnavailableError) throw error;
         // One unreadable file should not cost the user the rest of their export.
         getLogger().warn("account.export.artifact_unreadable", {
           "artifact.id": artifact.id,
@@ -183,16 +201,11 @@ export async function* accountArchiveFiles(
       const files = stores.home.exportHome(home.homeKey, context(home.botId), {
         directory,
         skipHidden: true,
+        maxFileBytes: ACCOUNT_EXPORT_MAX_HOME_FILE_BYTES,
       });
       for await (const file of runGeneratorAsTenant(tenant, iterate(files))) {
-        if (file.content.length > ACCOUNT_EXPORT_MAX_HOME_FILE_BYTES) {
-          getLogger().warn("account.export.home_file_too_large", {
-            "bot.id": home.botId,
-            "space.id": space.id,
-            size: file.content.length,
-          });
-          continue;
-        }
+        if (!isAccountHomePath(file.path))
+          throw new Error("The workspace contains a filename that cannot be safely restored.");
         if (file.executable) executables.push({ botId: home.botId, path: file.path });
         yield {
           path: accountExportPaths.homeFile(space.id, home.botId, file.path),

@@ -293,6 +293,18 @@ describe("LocalAgentHomeStore path containment", () => {
     expect(files.sort()).toEqual(["project/.gitignore", "project/ignore.txt"]);
   });
 
+  it("exports only workspace files at or below the requested byte limit", async () => {
+    const { store, home } = await fixture();
+    await writeFile(path.join(home, "within.txt"), "1234");
+    await writeFile(path.join(home, "over.txt"), "12345");
+
+    const files = [];
+    for await (const file of store.exportHome("bot-1", context, { maxFileBytes: 4 })) {
+      files.push([file.path, Buffer.from(file.content).toString()]);
+    }
+    expect(files).toEqual([["within.txt", "1234"]]);
+  });
+
   it("skips hidden top-level links to visible entries without hiding their targets", async () => {
     const { store, home } = await fixture();
     await mkdir(path.join(home, "settings"), { recursive: true });

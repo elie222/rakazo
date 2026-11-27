@@ -509,6 +509,13 @@ export interface JobWorkerHost {
   stop(): Promise<void>;
 }
 
+export interface HomeExportOptions {
+  directory?: string;
+  skipHidden?: boolean;
+  /** Omit files larger than this many bytes, including files that grow while being read. */
+  maxFileBytes?: number;
+}
+
 export interface AgentHomeStore {
   describe(): AdapterDescriptor<{ revisions: boolean }>;
   /** The most one computer save copies; unset means the default of 5 GiB and a million files. */
@@ -523,7 +530,7 @@ export interface AgentHomeStore {
   exportHome(
     botId: string,
     context: AdapterContext,
-    options?: { directory?: string; skipHidden?: boolean },
+    options?: HomeExportOptions,
   ): AsyncIterable<PortableFile>;
   /** Throws `SandboxFileTooLargeError` for a file over `maxBytes`. */
   readFile(
