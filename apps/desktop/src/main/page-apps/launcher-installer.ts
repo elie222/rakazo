@@ -35,6 +35,9 @@ export type PageAppLauncher = {
   find: (appId: string) => Promise<string | null>;
 };
 
+/** More copies than anyone makes by hand; the cap keeps a launcher that cannot be removed from looping. */
+const MAX_COPIES = 20;
+
 function parsedJson(text: string): unknown {
   try {
     return JSON.parse(text);
@@ -139,6 +142,15 @@ export function createLauncherInstaller(options: {
     const app = (await registry.list()).find((entry) => entry.appId === appId);
     if (!app) return false;
     await launcher.remove(app.bundlePath);
+    // A copy the person made of the launcher would start nothing once the app is gone.
+    for (
+      let copies = 0, found = await launcher.find(appId);
+      found && copies < MAX_COPIES;
+      copies++
+    ) {
+      await launcher.remove(found);
+      found = await launcher.find(appId);
+    }
     await forget(app);
     return true;
   }
