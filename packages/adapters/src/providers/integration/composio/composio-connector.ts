@@ -212,15 +212,16 @@ function callUsesToolkit(call: ConnectorCall, toolkit: string, toolkits: string[
   });
 }
 
-function accountIsPinned(
+function accountPinCount(
   connectedAccounts: Record<string, string[]>,
   tool: string,
   account: string,
-): boolean {
+): number {
   const toolKey = composioSlugKey(tool);
-  return Object.entries(connectedAccounts).some(
+  const pin = Object.entries(connectedAccounts).find(
     ([toolkit, ids]) => toolKey.startsWith(`${composioSlugKey(toolkit)}_`) && ids.includes(account),
   );
+  return pin?.[1].length ?? 0;
 }
 
 function dropboxFolderListCall(item: unknown): ComposioExecutionCall | undefined {
@@ -649,10 +650,11 @@ export class ComposioConnector implements ComposioProvider {
         yield { type: "error", message: "No active Composio connection for this tool." };
         return;
       }
-      const planned = expandComposioMultiExecute(call.tool, call.args ?? {});
-      const unpinned = planned.find(
-        (item) => item.account && !accountIsPinned(connectedAccounts, item.tool, item.account),
-      );
+      const planned = expandComposioMultiExecute(call.tool, call.args ?? {}).map((item) => ({
+        ...item,
+        pinCount: item.account ? accountPinCount(connectedAccounts, item.tool, item.account) : 0,
+      }));
+      const unpinned = planned.find((item) => item.account && item.pinCount === 0);
       if (unpinned) {
         yield {
           type: "error",
@@ -664,7 +666,7 @@ export class ComposioConnector implements ComposioProvider {
         const result = await session.execute(
           item.tool,
           item.args,
-          item.account ? { account: item.account } : undefined,
+          item.account && item.pinCount > 1 ? { account: item.account } : undefined,
         );
         // A failed or hook-blocked call can come back with an empty error.
         if (result.error || result.resultType !== "completed") {
