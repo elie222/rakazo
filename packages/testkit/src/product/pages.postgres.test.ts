@@ -1904,7 +1904,8 @@ describePages("pages", () => {
       });
 
     const view = (await (await call()).json()) as PageAppView;
-    expect(view).toMatchObject({ appId: installed.appId, approved: ["notify"] });
+    // Asked for, but this version never calls notify, so nothing is approved yet.
+    expect(view).toMatchObject({ appId: installed.appId, approved: [] });
     expect(view.page).toMatchObject({ id: pageId, title: "Deals" });
     const saved = await call("/state", {
       method: "PUT",

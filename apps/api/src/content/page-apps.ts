@@ -35,9 +35,17 @@ export async function installPageApp(
 ): Promise<PageAppInstall> {
   const page = await prisma.page.findFirst({
     where: { id: input.pageId, spaceId: actor.spaceId, userId: actor.userId },
-    select: { id: true, title: true, icon: true, iconColor: true },
+    select: { id: true, title: true, icon: true, iconColor: true, currentVersion: true },
   });
   if (!page) throw new IsolationError();
+  // Only what the page uses now is approved; a later version that adds more asks again.
+  const used = await prisma.pageVersion.findUnique({
+    where: { pageId_version: { pageId: page.id, version: page.currentVersion } },
+    select: { abilities: true },
+  });
+  const approved = knownPageAbilities(input.abilities).filter((ability) =>
+    used?.abilities.includes(ability),
+  );
   const token = `${PAGE_APP_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
   const app = await runAsSystem("install a page app", () =>
     prisma.$transaction(async (tx) => {
@@ -51,7 +59,7 @@ export async function installPageApp(
           userId: actor.userId,
           spaceId: actor.spaceId,
           tokenHash: hashPageAppToken(token),
-          abilities: knownPageAbilities(input.abilities),
+          abilities: approved,
         },
         select: { id: true },
       });

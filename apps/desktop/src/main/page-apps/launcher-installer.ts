@@ -76,6 +76,11 @@ export function createLauncherInstaller(options: {
         if (written !== null) await launcher.remove(written);
         await removePageAppData(request.appId, appData);
       }
+      // Nothing will use the token now, so it ends here rather than waiting for the server.
+      await bestEffort(
+        "revoke an unfinished page app",
+        createPageAppApi(server, request.token, options.fetch).revoke(),
+      );
       throw error;
     }
     await bestEffort("open page app", options.open(request.appId));

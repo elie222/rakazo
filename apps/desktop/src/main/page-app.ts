@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { PageAbility } from "@rakazo/contracts";
-import { bestEffort } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { BrowserWindow, MessageBoxOptions } from "electron";
 import { app, clipboard, dialog, Notification, nativeTheme, shell } from "electron";
 import { desktop } from "./desktop-state.js";
@@ -53,9 +53,19 @@ registerPageAppScheme();
  */
 async function removeSelf(revoked: boolean) {
   if (launchedId !== null && !revoked) return app.exit(0);
-  if (launchedId === null) await bestEffort("trash page app", shell.trashItem(runningBundle()));
-  else await bestEffort("remove page app launcher", removeOwnLauncher(appId, appData));
-  if (revoked) await bestEffort("remove page app data", removePageAppData(appId, appData));
+  // An app whose bundle or launcher could not be removed stays usable: its data goes only
+  // once that is gone.
+  const removal =
+    launchedId === null ? shell.trashItem(runningBundle()) : removeOwnLauncher(appId, appData);
+  const removed = await removal.then(
+    () => true,
+    (error: unknown) => {
+      getLogger().warn("page app could not remove itself", { error });
+      return false;
+    },
+  );
+  if (revoked && removed)
+    await bestEffort("remove page app data", removePageAppData(appId, appData));
   app.exit(0);
 }
 
