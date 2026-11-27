@@ -7,6 +7,7 @@ import {
   INBOUND_EMAIL_TEXT_MAX_CHARS,
   readInboundEmail,
 } from "./inbound-email.js";
+import { inboundEmailBodyText } from "./inbound-email-text.js";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const privatePem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
@@ -388,6 +389,14 @@ describe("readInboundEmail", () => {
     expect(email.wholeText).toBe(body);
     expect(email.text).toHaveLength(INBOUND_EMAIL_TEXT_MAX_CHARS + "\n[…]".length);
     expect(email.key).toBe(short.key);
+  });
+
+  it("marks an HTML body whose markup was longer than is read", () => {
+    const paragraph = "<p>Stock is steady.</p>";
+    const { wholeText } = inboundEmailBodyText(undefined, paragraph.repeat(10_000));
+
+    expect(wholeText.endsWith("\n[…]")).toBe(true);
+    expect(inboundEmailBodyText(undefined, paragraph).wholeText).toBe("Stock is steady.");
   });
 
   it("refuses mail with more parts than real mail has", async () => {

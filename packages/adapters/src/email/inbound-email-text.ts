@@ -30,7 +30,8 @@ export function inboundEmailBodyText(
   );
   return {
     text: limitBody(text),
-    wholeText: limitBody(text, MAX_BODY_SCAN_CHARS),
+    // Markup cut before it was read leaves text that ends early, however short it is.
+    wholeText: rawHtml.length > MAX_BODY_SCAN_CHARS ? `${text}\n[…]` : text,
     modelText: limitBody(filteredText),
   };
 }
