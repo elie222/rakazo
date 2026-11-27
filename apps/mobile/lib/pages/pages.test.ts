@@ -29,6 +29,7 @@ const detail = (overrides: Partial<PageDetail> = {}): PageDetail => ({
   version: 2,
   code: "exports.default = () => null;",
   images: {},
+  abilities: [],
   owner: { name: "RJ", image: null },
   shareUrl: null,
   ...overrides,

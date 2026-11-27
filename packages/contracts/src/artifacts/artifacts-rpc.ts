@@ -22,6 +22,7 @@ import {
   TicketSchema,
   UpdateTicketInput,
 } from "./board.js";
+import { PageAskEventSchema, PageAskInputSchema } from "./page-abilities.js";
 import { PageAppInstallInputSchema, PageAppInstallSchema } from "./page-apps.js";
 import {
   PageAccessInput,
@@ -191,6 +192,10 @@ export const artifactsRpc = {
       ),
     pin: oc.input(z.strictObject({ pageId: Id, pinned: z.boolean() })).output(PageSummarySchema),
     remove: oc.input(z.strictObject({ pageId: Id })).output(z.object({ ok: z.literal(true) })),
+    /** A page's question to its bot, sent in the page's chat; ends with the bot's answer. */
+    ask: oc
+      .input(PageAskInputSchema.extend({ pageId: Id }))
+      .output(eventIterator(PageAskEventSchema)),
   },
   /** The caller's own pages installed as apps on their devices. */
   pageApps: {

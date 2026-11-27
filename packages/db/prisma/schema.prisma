@@ -2210,6 +2210,8 @@ model PageVersion {
   /// The source compiled for the viewer when it was saved, so reads never run the compiler.
   code      String
   images    Json?
+  /// What this version may ask its host for, read from its source when it was saved.
+  abilities String[] @default([])
   createdAt DateTime @default(now())
 
   @@unique([pageId, version])
