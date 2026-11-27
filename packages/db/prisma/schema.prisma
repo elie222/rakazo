@@ -1109,6 +1109,8 @@ model Bot {
   autoSpeak         Boolean           @default(false)
   modelProvider     String?
   modelId           String?
+  // Keep the id after disconnect so a pinned bot fails rather than changing accounts.
+  modelCredentialId String?
   thinkingLevel     String?
   disabledBuiltinTools String[] @default([])
   webhookSecretId   String?
@@ -1399,6 +1401,9 @@ model Run {
   userId               String
   status               String
   trigger              String
+  // Only the opted-in direct-chat pilot sets these at enqueue time.
+  primaryRuntime       String?
+  modelCredentialId    String?
   modelProvider        String?
   modelId              String?
   thinkingLevel        String?
