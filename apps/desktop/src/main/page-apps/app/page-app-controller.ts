@@ -17,6 +17,9 @@ import type { PageAppScreen } from "./page-app-shell.js";
 import { FRAME_ORIGIN } from "./page-app-shell.js";
 
 const NOTIFY_INTERVAL_MS = 10_000;
+/** Nothing stops a page from asking in a loop, as a browser's popup blocker would. */
+const LINK_INTERVAL_MS = 2_000;
+const COPY_INTERVAL_MS = 1_000;
 const ASK_DEADLINE_MS = 10 * 60_000;
 const MAX_ASKS = 3;
 const CHANGES_RETRY_MAX_MS = 60_000;
@@ -51,6 +54,8 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
   const images = new Map<string, string>();
   const declined = new Set<string>();
   const mayNotify = createRateLimit(NOTIFY_INTERVAL_MS);
+  const mayOpenLink = createRateLimit(LINK_INTERVAL_MS);
+  const mayCopy = createRateLimit(COPY_INTERVAL_MS);
   let view: PageAppViewWithAbilities | null = null;
   let runtime: string | null = null;
   let shown: string | null = null;
@@ -203,10 +208,10 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
         await api.saveState(request.values).catch(fail);
         return null;
       case "open-link":
-        host.openLink(request.url);
+        if (mayOpenLink()) host.openLink(request.url);
         return null;
       case "copy":
-        return pageCopyResult(request.id, host.copy(request.text));
+        return pageCopyResult(request.id, mayCopy() && host.copy(request.text));
       case "ask":
         return ask(request.id, request.text);
       case "notify":
