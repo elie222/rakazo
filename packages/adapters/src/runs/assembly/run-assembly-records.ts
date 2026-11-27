@@ -337,6 +337,7 @@ export async function loadRunRecords(
           run,
           modelChoice.modelProvider,
           modelChoice.modelId,
+          { credentialId: modelChoice.modelCredentialId },
         )
       : null;
   return {
