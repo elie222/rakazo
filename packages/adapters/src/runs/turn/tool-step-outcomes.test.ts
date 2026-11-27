@@ -1523,14 +1523,31 @@ describe("tool step outcomes", () => {
     expect(failed('COMPOSIO_API_KEY: "Bearer\n\u00A0\n["opaque-123"]')).toBe(
       "COMPOSIO_API_KEY=[redacted]",
     );
+    expect(failed('COMPOSIO_API_KEY: "Bearer\u00A0\n["opaque-123"]')).toBe(
+      "COMPOSIO_API_KEY=[redacted]",
+    );
+    expect(failed('Authorization: Bearer\u3000\n"opaque-123"')).toBe(
+      "Authorization: Bearer [redacted]",
+    );
+    const jsonAfterUnicodeBearer =
+      'COMPOSIO_API_KEY=\u00A0"Bearer\u3000\n{"access_token":"opaque-123"}\n';
+    expect(failed(jsonAfterUnicodeBearer)).not.toContain("opaque-123");
+    const kept = keptToolResult(
+      { ...base, result: { content: [{ type: "text", text: jsonAfterUnicodeBearer }] } },
+      [],
+    );
+    expect(kept).not.toContain("opaque-123");
   });
 
   it("keeps multiline JSON fallback linear on large non-JSON stretches", () => {
     const largeStretch = `password:\n${"line ok\n".repeat(100_000)}{"ok":true}`;
+    const blankStretch = `password:\n${"\n".repeat(50_000)}{"ok":true}`;
     expectLinearTime(() => {
       const redacted = sanitizeError(largeStretch);
       expect(redacted).toContain('{"ok":true}');
       expect(redacted).toContain("password:\n[redacted]");
+      const blankRedacted = sanitizeError(blankStretch);
+      expect(blankRedacted).toContain('{"ok":true}');
     });
   });
 });

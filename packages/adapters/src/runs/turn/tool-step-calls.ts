@@ -88,8 +88,12 @@ function cleanToolText(text: string, secrets: string[], honorOmissionMarker = fa
     (value) => redactSecrets(value, secretForms),
     secrets,
   );
-  const cleaned = redactJsonStringsAndPlainText(
+  const assigned = redactCredentialJsonFields(
     redactComposioApiKeyAssignments(withSecrets),
+    honorOmissionMarker,
+  );
+  const cleaned = redactJsonStringsAndPlainText(
+    assigned,
     (value) => redactDecodedToolText(value, { decoded: true }),
     (value) => redactDecodedToolText(value, { decoded: true }),
   );

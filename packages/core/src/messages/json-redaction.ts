@@ -370,7 +370,7 @@ function findUnescapedQuotes(line: string): number[] {
 
 function isPrecededByBearer(raw: string, index: number): boolean {
   let end = index - 1;
-  while (end >= 0 && isJsonWhitespace(raw[end])) end -= 1;
+  while (end >= 0 && /\s/.test(raw[end]!)) end -= 1;
   if (end < 5) return false;
   const start = end - 5;
   if (raw.slice(start, end + 1).toLowerCase() !== "bearer") return false;
@@ -409,7 +409,7 @@ function isClosedJsonStringToken(token: string): boolean {
 
 function isPrecededByAssignmentSeparator(raw: string, index: number): boolean {
   let end = index - 1;
-  while (end >= 0 && isJsonWhitespace(raw[end])) end -= 1;
+  while (end >= 0 && /\s/.test(raw[end]!)) end -= 1;
   return end >= 0 && (raw[end] === ":" || raw[end] === "=");
 }
 
@@ -549,12 +549,8 @@ function lineEndsWithBearer(line: string): boolean {
   return line.slice(end - 6, end).toLowerCase() === "bearer";
 }
 
-function afterTrailingBearer(
-  parts: readonly string[],
-  stretchStart: number,
-  index: number,
-): boolean {
-  for (let before = index - 2; before >= stretchStart; before -= 2) {
+function afterTrailingBearer(parts: readonly string[], index: number): boolean {
+  for (let before = index - 2; before >= 0; before -= 2) {
     const line = parts[before]!;
     if (/\S/.test(line)) return lineEndsWithBearer(line);
   }
@@ -574,18 +570,12 @@ function redactAroundJsonLines(
 ): string {
   let out = "";
   let stretch = "";
-  let stretchStart = 0;
   for (let index = 0; index < parts.length; index += 2) {
     const line = parts[index]!;
     const separator = parts[index + 1] ?? "";
-    if (
-      /^\s*[{[]/.test(line) &&
-      parseJsonSpans(line) &&
-      !afterTrailingBearer(parts, stretchStart, index)
-    ) {
+    if (/^\s*[{[]/.test(line) && parseJsonSpans(line) && !afterTrailingBearer(parts, index)) {
       if (stretch) out += redactStretch(stretch);
       stretch = "";
-      stretchStart = index + 2;
       out += `${redactJsonLine(line)}${separator}`;
     } else {
       stretch += `${line}${separator}`;
