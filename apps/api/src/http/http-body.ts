@@ -4,8 +4,8 @@ import { withAbort } from "@rakazo/core";
 export async function readBoundedBody(request: Request, maxBytes: number): Promise<string | null> {
   const contentLengthHeader = request.headers.get("content-length");
   if (contentLengthHeader !== null) {
-    const contentLength = Number(contentLengthHeader);
-    if (!Number.isFinite(contentLength) || contentLength < 0 || contentLength > maxBytes) {
+    const contentLength = parseContentLength(contentLengthHeader);
+    if (contentLength === null || contentLength > maxBytes) {
       cancelBody(request.body);
       return null;
     }
@@ -49,8 +49,8 @@ export async function readBoundedBytes(
   const contentLengthHeader = request.headers.get("content-length");
   let declared: number | null = null;
   if (contentLengthHeader !== null) {
-    const contentLength = Number(contentLengthHeader);
-    if (!Number.isFinite(contentLength) || contentLength < 0 || contentLength > maxBytes) {
+    const contentLength = parseContentLength(contentLengthHeader);
+    if (contentLength === null || contentLength > maxBytes) {
       cancelBody(request.body);
       return null;
     }
@@ -109,4 +109,10 @@ export function cancelBody(body: { cancel(): Promise<void> } | null): void {
   } catch {
     // Ignore cancel failures.
   }
+}
+
+function parseContentLength(header: string): number | null {
+  if (!/^[0-9]+$/.test(header)) return null;
+  const length = Number(header);
+  return Number.isSafeInteger(length) ? length : null;
 }
