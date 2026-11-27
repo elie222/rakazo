@@ -24,6 +24,7 @@ export * from "./bots/bot-email-address.js";
 export * from "./bots/bot-email-attachments.js";
 export * from "./bots/bot-email-sends.js";
 export * from "./bots/bot-instructions.js";
+export { setBotPrimaryRuntimePreference } from "./bots/bot-primary-runtime.js";
 export * from "./bots/bot-repository.js";
 export * from "./bots/bot-update.js";
 export * from "./bots/memory-config.js";

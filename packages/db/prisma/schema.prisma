@@ -1111,6 +1111,8 @@ model Bot {
   modelId           String?
   // Keep the id after disconnect so a pinned bot fails rather than changing accounts.
   modelCredentialId String?
+  primaryRuntimePreference String?
+  primaryRuntimeRevision Int @default(0)
   thinkingLevel     String?
   disabledBuiltinTools String[] @default([])
   webhookSecretId   String?
@@ -1423,6 +1425,7 @@ model Run {
   trigger              String
   // Only the opted-in direct-chat pilot sets these at enqueue time.
   primaryRuntime       String?
+  primaryRuntimeRevision Int @default(0)
   nativeDmResumeGrant  String?
   modelCredentialId    String?
   modelProvider        String?

@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { setBotPrimaryRuntimePreference } from "../bots/bot-primary-runtime.js";
 import { createDb } from "../database/client.js";
 import { asSystem, runAsTenant } from "../database/row-security.js";
 import { LocalKeyProvider } from "../encryption/content-keys.js";
@@ -79,7 +80,11 @@ describePostgres("native DM snapshots (PostgreSQL)", () => {
     }
   });
 
-  async function start(thread = { id: ids.threadId, botId: ids.botId }, authenticated = true) {
+  async function start(
+    thread = { id: ids.threadId, botId: ids.botId },
+    authenticated = true,
+    primaryRuntimeRevision = 0,
+  ) {
     const { spaceId, userId } = ids;
     const { id: threadId, botId } = thread;
     const base = { spaceId, threadId, botId, userId };
@@ -98,6 +103,7 @@ describePostgres("native DM snapshots (PostgreSQL)", () => {
         trigger: "user",
         modelPinned: true,
         primaryRuntime: "fixture-native",
+        primaryRuntimeRevision,
         ...model,
         modelCredentialId: credentialId,
         nativeDmResumeGrant: authenticated ? grant : null,
@@ -211,5 +217,48 @@ describePostgres("native DM snapshots (PostgreSQL)", () => {
     });
     expect(await pruneNativeDmSessions(db.prisma, new Date())).toBeGreaterThanOrEqual(1);
     expect(await read(thread2.id)).toBeNull();
+  });
+  it("blocks stale runtime choices and snapshots after switching away and back", async () => {
+    const change = (preference: string | null, expectedRevision: number, userId = ids.userId) =>
+      runAsTenant({ ...ids, userId }, () =>
+        setBotPrimaryRuntimePreference(db.prisma, { ...ids, userId, preference, expectedRevision }),
+      );
+
+    const first = await start();
+    await finish(first, await prepare(first));
+    const unchanged = await read();
+    expect(unchanged).not.toBeNull();
+    await expect(change(null, 0)).resolves.toEqual({ status: "unchanged", revision: 0 });
+    expect(await read()).toEqual(unchanged);
+
+    const old = await start();
+    const prepared = await prepare(old);
+    expect(prepared?.previous).toEqual(snapshot);
+    await expect(change("pi", 0, "another-member")).resolves.toEqual({ status: "not_found" });
+    expect(await read()).toEqual(unchanged);
+    await expect(change("pi", 0)).resolves.toEqual({ status: "changed", revision: 1 });
+    expect(await read()).toBeNull();
+    await expect(change(null, 1)).resolves.toEqual({ status: "changed", revision: 2 });
+    await expect(change("pi", 0)).resolves.toEqual({ status: "conflict" });
+    expect(await prepare(old)).toBeUndefined();
+    expect(await finish(old, prepared)).toEqual({ continuationRunId: null });
+    expect((await sys.run.findUniqueOrThrow({ where: { id: old.runId } })).status).toBe(
+      "completed",
+    );
+    expect(await read()).toBeNull();
+
+    const current = await start(undefined, true, 2);
+    const newCandidate = await prepare(current);
+    expect(newCandidate).toBeDefined();
+    expect(newCandidate?.previous).toBeUndefined();
+    await finish(current, newCandidate);
+    expect(await read()).not.toBeNull();
+    const followUp = await start(undefined, true, 2);
+    expect((await prepare(followUp))?.previous).toEqual(snapshot);
+    await finish(followUp);
+
+    const results = await Promise.all([change("pi", 2), change("fixture-native", 2)]);
+    expect(results.map((r) => r.status).sort()).toEqual(["changed", "conflict"]);
+    expect(await read()).toBeNull();
   });
 });

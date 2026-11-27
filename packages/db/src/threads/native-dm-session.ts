@@ -42,6 +42,7 @@ type Binding = {
   sourceSeq: number;
   generation: number;
   runtimeId: string;
+  runtimeRevision: number;
   modelId: string;
   provider: string;
   credentialId: string;
@@ -88,12 +89,14 @@ async function readBinding(
     select: {
       userId: true,
       primaryRuntime: true,
+      primaryRuntimeRevision: true,
       modelId: true,
       modelProvider: true,
       modelCredentialId: true,
       bot: {
         select: {
           ...identities,
+          primaryRuntimeRevision: true,
           userId: true,
           modelId: true,
           modelProvider: true,
@@ -117,6 +120,7 @@ async function readBinding(
   });
   if (
     !run?.primaryRuntime ||
+    run.primaryRuntimeRevision !== run.bot.primaryRuntimeRevision ||
     !run.modelId ||
     !run.modelProvider ||
     !run.modelCredentialId ||
@@ -159,6 +163,7 @@ async function readBinding(
     sourceSeq: source.seq,
     generation: run.thread.historyCompactionGeneration,
     runtimeId: run.primaryRuntime,
+    runtimeRevision: run.primaryRuntimeRevision,
     modelId: run.modelId,
     provider: run.modelProvider,
     credentialId: run.modelCredentialId,
@@ -186,6 +191,8 @@ function scope(b: Binding) {
     b.credentialRevision,
     b.profileRevision,
     b.grant,
+    // Keep stored pilot snapshots readable until a bot first changes its runtime preference.
+    ...(b.runtimeRevision === 0 ? [] : [b.runtimeRevision]),
   ]);
 }
 

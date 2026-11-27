@@ -690,6 +690,7 @@ export async function sendThreadMessage(
         const stoppingInPilot =
           pilotId && activeRuns.length > 0 && !routineRuns.length && isStopMessage(input);
         let pilotPin: ReturnType<typeof pilotRunModel>;
+        let primaryRuntimeRevision: number | undefined;
         if (pilotId && !stoppingInPilot) {
           if (!pilotLauncher())
             throw new ClientError(
@@ -712,7 +713,12 @@ export async function sendThreadMessage(
             );
           const bot = await tx.bot.findFirst({
             where: { id: target.botId, spaceId: actor.spaceId, userId: actor.userId },
-            select: { modelProvider: true, modelId: true, modelCredentialId: true },
+            select: {
+              modelProvider: true,
+              modelId: true,
+              modelCredentialId: true,
+              primaryRuntimeRevision: true,
+            },
           });
           if (!bot)
             throw new ClientError(
@@ -720,6 +726,7 @@ export async function sendThreadMessage(
               "Only the pilot bot owner can use its model connection.",
             );
           pilotPin = pilotRunModel(pilotId, bot);
+          primaryRuntimeRevision = bot.primaryRuntimeRevision;
           if (!pilotPin)
             throw new ClientError(
               "BAD_REQUEST",
@@ -885,6 +892,7 @@ export async function sendThreadMessage(
             clientNonce: sendRunClientNonce(input.clientNonce, message.id),
             sourceMessageId: message.id,
             ...pilotPin,
+            ...(pilotPin ? { primaryRuntimeRevision } : {}),
             ...(pilotPin && deps.signedInApp && !replyToMessageId && !replyQuote
               ? { nativeDmResumeGrant: pilotDmResumeGrant(target.botId) }
               : {}),
