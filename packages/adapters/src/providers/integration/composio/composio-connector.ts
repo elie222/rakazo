@@ -74,17 +74,18 @@ export type ComposioClient = {
   tools?: Pick<Composio["tools"], "proxyExecute">;
   sessions: { use(sessionId: string): Promise<ComposioSession> };
   connectedAccounts: Pick<Composio["connectedAccounts"], "list" | "waitForConnection" | "delete">;
-  toolkits: {
-    get(query: { limit?: number }): Promise<
-      Array<{
-        slug: string;
-        meta?: { description?: string };
-        noAuth?: boolean;
-        composioManagedAuthSchemes?: string[];
-      }>
-    >;
-  };
   getClient(): {
+    toolkits: {
+      list(query: { limit: number; cursor?: string }): Promise<{
+        items: Array<{
+          slug: string;
+          meta?: { description?: string };
+          no_auth?: boolean;
+          composio_managed_auth_schemes?: string[];
+        }>;
+        next_cursor?: string | null;
+      }>;
+    };
     tools: {
       list(
         query: { toolkit_slug: string; limit: number; cursor?: string },
@@ -488,7 +489,7 @@ export class ComposioConnector implements ComposioProvider {
       collectPages((cursor) => session.toolkits({ limit: 50, cursor })),
       // Without this lookup every app stays listed, as before.
       this.loadToolkitMetadata().catch((error: unknown) => {
-        getLogger().warn("composio sign-in setup lookup failed", {
+        getLogger().warn("composio toolkit metadata lookup failed", {
           error: sanitizeIntegrationError(error),
         });
         return undefined;
@@ -514,17 +515,27 @@ export class ComposioConnector implements ComposioProvider {
   private async loadToolkitMetadata() {
     const composio = await this.sdk();
     const [toolkits, authConfigs] = await Promise.all([
-      composio.toolkits.get({ limit: 1000 }),
+      collectPages(async (cursor) => {
+        const page = await composio.getClient().toolkits.list({ limit: 1000, cursor });
+        return { items: page.items, cursor: page.next_cursor ?? undefined };
+      }),
       collectPages(async (cursor) => {
         const page = await composio.authConfigs.list({ limit: 100, cursor });
         return { items: page.items, cursor: page.nextCursor ?? undefined };
+      }).catch((error: unknown) => {
+        getLogger().warn("composio sign-in setup lookup failed", {
+          error: sanitizeIntegrationError(error),
+        });
+        return undefined;
       }),
     ]);
-    const configured = new Set(
-      authConfigs
-        .filter((config) => config.status === "ENABLED")
-        .map((config) => composioSlugKey(config.toolkit.slug)),
-    );
+    const configured =
+      authConfigs &&
+      new Set(
+        authConfigs
+          .filter((config) => config.status === "ENABLED")
+          .map((config) => composioSlugKey(config.toolkit.slug)),
+      );
     return new Map(
       toolkits.map((toolkit) => {
         const slug = composioSlugKey(toolkit.slug);
@@ -534,9 +545,9 @@ export class ComposioConnector implements ComposioProvider {
             description: toolkit.meta?.description,
             // A missing field is unknown, not "no managed sign-in".
             needsSignInSetup:
-              !toolkit.noAuth &&
-              toolkit.composioManagedAuthSchemes?.length === 0 &&
-              !configured.has(slug),
+              !toolkit.no_auth &&
+              toolkit.composio_managed_auth_schemes?.length === 0 &&
+              configured?.has(slug) === false,
           },
         ];
       }),
