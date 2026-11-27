@@ -59,6 +59,10 @@ export function registerPageApps(userDataDir: string) {
     const request = pageAppInstallRequest(input);
     const server = callerServer(event);
     if (!request || !server) return false;
+    // An app another server installed is never replaced from this one.
+    const installed = await registry.list();
+    if (installed.some((entry) => entry.appId === request.appId && entry.server !== server))
+      return false;
     try {
       return await installer.install(request, server);
     } catch (error) {
