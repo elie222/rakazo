@@ -3,6 +3,7 @@ import type { PageAbility, PageAppView, PageState } from "@rakazo/contracts";
 import {
   abortableDelay,
   deadlineSignal,
+  pageAskAnswer,
   pageCopyResult,
   pageViewerDocument,
   retry,
@@ -13,7 +14,7 @@ import { desktopLocale, t } from "../../i18n.js";
 import type { PageAppApi } from "../page-app-api.js";
 import { PageAppRequestError } from "../page-app-api.js";
 import type { FrameRequest } from "./frame-requests.js";
-import { askAnswer, createRateLimit, frameRequest } from "./frame-requests.js";
+import { createRateLimit, frameRequest } from "./frame-requests.js";
 import type { PageAppScreen } from "./page-app-shell.js";
 import { FRAME_ORIGIN } from "./page-app-shell.js";
 
@@ -275,18 +276,18 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
   }
 
   async function ask(id: string, text: string) {
-    if (!approved("ask") || asks >= MAX_ASKS) return askAnswer(id, null);
+    if (!approved("ask") || asks >= MAX_ASKS) return pageAskAnswer(id, null);
     asks += 1;
     try {
       const signal = deadlineSignal(ASK_DEADLINE_MS, stopped.signal);
       for await (const event of api.ask(text, randomUUID(), signal)) {
-        if (event.kind === "answer") return askAnswer(id, event.text);
+        if (event.kind === "answer") return pageAskAnswer(id, event.text);
         if (event.kind === "failed") break;
       }
-      return askAnswer(id, null);
+      return pageAskAnswer(id, null);
     } catch (error) {
       fail(error);
-      return askAnswer(id, null);
+      return pageAskAnswer(id, null);
     } finally {
       asks -= 1;
     }
@@ -301,7 +302,7 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
   }
 
   async function answer(request: FrameRequest, gesture: unknown): Promise<unknown> {
-    if (request.kind === "ask" && !takeGesture(gesture)) return askAnswer(request.id, null);
+    if (request.kind === "ask" && !takeGesture(gesture)) return pageAskAnswer(request.id, null);
     if ((request.kind === "copy" || request.kind === "open-link") && !takeGesture(gesture))
       return request.kind === "copy" ? pageCopyResult(request.id, false) : null;
     switch (request.kind) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { askAnswer, createRateLimit, frameRequest } from "./frame-requests.js";
+import { createRateLimit, frameRequest } from "./frame-requests.js";
 
 describe("frameRequest", () => {
   it("takes a question with an id and refuses an empty, long or unnamed one", () => {
@@ -27,16 +27,6 @@ describe("frameRequest", () => {
   it("drops messages of any other type", () => {
     expect(frameRequest({ type: "rakazo-page:height", height: 3 })).toBeNull();
     expect(frameRequest("rakazo-page:ask")).toBeNull();
-  });
-});
-
-describe("askAnswer", () => {
-  it("trims an answer to what a page receives", () => {
-    expect(askAnswer("q1", "y".repeat(20_005))).toMatchObject({
-      ok: true,
-      text: "y".repeat(20_000),
-    });
-    expect(askAnswer("q1", null)).toEqual({ type: "rakazo-page:answer", id: "q1", ok: false });
   });
 });
 

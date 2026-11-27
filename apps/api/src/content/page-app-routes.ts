@@ -1,3 +1,4 @@
+import { ORPCError } from "@orpc/server";
 import type { PageAppView, PageAskEvent } from "@rakazo/contracts";
 import {
   PAGE_APP_API_PATH,
@@ -71,6 +72,10 @@ export function mountPageAppRoutes(
           clientErrorStatus(error.kind),
           HEADERS,
         );
+      // The send path the RPC routes share refuses with an RPC error (no usable model, say);
+      // its status is the answer here too, not a server error.
+      if (error instanceof ORPCError && error.status < 500)
+        return c.json({ error: error.message, code: error.code }, error.status as 400, HEADERS);
       throw error;
     }
   }
