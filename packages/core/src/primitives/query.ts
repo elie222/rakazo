@@ -20,7 +20,16 @@ export async function writeSaved<T, E>(
  * cancelled rather than reused and the answer comes from a request sent afterwards. `reuse` is
  * for a screen opening, where sharing an in-flight read is fine.
  */
-const freshAnswers = new Map<string, Promise<unknown>>();
+const freshAnswersByClient = new WeakMap<QueryClient, Map<string, Promise<unknown>>>();
+
+function clientFreshAnswers(client: QueryClient): Map<string, Promise<unknown>> {
+  let answers = freshAnswersByClient.get(client);
+  if (!answers) {
+    answers = new Map<string, Promise<unknown>>();
+    freshAnswersByClient.set(client, answers);
+  }
+  return answers;
+}
 
 export async function fetchFresh<T, E>(
   client: QueryClient,
@@ -28,6 +37,7 @@ export async function fetchFresh<T, E>(
   { reuse = false } = {},
 ): Promise<T> {
   if (reuse) return client.fetchQuery({ ...options, staleTime: 0 });
+  const freshAnswers = clientFreshAnswers(client);
   // Claimed before cancelling, so a refresh this one cancels can wait for its final answer.
   const key = hashKey(options.queryKey);
   let settle!: (answer: Promise<T>) => void;
