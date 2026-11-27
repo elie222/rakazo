@@ -2,14 +2,17 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { Connection, ConnectionCatalogItem, RpcOutput } from "@rakazo/contracts";
 import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
-import { appToolLabel, catalogItemKey } from "@rakazo/core";
+import type { CatalogConnectionTarget, ConnectionOwnerChoice } from "@rakazo/core";
+import { catalogItemKey } from "@rakazo/core";
 import type { Dispatch, SetStateAction } from "react";
+import { useState } from "react";
 import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { NativeActionButton } from "../native/native-action-button";
-import { Chevron } from "../ui/row-accessories";
+import { ConnectionOwnerPicker } from "./connection-owner-picker";
 import { ConnectorIcon } from "./connector-icon";
 import { createIntegrationsStyles, LOGO_SIZE } from "./integrations-styles";
+import { ToolPermissions } from "./tool-permissions";
 
 export type ConnectionTool = RpcOutput<"connections/tools">[number];
 
@@ -17,13 +20,13 @@ export type ConnectionTool = RpcOutput<"connections/tools">[number];
 export function IntegrationDetail({
   item,
   accounts,
+  organizationName,
   pending,
   labelDrafts,
   setLabelDrafts,
   tools,
   toolsLoading,
-  toolsOpen,
-  setToolsOpen,
+  toolsFailed,
   onBack,
   onUninstall,
   onRename,
@@ -33,26 +36,28 @@ export function IntegrationDetail({
 }: {
   item: ConnectionCatalogItem;
   accounts: Connection[];
+  organizationName: string | null;
   pending: string | null;
   labelDrafts: Record<string, string>;
   setLabelDrafts: Dispatch<SetStateAction<Record<string, string>>>;
   tools: ConnectionTool[];
   toolsLoading: boolean;
-  toolsOpen: boolean;
-  setToolsOpen: Dispatch<SetStateAction<boolean>>;
+  toolsFailed: boolean;
   onBack: () => void;
   onUninstall: () => void;
   onRename: (row: Connection) => void;
   onRevoke: (row: Connection) => void;
-  onConnect: () => void;
+  onConnect: (target: CatalogConnectionTarget) => void;
   onOpenChatApp: () => void;
 }) {
   const styles = useThemedStyles(createIntegrationsStyles);
   const { t } = useLingui();
+  const [owner, setOwner] = useState<ConnectionOwnerChoice>("me");
+  const shared = accounts.some((row) => row.organization);
+  const adding = !accounts.length && !item.connected;
   const key = catalogItemKey(item);
   const connecting = pending === key;
   const uninstalling = pending === `uninstall:${key}`;
-  const toolCount = tools.length;
 
   return (
     <View style={styles.detail}>
@@ -71,84 +76,98 @@ export function IntegrationDetail({
             {item.name}
           </Text>
         </View>
-        <NativeActionButton
-          accessibilityLabel={t`Uninstall`}
-          disabled={uninstalling || connecting}
-          fill={false}
-          label={uninstalling ? t`Working…` : t`Uninstall`}
-          onPress={onUninstall}
-          prominence="destructive"
-        />
+        {!shared && !adding ? (
+          <NativeActionButton
+            accessibilityLabel={t`Uninstall`}
+            disabled={uninstalling || connecting}
+            fill={false}
+            label={uninstalling ? t`Working…` : t`Uninstall`}
+            onPress={onUninstall}
+            prominence="destructive"
+          />
+        ) : null}
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.section}>{t`Accounts`}</Text>
+        {accounts.length ? <Text style={styles.section}>{t`Accounts`}</Text> : null}
         {accounts.map((row) => (
           <View key={row.id} style={styles.accountRow}>
-            <TextInput
-              value={labelDrafts[row.id] ?? row.displayName}
-              maxLength={CONNECTION_LABEL_MAX_LENGTH}
-              onChangeText={(value) =>
-                setLabelDrafts((current) => ({ ...current, [row.id]: value }))
-              }
-              onEndEditing={() => onRename(row)}
-              accessibilityLabel={t`Account label`}
-              style={styles.accountLabel}
-            />
-            <NativeActionButton
-              accessibilityLabel={t`Remove ${ph({ name: row.displayName })}`}
-              disabled={pending === row.id || uninstalling}
-              fill={false}
-              label={pending === row.id ? t`Working…` : t`Remove`}
-              onPress={() => onRevoke(row)}
-              prominence="destructive"
-            />
+            <View style={styles.grow}>
+              {row.manageable === false ? (
+                <Text style={styles.title}>{row.displayName}</Text>
+              ) : (
+                <TextInput
+                  value={labelDrafts[row.id] ?? row.displayName}
+                  maxLength={CONNECTION_LABEL_MAX_LENGTH}
+                  onChangeText={(value) =>
+                    setLabelDrafts((current) => ({ ...current, [row.id]: value }))
+                  }
+                  onEndEditing={() => onRename(row)}
+                  accessibilityLabel={t`Account label`}
+                  style={styles.accountLabel}
+                />
+              )}
+              {row.organization ? <Text style={styles.secondary}>{t`Organization`}</Text> : null}
+            </View>
+            {row.organization && row.status !== "connected" ? (
+              row.manageable !== false ? (
+                <NativeActionButton
+                  label={t`Reconnect`}
+                  disabled={connecting}
+                  fill={false}
+                  onPress={() => onConnect({ reconnectId: row.id })}
+                  prominence="secondary"
+                />
+              ) : (
+                <Text style={styles.secondary}>{t`Needs sign-in`}</Text>
+              )
+            ) : null}
+            {row.manageable !== false ? (
+              <NativeActionButton
+                accessibilityLabel={t`Remove ${ph({ name: row.displayName })}`}
+                disabled={pending === row.id || uninstalling}
+                fill={false}
+                label={pending === row.id ? t`Working…` : t`Remove`}
+                onPress={() => onRevoke(row)}
+                prominence="destructive"
+              />
+            ) : null}
           </View>
         ))}
+        {organizationName ? (
+          <ConnectionOwnerPicker
+            organizationName={organizationName}
+            value={owner}
+            onChange={setOwner}
+          />
+        ) : null}
         <NativeActionButton
-          accessibilityLabel={t`Add another ${ph({ name: item.name })}`}
+          accessibilityLabel={
+            adding
+              ? t`Connect ${ph({ name: item.name })}`
+              : t`Add another ${ph({ name: item.name })}`
+          }
           disabled={connecting || uninstalling}
-          label={connecting ? t`Working…` : t`Add another`}
-          onPress={onConnect}
+          label={connecting ? t`Working…` : adding ? t`Connect` : t`Add another`}
+          onPress={() => onConnect(organizationName ? owner : "me")}
           prominence="secondary"
         />
       </View>
 
-      <View style={styles.card}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ expanded: toolsOpen }}
-          onPress={() => setToolsOpen((open) => !open)}
-          style={styles.toolsToggle}
-        >
-          <Text style={styles.title}>
-            {toolsLoading
-              ? t`Tools`
-              : toolCount === 1
-                ? t`1 tool`
-                : t`${ph({ count: toolCount })} tools`}
-          </Text>
-          <Chevron expanded={toolsOpen} />
-        </Pressable>
-        {toolsOpen ? (
-          <View style={styles.toolsBody}>
-            {toolsLoading ? (
-              <ActivityIndicator
-                color={native.secondaryLabel}
-                accessibilityLabel={t`Loading tools…`}
-              />
-            ) : tools.length === 0 ? (
-              <Text style={styles.secondary}>{t`No tools available.`}</Text>
-            ) : (
-              tools.map((tool) => (
-                <Text key={tool.name} style={styles.toolName}>
-                  {appToolLabel(tool.name, item.slug)}
-                </Text>
-              ))
-            )}
-          </View>
-        ) : null}
-      </View>
+      {toolsFailed ? (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {t`Could not load permissions`}
+        </Text>
+      ) : toolsLoading ? (
+        <ActivityIndicator
+          accessible
+          accessibilityRole="progressbar"
+          accessibilityLabel={t`Loading tool permissions…`}
+          color={native.secondaryLabel}
+        />
+      ) : tools.length > 0 ? (
+        <ToolPermissions tools={tools} slug={item.slug} />
+      ) : null}
       {item.chatApp ? (
         <Text accessibilityRole="link" onPress={onOpenChatApp} style={styles.inlineLink}>
           {t`Chat from ${ph({ name: item.name })}`}

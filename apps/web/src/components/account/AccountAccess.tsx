@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { fetchAccountSecurity, requestAccountDeletionCode } from "../../lib/auth/account-security";
 import { authClient } from "../../lib/auth/auth";
 import { forgetSignedIn } from "../../lib/auth/returning-user";
+import { holdSsoAutoStart } from "../../lib/auth/sso-auto-start";
 import { runSsoFlow } from "../../lib/auth/sso-flow";
 import { clearComposerDrafts } from "../../lib/composer/composer-draft";
 import { useSave } from "../../lib/query/query";
@@ -194,6 +195,9 @@ export function DeleteAccountForm({
                 onSecurity?.(current);
                 if (!current.hasPassword && !current.freshOidcAuth && !code.trim()) return;
                 if (current.hasPassword && !password) return;
+                // Held before asking, as for sign-out: once the account is gone, the provider's
+                // session would sign straight into a new one, even if this answer is lost.
+                holdSsoAutoStart();
                 const result = await authClient.deleteUser(
                   current.hasPassword ? { password } : code.trim() ? { token: code.trim() } : {},
                 );

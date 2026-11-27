@@ -24,6 +24,8 @@ export const AgentSkillSchema = z.object({
   content: z.string(),
   source: AgentSkillSourceSchema,
   readOnly: z.boolean(),
+  organization: z.boolean().optional(),
+  installId: Id.optional(),
   /** Absent for built-in skills, which every space has. */
   availability: SpaceAvailabilitySchema.optional(),
   createdAt: z.string(),
@@ -37,6 +39,8 @@ export const AgentSkillCatalogEntrySchema = AgentSkillSchema.pick({
   description: true,
   source: true,
   readOnly: true,
+  organization: true,
+  installId: true,
   availability: true,
 });
 export type AgentSkillCatalogEntry = z.infer<typeof AgentSkillCatalogEntrySchema>;
@@ -47,6 +51,7 @@ export const CreateAgentSkillInput = z
     name: z.string().min(1).max(80).optional(),
     description: z.string().min(1).max(2000).optional(),
     body: z.string().max(100_000).optional(),
+    organization: z.boolean().optional(),
   })
   .superRefine((input, ctx) => {
     if (input.content?.trim()) return;

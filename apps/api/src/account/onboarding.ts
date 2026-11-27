@@ -7,6 +7,7 @@ import {
   changeMessageBlocks,
   createThreadMessageInTransaction,
   IsolationError,
+  organizationItemIn,
   storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
@@ -313,6 +314,7 @@ export async function markAppConnected(
   connectorId = deps.connectors.defaultConnectorId,
   threadId?: string,
   messageId?: string,
+  organizationConnectionId?: string,
 ): Promise<void> {
   const { bot, thread: ownThread } = await requireBotThread(deps, actor, botId);
   let thread = ownThread;
@@ -342,7 +344,19 @@ export async function markAppConnected(
     catalog.filter((item) => item.connectorId === connectorId),
     provider,
   );
-  if (!entry?.connected) return;
+  const shared = organizationConnectionId
+    ? await deps.prisma.connection.findFirst({
+        where: {
+          ...organizationItemIn(actor),
+          id: organizationConnectionId,
+          connectorId,
+          provider: { equals: entry?.slug ?? provider, mode: "insensitive" },
+          status: "connected",
+        },
+        select: { id: true },
+      })
+    : null;
+  if (organizationConnectionId ? !shared : !entry?.connected) return;
   const target = { spaceId: actor.spaceId, botId: bot.id, threadId: thread.id };
   const updates = await deps.prisma.$transaction(async (tx) => {
     // Two authorizations may finish together on an onboarding message with multiple cards.
@@ -368,9 +382,16 @@ export async function markAppConnected(
     const messages = [...new Map([...first, ...latest, ...own].map((m) => [m.id, m])).values()];
     const events = [];
     for (const message of messages) {
-      const next = changeMessageBlocks(message, (block) =>
-        connectedAppBlock(block, connectorId, entry.slug, deps.connectors.defaultConnectorId),
-      );
+      const next = changeMessageBlocks(message, (block) => {
+        if (block.kind === "app_connect" && block.organizationConnectionId !== shared?.id)
+          return block;
+        return connectedAppBlock(
+          block,
+          connectorId,
+          entry?.slug ?? provider,
+          deps.connectors.defaultConnectorId,
+        );
+      });
       if (!next) continue;
       await tx.message.update({ where: { id: message.id }, data: { blocks: next.stored } });
       events.push(

@@ -9,6 +9,7 @@ import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { rpcQuery } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
+import { openFromSettings } from "../../lib/settings/back-to-settings";
 import { openFromSettingsSheet } from "../../lib/settings/settings-sheet";
 
 /**
@@ -51,12 +52,12 @@ export default function SpacesSettings() {
                   accessibilityRole="button"
                   chevron="right"
                   title={t`Members`}
-                  // Members lives on the root stack, so it closes the sheet first.
                   onPress={() =>
-                    openFromSettingsSheet(router, {
-                      pathname: "/space-members",
-                      params: { spaceId: only.id },
-                    })
+                    openFromSettings(
+                      router,
+                      { pathname: "/space-members", params: { spaceId: only.id } },
+                      "/spaces",
+                    )
                   }
                 />
               ) : null}

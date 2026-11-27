@@ -48,7 +48,7 @@ import {
 } from "../../payments/purchase-service.js";
 import {
   desktopGuardApplies,
-  desktopProtectionGuardMessage,
+  desktopGuardRefusalMessage,
   protectedComputerLifecycleRefusal,
 } from "../../providers/computer/desktop/desktop-command-guard.js";
 import {
@@ -73,6 +73,8 @@ import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "../turn/takeover-resume.promp
 import { settleMsArg } from "../turn/tool-text.js";
 import { auditToolCall } from "./run-tool-audit.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
+import { screenOpeningTool } from "./run-tool-selection.js";
+import { shellNoDisplayNotice } from "./run-tools-computer.prompt.js";
 
 function appendComputerCommand(ctx: RunContext, payload: ComputerCommand) {
   const { deps, run, runId, bot, thread } = ctx;
@@ -536,7 +538,7 @@ export const computerTools: ToolHandlers = {
     const command = String(args.command ?? args.cmd ?? "");
     const refusal = protectedComputerLifecycleRefusal(command);
     if (desktopGuardApplies(ctx.computer) && refusal) {
-      return call.finish({ error: desktopProtectionGuardMessage(refusal, command) });
+      return call.finish({ error: desktopGuardRefusalMessage() });
     }
     const cwd = resolveBotWorkspaceCwd(
       ctx.computer.mode,
@@ -695,7 +697,13 @@ export const computerTools: ToolHandlers = {
         exitCode: redacted.code,
         output: commandOutput(redacted, false).slice(-COMPUTER_COMMAND_OUTPUT_MAX_CHARS),
       });
-      return call.finish(redacted);
+      const screenTool =
+        redacted.code && NO_DISPLAY_OUTPUT.test(`${redacted.stderr}\n${redacted.stdout}`)
+          ? screenOpeningTool(ctx.tools.offered)
+          : undefined;
+      return call.finish(
+        screenTool ? { ...redacted, notice: shellNoDisplayNotice(screenTool) } : redacted,
+      );
     } catch (error) {
       await recordFailure(error);
       throw error;
@@ -775,3 +783,7 @@ export const computerTools: ToolHandlers = {
     }, call.finish);
   },
 };
+
+/** What X clients and the browsers' own launchers print when they find no display to use. */
+const NO_DISPLAY_OUTPUT =
+  /\b(?:can'?t|cannot|could not|unable to) (?:open|connect to) (?:the )?(?:X )?display\b|\bmissing X server\b|\bno \$DISPLAY\b/i;

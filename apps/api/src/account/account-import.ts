@@ -53,7 +53,6 @@ import { deleteSpaceWithContent } from "../spaces/space-deletion.js";
 import { inflateEntry, parseZipArchive, readExact, ZipFormatError } from "./account-zip-reader.js";
 
 export const ACCOUNT_IMPORT_LIMITS = {
-  /** The uploaded zip as sent. */
   bodyBytes: 4 * 1024 ** 3,
   /** Everything the zip inflates to, so a bomb stops early. */
   unpackedBytes: 16 * 1024 ** 3,
@@ -71,7 +70,6 @@ const MESSAGE_BATCH_SIZE = 500;
 /** Prefix of the private spool files, exposed so tests can assert cleanup. */
 export const SPOOL_PREFIX = "rakazo-account-import-archive-";
 
-/** Slice size for streaming a spilled entry back to its sink. */
 const READ_SPILL_BYTES = 16 * 1024;
 
 export class AccountImportError extends Error {
@@ -793,6 +791,7 @@ class AccountImporter implements ArchiveSink {
             messageProvider: record.messageProvider,
             ...carriedRoutineModelPin(record),
             watch: jsonValue(record.watch),
+            endsAt: record.endsAt ? new Date(record.endsAt) : null,
             createdAt: new Date(record.createdAt),
           },
         });

@@ -13,6 +13,7 @@ COPY --chmod=755 package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs .
 RUN corepack install && pnpm --version >/dev/null && chmod -R a+rX "${COREPACK_HOME}"
 COPY --chmod=755 patches patches
 COPY --chmod=755 apps/api/package.json apps/api/
+COPY --chmod=755 apps/cli/package.json apps/cli/
 COPY --chmod=755 apps/desktop/package.json apps/desktop/
 COPY --chmod=755 apps/mobile/package.json apps/mobile/
 COPY --chmod=755 apps/web/package.json apps/web/
@@ -66,7 +67,9 @@ COPY infra/sandboxes/computer/apt-security.sh /tmp/apt-security.sh
 RUN /tmp/apt-security.sh
 # Prisma's migration engine detects and links against OpenSSL. A stdio MCP server that runs on
 # another machine is launched over ssh, which the slim base image does not ship.
-RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends openssl openssh-client \
+# The server rasterizes plot labels with Fontconfig and needs an installed font.
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+  && apt-get install -y --no-install-recommends openssl openssh-client fontconfig fonts-dejavu-core \
   && rm -rf /var/lib/apt/lists/*
 # Managed stdio package installs need npm; the Node image bundles an older copy.
 RUN npm install --global --ignore-scripts npm@11.21.2 && npm cache clean --force

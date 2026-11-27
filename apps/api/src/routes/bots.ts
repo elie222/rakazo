@@ -66,6 +66,7 @@ import type { AgentImportServices } from "../bots/agent-import.js";
 import {
   agentImportSetupState,
   createImportedBot,
+  createImportedBots,
   previewAgentImport,
 } from "../bots/agent-import.js";
 import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "../bots/agent-secrets.js";
@@ -359,6 +360,9 @@ export function botsRoutes(ctx: RouterContext) {
       // An imported bot starts inert: no intro run, paused routines, unapproved servers.
       importCreate: authed.bots.importCreate.handler(async ({ context, input }) =>
         createImportedBot(agentImportServices, context.actor, input, context.signal),
+      ),
+      importMany: authed.bots.importMany.handler(async ({ context, input }) =>
+        createImportedBots(agentImportServices, context.actor, input, context.signal),
       ),
       importSetupState: authed.bots.importSetupState.handler(async ({ context, input }) =>
         agentImportSetupState(agentImportServices as AgentImportServices, context.actor, input),

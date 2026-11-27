@@ -3,7 +3,7 @@ import type { BotAvatarSet } from "@rakazo/contracts";
 import { avatarPhotoDot } from "@rakazo/core";
 import { MAX_FONT_SCALE, typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { View } from "react-native";
 import type { SharedValue } from "react-native-reanimated";
 import Animated, {
   cancelAnimation,
@@ -18,6 +18,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useAvatarOnScreen } from "../../lib/bots/avatar-life";
 import { useMobileTokens } from "../../lib/native/native";
+import { ShimmerText } from "../ui/shimmer-text";
 import { BotAvatar } from "./bot-avatar";
 
 /** A working bot; `composing` while it writes reply text (the mark turns into dots). */
@@ -115,13 +116,15 @@ export function ActivityMark({
         </Animated.View>
       </Animated.View>
       {label ? (
-        <Text
-          numberOfLines={1}
+        <ShimmerText
           maxFontSizeMultiplier={MAX_FONT_SCALE}
-          style={{ flexShrink: 1, color: tokens.mutedForeground, ...typeScale.secondary }}
+          style={typeScale.secondary}
+          color={tokens.mutedForeground}
+          highlight={tokens.foreground}
+          paused={!onScreen}
         >
           {label}
-        </Text>
+        </ShimmerText>
       ) : null}
     </Animated.View>
   );

@@ -233,6 +233,9 @@ export async function recordEffect(
     }
   }
 
+  // Only a pre-fix row can be the answer here, and the modern-key test is a cheap string
+  // comparison while `stableJsonValue` serializes the whole stored request. This runs on every
+  // tool call, so testing the key first keeps a long run from re-serializing its own history.
   const prior = await deps.prisma.externalEffect.findMany({
     where: { runId: run.id, spaceId: run.spaceId, kind },
     orderBy: { createdAt: "asc" },
@@ -249,13 +252,13 @@ export async function recordEffect(
             candidate.kind !== kind
           )
             return false;
+          // Live later occurrences use a new modern key; do not steal an earlier modern row.
+          if (isToolEffectIdempotencyKey(candidate.idempotencyKey, run.id, kind)) return false;
           try {
-            if (stableJsonValue(candidate.request) !== expectedRequest) return false;
+            return stableJsonValue(candidate.request) === expectedRequest;
           } catch {
             return false;
           }
-          // Live later occurrences use a new modern key; do not steal an earlier modern row.
-          return !isToolEffectIdempotencyKey(candidate.idempotencyKey, run.id, kind);
         });
   if (legacy) {
     consumedIds?.add(legacy.id);

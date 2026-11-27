@@ -523,12 +523,46 @@ describe("routines.update", () => {
     nextRunAt: new Date("2026-09-02T09:00:00.000Z"),
   };
 
+  it("renames a routine on its last run without resuming its schedule", async () => {
+    const { call, update } = fixture(false, false, {
+      ...recurring,
+      nextRunAt: null,
+      endsAt: new Date(Date.now() + 60 * 60_000),
+    });
+    expect((await call({ name: "Renamed", runAt: undefined })).status).toBe(200);
+    expect(update.mock.calls[0]![0].data).not.toHaveProperty("nextRunAt");
+  });
+
+  it("resumes a routine on its last run when its end is removed", async () => {
+    const { call, update, enqueue } = fixture(false, false, {
+      ...recurring,
+      nextRunAt: null,
+      endsAt: new Date(Date.now() + 60 * 60_000),
+    });
+    expect((await call({ endsAt: null, runAt: undefined })).status).toBe(200);
+    expect(update.mock.calls[0]![0].data).toMatchObject({
+      endsAt: null,
+      nextRunAt: expect.any(Date),
+    });
+    expect(enqueue).toHaveBeenCalledOnce();
+  });
+
   it("leaves the schedule alone when an edit does not change it", async () => {
     const { call, update, enqueue } = fixture(false, false, recurring);
     expect((await call({ name: "Renamed", runAt: undefined })).status).toBe(200);
     expect(update.mock.calls[0]![0].data).not.toHaveProperty("nextRunAt");
     expect(update.mock.calls[0]![0].where).not.toHaveProperty("nextRunAt");
     expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("saves an end and refuses one that leaves the routine no run", async () => {
+    const { call, update } = fixture(false, false, recurring);
+    const endsAt = "2031-01-01T00:00:00.000Z";
+    expect((await call({ endsAt, runAt: undefined })).status).toBe(200);
+    expect(update.mock.calls[0]![0].data).toMatchObject({ endsAt: new Date(endsAt) });
+    const refused = await call({ endsAt: "2026-01-01T00:00:00.000Z", runAt: undefined });
+    expect(refused.status).toBe(400);
+    expect(update).toHaveBeenCalledTimes(1);
   });
 
   it("keeps a schedule that a concurrent enable armed while renaming", async () => {

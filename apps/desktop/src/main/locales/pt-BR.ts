@@ -100,6 +100,7 @@ export const PT_BR_MESSAGES: Record<string, string> = {
   "Almost ready…": "Quase pronto…",
   "Rakazo is ready.": "O Rakazo está pronto.",
   "{size} downloaded": "{size} baixados",
+  "{done} of {total}": "{done} de {total}",
   "Connecting…": "Conectando…",
   "Checking…": "Verificando…",
   "Rakazo answered at {url}.": "O Rakazo respondeu em {url}.",

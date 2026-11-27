@@ -18,6 +18,10 @@ contextBridge.exposeInMainWorld("rakazoDesktop", {
   clipboard: {
     writeText: (text) => ipcRenderer.invoke("desktop.clipboard.write", text),
   },
+  appIcon: {
+    get: () => ipcRenderer.invoke("desktop.appIcon.get"),
+    set: (icon) => ipcRenderer.invoke("desktop.appIcon.set", icon),
+  },
   badge: {
     set: (count) => ipcRenderer.invoke("desktop.badge.set", count),
   },
@@ -103,3 +107,12 @@ contextBridge.exposeInMainWorld("rakazoDesktop", {
     },
   },
 });
+
+// A mouse's side buttons step through history, as in a browser. Windows and Linux report them to
+// the main process as app commands; macOS only hands them to the page.
+if (process.platform === "darwin") {
+  window.addEventListener("mouseup", (event) => {
+    if (event.button === 3) history.back();
+    if (event.button === 4) history.forward();
+  });
+}

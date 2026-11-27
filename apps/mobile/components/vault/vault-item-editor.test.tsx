@@ -51,6 +51,7 @@ vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({})
 vi.mock("../native/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../ui/menu-picker", () => ({ MenuPicker: () => null }));
 vi.mock("./login-fields-editor", () => ({ LoginFieldsEditor: () => null }));
+vi.mock("../native/sheet-bar", () => import("../native/sheet-bar.test-support"));
 vi.mock("../native/native-action-button", () => ({
   NativeActionButton: ({ label }: { label: string }) =>
     createElement("button", { type: "button" }, label),

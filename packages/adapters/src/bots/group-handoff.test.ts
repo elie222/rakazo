@@ -1,3 +1,4 @@
+import { runContinueJob } from "@rakazo/adapter-kit";
 import { BOT_MESSAGE_MAX_HOPS } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
@@ -178,7 +179,21 @@ describe("group handoff ownership", () => {
         .mockResolvedValueOnce(null as never);
       await expect(
         handoffToGroupBot(deps as never, run, "group-1", pilotHandoff),
-      ).resolves.toMatchObject({ ok: true });
+      ).resolves.toMatchObject({ ok: true, runId: "run-b" });
+      expect(tx.event.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          type: "group.handoff",
+          runId: run.id,
+          payload: {
+            messageId: "message-1",
+            fromBotId: run.botId,
+            toBotId: "bot-b",
+            text: pilotHandoff.message,
+          },
+        }),
+      });
+      expect(deps.events.notify).toHaveBeenCalledExactlyOnceWith(run.threadId, 1);
+      expect(deps.jobs.enqueue).toHaveBeenCalledExactlyOnceWith(runContinueJob("run-b"));
       expect(tx.bot.findFirst).toHaveBeenCalledWith({
         where: { id: "bot-b", spaceId: run.spaceId, userId: run.userId, archivedAt: null },
         select: { modelProvider: true, modelId: true, modelCredentialId: true },
