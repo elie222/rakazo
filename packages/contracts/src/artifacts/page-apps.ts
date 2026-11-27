@@ -2,23 +2,7 @@ import * as z from "zod";
 import { Id } from "../ids.js";
 import { PageAbilitiesSchema } from "./page-abilities.js";
 import { PageStateSchema } from "./page-reader-state.js";
-import { PageDetailSchema } from "./pages.js";
-
-/** Colors a page's app icon can take; each names a gradient in the UI tokens. */
-export const PAGE_ICON_COLORS = [
-  "blue",
-  "indigo",
-  "purple",
-  "pink",
-  "red",
-  "orange",
-  "yellow",
-  "green",
-  "teal",
-  "gray",
-] as const;
-export const PageIconColorSchema = z.enum(PAGE_ICON_COLORS);
-export type PageIconColor = z.infer<typeof PageIconColorSchema>;
+import { PageDetailSchema, PageIconColorSchema } from "./pages.js";
 
 /** Where an installed page app reads its page, with its own token as a bearer credential. */
 export const PAGE_APP_API_PATH = "/api/v1/page-app";

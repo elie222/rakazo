@@ -5,6 +5,8 @@
   "type": "module",
   "exports": {
     "./compile": "./src/compile.ts",
+    "./icon": "./src/kit/icon.tsx",
+    "./icon-names": "./src/icon-names.ts",
     "./runtime": "./src/runtime.tsx",
     "./runtime-build": "./src/runtime-build.ts",
     "./validate": "./src/validate.ts"

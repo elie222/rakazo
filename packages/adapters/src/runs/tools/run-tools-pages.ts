@@ -2,10 +2,12 @@ import type { MessageBlock } from "@rakazo/contracts";
 import {
   Id,
   IsoDate,
+  PAGE_ICON_COLORS,
   PAGE_IMAGE_PREFIX,
   PAGE_IMAGES_MAX,
   PAGE_LIST_MAX_LIMIT,
   PAGE_TITLE_MAX_LENGTH,
+  PageIconColorSchema,
   PageTitleSchema,
 } from "@rakazo/contracts";
 import {
@@ -26,6 +28,7 @@ import {
   signalPageUsers,
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
+import { isPageIcon } from "@rakazo/page-kit/icon-names";
 import { checkPageSource, PAGE_KIT_GUIDE } from "@rakazo/page-kit/validate";
 import { z } from "zod";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "../../approvals/approval-ask.js";
@@ -321,6 +324,8 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     if (!parsed.success) return { error: "title must be 1 to 200 characters." };
     title = redactSecrets(parsed.data, ctx.secrets).slice(0, PAGE_TITLE_MAX_LENGTH);
   }
+  const appIcon = parseAppIcon(args);
+  if (typeof appIcon === "string") return { error: appIcon, unchanged: true };
 
   const page = pageId
     ? await deps.prisma.page.findFirst({
@@ -343,6 +348,12 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   const current = currentVersion?.source ?? "";
   const previousImages = currentVersion ? pageVersionImages(currentVersion, "reject") : {};
 
+  if (page && !hasSource && !hasEdits && !title && !hasImages && Object.keys(appIcon).length) {
+    await deps.prisma.page.update({ where: { id: page.id }, data: appIcon });
+    if (deps.events?.publishSpaceChange)
+      await bestEffort("signal page icon", signalPage(deps.prisma, deps.events, page.id));
+    return { pageId: page.id, ...appIcon };
+  }
   if (page && !hasSource && !hasEdits && !title && !hasImages) {
     // The stored source may hold outside text an earlier run put in the page, so reading it
     // taints this run like any other outside content; saves only confirm this run's own write.
@@ -422,6 +433,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
             botId: bot.id,
             groupId: thread.groupId,
             title: title!,
+            ...appIcon,
             versions: {
               create: {
                 version: 1,
@@ -456,7 +468,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
               ? { visibility: { in: ["private", approvedVisibility] } }
               : {}),
         },
-        data: { currentVersion: version, title, updatedAt: new Date() },
+        data: { currentVersion: version, title, ...appIcon, updatedAt: new Date() },
       });
       if (moved.count === 0) throw new PageChangedError();
       let nextTitle =
@@ -541,6 +553,21 @@ function missingImages(source: string, kept: string[]): string[] {
 }
 
 class PageChangedError extends Error {}
+
+function parseAppIcon(
+  args: Record<string, unknown>,
+): { icon?: string; iconColor?: string } | string {
+  const icon = argumentGiven(args.icon) ? args.icon : undefined;
+  const iconColor = argumentGiven(args.iconColor) ? args.iconColor : undefined;
+  if (icon !== undefined && !isPageIcon(icon))
+    return "icon must be one of the page kit's icon names.";
+  if (iconColor !== undefined && !PageIconColorSchema.safeParse(iconColor).success)
+    return `iconColor must be one of ${PAGE_ICON_COLORS.join(", ")}.`;
+  return {
+    ...(icon !== undefined ? { icon } : {}),
+    ...(iconColor !== undefined ? { iconColor: iconColor as string } : {}),
+  };
+}
 
 export const pageTools: ToolHandlers = {
   async save_page(ctx, call) {

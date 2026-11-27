@@ -34,6 +34,22 @@ export type PageImages = z.infer<typeof PageImagesSchema>;
 export const PageImageSourceSchema = z.strictObject({ src: z.string().startsWith("data:image/") });
 export type PageImageSource = z.infer<typeof PageImageSourceSchema>;
 
+/** Colors a page's app icon can take; each names a gradient in the UI tokens. */
+export const PAGE_ICON_COLORS = [
+  "blue",
+  "indigo",
+  "purple",
+  "pink",
+  "red",
+  "orange",
+  "yellow",
+  "green",
+  "teal",
+  "gray",
+] as const;
+export const PageIconColorSchema = z.enum(PAGE_ICON_COLORS);
+export type PageIconColor = z.infer<typeof PageIconColorSchema>;
+
 export const PageVisibilitySchema = z.enum(["private", "people", "link"]);
 export type PageVisibility = z.infer<typeof PageVisibilitySchema>;
 
@@ -54,6 +70,9 @@ export const PageSummarySchema = z.strictObject({
   visibility: PageVisibilitySchema,
   currentVersion: z.number().int().positive(),
   pinned: z.boolean(),
+  /** The page-kit icon and color its app icon is drawn with; null until the bot picks them. */
+  icon: z.string().nullable(),
+  iconColor: PageIconColorSchema.nullable(),
   createdAt: IsoDate,
   updatedAt: IsoDate,
 });

@@ -580,6 +580,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["pages/setVisibility"],
       ["pages/pin"],
       ["pages/remove"],
+      ["pageApps/install"],
+      ["pageApps/remove"],
       ["pages/ask"],
       ["usage/list"],
       ["usage/summary"],

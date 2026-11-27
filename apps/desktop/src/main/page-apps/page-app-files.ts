@@ -1,0 +1,157 @@
+import { readFileSync } from "node:fs";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { PAGE_APP_TOKEN } from "@rakazo/contracts";
+import { PAGE_APP_ID } from "./bundle-name.js";
+
+/** Written into each app's bundle; its presence is what starts the bundle as a page app. */
+export const PAGE_APP_CONFIG_FILE = "page-app.json";
+
+export type PageAppConfig = {
+  appId: string;
+  pageId: string;
+  title: string;
+  /** The origin of the Rakazo server that made the app's token. */
+  server: string;
+};
+
+const PAGE_ID = /^[A-Za-z0-9_-]{1,200}$/;
+
+/** An http(s) origin, or null. */
+export function serverOrigin(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const url = URL.parse(value);
+  return url && (url.protocol === "https:" || url.protocol === "http:") ? url.origin : null;
+}
+
+/** Whether these name one page app in a way that is safe in paths, identifiers and menus. */
+export function isPageAppIdentity(appId: unknown, pageId: unknown, title: unknown): boolean {
+  return (
+    typeof appId === "string" &&
+    PAGE_APP_ID.test(appId) &&
+    typeof pageId === "string" &&
+    PAGE_ID.test(pageId) &&
+    typeof title === "string" &&
+    title.length > 0 &&
+    title.length <= 200
+  );
+}
+
+/** The config's fields when every one is usable; null otherwise. */
+export function pageAppConfig(value: unknown): PageAppConfig | null {
+  if (!value || typeof value !== "object") return null;
+  const { appId, pageId, title, server } = value as Record<string, unknown>;
+  const origin = serverOrigin(server);
+  return isPageAppIdentity(appId, pageId, title) && origin !== null
+    ? { appId: appId as string, pageId: pageId as string, title: title as string, server: origin }
+    : null;
+}
+
+/** Whether an origin is this computer's own, as Rakazo's local server is. */
+export function isLoopbackOrigin(origin: string): boolean {
+  const host = URL.parse(origin)?.hostname;
+  return host === "127.0.0.1" || host === "localhost" || host === "[::1]";
+}
+
+const SERVER_FILE = "server";
+
+/**
+ * The server an app reads instead of the one in its bundle, kept with its data because a signed
+ * bundle cannot change: Rakazo's local server can move to another port between starts.
+ */
+export function readServerOverride(appId: string, home?: string): string | null {
+  try {
+    return serverOrigin(readFileSync(path.join(pageAppDataDir(appId, home), SERVER_FILE), "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+export async function writeServerOverride(appId: string, server: string, home?: string) {
+  await mkdir(pageAppDataDir(appId, home), { recursive: true, mode: 0o700 });
+  await writeFile(path.join(pageAppDataDir(appId, home), SERVER_FILE), `${server}\n`, {
+    mode: 0o600,
+  });
+}
+
+export function pageAppsFolder(home = os.homedir()): string {
+  return path.join(home, "Applications", "Rakazo Apps");
+}
+
+/** An app's own data: its token and its window's browser data. */
+export function pageAppDataDir(appId: string, home = os.homedir()): string {
+  if (!PAGE_APP_ID.test(appId)) throw new Error("Invalid page app id.");
+  return path.join(home, "Library", "Application Support", "Rakazo Apps", appId);
+}
+
+function tokenFile(appId: string, home?: string) {
+  return path.join(pageAppDataDir(appId, home), "token");
+}
+
+export async function writePageAppToken(appId: string, token: string, home?: string) {
+  await mkdir(pageAppDataDir(appId, home), { recursive: true, mode: 0o700 });
+  await writeFile(tokenFile(appId, home), token, { encoding: "utf8", mode: 0o600 });
+}
+
+/** Null when the app has no token: it was uninstalled, or its data was removed. */
+export async function readPageAppToken(appId: string, home?: string): Promise<string | null> {
+  try {
+    const token = (await readFile(tokenFile(appId, home), "utf8")).trim();
+    return PAGE_APP_TOKEN.test(token) ? token : null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+const HEADERS_FILE = "headers.json";
+
+/**
+ * Headers the app's server requires on every request (an access proxy's credentials, say), kept
+ * beside the token and as private, since an app is its own process outside Rakazo's session.
+ */
+export async function writePageAppHeaders(
+  appId: string,
+  headers: Record<string, string>,
+  home?: string,
+) {
+  if (Object.keys(headers).length === 0) return;
+  await mkdir(pageAppDataDir(appId, home), { recursive: true, mode: 0o700 });
+  await writeFile(path.join(pageAppDataDir(appId, home), HEADERS_FILE), JSON.stringify(headers), {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+}
+
+export async function readPageAppHeaders(
+  appId: string,
+  home?: string,
+): Promise<Record<string, string>> {
+  let text: string;
+  try {
+    text = await readFile(path.join(pageAppDataDir(appId, home), HEADERS_FILE), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw error;
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch (error) {
+    // A damaged file sends no headers rather than stopping the app's removal.
+    if (error instanceof SyntaxError) return {};
+    throw error;
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
+}
+
+export async function removePageAppData(appId: string, home?: string) {
+  await rm(pageAppDataDir(appId, home), { recursive: true, force: true });
+}
