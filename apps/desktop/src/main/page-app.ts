@@ -16,7 +16,7 @@ import {
   setPageAppMenu,
 } from "./page-apps/app/page-app-window.js";
 import { runningBundle } from "./page-apps/bundle-builder.js";
-import { createPageAppApi } from "./page-apps/page-app-api.js";
+import { createPageAppApi, revokePageAppToken } from "./page-apps/page-app-api.js";
 import {
   PAGE_APP_CONFIG_FILE,
   pageAppConfig,
@@ -36,10 +36,13 @@ app.setName(title);
 app.setPath("userData", pageAppDataDir(appId));
 registerPageAppScheme();
 
-/** Moves this app to the Trash and forgets its data; its token is already revoked or gone. */
-async function removeSelf() {
+/**
+ * Moves this app to the Trash. Its data goes only with a revoked token; otherwise Rakazo finds
+ * the app in the Trash on its next start and revokes the token from there.
+ */
+async function removeSelf(revoked: boolean) {
   await bestEffort("trash page app", shell.trashItem(runningBundle()));
-  await bestEffort("remove page app data", removePageAppData(appId));
+  if (revoked) await bestEffort("remove page app data", removePageAppData(appId));
   app.exit(0);
 }
 
@@ -63,7 +66,7 @@ async function start() {
       cancelId: 1,
       noLink: true,
     });
-    if (response === 0) await removeSelf();
+    if (response === 0) await removeSelf(true);
     else app.exit(0);
   };
 
@@ -140,8 +143,7 @@ async function start() {
     });
     if (response !== 0) return;
     controller.stop();
-    await bestEffort("revoke page app", api.revoke());
-    await removeSelf();
+    await removeSelf(await revokePageAppToken(api));
   }
 
   handleIpc("desktop.pageApp.ready", () => controller.screen());

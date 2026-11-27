@@ -19,7 +19,7 @@ import {
 } from "./bundle-builder.js";
 import { pageAppBundleId, pageAppName, uniqueBundleName } from "./bundle-name.js";
 import { ICNS_SIZES, isSquarePng, writeIcns } from "./icns.js";
-import { createPageAppApi } from "./page-app-api.js";
+import { createPageAppApi, revokePageAppToken } from "./page-app-api.js";
 import type { PageAppConfig } from "./page-app-files.js";
 import {
   isPageAppIdentity,
@@ -32,6 +32,8 @@ import {
 import type { InstalledPageApp } from "./registry.js";
 
 const MAX_ICON_BASE64 = 4 * 1024 * 1024;
+/** One drawing per size the web app renders, with room to spare; a longer list is refused unread. */
+const MAX_ICON_ENTRIES = 12;
 /** Where bundles are made before they appear in the apps folder, on the same volume. */
 const STAGING = ".staging";
 
@@ -51,14 +53,16 @@ export function pageAppInstallRequest(value: unknown): PageAppInstallRequest | n
     typeof appId !== "string" ||
     typeof token !== "string" ||
     !PAGE_APP_TOKEN.test(token) ||
-    !Array.isArray(icon)
+    !Array.isArray(icon) ||
+    icon.length > MAX_ICON_ENTRIES
   )
     return null;
   if (!isPageAppIdentity(appId, pageId, title)) return null;
   const pngs = new Map<number, Buffer>();
   for (const entry of icon as unknown[]) {
     const { size, png } = (entry ?? {}) as { size?: unknown; png?: unknown };
-    if (typeof size !== "number" || !ICNS_SIZES.includes(size)) continue;
+    if (typeof size !== "number" || pngs.has(size)) return null;
+    if (!ICNS_SIZES.includes(size)) continue;
     if (typeof png !== "string" || png.length > MAX_ICON_BASE64) return null;
     const bytes = Buffer.from(png, "base64");
     if (!isSquarePng(bytes, size)) return null;
@@ -182,6 +186,11 @@ export function createPageAppInstaller(options: {
     } catch (error) {
       if (placed !== null) await removeBundle(placed);
       if (!previous) await removePageAppData(request.appId, home);
+      // Nothing will use the token now, so it ends here rather than waiting for the server.
+      await bestEffort(
+        "revoke an unfinished page app",
+        createPageAppApi(server, request.token).revoke(),
+      );
       throw error;
     }
   }
@@ -192,9 +201,10 @@ export function createPageAppInstaller(options: {
     await options.trash(bundle);
   }
 
+  /** Drops an app whose bundle is gone; until its token is revoked, the next start tries again. */
   async function forget(app: InstalledPageApp) {
     const token = await readPageAppToken(app.appId, home);
-    if (token) await bestEffort("revoke page app", createPageAppApi(app.server, token).revoke());
+    if (token && !(await revokePageAppToken(createPageAppApi(app.server, token)))) return;
     await removePageAppData(app.appId, home);
     await registry.remove(app.appId);
   }

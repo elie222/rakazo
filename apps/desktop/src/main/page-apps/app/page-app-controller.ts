@@ -41,6 +41,26 @@ export type PageAppHost = {
   viewed: (view: PageAppView) => void;
 };
 
+/** JSON with object keys sorted, since the database keeps its own key order. */
+function canonical(value: unknown): string {
+  return JSON.stringify(value, (_key, item: unknown) =>
+    item && typeof item === "object" && !Array.isArray(item)
+      ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : item,
+  );
+}
+
+/** A refusal resending cannot change, such as values past the page's limits. */
+function refusedForGood(error: unknown) {
+  return (
+    error instanceof PageAppRequestError &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    error.status !== 401 &&
+    error.status !== 429
+  );
+}
+
 function isRemoved(error: unknown) {
   return error instanceof PageAppRequestError && error.status === 401;
 }
@@ -65,6 +85,9 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
   let again: { force: boolean } | null = null;
   let asks = 0;
   let unsaved: PageState = {};
+  /** The reader's values as the shown frame has them: what it opened with and saved since. */
+  let known: PageState = {};
+  let saving: Promise<void> | null = null;
   let consenting = false;
 
   function show(next: PageAppScreen) {
@@ -126,7 +149,9 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
     host.viewed(next);
     const ask = next.page.abilities.includes("ask") && next.approved.includes("ask");
     const key = JSON.stringify([next.page.version, ask, host.theme(), desktopLocale()]);
-    if (!force && key === shown) return;
+    // Values changed on another device draw the page again; the frame's own saves do not.
+    const stateChanged = canonical(next.page.readerState ?? {}) !== canonical(known);
+    if (!force && key === shown && (!stateChanged || saving)) return;
     if (force || runtime === null) runtime = await api.runtime();
     const document = pageViewerDocument({
       runtime,
@@ -140,6 +165,7 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
       ask,
     });
     frame = { id: frame.id + 1, document: withSandboxedArtifactCsp(document) };
+    known = next.page.readerState ?? {};
     shown = key;
     show({ frame: `${FRAME_ORIGIN}/${frame.id}`, title: host.name, lang: desktopLocale() });
   }
@@ -182,15 +208,32 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
     }
   }
 
-  /** Values a failed save could not keep go again with the next one, so none are lost. */
-  async function saveState(values: PageState) {
-    const sending = { ...unsaved, ...values };
-    unsaved = {};
-    try {
-      await api.saveState(sending);
-    } catch (error) {
-      unsaved = { ...sending, ...unsaved };
-      fail(error);
+  /**
+   * Saves go one at a time, in order, so an older one never lands last. Values a save could not
+   * reach the server with go again with the next; values the server refused are dropped.
+   */
+  function saveState(values: PageState) {
+    unsaved = { ...unsaved, ...values };
+    known = { ...known, ...values };
+    saving ??= flushState().finally(() => {
+      saving = null;
+    });
+    return saving;
+  }
+
+  async function flushState() {
+    while (Object.keys(unsaved).length) {
+      const sending = unsaved;
+      unsaved = {};
+      try {
+        await api.saveState(sending);
+      } catch (error) {
+        fail(error);
+        if (!refusedForGood(error)) {
+          unsaved = { ...sending, ...unsaved };
+          return;
+        }
+      }
     }
   }
 
