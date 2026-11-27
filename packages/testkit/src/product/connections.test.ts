@@ -152,16 +152,8 @@ describeWithDatabase("Composio catalog reconciliation", () => {
 
   it("keeps a second connected account for the same provider and renames it", async () => {
     const cookie = await signup(app, `multi-account-${stamp}@rakazo.test`, "Multi Account");
-    const first = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
-      connectorId: "composio",
-      provider: "GMAIL",
-      displayName: "Personal",
-    });
-    const second = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
-      connectorId: "composio",
-      provider: "GMAIL",
-      displayName: "Work",
-    });
+    const first = await linkGmail(cookie, "Personal");
+    const second = await linkGmail(cookie, "Work");
     await expect(
       rpc<Array<{ id: string; displayName: string; status: string }>>(
         app,
@@ -414,11 +406,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
   async function connectedGmail(label: string) {
     const cookie = await signup(app, `${label}-${stamp}@rakazo.test`, label);
     const actor = await rpc<Actor>(app, cookie, "me");
-    const { connectionId } = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
-      connectorId: "composio",
-      provider: "GMAIL",
-      displayName: "Gmail",
-    });
+    const { connectionId } = await linkGmail(cookie, "Gmail");
     const row = await asSystem(handles.prisma).connection.findUniqueOrThrow({
       where: { id: connectionId },
       select: { providerRef: true },
@@ -762,16 +750,8 @@ describeWithDatabase("Composio catalog reconciliation", () => {
 
   it("marks a connected account Composio reports dead as needing reconnect", async () => {
     const cookie = await signup(app, `reconnect-${stamp}@rakazo.test`, "Reconnect");
-    const work = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
-      connectorId: "composio",
-      provider: "GMAIL",
-      displayName: "Work",
-    });
-    const personal = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
-      connectorId: "composio",
-      provider: "GMAIL",
-      displayName: "Personal",
-    });
+    const work = await linkGmail(cookie, "Work");
+    const personal = await linkGmail(cookie, "Personal");
     const row = await asSystem(handles.prisma).connection.findUniqueOrThrow({
       where: { id: work.connectionId },
     });
@@ -1189,25 +1169,26 @@ describeWithDatabase("Composio catalog reconciliation", () => {
       userId: actor.userId,
       signal: new AbortController().signal,
     };
-    const tools = await provider.discoverTools(adapterContext);
-    const tool = tools.find((candidate) => candidate.route?.toolName === "query_hero");
-    expect(tool).toMatchObject({
-      name: "hero",
-      readOnly: true,
+    const events: unknown[] = [];
+    await runAsSystem("background job run.continue", async () => {
+      const tools = await provider.discoverTools(adapterContext);
+      const tool = tools.find((candidate) => candidate.route?.toolName === "query_hero");
+      expect(tool).toMatchObject({
+        name: "hero",
+        readOnly: true,
+      });
+      for await (const event of provider.execute(
+        {
+          tool: tool!.name,
+          args: { episode: "EMPIRE" },
+          executionId: "graphql-call-1",
+          route: tool!.route,
+        },
+        adapterContext,
+      )) {
+        events.push(event);
+      }
     });
-
-    const events = [];
-    for await (const event of provider.execute(
-      {
-        tool: tool!.name,
-        args: { episode: "EMPIRE" },
-        executionId: "graphql-call-1",
-        route: tool!.route,
-      },
-      adapterContext,
-    )) {
-      events.push(event);
-    }
     expect(JSON.stringify(events)).toContain("ok");
     expect(thirdParties.records).toContainEqual(
       expect.objectContaining({
@@ -1218,6 +1199,18 @@ describeWithDatabase("Composio catalog reconciliation", () => {
 
     await rpc(app, cookie, "capabilities/remove", { id: install.id });
   });
+
+  async function linkGmail(cookie: string, displayName: string) {
+    const connection = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
+      connectorId: "composio",
+      provider: "GMAIL",
+      displayName,
+    });
+    await expect(rpc(app, cookie, "connections/complete", connection)).resolves.toMatchObject({
+      status: "connected",
+    });
+    return connection;
+  }
 
   async function createConnection(owner: Actor, provider: string) {
     return asSystem(handles.prisma).connection.create({
