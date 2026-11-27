@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readdir, writeFile } from "node:fs/promises";
+import { readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { bestEffort } from "@rakazo/logging";
 import { PAGE_APP_ID } from "./bundle-name.js";
@@ -92,8 +92,9 @@ export function createLauncherInstaller(options: {
         "revoke page app",
         createPageAppApi(app.server, token, options.fetch).revoke(),
       );
-    // A running app holds files in its data folder on Windows. Once it sees it was removed it
-    // removes what it can, and `refresh` clears the rest.
+    // A running app holds files in its data folder on Windows. Without its token it is a
+    // removed app's folder, which the app clears once it sees it was removed, or `refresh` does.
+    await rm(pageAppTokenFile(appId, appData), { force: true });
     await bestEffort("remove page app data", removePageAppData(appId, appData));
     await registry.remove(appId);
     return true;
