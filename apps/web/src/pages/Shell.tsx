@@ -671,6 +671,7 @@ function SpaceShell({ sidebarScrollRef }: { sidebarScrollRef: Ref<HTMLDivElement
         roster={
           <SidebarRoster
             mini={sidebar.mini}
+            searching={Boolean(search.query.trim())}
             sidebarGroups={sidebar.sidebarGroups}
             collapsedSidebarSections={collapsedSidebarSections}
             bootstrapMe={bootstrapMe}

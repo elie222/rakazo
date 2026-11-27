@@ -17,16 +17,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@rakazo/ui-web";
-import {
-  ChevronDown,
-  CircleAlert,
-  Globe,
-  Lock,
-  Pencil,
-  Settings,
-  Trash2,
-  Users,
-} from "lucide-react";
+import { ChevronDown, CircleAlert, Globe, Pencil, Settings, Trash2 } from "lucide-react";
 import { IconTooltip } from "../../../components/IconTooltip";
 import {
   compactRosterStatusLabel,
@@ -38,6 +29,7 @@ import type { ChatMenuState } from "../chat/chat-context-menu";
 import { ChatMenu } from "../chat/chat-context-menu";
 import { useRedrawAtMidnight } from "../chat/use-redraw-at-midnight";
 import type { RosterDropAction, RosterDropTarget } from "./roster-drop";
+import { SidebarSpace } from "./sidebar-space";
 import type { sidebarGroupsForSpaces } from "./space-sidebar";
 
 export function SidebarRoster({
@@ -67,6 +59,7 @@ export function SidebarRoster({
   reorderRosterBot,
   activeSnapshot,
   mini = false,
+  searching = false,
 }: {
   sidebarGroups: ReturnType<
     typeof sidebarGroupsForSpaces<Space["bots"][number], Space["groups"][number]>
@@ -96,19 +89,20 @@ export function SidebarRoster({
   reorderRosterBot: (sourceId: string, targetId: string, groupBotIds: string[]) => void;
   activeSnapshot: ThreadSnapshot | null;
   mini?: boolean;
+  searching?: boolean;
 }) {
   useRedrawAtMidnight();
   const { t } = useLingui();
-  return (
+  const renderGroups = (groups: typeof sidebarGroups) => (
     <>
-      {sidebarGroups.map((group, groupIndex) => {
-        const collapsed = Boolean(group.title) && collapsedSidebarSections.has(group.key);
+      {groups.map((group, groupIndex) => {
+        const title = group.showLock ? group.subtitle : group.title;
+        const collapsed = !searching && Boolean(title) && collapsedSidebarSections.has(group.key);
         const groupBotIds = group.bots.flatMap((item) =>
           item.kind === "bot" ? [item.chat.id] : [],
         );
-        const settingsLabel = group.canOpenSpaceSettings
-          ? t`Settings for ${group.spaceName}`
-          : null;
+        const settingsLabel =
+          !group.showLock && group.canOpenSpaceSettings ? t`Settings for ${group.spaceName}` : null;
         const chatCount = collapsed ? group.bots.length : 0;
         const tiles = group.tiles && !mini;
         const headerDropTarget: RosterDropTarget | null =
@@ -129,12 +123,12 @@ export function SidebarRoster({
             key={group.key}
             open={mini || !collapsed}
             onOpenChange={() => {
-              if (!mini) toggleSidebarSection(group.key);
+              if (!mini && !searching) toggleSidebarSection(group.key);
             }}
             data-sidebar-group={group.key}
             className={`flex flex-col gap-0.5 ${mini && groupIndex > 0 ? "mt-2 border-t border-sidebar-border pt-2" : ""}`}
           >
-            {!mini && group.title ? (
+            {!mini && title ? (
               // biome-ignore lint/a11y/useSemanticElements: groups sidebar controls, not form fields; Move to remains the keyboard alternative.
               <div
                 role="group"
@@ -157,13 +151,8 @@ export function SidebarRoster({
               >
                 <ContextMenu disabled={!section}>
                   <ContextMenuTrigger
-                    render={group.emptySpaceId ? <button type="button" /> : <CollapsibleTrigger />}
+                    render={<CollapsibleTrigger />}
                     className="col-start-1 row-start-1 flex w-full min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-start text-body-sm text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
-                    onClick={() => {
-                      if (group.emptySpaceId) {
-                        openSpaceChat(group.emptySpaceId, "/onboarding");
-                      }
-                    }}
                     onContextMenu={section ? (event) => event.currentTarget.focus() : undefined}
                     aria-description={
                       chatCount > 0
@@ -171,49 +160,31 @@ export function SidebarRoster({
                         : undefined
                     }
                     aria-label={
-                      (group.emptySpaceId
-                        ? t`Open ${headerName(group)}`
-                        : collapsed
-                          ? t`Expand ${headerName(group)}`
-                          : t`Collapse ${headerName(group)}`) +
-                      // The button's own name is what is read, so the globe's meaning joins it.
-                      (group.hasGuests ? `, ${t`Shared with guests`}` : "")
+                      (collapsed ? t`Expand ${title}` : t`Collapse ${title}`) +
+                      (!group.showLock && group.hasGuests ? `, ${t`Shared with guests`}` : "")
                     }
                   >
                     <span
                       className={`flex min-w-0 items-center gap-1.5 truncate ${settingsLabel ? "pe-7" : ""}`}
                     >
                       {/* People from outside the organization are marked even in a lone Space. */}
-                      {group.hasGuests ? (
+                      {!group.showLock && group.hasGuests ? (
                         <Globe size={11} strokeWidth={2} aria-hidden="true" />
-                      ) : group.showLock ? (
-                        group.shared ? (
-                          <Users size={11} strokeWidth={2} aria-hidden="true" />
-                        ) : (
-                          <Lock size={11} strokeWidth={2} aria-hidden="true" />
-                        )
                       ) : null}
-                      <span className="truncate">{group.title}</span>
-                      {group.subtitle ? (
-                        <span className="ms-0.5 truncate text-muted-foreground">
-                          {group.subtitle}
+                      <span className="truncate">{title}</span>
+                    </span>
+                    <span aria-hidden="true" className="grid shrink-0 place-items-center">
+                      {chatCount > 0 ? (
+                        <span className="col-start-1 row-start-1 hidden tabular-nums group-hover/header:invisible group-has-focus-visible/header:invisible [@media(hover:hover)_and_(pointer:fine)]:block">
+                          {chatCount}
                         </span>
                       ) : null}
+                      <ChevronDown
+                        size={14}
+                        strokeWidth={1.8}
+                        className={`col-start-1 row-start-1 group-hover/header:visible group-has-focus-visible/header:visible motion-safe:transition-transform [@media(hover:hover)_and_(pointer:fine)]:invisible ${collapsed ? "-rotate-90 rtl:rotate-90" : ""}`}
+                      />
                     </span>
-                    {group.emptySpaceId ? null : (
-                      <span aria-hidden="true" className="grid shrink-0 place-items-center">
-                        {chatCount > 0 ? (
-                          <span className="col-start-1 row-start-1 hidden tabular-nums group-hover/header:invisible group-has-focus-visible/header:invisible [@media(hover:hover)_and_(pointer:fine)]:block">
-                            {chatCount}
-                          </span>
-                        ) : null}
-                        <ChevronDown
-                          size={14}
-                          strokeWidth={1.8}
-                          className={`col-start-1 row-start-1 group-hover/header:visible group-has-focus-visible/header:visible motion-safe:transition-transform [@media(hover:hover)_and_(pointer:fine)]:invisible ${collapsed ? "-rotate-90 rtl:rotate-90" : ""}`}
-                        />
-                      </span>
-                    )}
                   </ContextMenuTrigger>
                   {section ? (
                     <ContextMenuContent
@@ -241,7 +212,7 @@ export function SidebarRoster({
                     <Button
                       variant="ghost"
                       size="icon-xs"
-                      className={`col-start-1 row-start-1 self-center justify-self-end text-muted-foreground group-hover/header:pointer-events-auto group-hover/header:opacity-100 group-has-focus-visible/header:pointer-events-auto group-has-focus-visible/header:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:pointer-events-none [@media(hover:hover)_and_(pointer:fine)]:opacity-0 ${group.emptySpaceId ? "me-1" : "me-7"}`}
+                      className={`col-start-1 row-start-1 self-center justify-self-end text-muted-foreground group-hover/header:pointer-events-auto group-hover/header:opacity-100 group-has-focus-visible/header:pointer-events-auto group-has-focus-visible/header:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:pointer-events-none [@media(hover:hover)_and_(pointer:fine)]:opacity-0 me-7`}
                       aria-label={settingsLabel}
                       onClick={() => openSpaceSettings(group.spaceId)}
                     >
@@ -607,11 +578,41 @@ export function SidebarRoster({
       })}
     </>
   );
-}
+  if (mini || !sidebarGroups[0]?.showLock) return renderGroups(sidebarGroups);
 
-/** A space section header's name as one phrase, for accessible labels. */
-function headerName(group: { title?: string | null; subtitle?: string }): string {
-  return group.subtitle ? `${group.title}, ${group.subtitle}` : (group.title ?? "");
+  const spaceGroups = new Map<string, typeof sidebarGroups>();
+  for (const group of sidebarGroups) {
+    const groups = spaceGroups.get(group.spaceId);
+    if (groups) groups.push(group);
+    else spaceGroups.set(group.spaceId, [group]);
+  }
+  return (
+    <>
+      {[...spaceGroups].map(([spaceId, groups]) => {
+        const first = groups[0]!;
+        const key = `space:${spaceId}`;
+        const collapsed = !searching && collapsedSidebarSections.has(key);
+        return (
+          <SidebarSpace
+            key={spaceId}
+            spaceId={spaceId}
+            name={first.spaceName}
+            hasGuests={first.hasGuests}
+            shared={first.shared}
+            empty={Boolean(first.emptySpaceId)}
+            collapsed={collapsed}
+            onToggle={() => {
+              if (!searching) toggleSidebarSection(key);
+            }}
+            onOpen={() => openSpaceChat(spaceId, "/onboarding")}
+            onSettings={() => openSpaceSettings(spaceId)}
+          >
+            {renderGroups(groups)}
+          </SidebarSpace>
+        );
+      })}
+    </>
+  );
 }
 
 function formatRosterTime(isoDate?: string | null): string {

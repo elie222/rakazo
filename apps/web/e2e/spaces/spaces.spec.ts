@@ -54,9 +54,7 @@ test("a new space starts empty, is renamed in its settings, and is deleted with 
   });
   expect(scout.ok()).toBe(true);
   await page.reload();
-  const occupied = sidebar
-    .locator('[data-sidebar-group^="space:"]')
-    .filter({ hasText: "Typo space" });
+  const occupied = sidebar.locator("[data-sidebar-space]").filter({ hasText: "Typo space" });
   await expect(occupied.getByRole("button", { name: /^Scout/ })).toBeVisible();
 
   const gear = sidebar.getByRole("button", { name: "Settings for Typo space" });
@@ -154,7 +152,7 @@ test("deleting the last bot in a space stays in the app after first use", {
   expect(made.ok()).toBe(true);
   await page.reload();
   const sideBot = sidebar
-    .locator('[data-sidebar-group^="space:"]')
+    .locator("[data-sidebar-space]")
     .filter({ hasText: "Side" })
     .getByRole("button", { name: /^Scout/ });
   await sideBot.click({ button: "right" });
@@ -197,4 +195,43 @@ test("deleting every bot leaves an empty space instead of a new Chief", async ({
   await page.goto("/onboarding");
   await page.waitForURL(/\/app/);
   expect(await rpc<unknown[]>(page, "bots/list", {})).toEqual([]);
+});
+
+test("collapsing a Space hides every section and chat in its sidebar group", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `spaces-collapse-${Date.now()}@rakazo.test`, "password12", "Space Owner");
+  await completeOnboarding(page);
+  const [chief] = await rpc<Array<{ id: string }>>(page, "bots/list", {});
+  await rpc(page, "botSections/create", { botId: chief!.id, name: "Projects" });
+  await rpc(page, "bots/create", { name: "Scout", computerMode: "team" });
+  await rpc(page, "spaces/create", { name: "Support" });
+  const { spaces } = await rpc<{ spaces: Array<{ id: string; name: string; isDefault: boolean }> }>(
+    page,
+    "spaces/list",
+    {},
+  );
+  const personal = spaces.find((space) => space.isDefault)!;
+
+  await page.reload();
+  const sidebar = page.locator("aside").first();
+  const space = sidebar.locator(`[data-sidebar-space="${personal.id}"]`);
+  const toggle = space.getByRole("button", {
+    name: new RegExp(`^(Collapse|Expand) ${personal.name}$`),
+  });
+  const projects = space.getByRole("button", { name: "Collapse Projects", exact: true });
+  const scout = space.getByRole("button", { name: /^Scout/ });
+  await expect(projects).toBeVisible();
+  await expect(scout).toBeVisible();
+  await captureScreenshot(page, testInfo, "sidebar-spaces-and-sections");
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(projects).toBeHidden();
+  await expect(scout).toBeHidden();
+  await expect(sidebar.getByRole("button", { name: "Open Support", exact: true })).toBeVisible();
+
+  await toggle.click();
+  await expect(projects).toBeVisible();
+  await expect(scout).toBeVisible();
 });
