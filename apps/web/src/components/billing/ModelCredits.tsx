@@ -3,6 +3,7 @@ import { ORPCError } from "@orpc/client";
 import type { BillingStatus, ByokInterval, ByokTier, HeldCreditAmount } from "@rakazo/contracts";
 import {
   byokTierChangeOffered,
+  byokTrialRenewalOffered,
   byokYearlySwitchSavings,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   HeldCreditAmountSchema,
@@ -124,6 +125,60 @@ function SubscribeLabel({ price, annualPrice }: { price: string; annualPrice: st
     <Trans>Subscribe for {annualPrice} / year</Trans>
   ) : (
     <Trans>Subscribe for {price} / month</Trans>
+  );
+}
+
+/** Keeps a cancelled trial, on the tier and billing period picked here. */
+function RenewTrial({
+  status,
+  disabled,
+  onRenew,
+}: {
+  status: BillingStatus;
+  disabled: boolean;
+  onRenew: (plan: { tier: ByokTier; interval: ByokInterval }) => void;
+}) {
+  const { i18n } = useLingui();
+  const tiers = status.byokTiers ?? [];
+  const [tier, setTier] = useState<ByokTier>(subscribedTier(status)?.tier ?? "standard");
+  const [chosenInterval, setChosenInterval] = useState<ByokInterval>(
+    status.byokInterval ?? "month",
+  );
+  const offer = tiers.find((candidate) => candidate.tier === tier);
+  if (!offer) return null;
+  const interval = offer.annualPriceCents ? chosenInterval : "month";
+  const price = formatBillingPrice(
+    {
+      amount: tierPriceCents(offer, interval) ?? offer.monthlyPriceCents,
+      currency: "usd",
+      interval,
+      intervalCount: 1,
+    },
+    i18n.locale,
+  );
+  return (
+    <div className="mt-5 flex flex-wrap items-center gap-3">
+      {tiers.length > 1 ? (
+        <ByokTierSelect
+          tiers={tiers}
+          interval={interval}
+          value={tier}
+          disabled={disabled}
+          onChange={(next) => setTier(next.tier)}
+        />
+      ) : null}
+      {offer.annualPriceCents ? (
+        <ByokIntervalToggle
+          monthlyCents={offer.monthlyPriceCents}
+          annualCents={offer.annualPriceCents}
+          value={interval}
+          onChange={setChosenInterval}
+        />
+      ) : null}
+      <Button disabled={disabled} onClick={() => onRenew({ tier, interval })}>
+        <Trans>Renew for {price}</Trans>
+      </Button>
+    </div>
   );
 }
 
@@ -372,7 +427,18 @@ export function ModelCreditsSettings({
               <p className="mt-2 text-body text-muted-foreground">
                 <Trans>Cancelled trials have no computer hours.</Trans>
               </p>
-              {status.canManage && status.hasCustomer ? (
+              {byokTrialRenewalOffered(status) ? (
+                <RenewTrial
+                  status={status}
+                  disabled={pending}
+                  onRenew={(plan) =>
+                    action(async (client) => {
+                      await client.billing.renewTrial(plan);
+                      await refresh();
+                    })
+                  }
+                />
+              ) : status.canManage && status.hasCustomer ? (
                 <Button
                   className="mt-5"
                   variant="secondary"

@@ -241,6 +241,22 @@ export function isCancelledTrial(status: BillingStatus): boolean {
   return status.state === "trialing" && status.cancelAtPeriodEnd;
 }
 
+/**
+ * Whether an owner can keep a cancelled own-key trial by picking the plan it continues on. Other
+ * cancelled trials are renewed in the billing portal.
+ */
+export function byokTrialRenewalOffered(status: BillingStatus): boolean {
+  return Boolean(
+    status.canManage &&
+      isCancelledTrial(status) &&
+      status.funding === "byok" &&
+      !status.byokFreeUntil &&
+      !status.monthlyAmountCents &&
+      status.byokPriceCents &&
+      status.byokTiers?.length,
+  );
+}
+
 /** Why computers ran out of hours: a trial's smaller allowance, a cancelled trial, or the plan's. */
 export function computerHoursOut(status: BillingStatus): "trial" | "cancelled_trial" | "plan" {
   if (status.state !== "trialing") return "plan";

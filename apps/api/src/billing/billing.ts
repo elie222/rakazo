@@ -76,9 +76,12 @@ import type { ScheduleLifecycleEmail } from "../email/lifecycle-email.js";
 import {
   byokTierOffers,
   byokTrialAvailable,
+  planAtTier,
   planTerms,
+  renewedPlan,
   subscribedByokPrice,
   subscriptionStarted,
+  yearlyPlan,
 } from "./byok-terms.js";
 import type { UnderLease } from "./checkout-lease.js";
 import { withCheckoutLease } from "./checkout-lease.js";
@@ -132,6 +135,7 @@ export interface BillingService {
   switchToYearly(actor: Actor): Promise<void>;
   /** Moves the own-key plan to another tier at the same interval, billing the difference now. */
   changeTier(actor: Actor, tier: ByokTier): Promise<void>;
+  renewTrial(actor: Actor, tier: ByokTier, interval: ByokInterval): Promise<void>;
   /** Re-fetches the customer's subscription and bills the member count if it drifted. */
   sync(customerId: string): Promise<void>;
   /**
@@ -568,6 +572,7 @@ export function createBillingService(deps: {
   async function changeByokPlan(
     actor: Actor,
     target: (from: BillingByokPlan) => BillingByokPlan | null,
+    resume = false,
   ) {
     if (!provider.changeByokPlan) throw new ORPCError("NOT_FOUND");
     const { organizationId } = await managedOrganization(actor);
@@ -584,9 +589,11 @@ export function createBillingService(deps: {
         !account?.subscriptionId ||
         !subscribed ||
         account.creditAmountCents ||
-        account.cancelAtPeriodEnd ||
+        account.cancelAtPeriodEnd !== resume ||
         // Paid up: an overdue period must not be credited against the new plan.
-        (account.status !== "active" && account.status !== "trialing")
+        (resume
+          ? account.status !== "trialing"
+          : account.status !== "active" && account.status !== "trialing")
       )
         throw conflict();
       const from = {
@@ -609,6 +616,7 @@ export function createBillingService(deps: {
       const changed = await provider.changeByokPlan!(account.customerId, account.subscriptionId, {
         from,
         to,
+        resume,
       });
       await sync(account.customerId);
       if (!changed) throw conflict();
@@ -919,24 +927,15 @@ export function createBillingService(deps: {
     },
 
     async switchToYearly(actor) {
-      await changeByokPlan(actor, (from) => {
-        const amountCents = byokTierPriceCents(from.tier, "year");
-        // A subscriber on an older, cheaper price would pay more.
-        return from.interval === "month" &&
-          amountCents !== null &&
-          from.amountCents * 12 > amountCents
-          ? { tier: from.tier, interval: "year", amountCents }
-          : null;
-      });
+      await changeByokPlan(actor, yearlyPlan);
     },
 
     async changeTier(actor, tier) {
-      await changeByokPlan(actor, (from) => {
-        const amountCents = byokTierPriceCents(tier, from.interval);
-        return tier !== from.tier && amountCents !== null
-          ? { tier, interval: from.interval, amountCents }
-          : null;
-      });
+      await changeByokPlan(actor, (from) => planAtTier(from, tier));
+    },
+
+    async renewTrial(actor, tier, interval) {
+      await changeByokPlan(actor, (from) => renewedPlan(from, tier, interval), true);
     },
 
     // Each billing event fixes missed seat counts; a failed update fails it, so it is redelivered.

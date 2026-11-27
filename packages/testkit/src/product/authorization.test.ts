@@ -630,6 +630,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["billing/endTrial"],
       ["billing/switchToYearly"],
       ["billing/changeTier"],
+      ["billing/renewTrial"],
       ["billing/claimReferral"],
       ["billing/redeemCreditCode", { code: "NOT-A-REAL-CODE" }],
       ["accessGrants/list"],
