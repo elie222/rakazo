@@ -1933,19 +1933,16 @@ describe("tool step outcomes", () => {
       msg: "Bearer [redacted]",
       sibling: 7,
     });
-    expect(
-      JSON.parse(
-        sanitizeError(
-          JSON.stringify({
-            msg: String.raw`Bearer [redacted]Bearer\n[redacted]opaque-123`,
-            sibling: 7,
-          }),
-        ),
-      ),
-    ).toEqual({
-      msg: "Bearer [redacted]",
+    const rawLiteralBearerSuffix = JSON.stringify({
+      msg: String.raw`Bearer [redacted]Bearer\n[redacted]opaque-123`,
       sibling: 7,
     });
+    for (const read of [kept, replay, failed, sanitizeError, sanitizeSensitiveText]) {
+      expect(JSON.parse(read(rawLiteralBearerSuffix) ?? "")).toEqual({
+        msg: "Bearer [redacted]",
+        sibling: 7,
+      });
+    }
     expect(sanitizeConnectorError(new Error(String.raw`Bearer\n[redacted]\TokenTail`))).toBe(
       "Bearer [redacted]",
     );
