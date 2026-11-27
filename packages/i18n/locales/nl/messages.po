@@ -67,7 +67,7 @@ msgstr "{0, plural, one {# tool} other {# tools}}"
 #. placeholder {0}: picked.length
 #: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
 msgid "{0, plural, one {Import # Bot} other {Import # Bots}}"
-msgstr ""
+msgstr "{0, plural, one {# bot importeren} other {# bots importeren}}"
 
 #. placeholder {0}: images.length
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
@@ -1211,7 +1211,7 @@ msgstr "Item toevoegen"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Add login"
-msgstr ""
+msgstr "Login toevoegen"
 
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
 msgid "Add MCP server"
@@ -1231,7 +1231,7 @@ msgstr "Open taak toevoegen"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Add organization model"
-msgstr ""
+msgstr "Organisatiemodel toevoegen"
 
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
@@ -1491,7 +1491,7 @@ msgstr "Schrijven toestaan"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Allowed agents"
-msgstr ""
+msgstr "Toegestane agents"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -1665,7 +1665,7 @@ msgstr "Iedereen met de link"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Anything using this key stops working."
-msgstr ""
+msgstr "Alles wat deze sleutel gebruikt, werkt niet meer."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/voice.tsx
@@ -1718,7 +1718,7 @@ msgstr "API-URL"
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AppIconPicker.tsx
 msgid "App icon"
-msgstr ""
+msgstr "App-icoon"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
@@ -1962,7 +1962,7 @@ msgstr "Beschikbaar in"
 #: apps/web/src/components/integrations/connection-owner-picker.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Available to"
-msgstr ""
+msgstr "Beschikbaar voor"
 
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Available to shell commands as {commandVariable}"
@@ -2049,7 +2049,7 @@ msgstr "Basisauthenticatie ({username})"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Beanie"
-msgstr ""
+msgstr "Muts"
 
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 msgid "Bearer"
@@ -2260,7 +2260,7 @@ msgstr "Gekoppeld aan bots"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Bow tie"
-msgstr ""
+msgstr "Vlinderdas"
 
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Brain label"
@@ -2498,7 +2498,7 @@ msgstr "Opgezegde proefperiodes hebben geen computeruren."
 
 #: packages/i18n/src/app-icon.ts
 msgid "Cap"
-msgstr ""
+msgstr "Pet"
 
 #: apps/mobile/lib/vault/secret-destination.ts
 #: apps/mobile/lib/vault/vault.ts
@@ -2691,7 +2691,7 @@ msgstr "Kies een botvorm, kleur of upload een afbeelding"
 
 #: apps/mobile/components/models/organization-model-settings.tsx
 msgid "Choose a connection"
-msgstr ""
+msgstr "Kies een verbinding"
 
 #: apps/mobile/app/(settings)/models.tsx
 #: apps/mobile/components/models/media-model-settings.tsx
@@ -3305,7 +3305,7 @@ msgstr "Verbinding"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Connection name"
-msgstr ""
+msgstr "Verbindingsnaam"
 
 #: apps/mobile/app/(settings)/model-settings.tsx
 msgid "Connection not found"
@@ -3486,7 +3486,7 @@ msgstr "Uitnodigingslink kopiëren"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Copy it now. It won't be shown again."
-msgstr ""
+msgstr "Kopieer hem nu. Hij wordt niet opnieuw getoond."
 
 #: apps/mobile/components/thread/routine-event-row.tsx
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
@@ -3727,7 +3727,7 @@ msgstr "Bot aanmaken mislukt"
 
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 msgid "Could not create bots"
-msgstr ""
+msgstr "Bots maken mislukt"
 
 #: apps/mobile/app/new-group.tsx
 #: apps/web/src/pages/space/GroupPanel.tsx
@@ -4453,7 +4453,7 @@ msgstr "Modelinstellingen opslaan mislukt"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Could not save organization model"
-msgstr ""
+msgstr "Organisatiemodel opslaan mislukt"
 
 #: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/web/src/pages/plugins/tool-permissions.tsx
@@ -4753,7 +4753,7 @@ msgstr "De computerinstallatie kon niet worden geverifieerd ({failureMessage}). 
 #: apps/mobile/app/(settings)/app-icon.tsx
 #: apps/web/src/pages/settings/AppIconPicker.tsx
 msgid "Couldn't change the app icon"
-msgstr ""
+msgstr "App-icoon wijzigen mislukt"
 
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Couldn't copy. Select the link and copy it."
@@ -4867,7 +4867,7 @@ msgstr "Groep aanmaken"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Create key"
-msgstr ""
+msgstr "Sleutel maken"
 
 #: apps/mobile/app/new-organization.tsx
 #: apps/web/src/components/spaces/CreateOrganizationDialog.tsx
@@ -5221,7 +5221,7 @@ msgstr "Groep verwijderen"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Delete login"
-msgstr ""
+msgstr "Login verwijderen"
 
 #: apps/mobile/lib/bots/bot-lifecycle.ts
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -5262,7 +5262,7 @@ msgstr "Deze routine verwijderen?"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Delete this shared login and its session?"
-msgstr ""
+msgstr "Deze gedeelde login en de bijbehorende sessie verwijderen?"
 
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
@@ -6034,7 +6034,7 @@ msgstr "Foutafhandeling"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Feet"
-msgstr ""
+msgstr "Voeten"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Fields to compare (optional)"
@@ -6109,7 +6109,7 @@ msgstr "Rond het verbinden in de browser af en vernieuw daarna deze pagina."
 
 #: apps/mobile/components/integrations/use-connection-actions.ts
 msgid "Finish connecting in the browser. If the connection stays pending, select Reconnect."
-msgstr ""
+msgstr "Rond het verbinden af in de browser. Blijft de verbinding in afwachting, kies dan Opnieuw verbinden."
 
 #: apps/mobile/components/cards/McpApprovalCard.tsx
 msgid "Finish MCP authorization in the web app."
@@ -6123,7 +6123,7 @@ msgstr "Instellen afronden"
 #. placeholder {0}: item.name
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
 msgid "Finish signing in to {0} in the browser. If the connection stays pending, select Reconnect."
-msgstr ""
+msgstr "Rond het aanmelden bij {0} af in de browser. Blijft de verbinding in afwachting, kies dan Opnieuw verbinden."
 
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/CloudAgentCard.tsx
@@ -6141,7 +6141,7 @@ msgstr "MCP-verbinding afronden…"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Flower"
-msgstr ""
+msgstr "Bloem"
 
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Focus message"
@@ -6412,11 +6412,11 @@ msgstr "Headers"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Heading after sign-in"
-msgstr ""
+msgstr "Kop na aanmelden"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Headphones"
-msgstr ""
+msgstr "Koptelefoon"
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
@@ -6648,11 +6648,11 @@ msgstr "Gegevens importeren"
 
 #: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
 msgid "Imported"
-msgstr ""
+msgstr "Geïmporteerd"
 
 #: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
 msgid "Importing…"
-msgstr ""
+msgstr "Importeren…"
 
 #: apps/mobile/lib/board/board.ts
 #: apps/web/src/pages/space/ticket-status.ts
@@ -6724,7 +6724,7 @@ msgstr "Invoer"
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Install for organization"
-msgstr ""
+msgstr "Installeren voor organisatie"
 
 #: apps/web/src/pages/shell/sidebar/sidebar-footer.tsx
 msgid "Install update"
@@ -6939,7 +6939,7 @@ msgstr "Spring naar het beantwoorde bericht: {excerpt}"
 #: apps/web/src/components/integrations/connection-owner-picker.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Just me"
-msgstr ""
+msgstr "Alleen ik"
 
 #: packages/i18n/src/activity.ts
 msgid "just now"
@@ -6971,7 +6971,7 @@ msgstr "Toolresultaten volledig houden"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Key name"
-msgstr ""
+msgstr "Sleutelnaam"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Key options"
@@ -7351,7 +7351,7 @@ msgstr "{0} beheren"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Manage access"
-msgstr ""
+msgstr "Toegang beheren"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/paywall.tsx
@@ -7372,7 +7372,7 @@ msgstr "Model beheren"
 
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Manage organization models"
-msgstr ""
+msgstr "Organisatiemodellen beheren"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
@@ -7706,7 +7706,7 @@ msgstr "Model-id"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Model ID"
-msgstr ""
+msgstr "Model-ID"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Model name unavailable"
@@ -7964,7 +7964,7 @@ msgstr "Aanmelding nodig"
 #: apps/web/src/pages/plugins/connector-detail.tsx
 #: apps/web/src/pages/shell/chat/message-cards.tsx
 msgid "Needs sign-in"
-msgstr ""
+msgstr "Aanmelden vereist"
 
 #: packages/i18n/src/activity.ts
 msgid "Needs takeover"
@@ -7988,7 +7988,7 @@ msgstr "Nooit vragen"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Never used"
-msgstr ""
+msgstr "Nooit gebruikt"
 
 #: apps/mobile/components/thread/unread-divider.tsx
 #: apps/web/src/components/vault/VaultSettings.tsx
@@ -8346,7 +8346,7 @@ msgstr "Nog geen runs"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "No session"
-msgstr ""
+msgstr "Geen sessie"
 
 #: apps/mobile/app/page-share.tsx
 msgid "No sign-in needed"
@@ -8862,7 +8862,7 @@ msgstr "Organisatie-opties"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Organization override for this Space"
-msgstr ""
+msgstr "Organisatiemodel voor deze space"
 
 #: apps/mobile/components/inbox/organization-menu.tsx
 msgid "Organization settings"
@@ -9036,7 +9036,7 @@ msgstr "Wachtwoord"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Password field label"
-msgstr ""
+msgstr "Label van wachtwoordveld"
 
 #: packages/i18n/src/user-error.ts
 msgid "Password must be {max} characters or fewer"
@@ -9391,7 +9391,7 @@ msgstr "Beveiligde invoer"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Protected sign-in is unavailable."
-msgstr ""
+msgstr "Beveiligd aanmelden is niet beschikbaar."
 
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
@@ -9806,7 +9806,7 @@ msgstr "{0} verwijderen"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Remove {0} for everyone in the organization?"
-msgstr ""
+msgstr "{0} verwijderen voor iedereen in de organisatie?"
 
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/space/GroupPanel.tsx
@@ -9908,7 +9908,7 @@ msgstr "Berichttrigger verwijderen"
 
 #: apps/mobile/components/models/organization-model-settings.tsx
 msgid "Remove organization model"
-msgstr ""
+msgstr "Organisatiemodel verwijderen"
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Remove photo"
@@ -9935,7 +9935,7 @@ msgstr "Skills verwijderen"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Remove this saved session?"
-msgstr ""
+msgstr "Deze opgeslagen sessie verwijderen?"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Remove webhook"
@@ -10289,7 +10289,7 @@ msgstr "Terug naar Rakazo"
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
 msgid "Review {0}"
-msgstr ""
+msgstr "{0} bekijken"
 
 #: apps/mobile/app/page.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
@@ -10319,7 +10319,7 @@ msgstr "Intrekken"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Revoke session"
-msgstr ""
+msgstr "Sessie intrekken"
 
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Revoked"
@@ -10516,7 +10516,7 @@ msgstr "Opslaan"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Save access"
-msgstr ""
+msgstr "Toegang opslaan"
 
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
@@ -10537,7 +10537,7 @@ msgstr "Sectienaam opslaan"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Save session"
-msgstr ""
+msgstr "Sessie opslaan"
 
 #: apps/mobile/components/cards/secret-ask-sheet.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
@@ -10633,7 +10633,7 @@ msgstr "Zeg ja of nee, of antwoord in een zin."
 
 #: packages/i18n/src/app-icon.ts
 msgid "Scarf"
-msgstr ""
+msgstr "Sjaal"
 
 #: packages/i18n/src/routine-approval.ts
 msgid "Schedule"
@@ -10827,7 +10827,7 @@ msgstr "Zelf gehost"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Self-hosting guide"
-msgstr ""
+msgstr "Handleiding voor self-hosten"
 
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
 #: apps/mobile/components/composer/thread-composer.tsx
@@ -10944,7 +10944,7 @@ msgstr "Sessie"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Session saved"
-msgstr ""
+msgstr "Sessie opgeslagen"
 
 #: apps/web/src/components/billing/SpendingLimitSettings.tsx
 msgid "Set"
@@ -11065,7 +11065,7 @@ msgstr "Spraakgegevens delen met {name}?"
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Share with organization"
-msgstr ""
+msgstr "Delen met organisatie"
 
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Share, anyone with the link can view"
@@ -11079,7 +11079,7 @@ msgstr "Gedeeld"
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Shared logins"
-msgstr ""
+msgstr "Gedeelde logins"
 
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Shared memory"
@@ -11260,7 +11260,7 @@ msgstr "Registreer je voor Rakazo"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Sign-in button label"
-msgstr ""
+msgstr "Label van aanmeldknop"
 
 #: apps/web/src/pages/plugins/PluginsOverlay.tsx
 msgid "Sign-in cancelled. Retry in Manage MCP servers."
@@ -11278,7 +11278,7 @@ msgstr "De aanmelding gaf geen sessie terug"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Sign-in page"
-msgstr ""
+msgstr "Aanmeldpagina"
 
 #: apps/mobile/lib/auth/api-auth.ts
 msgid "Sign-up did not return a session"
@@ -11553,7 +11553,7 @@ msgstr "Bestedingslimiet"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Sprout"
-msgstr ""
+msgstr "Kiemplant"
 
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/account/AccountAccess.tsx
@@ -11775,7 +11775,7 @@ msgstr "zondag"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Sunglasses"
-msgstr ""
+msgstr "Zonnebril"
 
 #: apps/mobile/lib/billing/self-hosted-support.ts
 msgid "Support for $25 / month"
@@ -11927,11 +11927,11 @@ msgstr "Testen"
 
 #: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Thanks for being an early user. Running Rakazo in the cloud has real costs, so it's now paid. It's still free if you <0>self-host</0>."
-msgstr ""
+msgstr "Bedankt dat je een vroege gebruiker bent. Rakazo in de cloud draaien kost echt geld, dus het is nu betaald. Het blijft gratis als je het zelf <0>host</0>."
 
 #: apps/mobile/app/paywall.tsx
 msgid "Thanks for being an early user. Running Rakazo in the cloud has real costs, so it's now paid. It's still free if you self-host."
-msgstr ""
+msgstr "Bedankt dat je een vroege gebruiker bent. Rakazo in de cloud draaien kost echt geld, dus het is nu betaald. Het blijft gratis als je het zelf host."
 
 #: apps/mobile/components/bots/bot-email.tsx
 #: apps/web/src/components/BotEmailAddressField.tsx
@@ -12464,7 +12464,7 @@ msgstr "Ticket"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Tie"
-msgstr ""
+msgstr "Stropdas"
 
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
 #: apps/web/src/pages/routines/RoutineSchedule.tsx
@@ -12780,7 +12780,7 @@ msgstr "Niet toegewezen"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Unavailable organization model"
-msgstr ""
+msgstr "Niet-beschikbaar organisatiemodel"
 
 #: apps/mobile/components/cards/change-undo.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -13092,7 +13092,7 @@ msgstr "Rakazo-tegoed gebruiken"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Use saved main model"
-msgstr ""
+msgstr "Opgeslagen hoofdmodel gebruiken"
 
 #: apps/mobile/components/settings/space-bots-model.tsx
 msgid "Use space default"
@@ -13104,7 +13104,7 @@ msgstr "Gebruik maximaal 512 letters, cijfers, _ of -."
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Use your bots from scripts and other agents"
-msgstr ""
+msgstr "Gebruik je bots vanuit scripts en andere agents"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Use your own key"
@@ -13113,7 +13113,7 @@ msgstr "Gebruik je eigen sleutel"
 #. placeholder {0}: formatRelativeTime(key.lastUsedAt)
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Used {0}"
-msgstr ""
+msgstr "Gebruikt {0}"
 
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemActivity.tsx
@@ -13136,7 +13136,7 @@ msgstr "Gebruikersnaam"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Username field label"
-msgstr ""
+msgstr "Label van gebruikersnaamveld"
 
 #: apps/mobile/lib/cards/import-setup.ts
 #: apps/web/src/pages/shell/bots/import-status.ts
@@ -13329,7 +13329,7 @@ msgstr "Webhook"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Website"
-msgstr ""
+msgstr "Website"
 
 #: packages/i18n/src/cron.ts
 msgid "Wednesday"

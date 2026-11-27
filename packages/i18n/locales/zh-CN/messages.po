@@ -67,7 +67,7 @@ msgstr "{0, plural, other {# 个工具}}"
 #. placeholder {0}: picked.length
 #: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
 msgid "{0, plural, one {Import # Bot} other {Import # Bots}}"
-msgstr ""
+msgstr "{0, plural, other {导入 # 个 Bot}}"
 
 #. placeholder {0}: images.length
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
@@ -1211,7 +1211,7 @@ msgstr "添加项目"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Add login"
-msgstr ""
+msgstr "添加登录信息"
 
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
 msgid "Add MCP server"
@@ -1231,7 +1231,7 @@ msgstr "添加待办事项"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Add organization model"
-msgstr ""
+msgstr "添加组织模型"
 
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
@@ -1491,7 +1491,7 @@ msgstr "允许写入"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Allowed agents"
-msgstr ""
+msgstr "允许的智能体"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -1665,7 +1665,7 @@ msgstr "任何拥有链接的人"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Anything using this key stops working."
-msgstr ""
+msgstr "使用此密钥的所有内容都将停止工作。"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/voice.tsx
@@ -1718,7 +1718,7 @@ msgstr "API URL"
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AppIconPicker.tsx
 msgid "App icon"
-msgstr ""
+msgstr "应用图标"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
@@ -1962,7 +1962,7 @@ msgstr "可用于"
 #: apps/web/src/components/integrations/connection-owner-picker.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Available to"
-msgstr ""
+msgstr "可用范围"
 
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Available to shell commands as {commandVariable}"
@@ -2049,7 +2049,7 @@ msgstr "基本认证（{username}）"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Beanie"
-msgstr ""
+msgstr "毛线帽"
 
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 msgid "Bearer"
@@ -2260,7 +2260,7 @@ msgstr "已绑定 Bot"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Bow tie"
-msgstr ""
+msgstr "领结"
 
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Brain label"
@@ -2498,7 +2498,7 @@ msgstr "已取消的试用没有电脑时长。"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Cap"
-msgstr ""
+msgstr "鸭舌帽"
 
 #: apps/mobile/lib/vault/secret-destination.ts
 #: apps/mobile/lib/vault/vault.ts
@@ -2691,7 +2691,7 @@ msgstr "选择 Bot 形状和颜色，或上传图片"
 
 #: apps/mobile/components/models/organization-model-settings.tsx
 msgid "Choose a connection"
-msgstr ""
+msgstr "选择连接"
 
 #: apps/mobile/app/(settings)/models.tsx
 #: apps/mobile/components/models/media-model-settings.tsx
@@ -3305,7 +3305,7 @@ msgstr "连接"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Connection name"
-msgstr ""
+msgstr "连接名称"
 
 #: apps/mobile/app/(settings)/model-settings.tsx
 msgid "Connection not found"
@@ -3486,7 +3486,7 @@ msgstr "复制邀请链接"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Copy it now. It won't be shown again."
-msgstr ""
+msgstr "请立即复制。它不会再次显示。"
 
 #: apps/mobile/components/thread/routine-event-row.tsx
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
@@ -3727,7 +3727,7 @@ msgstr "无法创建 Bot"
 
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 msgid "Could not create bots"
-msgstr ""
+msgstr "无法创建 Bot"
 
 #: apps/mobile/app/new-group.tsx
 #: apps/web/src/pages/space/GroupPanel.tsx
@@ -4453,7 +4453,7 @@ msgstr "无法保存模型设置"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Could not save organization model"
-msgstr ""
+msgstr "无法保存组织模型"
 
 #: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/web/src/pages/plugins/tool-permissions.tsx
@@ -4753,7 +4753,7 @@ msgstr "无法确认电脑是否就绪（{failureMessage}）。请修复连接�
 #: apps/mobile/app/(settings)/app-icon.tsx
 #: apps/web/src/pages/settings/AppIconPicker.tsx
 msgid "Couldn't change the app icon"
-msgstr ""
+msgstr "无法更改应用图标"
 
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Couldn't copy. Select the link and copy it."
@@ -4867,7 +4867,7 @@ msgstr "创建群组"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Create key"
-msgstr ""
+msgstr "创建密钥"
 
 #: apps/mobile/app/new-organization.tsx
 #: apps/web/src/components/spaces/CreateOrganizationDialog.tsx
@@ -5221,7 +5221,7 @@ msgstr "删除群组"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Delete login"
-msgstr ""
+msgstr "删除登录信息"
 
 #: apps/mobile/lib/bots/bot-lifecycle.ts
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -5262,7 +5262,7 @@ msgstr "要删除此例行任务吗？"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Delete this shared login and its session?"
-msgstr ""
+msgstr "删除此共享登录信息及其会话？"
 
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
@@ -6034,7 +6034,7 @@ msgstr "失败处理"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Feet"
-msgstr ""
+msgstr "脚丫"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Fields to compare (optional)"
@@ -6109,7 +6109,7 @@ msgstr "在浏览器中完成连接，然后刷新此页面。"
 
 #: apps/mobile/components/integrations/use-connection-actions.ts
 msgid "Finish connecting in the browser. If the connection stays pending, select Reconnect."
-msgstr ""
+msgstr "在浏览器中完成连接。如果连接一直处于待处理状态，请选择“重新连接”。"
 
 #: apps/mobile/components/cards/McpApprovalCard.tsx
 msgid "Finish MCP authorization in the web app."
@@ -6123,7 +6123,7 @@ msgstr "完成设置"
 #. placeholder {0}: item.name
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
 msgid "Finish signing in to {0} in the browser. If the connection stays pending, select Reconnect."
-msgstr ""
+msgstr "在浏览器中完成 {0} 的登录。如果连接一直处于待处理状态，请选择“重新连接”。"
 
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/CloudAgentCard.tsx
@@ -6141,7 +6141,7 @@ msgstr "正在完成 MCP 连接…"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Flower"
-msgstr ""
+msgstr "花朵"
 
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Focus message"
@@ -6412,11 +6412,11 @@ msgstr "请求头"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Heading after sign-in"
-msgstr ""
+msgstr "登录后的标题"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Headphones"
-msgstr ""
+msgstr "耳机"
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
@@ -6648,11 +6648,11 @@ msgstr "导入数据"
 
 #: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
 msgid "Imported"
-msgstr ""
+msgstr "已导入"
 
 #: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
 msgid "Importing…"
-msgstr ""
+msgstr "正在导入…"
 
 #: apps/mobile/lib/board/board.ts
 #: apps/web/src/pages/space/ticket-status.ts
@@ -6724,7 +6724,7 @@ msgstr "输入"
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Install for organization"
-msgstr ""
+msgstr "为组织安装"
 
 #: apps/web/src/pages/shell/sidebar/sidebar-footer.tsx
 msgid "Install update"
@@ -6939,7 +6939,7 @@ msgstr "跳转到回复的消息：{excerpt}"
 #: apps/web/src/components/integrations/connection-owner-picker.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Just me"
-msgstr ""
+msgstr "仅我"
 
 #: packages/i18n/src/activity.ts
 msgid "just now"
@@ -6971,7 +6971,7 @@ msgstr "保留完整工具结果"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Key name"
-msgstr ""
+msgstr "密钥名称"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Key options"
@@ -7351,7 +7351,7 @@ msgstr "管理 {0}"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Manage access"
-msgstr ""
+msgstr "管理访问权限"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/paywall.tsx
@@ -7372,7 +7372,7 @@ msgstr "管理模型"
 
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Manage organization models"
-msgstr ""
+msgstr "管理组织模型"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
@@ -7706,7 +7706,7 @@ msgstr "模型 ID"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Model ID"
-msgstr ""
+msgstr "模型 ID"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Model name unavailable"
@@ -7964,7 +7964,7 @@ msgstr "需要登录"
 #: apps/web/src/pages/plugins/connector-detail.tsx
 #: apps/web/src/pages/shell/chat/message-cards.tsx
 msgid "Needs sign-in"
-msgstr ""
+msgstr "需要登录"
 
 #: packages/i18n/src/activity.ts
 msgid "Needs takeover"
@@ -7988,7 +7988,7 @@ msgstr "从不询问"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Never used"
-msgstr ""
+msgstr "从未使用"
 
 #: apps/mobile/components/thread/unread-divider.tsx
 #: apps/web/src/components/vault/VaultSettings.tsx
@@ -8346,7 +8346,7 @@ msgstr "还没有运行记录"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "No session"
-msgstr ""
+msgstr "无会话"
 
 #: apps/mobile/app/page-share.tsx
 msgid "No sign-in needed"
@@ -8862,7 +8862,7 @@ msgstr "组织选项"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Organization override for this Space"
-msgstr ""
+msgstr "此空间的组织覆盖设置"
 
 #: apps/mobile/components/inbox/organization-menu.tsx
 msgid "Organization settings"
@@ -9036,7 +9036,7 @@ msgstr "密码"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Password field label"
-msgstr ""
+msgstr "密码字段标签"
 
 #: packages/i18n/src/user-error.ts
 msgid "Password must be {max} characters or fewer"
@@ -9391,7 +9391,7 @@ msgstr "受保护输入"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Protected sign-in is unavailable."
-msgstr ""
+msgstr "受保护的登录不可用。"
 
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
@@ -9806,7 +9806,7 @@ msgstr "移除 {0}"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Remove {0} for everyone in the organization?"
-msgstr ""
+msgstr "为组织中的所有人移除 {0}？"
 
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/space/GroupPanel.tsx
@@ -9908,7 +9908,7 @@ msgstr "移除消息触发器"
 
 #: apps/mobile/components/models/organization-model-settings.tsx
 msgid "Remove organization model"
-msgstr ""
+msgstr "移除组织模型"
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Remove photo"
@@ -9935,7 +9935,7 @@ msgstr "移除技能"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Remove this saved session?"
-msgstr ""
+msgstr "移除此已保存的会话？"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Remove webhook"
@@ -10289,7 +10289,7 @@ msgstr "返回 Rakazo"
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
 msgid "Review {0}"
-msgstr ""
+msgstr "审阅 {0}"
 
 #: apps/mobile/app/page.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
@@ -10319,7 +10319,7 @@ msgstr "撤销"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Revoke session"
-msgstr ""
+msgstr "撤销会话"
 
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Revoked"
@@ -10516,7 +10516,7 @@ msgstr "保存"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Save access"
-msgstr ""
+msgstr "保存访问权限"
 
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
@@ -10537,7 +10537,7 @@ msgstr "保存分组名称"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Save session"
-msgstr ""
+msgstr "保存会话"
 
 #: apps/mobile/components/cards/secret-ask-sheet.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
@@ -10633,7 +10633,7 @@ msgstr "回答是或否，或一句话说明。"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Scarf"
-msgstr ""
+msgstr "围巾"
 
 #: packages/i18n/src/routine-approval.ts
 msgid "Schedule"
@@ -10827,7 +10827,7 @@ msgstr "自托管"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Self-hosting guide"
-msgstr ""
+msgstr "自托管指南"
 
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
 #: apps/mobile/components/composer/thread-composer.tsx
@@ -10944,7 +10944,7 @@ msgstr "会话"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Session saved"
-msgstr ""
+msgstr "会话已保存"
 
 #: apps/web/src/components/billing/SpendingLimitSettings.tsx
 msgid "Set"
@@ -11065,7 +11065,7 @@ msgstr "要与 {name} 共享语音数据吗？"
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Share with organization"
-msgstr ""
+msgstr "与组织共享"
 
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Share, anyone with the link can view"
@@ -11079,7 +11079,7 @@ msgstr "共享"
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Shared logins"
-msgstr ""
+msgstr "共享登录信息"
 
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Shared memory"
@@ -11260,7 +11260,7 @@ msgstr "注册 Rakazo"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Sign-in button label"
-msgstr ""
+msgstr "登录按钮标签"
 
 #: apps/web/src/pages/plugins/PluginsOverlay.tsx
 msgid "Sign-in cancelled. Retry in Manage MCP servers."
@@ -11278,7 +11278,7 @@ msgstr "登录未返回会话"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Sign-in page"
-msgstr ""
+msgstr "登录页面"
 
 #: apps/mobile/lib/auth/api-auth.ts
 msgid "Sign-up did not return a session"
@@ -11553,7 +11553,7 @@ msgstr "支出上限"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Sprout"
-msgstr ""
+msgstr "嫩芽"
 
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/account/AccountAccess.tsx
@@ -11775,7 +11775,7 @@ msgstr "周日"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Sunglasses"
-msgstr ""
+msgstr "墨镜"
 
 #: apps/mobile/lib/billing/self-hosted-support.ts
 msgid "Support for $25 / month"
@@ -11927,11 +11927,11 @@ msgstr "测试"
 
 #: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Thanks for being an early user. Running Rakazo in the cloud has real costs, so it's now paid. It's still free if you <0>self-host</0>."
-msgstr ""
+msgstr "感谢你成为早期用户。在云端运行 Rakazo 有实际成本，因此现在需要付费。如果你<0>自托管</0>，仍然免费。"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Thanks for being an early user. Running Rakazo in the cloud has real costs, so it's now paid. It's still free if you self-host."
-msgstr ""
+msgstr "感谢你成为早期用户。在云端运行 Rakazo 有实际成本，因此现在需要付费。如果你自托管，仍然免费。"
 
 #: apps/mobile/components/bots/bot-email.tsx
 #: apps/web/src/components/BotEmailAddressField.tsx
@@ -12464,7 +12464,7 @@ msgstr "工单"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Tie"
-msgstr ""
+msgstr "领带"
 
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
 #: apps/web/src/pages/routines/RoutineSchedule.tsx
@@ -12780,7 +12780,7 @@ msgstr "未分配"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Unavailable organization model"
-msgstr ""
+msgstr "不可用的组织模型"
 
 #: apps/mobile/components/cards/change-undo.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -13092,7 +13092,7 @@ msgstr "使用 Rakazo 额度"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Use saved main model"
-msgstr ""
+msgstr "使用已保存的主模型"
 
 #: apps/mobile/components/settings/space-bots-model.tsx
 msgid "Use space default"
@@ -13104,7 +13104,7 @@ msgstr "最多 512 个字母、数字、_ 或 -。"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Use your bots from scripts and other agents"
-msgstr ""
+msgstr "从脚本和其他智能体中使用你的 Bot"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Use your own key"
@@ -13113,7 +13113,7 @@ msgstr "使用自己的密钥"
 #. placeholder {0}: formatRelativeTime(key.lastUsedAt)
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Used {0}"
-msgstr ""
+msgstr "{0}使用过"
 
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemActivity.tsx
@@ -13136,7 +13136,7 @@ msgstr "用户名"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Username field label"
-msgstr ""
+msgstr "用户名字段标签"
 
 #: apps/mobile/lib/cards/import-setup.ts
 #: apps/web/src/pages/shell/bots/import-status.ts
@@ -13329,7 +13329,7 @@ msgstr "Webhook"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Website"
-msgstr ""
+msgstr "网站"
 
 #: packages/i18n/src/cron.ts
 msgid "Wednesday"

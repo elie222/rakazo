@@ -67,7 +67,7 @@ msgstr "{0, plural, one {# herramienta} other {# herramientas}}"
 #. placeholder {0}: picked.length
 #: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
 msgid "{0, plural, one {Import # Bot} other {Import # Bots}}"
-msgstr ""
+msgstr "{0, plural, one {Importar # bot} other {Importar # bots}}"
 
 #. placeholder {0}: images.length
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
@@ -1211,7 +1211,7 @@ msgstr "Agregar elemento"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Add login"
-msgstr ""
+msgstr "Añadir inicio de sesión"
 
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
 msgid "Add MCP server"
@@ -1231,7 +1231,7 @@ msgstr "Añadir trabajo pendiente"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Add organization model"
-msgstr ""
+msgstr "Añadir modelo de la organización"
 
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
@@ -1491,7 +1491,7 @@ msgstr "Permitir escritura"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Allowed agents"
-msgstr ""
+msgstr "Agentes permitidos"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -1665,7 +1665,7 @@ msgstr "Cualquiera con el enlace"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Anything using this key stops working."
-msgstr ""
+msgstr "Todo lo que use esta clave dejará de funcionar."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/voice.tsx
@@ -1718,7 +1718,7 @@ msgstr "URL de la API"
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AppIconPicker.tsx
 msgid "App icon"
-msgstr ""
+msgstr "Icono de la app"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
@@ -1962,7 +1962,7 @@ msgstr "Disponible en"
 #: apps/web/src/components/integrations/connection-owner-picker.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Available to"
-msgstr ""
+msgstr "Disponible para"
 
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Available to shell commands as {commandVariable}"
@@ -2049,7 +2049,7 @@ msgstr "Autenticación básica ({username})"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Beanie"
-msgstr ""
+msgstr "Gorro"
 
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 msgid "Bearer"
@@ -2260,7 +2260,7 @@ msgstr "Vinculada a bots"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Bow tie"
-msgstr ""
+msgstr "Pajarita"
 
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Brain label"
@@ -2498,7 +2498,7 @@ msgstr "Las pruebas canceladas no tienen horas de computadora."
 
 #: packages/i18n/src/app-icon.ts
 msgid "Cap"
-msgstr ""
+msgstr "Gorra"
 
 #: apps/mobile/lib/vault/secret-destination.ts
 #: apps/mobile/lib/vault/vault.ts
@@ -2691,7 +2691,7 @@ msgstr "Elige una forma y color del bot, o sube una imagen"
 
 #: apps/mobile/components/models/organization-model-settings.tsx
 msgid "Choose a connection"
-msgstr ""
+msgstr "Elige una conexión"
 
 #: apps/mobile/app/(settings)/models.tsx
 #: apps/mobile/components/models/media-model-settings.tsx
@@ -3305,7 +3305,7 @@ msgstr "Conexión"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Connection name"
-msgstr ""
+msgstr "Nombre de la conexión"
 
 #: apps/mobile/app/(settings)/model-settings.tsx
 msgid "Connection not found"
@@ -3486,7 +3486,7 @@ msgstr "Copiar enlace de invitación"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Copy it now. It won't be shown again."
-msgstr ""
+msgstr "Cópiala ahora. No se volverá a mostrar."
 
 #: apps/mobile/components/thread/routine-event-row.tsx
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
@@ -3727,7 +3727,7 @@ msgstr "No se pudo crear el bot"
 
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 msgid "Could not create bots"
-msgstr ""
+msgstr "No se pudieron crear los bots"
 
 #: apps/mobile/app/new-group.tsx
 #: apps/web/src/pages/space/GroupPanel.tsx
@@ -4453,7 +4453,7 @@ msgstr "No se pudo guardar la configuración del modelo"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Could not save organization model"
-msgstr ""
+msgstr "No se pudo guardar el modelo de la organización"
 
 #: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/web/src/pages/plugins/tool-permissions.tsx
@@ -4753,7 +4753,7 @@ msgstr "No se pudo verificar la configuración de la computadora ({failureMessag
 #: apps/mobile/app/(settings)/app-icon.tsx
 #: apps/web/src/pages/settings/AppIconPicker.tsx
 msgid "Couldn't change the app icon"
-msgstr ""
+msgstr "No se pudo cambiar el icono de la app"
 
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Couldn't copy. Select the link and copy it."
@@ -4867,7 +4867,7 @@ msgstr "Crear grupo"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Create key"
-msgstr ""
+msgstr "Crear clave"
 
 #: apps/mobile/app/new-organization.tsx
 #: apps/web/src/components/spaces/CreateOrganizationDialog.tsx
@@ -5221,7 +5221,7 @@ msgstr "Eliminar grupo"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Delete login"
-msgstr ""
+msgstr "Eliminar inicio de sesión"
 
 #: apps/mobile/lib/bots/bot-lifecycle.ts
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -5262,7 +5262,7 @@ msgstr "¿Eliminar esta rutina?"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Delete this shared login and its session?"
-msgstr ""
+msgstr "¿Eliminar este inicio de sesión compartido y su sesión?"
 
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
@@ -6034,7 +6034,7 @@ msgstr "Manejo de fallos"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Feet"
-msgstr ""
+msgstr "Pies"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Fields to compare (optional)"
@@ -6109,7 +6109,7 @@ msgstr "Termina de conectar en el navegador y luego actualiza esta página."
 
 #: apps/mobile/components/integrations/use-connection-actions.ts
 msgid "Finish connecting in the browser. If the connection stays pending, select Reconnect."
-msgstr ""
+msgstr "Termina de conectar en el navegador. Si la conexión sigue pendiente, selecciona Reconectar."
 
 #: apps/mobile/components/cards/McpApprovalCard.tsx
 msgid "Finish MCP authorization in the web app."
@@ -6123,7 +6123,7 @@ msgstr "Termina la configuración"
 #. placeholder {0}: item.name
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
 msgid "Finish signing in to {0} in the browser. If the connection stays pending, select Reconnect."
-msgstr ""
+msgstr "Termina de iniciar sesión en {0} en el navegador. Si la conexión sigue pendiente, selecciona Reconectar."
 
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/CloudAgentCard.tsx
@@ -6141,7 +6141,7 @@ msgstr "Finalizando conexión MCP…"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Flower"
-msgstr ""
+msgstr "Flor"
 
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Focus message"
@@ -6412,11 +6412,11 @@ msgstr "Encabezados"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Heading after sign-in"
-msgstr ""
+msgstr "Encabezado tras iniciar sesión"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Headphones"
-msgstr ""
+msgstr "Auriculares"
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
@@ -6648,11 +6648,11 @@ msgstr "Importar datos"
 
 #: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
 msgid "Imported"
-msgstr ""
+msgstr "Importado"
 
 #: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
 msgid "Importing…"
-msgstr ""
+msgstr "Importando…"
 
 #: apps/mobile/lib/board/board.ts
 #: apps/web/src/pages/space/ticket-status.ts
@@ -6724,7 +6724,7 @@ msgstr "Entradas"
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Install for organization"
-msgstr ""
+msgstr "Instalar para la organización"
 
 #: apps/web/src/pages/shell/sidebar/sidebar-footer.tsx
 msgid "Install update"
@@ -6939,7 +6939,7 @@ msgstr "Ir al mensaje respondido: {excerpt}"
 #: apps/web/src/components/integrations/connection-owner-picker.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Just me"
-msgstr ""
+msgstr "Solo yo"
 
 #: packages/i18n/src/activity.ts
 msgid "just now"
@@ -6971,7 +6971,7 @@ msgstr "Mantener completos los resultados de herramientas"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Key name"
-msgstr ""
+msgstr "Nombre de la clave"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Key options"
@@ -7351,7 +7351,7 @@ msgstr "Gestionar {0}"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Manage access"
-msgstr ""
+msgstr "Gestionar acceso"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/paywall.tsx
@@ -7372,7 +7372,7 @@ msgstr "Gestionar modelo"
 
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Manage organization models"
-msgstr ""
+msgstr "Gestionar modelos de la organización"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
@@ -7706,7 +7706,7 @@ msgstr "ID del modelo"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Model ID"
-msgstr ""
+msgstr "ID del modelo"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Model name unavailable"
@@ -7964,7 +7964,7 @@ msgstr "Requiere iniciar sesión"
 #: apps/web/src/pages/plugins/connector-detail.tsx
 #: apps/web/src/pages/shell/chat/message-cards.tsx
 msgid "Needs sign-in"
-msgstr ""
+msgstr "Requiere iniciar sesión"
 
 #: packages/i18n/src/activity.ts
 msgid "Needs takeover"
@@ -7988,7 +7988,7 @@ msgstr "No preguntar nunca"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Never used"
-msgstr ""
+msgstr "Nunca usada"
 
 #: apps/mobile/components/thread/unread-divider.tsx
 #: apps/web/src/components/vault/VaultSettings.tsx
@@ -8346,7 +8346,7 @@ msgstr "Aún no hay ejecuciones"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "No session"
-msgstr ""
+msgstr "Sin sesión"
 
 #: apps/mobile/app/page-share.tsx
 msgid "No sign-in needed"
@@ -8862,7 +8862,7 @@ msgstr "Opciones de la organización"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Organization override for this Space"
-msgstr ""
+msgstr "Ajuste de la organización para este Espacio"
 
 #: apps/mobile/components/inbox/organization-menu.tsx
 msgid "Organization settings"
@@ -9036,7 +9036,7 @@ msgstr "Contraseña"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Password field label"
-msgstr ""
+msgstr "Etiqueta del campo de contraseña"
 
 #: packages/i18n/src/user-error.ts
 msgid "Password must be {max} characters or fewer"
@@ -9391,7 +9391,7 @@ msgstr "Entrada protegida"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Protected sign-in is unavailable."
-msgstr ""
+msgstr "El inicio de sesión protegido no está disponible."
 
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
@@ -9806,7 +9806,7 @@ msgstr "Quitar {0}"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Remove {0} for everyone in the organization?"
-msgstr ""
+msgstr "¿Quitar {0} para todos en la organización?"
 
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/space/GroupPanel.tsx
@@ -9908,7 +9908,7 @@ msgstr "Quitar activador de mensajes"
 
 #: apps/mobile/components/models/organization-model-settings.tsx
 msgid "Remove organization model"
-msgstr ""
+msgstr "Quitar modelo de la organización"
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Remove photo"
@@ -9935,7 +9935,7 @@ msgstr "Quitar habilidades"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Remove this saved session?"
-msgstr ""
+msgstr "¿Quitar esta sesión guardada?"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Remove webhook"
@@ -10289,7 +10289,7 @@ msgstr "Volver a Rakazo"
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
 msgid "Review {0}"
-msgstr ""
+msgstr "Revisar {0}"
 
 #: apps/mobile/app/page.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
@@ -10319,7 +10319,7 @@ msgstr "Revocar"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Revoke session"
-msgstr ""
+msgstr "Revocar sesión"
 
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Revoked"
@@ -10516,7 +10516,7 @@ msgstr "Guardar"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Save access"
-msgstr ""
+msgstr "Guardar acceso"
 
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
@@ -10537,7 +10537,7 @@ msgstr "Guardar nombre de la sección"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Save session"
-msgstr ""
+msgstr "Guardar sesión"
 
 #: apps/mobile/components/cards/secret-ask-sheet.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
@@ -10633,7 +10633,7 @@ msgstr "Di sí o no, o responde en una frase."
 
 #: packages/i18n/src/app-icon.ts
 msgid "Scarf"
-msgstr ""
+msgstr "Bufanda"
 
 #: packages/i18n/src/routine-approval.ts
 msgid "Schedule"
@@ -10827,7 +10827,7 @@ msgstr "Autoalojado"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Self-hosting guide"
-msgstr ""
+msgstr "Guía de autoalojamiento"
 
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
 #: apps/mobile/components/composer/thread-composer.tsx
@@ -10944,7 +10944,7 @@ msgstr "Sesión"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Session saved"
-msgstr ""
+msgstr "Sesión guardada"
 
 #: apps/web/src/components/billing/SpendingLimitSettings.tsx
 msgid "Set"
@@ -11065,7 +11065,7 @@ msgstr "¿Compartir datos de voz con {name}?"
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Share with organization"
-msgstr ""
+msgstr "Compartir con la organización"
 
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Share, anyone with the link can view"
@@ -11079,7 +11079,7 @@ msgstr "Compartido"
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Shared logins"
-msgstr ""
+msgstr "Inicios de sesión compartidos"
 
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Shared memory"
@@ -11260,7 +11260,7 @@ msgstr "Regístrate en Rakazo"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Sign-in button label"
-msgstr ""
+msgstr "Etiqueta del botón de inicio de sesión"
 
 #: apps/web/src/pages/plugins/PluginsOverlay.tsx
 msgid "Sign-in cancelled. Retry in Manage MCP servers."
@@ -11278,7 +11278,7 @@ msgstr "El inicio de sesión no devolvió una sesión"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Sign-in page"
-msgstr ""
+msgstr "Página de inicio de sesión"
 
 #: apps/mobile/lib/auth/api-auth.ts
 msgid "Sign-up did not return a session"
@@ -11553,7 +11553,7 @@ msgstr "Límite de gasto"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Sprout"
-msgstr ""
+msgstr "Brote"
 
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/account/AccountAccess.tsx
@@ -11775,7 +11775,7 @@ msgstr "domingo"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Sunglasses"
-msgstr ""
+msgstr "Gafas de sol"
 
 #: apps/mobile/lib/billing/self-hosted-support.ts
 msgid "Support for $25 / month"
@@ -11927,11 +11927,11 @@ msgstr "Pruebas"
 
 #: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Thanks for being an early user. Running Rakazo in the cloud has real costs, so it's now paid. It's still free if you <0>self-host</0>."
-msgstr ""
+msgstr "Gracias por ser de los primeros usuarios. Ejecutar Rakazo en la nube tiene costos reales, así que ahora es de pago. Sigue siendo gratis si lo <0>alojas tú mismo</0>."
 
 #: apps/mobile/app/paywall.tsx
 msgid "Thanks for being an early user. Running Rakazo in the cloud has real costs, so it's now paid. It's still free if you self-host."
-msgstr ""
+msgstr "Gracias por ser de los primeros usuarios. Ejecutar Rakazo en la nube tiene costos reales, así que ahora es de pago. Sigue siendo gratis si lo alojas tú mismo."
 
 #: apps/mobile/components/bots/bot-email.tsx
 #: apps/web/src/components/BotEmailAddressField.tsx
@@ -12464,7 +12464,7 @@ msgstr "Ticket"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Tie"
-msgstr ""
+msgstr "Corbata"
 
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
 #: apps/web/src/pages/routines/RoutineSchedule.tsx
@@ -12780,7 +12780,7 @@ msgstr "Sin asignar"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Unavailable organization model"
-msgstr ""
+msgstr "Modelo de la organización no disponible"
 
 #: apps/mobile/components/cards/change-undo.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -13092,7 +13092,7 @@ msgstr "Usar créditos de Rakazo"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Use saved main model"
-msgstr ""
+msgstr "Usar el modelo principal guardado"
 
 #: apps/mobile/components/settings/space-bots-model.tsx
 msgid "Use space default"
@@ -13104,7 +13104,7 @@ msgstr "Usa hasta 512 letras, dígitos, _ o -."
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Use your bots from scripts and other agents"
-msgstr ""
+msgstr "Usa tus bots desde scripts y otros agentes"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Use your own key"
@@ -13113,7 +13113,7 @@ msgstr "Usar tu propia clave"
 #. placeholder {0}: formatRelativeTime(key.lastUsedAt)
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Used {0}"
-msgstr ""
+msgstr "Usada {0}"
 
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemActivity.tsx
@@ -13136,7 +13136,7 @@ msgstr "Nombre de usuario"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Username field label"
-msgstr ""
+msgstr "Etiqueta del campo de usuario"
 
 #: apps/mobile/lib/cards/import-setup.ts
 #: apps/web/src/pages/shell/bots/import-status.ts
@@ -13329,7 +13329,7 @@ msgstr "Webhook"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Website"
-msgstr ""
+msgstr "Sitio web"
 
 #: packages/i18n/src/cron.ts
 msgid "Wednesday"

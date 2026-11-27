@@ -67,7 +67,7 @@ msgstr "{0, plural, one {כלי אחד} two {# כלים} other {# כלים}}"
 #. placeholder {0}: picked.length
 #: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
 msgid "{0, plural, one {Import # Bot} other {Import # Bots}}"
-msgstr ""
+msgstr "{0, plural, one {ייבוא בוט אחד} two {ייבוא # בוטים} other {ייבוא # בוטים}}"
 
 #. placeholder {0}: images.length
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
@@ -1211,7 +1211,7 @@ msgstr "הוספת פריט"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Add login"
-msgstr ""
+msgstr "הוספת פרטי התחברות"
 
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
 msgid "Add MCP server"
@@ -1231,7 +1231,7 @@ msgstr "הוספת עבודה פתוחה"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Add organization model"
-msgstr ""
+msgstr "הוספת מודל ארגוני"
 
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
@@ -1491,7 +1491,7 @@ msgstr "לאפשר כתיבה"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Allowed agents"
-msgstr ""
+msgstr "סוכנים מורשים"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -1665,7 +1665,7 @@ msgstr "כל מי שיש לו את הקישור"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Anything using this key stops working."
-msgstr ""
+msgstr "כל מה שמשתמש במפתח הזה יפסיק לפעול."
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/voice.tsx
@@ -1718,7 +1718,7 @@ msgstr "כתובת URL של ה-API"
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AppIconPicker.tsx
 msgid "App icon"
-msgstr ""
+msgstr "סמל האפליקציה"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
@@ -1962,7 +1962,7 @@ msgstr "זמין ב"
 #: apps/web/src/components/integrations/connection-owner-picker.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Available to"
-msgstr ""
+msgstr "זמין עבור"
 
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Available to shell commands as {commandVariable}"
@@ -2049,7 +2049,7 @@ msgstr "Basic auth ({username})"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Beanie"
-msgstr ""
+msgstr "כובע גרב"
 
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 msgid "Bearer"
@@ -2260,7 +2260,7 @@ msgstr "מקושר לבוטים"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Bow tie"
-msgstr ""
+msgstr "פפיון"
 
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Brain label"
@@ -2498,7 +2498,7 @@ msgstr "לתקופות ניסיון שבוטלו אין שעות מחשב."
 
 #: packages/i18n/src/app-icon.ts
 msgid "Cap"
-msgstr ""
+msgstr "כובע מצחייה"
 
 #: apps/mobile/lib/vault/secret-destination.ts
 #: apps/mobile/lib/vault/vault.ts
@@ -2691,7 +2691,7 @@ msgstr "בחירת צורה או צבע לבוט, או העלאת תמונה"
 
 #: apps/mobile/components/models/organization-model-settings.tsx
 msgid "Choose a connection"
-msgstr ""
+msgstr "בחירת חיבור"
 
 #: apps/mobile/app/(settings)/models.tsx
 #: apps/mobile/components/models/media-model-settings.tsx
@@ -3305,7 +3305,7 @@ msgstr "חיבור"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Connection name"
-msgstr ""
+msgstr "שם החיבור"
 
 #: apps/mobile/app/(settings)/model-settings.tsx
 msgid "Connection not found"
@@ -3486,7 +3486,7 @@ msgstr "העתקת קישור ההזמנה"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Copy it now. It won't be shown again."
-msgstr ""
+msgstr "יש להעתיק אותו עכשיו. הוא לא יוצג שוב."
 
 #: apps/mobile/components/thread/routine-event-row.tsx
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
@@ -3727,7 +3727,7 @@ msgstr "לא ניתן ליצור את הבוט"
 
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 msgid "Could not create bots"
-msgstr ""
+msgstr "לא ניתן ליצור בוטים"
 
 #: apps/mobile/app/new-group.tsx
 #: apps/web/src/pages/space/GroupPanel.tsx
@@ -4453,7 +4453,7 @@ msgstr "לא ניתן לשמור את הגדרות המודל"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Could not save organization model"
-msgstr ""
+msgstr "לא ניתן לשמור את המודל הארגוני"
 
 #: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/web/src/pages/plugins/tool-permissions.tsx
@@ -4753,7 +4753,7 @@ msgstr "לא ניתן לאמת את הגדרת המחשב ({failureMessage}). י
 #: apps/mobile/app/(settings)/app-icon.tsx
 #: apps/web/src/pages/settings/AppIconPicker.tsx
 msgid "Couldn't change the app icon"
-msgstr ""
+msgstr "לא ניתן היה לשנות את סמל האפליקציה"
 
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Couldn't copy. Select the link and copy it."
@@ -4867,7 +4867,7 @@ msgstr "יצירת קבוצה"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Create key"
-msgstr ""
+msgstr "יצירת מפתח"
 
 #: apps/mobile/app/new-organization.tsx
 #: apps/web/src/components/spaces/CreateOrganizationDialog.tsx
@@ -5221,7 +5221,7 @@ msgstr "מחיקת הקבוצה"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Delete login"
-msgstr ""
+msgstr "מחיקת פרטי התחברות"
 
 #: apps/mobile/lib/bots/bot-lifecycle.ts
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -5262,7 +5262,7 @@ msgstr "למחוק את הרוטינה הזו?"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Delete this shared login and its session?"
-msgstr ""
+msgstr "למחוק את פרטי ההתחברות המשותפים האלה ואת הסשן שלהם?"
 
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
@@ -6034,7 +6034,7 @@ msgstr "טיפול בכשלים"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Feet"
-msgstr ""
+msgstr "רגליים"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Fields to compare (optional)"
@@ -6109,7 +6109,7 @@ msgstr "יש להשלים את החיבור בדפדפן ואז לרענן את 
 
 #: apps/mobile/components/integrations/use-connection-actions.ts
 msgid "Finish connecting in the browser. If the connection stays pending, select Reconnect."
-msgstr ""
+msgstr "יש לסיים את החיבור בדפדפן. אם החיבור נשאר בהמתנה, יש לבחור „חיבור מחדש”."
 
 #: apps/mobile/components/cards/McpApprovalCard.tsx
 msgid "Finish MCP authorization in the web app."
@@ -6123,7 +6123,7 @@ msgstr "סיום ההגדרה"
 #. placeholder {0}: item.name
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
 msgid "Finish signing in to {0} in the browser. If the connection stays pending, select Reconnect."
-msgstr ""
+msgstr "יש לסיים את ההתחברות אל {0} בדפדפן. אם החיבור נשאר בהמתנה, יש לבחור „חיבור מחדש”."
 
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/CloudAgentCard.tsx
@@ -6141,7 +6141,7 @@ msgstr "משלים את חיבור ה-MCP…"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Flower"
-msgstr ""
+msgstr "פרח"
 
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Focus message"
@@ -6412,11 +6412,11 @@ msgstr "Headers"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Heading after sign-in"
-msgstr ""
+msgstr "כותרת אחרי ההתחברות"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Headphones"
-msgstr ""
+msgstr "אוזניות"
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
@@ -6648,11 +6648,11 @@ msgstr "ייבוא נתונים"
 
 #: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
 msgid "Imported"
-msgstr ""
+msgstr "יובא"
 
 #: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
 msgid "Importing…"
-msgstr ""
+msgstr "מייבא…"
 
 #: apps/mobile/lib/board/board.ts
 #: apps/web/src/pages/space/ticket-status.ts
@@ -6724,7 +6724,7 @@ msgstr "קלטים"
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Install for organization"
-msgstr ""
+msgstr "התקנה לארגון"
 
 #: apps/web/src/pages/shell/sidebar/sidebar-footer.tsx
 msgid "Install update"
@@ -6939,7 +6939,7 @@ msgstr "מעבר להודעה שנענתה: {excerpt}"
 #: apps/web/src/components/integrations/connection-owner-picker.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Just me"
-msgstr ""
+msgstr "רק אני"
 
 #: packages/i18n/src/activity.ts
 msgid "just now"
@@ -6971,7 +6971,7 @@ msgstr "שמירת תוצאות כלים במלואן"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Key name"
-msgstr ""
+msgstr "שם המפתח"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Key options"
@@ -7351,7 +7351,7 @@ msgstr "ניהול {0}"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Manage access"
-msgstr ""
+msgstr "ניהול גישה"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/paywall.tsx
@@ -7372,7 +7372,7 @@ msgstr "ניהול מודל"
 
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Manage organization models"
-msgstr ""
+msgstr "ניהול מודלים ארגוניים"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
@@ -7706,7 +7706,7 @@ msgstr "מזהה מודל"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Model ID"
-msgstr ""
+msgstr "מזהה מודל"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Model name unavailable"
@@ -7964,7 +7964,7 @@ msgstr "נדרשת התחברות"
 #: apps/web/src/pages/plugins/connector-detail.tsx
 #: apps/web/src/pages/shell/chat/message-cards.tsx
 msgid "Needs sign-in"
-msgstr ""
+msgstr "נדרשת התחברות"
 
 #: packages/i18n/src/activity.ts
 msgid "Needs takeover"
@@ -7988,7 +7988,7 @@ msgstr "לא לשאול אף פעם"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Never used"
-msgstr ""
+msgstr "לא נעשה שימוש"
 
 #: apps/mobile/components/thread/unread-divider.tsx
 #: apps/web/src/components/vault/VaultSettings.tsx
@@ -8346,7 +8346,7 @@ msgstr "עדיין אין הרצות"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "No session"
-msgstr ""
+msgstr "אין סשן"
 
 #: apps/mobile/app/page-share.tsx
 msgid "No sign-in needed"
@@ -8862,7 +8862,7 @@ msgstr "אפשרויות הארגון"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Organization override for this Space"
-msgstr ""
+msgstr "עקיפה ארגונית למרחב הזה"
 
 #: apps/mobile/components/inbox/organization-menu.tsx
 msgid "Organization settings"
@@ -9036,7 +9036,7 @@ msgstr "סיסמה"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Password field label"
-msgstr ""
+msgstr "תווית שדה הסיסמה"
 
 #: packages/i18n/src/user-error.ts
 msgid "Password must be {max} characters or fewer"
@@ -9391,7 +9391,7 @@ msgstr "קלט מוגן"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Protected sign-in is unavailable."
-msgstr ""
+msgstr "התחברות מוגנת אינה זמינה."
 
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
@@ -9806,7 +9806,7 @@ msgstr "הסרת {0}"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Remove {0} for everyone in the organization?"
-msgstr ""
+msgstr "להסיר את {0} עבור כל מי שבארגון?"
 
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/space/GroupPanel.tsx
@@ -9908,7 +9908,7 @@ msgstr "הסרת טריגר ההודעה"
 
 #: apps/mobile/components/models/organization-model-settings.tsx
 msgid "Remove organization model"
-msgstr ""
+msgstr "הסרת מודל ארגוני"
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Remove photo"
@@ -9935,7 +9935,7 @@ msgstr "הסרת מיומנויות"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Remove this saved session?"
-msgstr ""
+msgstr "להסיר את הסשן השמור הזה?"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Remove webhook"
@@ -10289,7 +10289,7 @@ msgstr "חזרה ל-Rakazo"
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
 msgid "Review {0}"
-msgstr ""
+msgstr "סקירת {0}"
 
 #: apps/mobile/app/page.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
@@ -10319,7 +10319,7 @@ msgstr "ביטול הרשאה"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Revoke session"
-msgstr ""
+msgstr "ביטול הסשן"
 
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Revoked"
@@ -10516,7 +10516,7 @@ msgstr "שמירה"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Save access"
-msgstr ""
+msgstr "שמירת גישה"
 
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
@@ -10537,7 +10537,7 @@ msgstr "שמירת שם המקטע"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Save session"
-msgstr ""
+msgstr "שמירת סשן"
 
 #: apps/mobile/components/cards/secret-ask-sheet.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
@@ -10633,7 +10633,7 @@ msgstr "אפשר לענות כן או לא, או במשפט."
 
 #: packages/i18n/src/app-icon.ts
 msgid "Scarf"
-msgstr ""
+msgstr "צעיף"
 
 #: packages/i18n/src/routine-approval.ts
 msgid "Schedule"
@@ -10827,7 +10827,7 @@ msgstr "באירוח עצמי"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Self-hosting guide"
-msgstr ""
+msgstr "מדריך לאירוח עצמי"
 
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
 #: apps/mobile/components/composer/thread-composer.tsx
@@ -10944,7 +10944,7 @@ msgstr "סשן"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Session saved"
-msgstr ""
+msgstr "הסשן נשמר"
 
 #: apps/web/src/components/billing/SpendingLimitSettings.tsx
 msgid "Set"
@@ -11065,7 +11065,7 @@ msgstr "לשתף נתוני קול עם {name}?"
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Share with organization"
-msgstr ""
+msgstr "שיתוף עם הארגון"
 
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Share, anyone with the link can view"
@@ -11079,7 +11079,7 @@ msgstr "משותף"
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Shared logins"
-msgstr ""
+msgstr "פרטי התחברות משותפים"
 
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Shared memory"
@@ -11260,7 +11260,7 @@ msgstr "הרשמה ל-Rakazo"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Sign-in button label"
-msgstr ""
+msgstr "תווית כפתור ההתחברות"
 
 #: apps/web/src/pages/plugins/PluginsOverlay.tsx
 msgid "Sign-in cancelled. Retry in Manage MCP servers."
@@ -11278,7 +11278,7 @@ msgstr "ההתחברות לא החזירה סשן"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Sign-in page"
-msgstr ""
+msgstr "דף ההתחברות"
 
 #: apps/mobile/lib/auth/api-auth.ts
 msgid "Sign-up did not return a session"
@@ -11553,7 +11553,7 @@ msgstr "מגבלת הוצאות"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Sprout"
-msgstr ""
+msgstr "נבט"
 
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/account/AccountAccess.tsx
@@ -11775,7 +11775,7 @@ msgstr "יום ראשון"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Sunglasses"
-msgstr ""
+msgstr "משקפי שמש"
 
 #: apps/mobile/lib/billing/self-hosted-support.ts
 msgid "Support for $25 / month"
@@ -11927,11 +11927,11 @@ msgstr "בדיקות"
 
 #: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Thanks for being an early user. Running Rakazo in the cloud has real costs, so it's now paid. It's still free if you <0>self-host</0>."
-msgstr ""
+msgstr "תודה שהצטרפת מוקדם. להפעלת Rakazo בענן יש עלויות אמיתיות, ולכן השירות הפך לבתשלום. הוא עדיין חינמי ב<0>אירוח עצמי</0>."
 
 #: apps/mobile/app/paywall.tsx
 msgid "Thanks for being an early user. Running Rakazo in the cloud has real costs, so it's now paid. It's still free if you self-host."
-msgstr ""
+msgstr "תודה שהצטרפת מוקדם. להפעלת Rakazo בענן יש עלויות אמיתיות, ולכן השירות הפך לבתשלום. הוא עדיין חינמי באירוח עצמי."
 
 #: apps/mobile/components/bots/bot-email.tsx
 #: apps/web/src/components/BotEmailAddressField.tsx
@@ -12464,7 +12464,7 @@ msgstr "כרטיס"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Tie"
-msgstr ""
+msgstr "עניבה"
 
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
 #: apps/web/src/pages/routines/RoutineSchedule.tsx
@@ -12780,7 +12780,7 @@ msgstr "ללא שיוך"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Unavailable organization model"
-msgstr ""
+msgstr "מודל ארגוני לא זמין"
 
 #: apps/mobile/components/cards/change-undo.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -13092,7 +13092,7 @@ msgstr "שימוש בקרדיטים של Rakazo"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Use saved main model"
-msgstr ""
+msgstr "שימוש במודל הראשי השמור"
 
 #: apps/mobile/components/settings/space-bots-model.tsx
 msgid "Use space default"
@@ -13104,7 +13104,7 @@ msgstr "עד 512 אותיות, ספרות, _ או -."
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Use your bots from scripts and other agents"
-msgstr ""
+msgstr "שימוש בבוטים שלך מסקריפטים ומסוכנים אחרים"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Use your own key"
@@ -13113,7 +13113,7 @@ msgstr "שימוש במפתח משלך"
 #. placeholder {0}: formatRelativeTime(key.lastUsedAt)
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Used {0}"
-msgstr ""
+msgstr "שימוש אחרון {0}"
 
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemActivity.tsx
@@ -13136,7 +13136,7 @@ msgstr "שם משתמש"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Username field label"
-msgstr ""
+msgstr "תווית שדה שם המשתמש"
 
 #: apps/mobile/lib/cards/import-setup.ts
 #: apps/web/src/pages/shell/bots/import-status.ts
@@ -13329,7 +13329,7 @@ msgstr "Webhook"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Website"
-msgstr ""
+msgstr "אתר"
 
 #: packages/i18n/src/cron.ts
 msgid "Wednesday"

@@ -61,7 +61,7 @@ msgstr "{0, plural, other {# เครื่องมือ}}"
 #. placeholder {0}: picked.length
 #: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
 msgid "{0, plural, one {Import # Bot} other {Import # Bots}}"
-msgstr ""
+msgstr "{0, plural, other {นำเข้าบอท # ตัว}}"
 
 #. placeholder {0}: images.length
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
@@ -1205,7 +1205,7 @@ msgstr "เพิ่มรายการ"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Add login"
-msgstr ""
+msgstr "เพิ่มล็อกอิน"
 
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
 msgid "Add MCP server"
@@ -1225,7 +1225,7 @@ msgstr "เพิ่มงานที่ยังไม่เสร็จ"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Add organization model"
-msgstr ""
+msgstr "เพิ่มโมเดลขององค์กร"
 
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
@@ -1485,7 +1485,7 @@ msgstr "อนุญาตการเขียน"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Allowed agents"
-msgstr ""
+msgstr "เอเจนต์ที่อนุญาต"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -1659,7 +1659,7 @@ msgstr "ทุกคนที่มีลิงก์"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Anything using this key stops working."
-msgstr ""
+msgstr "ทุกอย่างที่ใช้ key นี้จะหยุดทำงาน"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/voice.tsx
@@ -1712,7 +1712,7 @@ msgstr "API URL"
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AppIconPicker.tsx
 msgid "App icon"
-msgstr ""
+msgstr "ไอคอนแอป"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
@@ -1956,7 +1956,7 @@ msgstr "ใช้ได้ใน"
 #: apps/web/src/components/integrations/connection-owner-picker.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Available to"
-msgstr ""
+msgstr "ใช้ได้สำหรับ"
 
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Available to shell commands as {commandVariable}"
@@ -2043,7 +2043,7 @@ msgstr "Basic auth ({username})"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Beanie"
-msgstr ""
+msgstr "หมวกไหมพรม"
 
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 msgid "Bearer"
@@ -2254,7 +2254,7 @@ msgstr "ผูกกับบอท"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Bow tie"
-msgstr ""
+msgstr "หูกระต่าย"
 
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Brain label"
@@ -2492,7 +2492,7 @@ msgstr "การทดลองใช้ที่ยกเลิกแล้ว
 
 #: packages/i18n/src/app-icon.ts
 msgid "Cap"
-msgstr ""
+msgstr "หมวกแก๊ป"
 
 #: apps/mobile/lib/vault/secret-destination.ts
 #: apps/mobile/lib/vault/vault.ts
@@ -2685,7 +2685,7 @@ msgstr "เลือกรูปทรงหรือสีของบอท �
 
 #: apps/mobile/components/models/organization-model-settings.tsx
 msgid "Choose a connection"
-msgstr ""
+msgstr "เลือกการเชื่อมต่อ"
 
 #: apps/mobile/app/(settings)/models.tsx
 #: apps/mobile/components/models/media-model-settings.tsx
@@ -3299,7 +3299,7 @@ msgstr "การเชื่อมต่อ"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Connection name"
-msgstr ""
+msgstr "ชื่อการเชื่อมต่อ"
 
 #: apps/mobile/app/(settings)/model-settings.tsx
 msgid "Connection not found"
@@ -3480,7 +3480,7 @@ msgstr "คัดลอกลิงก์เชิญ"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Copy it now. It won't be shown again."
-msgstr ""
+msgstr "คัดลอกตอนนี้ จะไม่แสดงอีก"
 
 #: apps/mobile/components/thread/routine-event-row.tsx
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
@@ -3721,7 +3721,7 @@ msgstr "สร้างบอทไม่สำเร็จ"
 
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 msgid "Could not create bots"
-msgstr ""
+msgstr "สร้างบอทไม่สำเร็จ"
 
 #: apps/mobile/app/new-group.tsx
 #: apps/web/src/pages/space/GroupPanel.tsx
@@ -4447,7 +4447,7 @@ msgstr "บันทึกการตั้งค่าโมเดลไม่
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Could not save organization model"
-msgstr ""
+msgstr "บันทึกโมเดลขององค์กรไม่สำเร็จ"
 
 #: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/web/src/pages/plugins/tool-permissions.tsx
@@ -4747,7 +4747,7 @@ msgstr "ตรวจสอบการตั้งค่าคอมพิวเ
 #: apps/mobile/app/(settings)/app-icon.tsx
 #: apps/web/src/pages/settings/AppIconPicker.tsx
 msgid "Couldn't change the app icon"
-msgstr ""
+msgstr "เปลี่ยนไอคอนแอปไม่สำเร็จ"
 
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Couldn't copy. Select the link and copy it."
@@ -4861,7 +4861,7 @@ msgstr "สร้างกลุ่ม"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Create key"
-msgstr ""
+msgstr "สร้าง key"
 
 #: apps/mobile/app/new-organization.tsx
 #: apps/web/src/components/spaces/CreateOrganizationDialog.tsx
@@ -5215,7 +5215,7 @@ msgstr "ลบกลุ่ม"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Delete login"
-msgstr ""
+msgstr "ลบล็อกอิน"
 
 #: apps/mobile/lib/bots/bot-lifecycle.ts
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -5256,7 +5256,7 @@ msgstr "ลบรูทีนนี้ไหม?"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Delete this shared login and its session?"
-msgstr ""
+msgstr "ลบล็อกอินที่แชร์นี้และเซสชันของล็อกอินไหม?"
 
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
@@ -6028,7 +6028,7 @@ msgstr "การจัดการเมื่อล้มเหลว"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Feet"
-msgstr ""
+msgstr "เท้า"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Fields to compare (optional)"
@@ -6103,7 +6103,7 @@ msgstr "เชื่อมต่อให้เสร็จในเบราว
 
 #: apps/mobile/components/integrations/use-connection-actions.ts
 msgid "Finish connecting in the browser. If the connection stays pending, select Reconnect."
-msgstr ""
+msgstr "เชื่อมต่อให้เสร็จในเบราว์เซอร์ หากการเชื่อมต่อยังรอดำเนินการ ให้เลือกเชื่อมต่อใหม่"
 
 #: apps/mobile/components/cards/McpApprovalCard.tsx
 msgid "Finish MCP authorization in the web app."
@@ -6117,7 +6117,7 @@ msgstr "ตั้งค่าให้เสร็จ"
 #. placeholder {0}: item.name
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
 msgid "Finish signing in to {0} in the browser. If the connection stays pending, select Reconnect."
-msgstr ""
+msgstr "เข้าสู่ระบบ {0} ให้เสร็จในเบราว์เซอร์ หากการเชื่อมต่อยังรอดำเนินการ ให้เลือกเชื่อมต่อใหม่"
 
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/CloudAgentCard.tsx
@@ -6135,7 +6135,7 @@ msgstr "กำลังเชื่อมต่อ MCP…"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Flower"
-msgstr ""
+msgstr "ดอกไม้"
 
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Focus message"
@@ -6406,11 +6406,11 @@ msgstr "เฮดเดอร์"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Heading after sign-in"
-msgstr ""
+msgstr "หัวข้อหลังเข้าสู่ระบบ"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Headphones"
-msgstr ""
+msgstr "หูฟัง"
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
@@ -6642,11 +6642,11 @@ msgstr "นำเข้าข้อมูล"
 
 #: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
 msgid "Imported"
-msgstr ""
+msgstr "นำเข้าแล้ว"
 
 #: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
 msgid "Importing…"
-msgstr ""
+msgstr "กำลังนำเข้า…"
 
 #: apps/mobile/lib/board/board.ts
 #: apps/web/src/pages/space/ticket-status.ts
@@ -6718,7 +6718,7 @@ msgstr "อินพุต"
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Install for organization"
-msgstr ""
+msgstr "ติดตั้งให้องค์กร"
 
 #: apps/web/src/pages/shell/sidebar/sidebar-footer.tsx
 msgid "Install update"
@@ -6933,7 +6933,7 @@ msgstr "ไปที่ข้อความที่ตอบกลับ: {exc
 #: apps/web/src/components/integrations/connection-owner-picker.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Just me"
-msgstr ""
+msgstr "เฉพาะฉัน"
 
 #: packages/i18n/src/activity.ts
 msgid "just now"
@@ -6965,7 +6965,7 @@ msgstr "เก็บผลลัพธ์เครื่องมือไว้
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Key name"
-msgstr ""
+msgstr "ชื่อ key"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Key options"
@@ -7345,7 +7345,7 @@ msgstr "จัดการ {0}"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Manage access"
-msgstr ""
+msgstr "จัดการสิทธิ์การเข้าถึง"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/paywall.tsx
@@ -7366,7 +7366,7 @@ msgstr "จัดการโมเดล"
 
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Manage organization models"
-msgstr ""
+msgstr "จัดการโมเดลขององค์กร"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
@@ -7700,7 +7700,7 @@ msgstr "ID โมเดล"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Model ID"
-msgstr ""
+msgstr "Model ID"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Model name unavailable"
@@ -7958,7 +7958,7 @@ msgstr "ต้องเข้าสู่ระบบ"
 #: apps/web/src/pages/plugins/connector-detail.tsx
 #: apps/web/src/pages/shell/chat/message-cards.tsx
 msgid "Needs sign-in"
-msgstr ""
+msgstr "ต้องเข้าสู่ระบบ"
 
 #: packages/i18n/src/activity.ts
 msgid "Needs takeover"
@@ -7982,7 +7982,7 @@ msgstr "ไม่ต้องถาม"
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Never used"
-msgstr ""
+msgstr "ไม่เคยใช้"
 
 #: apps/mobile/components/thread/unread-divider.tsx
 #: apps/web/src/components/vault/VaultSettings.tsx
@@ -8340,7 +8340,7 @@ msgstr "ยังไม่มีการรัน"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "No session"
-msgstr ""
+msgstr "ไม่มีเซสชัน"
 
 #: apps/mobile/app/page-share.tsx
 msgid "No sign-in needed"
@@ -8856,7 +8856,7 @@ msgstr "ตัวเลือกองค์กร"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Organization override for this Space"
-msgstr ""
+msgstr "การตั้งค่าแทนขององค์กรสำหรับสเปซนี้"
 
 #: apps/mobile/components/inbox/organization-menu.tsx
 msgid "Organization settings"
@@ -9030,7 +9030,7 @@ msgstr "รหัสผ่าน"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Password field label"
-msgstr ""
+msgstr "ป้ายช่องรหัสผ่าน"
 
 #: packages/i18n/src/user-error.ts
 msgid "Password must be {max} characters or fewer"
@@ -9385,7 +9385,7 @@ msgstr "อินพุตแบบป้องกัน"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Protected sign-in is unavailable."
-msgstr ""
+msgstr "การเข้าสู่ระบบแบบป้องกันไม่พร้อมใช้งาน"
 
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
@@ -9800,7 +9800,7 @@ msgstr "นำ {0} ออก"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Remove {0} for everyone in the organization?"
-msgstr ""
+msgstr "นำ {0} ออกสำหรับทุกคนในองค์กรไหม?"
 
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/space/GroupPanel.tsx
@@ -9902,7 +9902,7 @@ msgstr "นำทริกเกอร์ข้อความออก"
 
 #: apps/mobile/components/models/organization-model-settings.tsx
 msgid "Remove organization model"
-msgstr ""
+msgstr "นำโมเดลขององค์กรออก"
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Remove photo"
@@ -9929,7 +9929,7 @@ msgstr "นำสกิลออก"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Remove this saved session?"
-msgstr ""
+msgstr "นำเซสชันที่บันทึกไว้นี้ออกไหม?"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Remove webhook"
@@ -10283,7 +10283,7 @@ msgstr "กลับไปที่ Rakazo"
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/shell/bots/grok-bot-picker.tsx
 msgid "Review {0}"
-msgstr ""
+msgstr "ตรวจสอบ {0}"
 
 #: apps/mobile/app/page.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
@@ -10313,7 +10313,7 @@ msgstr "เพิกถอน"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Revoke session"
-msgstr ""
+msgstr "เพิกถอนเซสชัน"
 
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Revoked"
@@ -10510,7 +10510,7 @@ msgstr "บันทึก"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Save access"
-msgstr ""
+msgstr "บันทึกสิทธิ์การเข้าถึง"
 
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
@@ -10531,7 +10531,7 @@ msgstr "บันทึกชื่อส่วน"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Save session"
-msgstr ""
+msgstr "บันทึกเซสชัน"
 
 #: apps/mobile/components/cards/secret-ask-sheet.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
@@ -10627,7 +10627,7 @@ msgstr "ตอบใช่หรือไม่ หรือตอบเป็�
 
 #: packages/i18n/src/app-icon.ts
 msgid "Scarf"
-msgstr ""
+msgstr "ผ้าพันคอ"
 
 #: packages/i18n/src/routine-approval.ts
 msgid "Schedule"
@@ -10821,7 +10821,7 @@ msgstr "โฮสต์เอง"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Self-hosting guide"
-msgstr ""
+msgstr "คู่มือการโฮสต์เอง"
 
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
 #: apps/mobile/components/composer/thread-composer.tsx
@@ -10938,7 +10938,7 @@ msgstr "เซสชัน"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Session saved"
-msgstr ""
+msgstr "บันทึกเซสชันแล้ว"
 
 #: apps/web/src/components/billing/SpendingLimitSettings.tsx
 msgid "Set"
@@ -11059,7 +11059,7 @@ msgstr "แชร์ข้อมูลเสียงกับ {name} ไหม?
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Share with organization"
-msgstr ""
+msgstr "แชร์กับองค์กร"
 
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Share, anyone with the link can view"
@@ -11073,7 +11073,7 @@ msgstr "แชร์"
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Shared logins"
-msgstr ""
+msgstr "ล็อกอินที่แชร์"
 
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Shared memory"
@@ -11254,7 +11254,7 @@ msgstr "สมัครใช้งาน Rakazo"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Sign-in button label"
-msgstr ""
+msgstr "ป้ายปุ่มเข้าสู่ระบบ"
 
 #: apps/web/src/pages/plugins/PluginsOverlay.tsx
 msgid "Sign-in cancelled. Retry in Manage MCP servers."
@@ -11272,7 +11272,7 @@ msgstr "การเข้าสู่ระบบไม่ได้รับเ
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Sign-in page"
-msgstr ""
+msgstr "หน้าเข้าสู่ระบบ"
 
 #: apps/mobile/lib/auth/api-auth.ts
 msgid "Sign-up did not return a session"
@@ -11547,7 +11547,7 @@ msgstr "วงเงินการใช้จ่าย"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Sprout"
-msgstr ""
+msgstr "ต้นอ่อน"
 
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/web/src/components/account/AccountAccess.tsx
@@ -11769,7 +11769,7 @@ msgstr "วันอาทิตย์"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Sunglasses"
-msgstr ""
+msgstr "แว่นกันแดด"
 
 #: apps/mobile/lib/billing/self-hosted-support.ts
 msgid "Support for $25 / month"
@@ -11921,11 +11921,11 @@ msgstr "กำลังทดสอบ"
 
 #: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Thanks for being an early user. Running Rakazo in the cloud has real costs, so it's now paid. It's still free if you <0>self-host</0>."
-msgstr ""
+msgstr "ขอบคุณที่เป็นผู้ใช้รุ่นแรก การรัน Rakazo บนคลาวด์มีค่าใช้จ่ายจริง ตอนนี้จึงเป็นบริการแบบชำระเงิน แต่ยังใช้ฟรีได้หากคุณ<0>โฮสต์เอง</0>"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Thanks for being an early user. Running Rakazo in the cloud has real costs, so it's now paid. It's still free if you self-host."
-msgstr ""
+msgstr "ขอบคุณที่เป็นผู้ใช้รุ่นแรก การรัน Rakazo บนคลาวด์มีค่าใช้จ่ายจริง ตอนนี้จึงเป็นบริการแบบชำระเงิน แต่ยังใช้ฟรีได้หากคุณโฮสต์เอง"
 
 #: apps/mobile/components/bots/bot-email.tsx
 #: apps/web/src/components/BotEmailAddressField.tsx
@@ -12458,7 +12458,7 @@ msgstr "ตั๋ว"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Tie"
-msgstr ""
+msgstr "เนกไท"
 
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
 #: apps/web/src/pages/routines/RoutineSchedule.tsx
@@ -12774,7 +12774,7 @@ msgstr "ยังไม่ได้มอบหมาย"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Unavailable organization model"
-msgstr ""
+msgstr "โมเดลขององค์กรที่ไม่พร้อมใช้งาน"
 
 #: apps/mobile/components/cards/change-undo.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -13086,7 +13086,7 @@ msgstr "ใช้เครดิต Rakazo"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Use saved main model"
-msgstr ""
+msgstr "ใช้โมเดลหลักที่บันทึกไว้"
 
 #: apps/mobile/components/settings/space-bots-model.tsx
 msgid "Use space default"
@@ -13098,7 +13098,7 @@ msgstr "ใช้ตัวอักษร ตัวเลข _ หรือ - �
 
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Use your bots from scripts and other agents"
-msgstr ""
+msgstr "ใช้บอทของคุณจากสคริปต์และเอเจนต์อื่น"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Use your own key"
@@ -13107,7 +13107,7 @@ msgstr "ใช้ key ของคุณเอง"
 #. placeholder {0}: formatRelativeTime(key.lastUsedAt)
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 msgid "Used {0}"
-msgstr ""
+msgstr "ใช้ {0}"
 
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemActivity.tsx
@@ -13130,7 +13130,7 @@ msgstr "ชื่อผู้ใช้"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Username field label"
-msgstr ""
+msgstr "ป้ายช่องชื่อผู้ใช้"
 
 #: apps/mobile/lib/cards/import-setup.ts
 #: apps/web/src/pages/shell/bots/import-status.ts
@@ -13323,7 +13323,7 @@ msgstr "Webhook"
 
 #: apps/web/src/pages/settings/OrganizationVaultSettings.tsx
 msgid "Website"
-msgstr ""
+msgstr "เว็บไซต์"
 
 #: packages/i18n/src/cron.ts
 msgid "Wednesday"
