@@ -123,6 +123,7 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "MeetingCalendarConnection",
   "MeetingCalendarRule",
   "NativeCalendarRequest",
+  "NativeDmSession",
   "MemoryRevision",
   "Artifact",
   "Secret",

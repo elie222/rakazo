@@ -5,7 +5,16 @@ import type {
   ProductAnalytics,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { notifyMemberMessage, wakeRun } from "@rakazo/adapters";
+import {
+  groupPilotEnrolled,
+  groupPilotRuntimeForBot,
+  notifyMemberMessage,
+  pilotDmResumeGrant,
+  pilotLauncher,
+  pilotRunModel,
+  pilotRuntimeForBot,
+  wakeRun,
+} from "@rakazo/adapters";
 import type { Actor, GroupMember, MessageBlock, ReplyPreview } from "@rakazo/contracts";
 import {
   GROUP_MEMBER_MIN,
@@ -15,6 +24,7 @@ import {
 import {
   ACTIVE_RUN_STATUSES,
   BACKGROUND_HELPER_TRIGGER,
+  ClientError,
   callIdFromClientNonce,
   isConversationalRun,
   isQuestionAskBlock,
@@ -318,6 +328,14 @@ function groupSendTargets(
   input: { text?: string; mentions?: MentionTargetInput[] },
   replied: string | undefined,
 ) {
+  const explicitPilotIds = new Set(
+    (input.mentions ?? []).flatMap((mention) =>
+      typeof mention !== "string" && mention.kind === "bot" && groupPilotEnrolled(mention.id)
+        ? [mention.id]
+        : [],
+    ),
+  );
+  const allowTarget = (id: string) => !groupPilotEnrolled(id) || explicitPilotIds.has(id);
   const targeting = {
     text: input.text ?? "",
     members: members.map((member) => ({ id: member.botId, name: member.name })),
@@ -325,9 +343,13 @@ function groupSendTargets(
   };
   const named = mentionedGroupBotIds(targeting).length > 0;
   if (!named && replied && members.some((member) => member.botId === replied)) {
-    return { botIds: [replied], namesNobody: false };
+    return { botIds: [replied].filter(allowTarget), namesNobody: false, explicitPilotIds };
   }
-  return { botIds: resolveGroupTargetBotIds(targeting), namesNobody: !named };
+  return {
+    botIds: resolveGroupTargetBotIds(targeting).filter(allowTarget),
+    namesNobody: !named,
+    explicitPilotIds,
+  };
 }
 
 export function latestWaitingRun<T extends { id: string; status: string; updatedAt: Date }>(
@@ -488,6 +510,8 @@ export async function sendThreadMessage(
     prisma: PrismaClient;
     events: ThreadEvents;
     jobs: JobPublisher;
+    /** Set by the signed-in app route, never taken from client input. */
+    signedInApp?: boolean;
     imageAdmission?: Parameters<typeof assertThreadImageInput>[5];
     maxAttachmentsPerMessage?: number;
     analytics?: ProductAnalytics;
@@ -514,6 +538,9 @@ export async function sendThreadMessage(
   /** Runs saved with the message, after the thread lock and before the message is routed. */
   startRoutines?: (tx: Prisma.TransactionClient) => Promise<Array<{ id: string; status: string }>>,
 ) {
+  if (target.kind === "bot" && pilotRuntimeForBot(target.botId) && !deps.signedInApp) {
+    throw new ClientError("FORBIDDEN", "Use the signed-in app to message this pilot bot.");
+  }
   const existing = await replayExistingSend(
     deps,
     target.threadId,
@@ -659,6 +686,53 @@ export async function sendThreadMessage(
             routine: { select: { inChat: true } },
           },
         });
+        const pilotId = pilotRuntimeForBot(target.botId);
+        const stoppingInPilot =
+          pilotId && activeRuns.length > 0 && !routineRuns.length && isStopMessage(input);
+        let pilotPin: ReturnType<typeof pilotRunModel>;
+        let primaryRuntimeRevision: number | undefined;
+        if (pilotId && !stoppingInPilot) {
+          if (!pilotLauncher())
+            throw new ClientError(
+              "BAD_REQUEST",
+              "The primary runtime pilot is not available on this deployment.",
+            );
+          if (
+            !input.text?.trim() ||
+            attachmentBlocks.length ||
+            input.fromPage ||
+            callId ||
+            startRoutines ||
+            input.nativeCalendarSessionId ||
+            input.mentions?.length ||
+            activeRuns.length
+          )
+            throw new ClientError(
+              "BAD_REQUEST",
+              "The primary runtime pilot only supports one plain text chat turn at a time.",
+            );
+          const bot = await tx.bot.findFirst({
+            where: { id: target.botId, spaceId: actor.spaceId, userId: actor.userId },
+            select: {
+              modelProvider: true,
+              modelId: true,
+              modelCredentialId: true,
+              primaryRuntimeRevision: true,
+            },
+          });
+          if (!bot)
+            throw new ClientError(
+              "FORBIDDEN",
+              "Only the pilot bot owner can use its model connection.",
+            );
+          pilotPin = pilotRunModel(pilotId, bot);
+          primaryRuntimeRevision = bot.primaryRuntimeRevision;
+          if (!pilotPin)
+            throw new ClientError(
+              "BAD_REQUEST",
+              "Select an API-key connection on this pilot bot before sending.",
+            );
+        }
         if (input.imageHandling === "confirm") {
           await assertImageRecipients(tx, actor, target, input.text, attachmentBlocks, {
             botId: target.botId,
@@ -817,6 +891,11 @@ export async function sendThreadMessage(
             trigger: "user",
             clientNonce: sendRunClientNonce(input.clientNonce, message.id),
             sourceMessageId: message.id,
+            ...pilotPin,
+            ...(pilotPin ? { primaryRuntimeRevision } : {}),
+            ...(pilotPin && deps.signedInApp && !replyToMessageId && !replyQuote
+              ? { nativeDmResumeGrant: pilotDmResumeGrant(target.botId) }
+              : {}),
           },
         });
         await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
@@ -850,7 +929,19 @@ export async function sendThreadMessage(
       const members = await lockAndLoadGroupMembers(tx, actor, target);
       const memberBotIds = members.map((member) => member.botId);
       const mentionTargets = splitMentionTargets(input.mentions);
-      let { botIds: targetBotIds, namesNobody } = groupSendTargets(members, input, repliedBotId);
+      let {
+        botIds: targetBotIds,
+        namesNobody,
+        explicitPilotIds,
+      } = groupSendTargets(members, input, repliedBotId);
+      if ([...explicitPilotIds].some((id) => !memberBotIds.includes(id)))
+        throw new ClientError("BAD_REQUEST", "The addressed bot is not a group member.");
+      if (explicitPilotIds.size > 0 && !deps.signedInApp)
+        throw new ClientError("FORBIDDEN", "Use the signed-in app to message this pilot bot.");
+      const noEligiblePilotGroupTarget =
+        targetBotIds.length === 0 && memberBotIds.some((id) => groupPilotEnrolled(id));
+      if (noEligiblePilotGroupTarget && !isStopMessage(input))
+        throw new ClientError("BAD_REQUEST", "Mention a bot directly to start a group turn.");
       const { blocks: attachmentBlocks, artifacts } = await resolveGroupSendAttachments(
         { prisma: tx, maxAttachmentsPerMessage: deps.maxAttachmentsPerMessage },
         actor,
@@ -887,6 +978,47 @@ export async function sendThreadMessage(
           updatedAt: true,
         },
       });
+      const groupPilotPins = new Map<string, NonNullable<ReturnType<typeof pilotRunModel>>>();
+      for (const botId of explicitPilotIds) {
+        const runtimeId = groupPilotRuntimeForBot(botId);
+        if (!runtimeId || !pilotLauncher())
+          throw new ClientError(
+            "BAD_REQUEST",
+            "The primary runtime pilot is not available on this deployment.",
+          );
+        if (
+          !input.text?.trim() ||
+          attachmentBlocks.length ||
+          input.fromPage ||
+          callId ||
+          startRoutines ||
+          input.nativeCalendarSessionId ||
+          (input.mentions ?? []).some(
+            (mention) => typeof mention !== "string" && mention.kind !== "bot",
+          ) ||
+          activeRuns.some((run) => run.botId === botId)
+        )
+          throw new ClientError(
+            "BAD_REQUEST",
+            "The primary runtime pilot only supports one plain text chat turn at a time.",
+          );
+        const bot = await tx.bot.findFirst({
+          where: { id: botId, spaceId: actor.spaceId, userId: actor.userId, archivedAt: null },
+          select: { modelProvider: true, modelId: true, modelCredentialId: true },
+        });
+        if (!bot)
+          throw new ClientError(
+            "FORBIDDEN",
+            "Only the pilot bot owner can use its model connection.",
+          );
+        const pin = pilotRunModel(runtimeId, bot);
+        if (!pin)
+          throw new ClientError(
+            "BAD_REQUEST",
+            "Select an API-key connection on this pilot bot before sending.",
+          );
+        groupPilotPins.set(botId, pin);
+      }
       // A plain message while members wait on the user answers the latest question only.
       const asking = namesNobody ? latestWaitingRun(activeRuns) : undefined;
       if (asking) {
@@ -966,6 +1098,8 @@ export async function sendThreadMessage(
       if (input.noModel) {
         throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
       }
+      if (noEligiblePilotGroupTarget)
+        throw new ClientError("BAD_REQUEST", "Mention a bot directly to start a group turn.");
       const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
       const rank = (candidate: (typeof activeRuns)[number]) =>
         steersMessageFrom(candidate, actor) ? 2 : steersUserMessage(candidate) ? 1 : 0;
@@ -1067,6 +1201,7 @@ export async function sendThreadMessage(
             groupReplyOptional: namesNobody,
             clientNonce: sendRunClientNonce(input.clientNonce, message.id, botId),
             sourceMessageId: message.id,
+            ...groupPilotPins.get(botId),
           },
         });
         runs.push(run);
