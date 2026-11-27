@@ -1,7 +1,8 @@
 import type { PageVisibility } from "@rakazo/contracts";
-import { PAGE_LIST_MAX_LIMIT } from "@rakazo/contracts";
+import { PAGE_LIST_MAX_LIMIT, PAGE_TITLE_MAX_LENGTH } from "@rakazo/contracts";
 import sharp from "sharp";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { TOOL_RESULT_TEXT_LIMIT } from "../../runtime/pi/pi-runtime-limits.js";
 import type { RunContext } from "../assembly/run-context.js";
 
 const publishMessage = vi.fn();
@@ -288,6 +289,28 @@ describe("listing pages", () => {
         title: { contains: "Plan", mode: "insensitive" },
         AND: { OR: [{ updatedAt: { lt: updatedAt } }, { updatedAt, id: { lt: "page-1" } }] },
       },
+    });
+  });
+
+  it("keeps long escaped titles and their continuation cursor within the tool result budget", async () => {
+    const updatedAt = new Date("2026-11-01");
+    const { ctx } = listing(
+      Array.from({ length: PAGE_LIST_MAX_LIMIT }, (_, index) => ({
+        id: `page-${index}`,
+        title: '"'.repeat(PAGE_TITLE_MAX_LENGTH),
+        visibility: "private",
+        updatedAt,
+      })),
+    );
+    const result = (await pageTools.save_page!(ctx, call({ list: true }))) as {
+      pages: { pageId: string }[];
+      nextCursor?: { pageId: string; updatedAt: string };
+    };
+    expect(JSON.stringify(result).length).toBeLessThanOrEqual(TOOL_RESULT_TEXT_LIMIT);
+    expect(result.pages.length).toBeLessThan(PAGE_LIST_MAX_LIMIT);
+    expect(result.nextCursor).toEqual({
+      pageId: result.pages.at(-1)!.pageId,
+      updatedAt: updatedAt.toISOString(),
     });
   });
 

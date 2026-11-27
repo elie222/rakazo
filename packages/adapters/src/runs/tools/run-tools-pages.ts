@@ -30,6 +30,7 @@ import { checkPageSource, PAGE_KIT_GUIDE } from "@rakazo/page-kit/validate";
 import { z } from "zod";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "../../approvals/approval-ask.js";
 import { argumentGiven } from "../../bots/update-bot-patch.js";
+import { TOOL_RESULT_TEXT_LIMIT } from "../../runtime/pi/pi-runtime-limits.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { markReadOutsideContent, neverAsks } from "../assembly/run-context.js";
 import { publishMessage } from "../assembly/run-messages.js";
@@ -126,7 +127,19 @@ async function listPages(ctx: RunContext, args: Record<string, unknown>) {
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     take: PAGE_LIST_MAX_LIMIT + 1,
   });
-  const pages = rows.slice(0, PAGE_LIST_MAX_LIMIT);
+  const pages = [];
+  let serializedPagesLength = 0;
+  for (const row of rows.slice(0, PAGE_LIST_MAX_LIMIT)) {
+    const pageId = row.id;
+    const updatedAt = row.updatedAt.toISOString();
+    const page = { pageId, title: row.title, updatedAt, ...pageSharingHint(row.visibility) };
+    const length = serializedPagesLength + JSON.stringify(page).length + Number(pages.length > 0);
+    // Reserve space for continuation, including when the result budget is what ends this batch.
+    const envelopeLength = JSON.stringify({ pages: [], nextCursor: { pageId, updatedAt } }).length;
+    if (length + envelopeLength > TOOL_RESULT_TEXT_LIMIT) break;
+    pages.push(page);
+    serializedPagesLength = length;
+  }
   const last = pages.at(-1);
   if (pages.length)
     await markReadOutsideContent(
@@ -134,15 +147,10 @@ async function listPages(ctx: RunContext, args: Record<string, unknown>) {
       pages.map((page) => page.title),
     );
   return {
-    ...(rows.length > PAGE_LIST_MAX_LIMIT && last
-      ? { nextCursor: { pageId: last.id, updatedAt: last.updatedAt.toISOString() } }
+    ...(rows.length > pages.length && last
+      ? { nextCursor: { pageId: last.pageId, updatedAt: last.updatedAt } }
       : {}),
-    pages: pages.map((page) => ({
-      pageId: page.id,
-      title: page.title,
-      updatedAt: page.updatedAt.toISOString(),
-      ...pageSharingHint(page.visibility),
-    })),
+    pages,
   };
 }
 
