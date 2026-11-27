@@ -11,6 +11,37 @@ const context: AdapterContext = {
   signal: new AbortController().signal,
 };
 
+describe("memory search", () => {
+  it("ranks a path match above a body match and caps the answer", async () => {
+    const body = Array.from({ length: 24 }, (_, index) => ({
+      id: `body-${index}`,
+      path: `notes/${index}.md`,
+      content: "the budget line",
+    }));
+    const findMany = vi.fn(async (_args: Record<string, unknown>) => [
+      ...body,
+      { id: "named", path: "budget/plan.md", content: "the quarterly line" },
+    ]);
+    const store = new MarkdownMemoryStore({ memoryDocument: { findMany } } as never);
+
+    const hits = await store.search({ scope: "all", query: "budget" }, context);
+
+    expect(hits).toHaveLength(20);
+    expect(hits[0]?.path).toBe("budget/plan.md");
+    expect(hits[0]?.score).toBe(2);
+    expect(hits[1]?.score).toBe(1);
+    expect(findMany.mock.calls[0]?.[0]).not.toHaveProperty("take");
+  });
+
+  it("answers a blank query without reading memory", async () => {
+    const findMany = vi.fn();
+    const store = new MarkdownMemoryStore({ memoryDocument: { findMany } } as never);
+
+    await expect(store.search({ scope: "all", query: "  " }, context)).resolves.toEqual([]);
+    expect(findMany).not.toHaveBeenCalled();
+  });
+});
+
 describe("memory store contract shape", () => {
   it("reads the most recently updated documents first", async () => {
     const updatedAt = new Date("2026-08-16T10:00:00.000Z");
