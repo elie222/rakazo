@@ -36,6 +36,7 @@ import {
   secretValuesToRedact,
   serializeModelSecret,
 } from "../../../models/model-secret.js";
+import { dispatcherFetch } from "../../../network/undici-fetch.js";
 import { listPiCatalog } from "./pi-models.js";
 import {
   closeOpenAiCompatibleTransports,
@@ -3312,7 +3313,6 @@ describe("compatible gateway connection reuse", () => {
   });
 
   it("releases a retained unread response when its request signal aborts", async () => {
-    let connections = 0;
     const bodyGate = deferred<void>();
     const server = createServer((_request, response) => {
       response.writeHead(200, { "content-type": "text/plain" });
@@ -3321,18 +3321,22 @@ describe("compatible gateway connection reuse", () => {
         if (!response.destroyed) response.end("chunk");
       });
     });
-    server.on("connection", () => {
-      connections += 1;
-    });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const port = (server.address() as AddressInfo).port;
+    const targetUrl = `http://127.0.0.1:${port}/v1/models`;
+    const dispatchers: unknown[] = [];
+    const transport: typeof fetch = (input, init) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url === targetUrl) {
+        dispatchers.push((init as { dispatcher?: unknown } | undefined)?.dispatcher);
+      }
+      return dispatcherFetch(input, init);
+    };
     try {
-      const safeFetch = createOpenAiCompatibleFetch(undefined, undefined, { allowPrivate: true });
+      const safeFetch = createOpenAiCompatibleFetch(transport, undefined, { allowPrivate: true });
       const controller = new AbortController();
       // Keep the response strongly referenced and unread, then abort its request signal.
-      const retained = await safeFetch(`http://127.0.0.1:${port}/v1/models`, {
-        signal: controller.signal,
-      });
+      const retained = await safeFetch(targetUrl, { signal: controller.signal });
       const reason = new Error("caller aborted unread response");
       controller.abort(reason);
       // Force the idle pool cap (32) with other origins so the aborted entry is evicted once released.
@@ -3357,11 +3361,13 @@ describe("compatible gateway connection reuse", () => {
           });
         }
       }
-      // If the aborted borrow was released, the entry was evicted and a fresh request opens a new TCP socket.
-      const followUp = await safeFetch(`http://127.0.0.1:${port}/v1/models`);
+      // If the aborted borrow was released, the entry was evicted and a fresh dispatcher is created.
+      const followUp = await safeFetch(targetUrl);
       bodyGate.resolve();
       expect(await followUp.text()).toBe("first chunk");
-      expect(connections).toBe(2);
+      expect(dispatchers).toHaveLength(2);
+      expect(dispatchers[0]).toBeDefined();
+      expect(dispatchers[1]).not.toBe(dispatchers[0]);
       // Reading the retained aborted response still surfaces the abort error rather than empty EOF.
       await expect(retained.text()).rejects.toBe(reason);
     } finally {
@@ -3370,6 +3376,71 @@ describe("compatible gateway connection reuse", () => {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
       });
+    }
+  });
+
+  it("releases the dispatcher when abort fires during an active pull on chunk or EOF", async () => {
+    for (const mode of ["chunk", "eof"] as const) {
+      const targetUrl = "http://127.0.0.1:41234/v1/models";
+      const dispatchers: unknown[] = [];
+      let upstreamCancelled = false;
+      const controller = new AbortController();
+      const reason = new Error(`caller aborted during active ${mode} pull`);
+      const transport: typeof fetch = async (input, init) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url === targetUrl) {
+          dispatchers.push((init as { dispatcher?: unknown } | undefined)?.dispatcher);
+          if (dispatchers.length === 1) {
+            const body = new ReadableStream<Uint8Array>({
+              pull(streamController) {
+                if (mode === "chunk") {
+                  // Abort while releaseCompatibleResponse.pull is awaiting reader.read().
+                  controller.abort(reason);
+                  streamController.enqueue(new TextEncoder().encode("first "));
+                  return;
+                }
+                streamController.close();
+                // Microtasks drain before setImmediate, so abort fires during onceImmediate().
+                queueMicrotask(() => {
+                  queueMicrotask(() => {
+                    controller.abort(reason);
+                  });
+                });
+              },
+              cancel() {
+                upstreamCancelled = true;
+              },
+            });
+            return new Response(body, {
+              status: 200,
+              headers: { "content-type": "text/plain" },
+            });
+          }
+          return new Response("second", {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+          });
+        }
+        return new Response(MODEL_LIST, {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      };
+      const safeFetch = createOpenAiCompatibleFetch(transport, undefined, { allowPrivate: true });
+      const retained = await safeFetch(targetUrl, { signal: controller.signal });
+      const bodyReader = retained.body!.getReader();
+      await expect(bodyReader.read()).rejects.toBe(reason);
+      if (mode === "chunk") expect(upstreamCancelled).toBe(true);
+      for (let index = 0; index < 33; index += 1) {
+        const res = await safeFetch(`http://127.0.0.1:${42000 + index}/v1/models`);
+        await res.text();
+      }
+      const followUp = await safeFetch(targetUrl);
+      expect(await followUp.text()).toBe("second");
+      expect(dispatchers).toHaveLength(2);
+      expect(dispatchers[0]).toBeDefined();
+      expect(dispatchers[1]).not.toBe(dispatchers[0]);
+      await closeOpenAiCompatibleTransports();
     }
   });
 });

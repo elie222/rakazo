@@ -538,11 +538,23 @@ export async function releaseCompatibleResponse(
             if (stop) settleGrace(await endedAfter(reader, stop, result));
             return;
           }
+          if (signal?.aborted) {
+            if (!result.done) {
+              bestEffort(
+                "cancel aborted compatible gateway response",
+                reader.cancel(signal.reason),
+              );
+            }
+            throw abortError();
+          }
           if (result.done) {
             await onceImmediate();
             if (draining) {
               settleGrace(true);
               return;
+            }
+            if (signal?.aborted) {
+              throw abortError();
             }
             try {
               controller.close();
@@ -567,6 +579,7 @@ export async function releaseCompatibleResponse(
           }
         } finally {
           activePulls -= 1;
+          if (signal?.aborted && !released && !draining) onAbort();
         }
       },
       async cancel(reason) {
