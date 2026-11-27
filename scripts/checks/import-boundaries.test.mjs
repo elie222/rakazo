@@ -304,7 +304,8 @@ function findViolations(sources, workspaces) {
       }
       if (target === TESTKIT && !testCode) flag("testkit");
       // Browser end-to-end specs run in Node and may seed the database.
-      const client = CLIENT_CODE.includes(owner) && !under(SERVER_DIRS, file);
+      // Every browser surface, including the desktop preload and setup renderer, is held to this.
+      const client = (CLIENT_CODE.includes(owner) || browser) && !under(SERVER_DIRS, file);
       if (SERVER_PACKAGES.includes(target) && client && !testCode) {
         flag("server");
       }
@@ -483,6 +484,7 @@ test("resolves specifiers to packages and reports each rule", () => {
     },
     { file: "apps/web/src/page.test.tsx", specifiers: ["../server/proxy.js"] },
     { file: "apps/desktop/src/preload/preload.cjs", specifiers: ["../main/ipc.js"] },
+    { file: "apps/desktop/src/preload/bridge.cjs", specifiers: [scoped("db")] },
     {
       file: "apps/web/server/proxy.ts",
       specifiers: [scoped("db"), scoped("core/node/screen"), "../src/shared.js"],
@@ -519,8 +521,10 @@ test("resolves specifiers to packages and reports each rule", () => {
       "runtime: apps/desktop/src/preload/preload.cjs -> ../main/ipc.js",
       "runtime: apps/web/src/page.tsx -> ../server/proxy.js",
       "runtime: apps/web/src/page.tsx -> @rakazo/core/node/screen",
+      "server: apps/desktop/src/preload/bridge.cjs -> @rakazo/db",
       "server: apps/web/src/app.tsx -> @rakazo/db",
       "testkit: apps/api/src/index.ts -> @rakazo/testkit",
+      "undeclared: apps/desktop/package.json -> @rakazo/db",
       "undeclared: apps/web/package.json -> @rakazo/core",
       "unused: packages/ui-web/package.json -> @rakazo/contracts",
       "vendor: packages/adapters/src/providers/computer/one/one-sandbox.ts -> ../two/two-sandbox.js",

@@ -623,6 +623,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       : undefined;
 
   // Self-hosted deployments without billing keep every saved home.
+  const onRetentionError = emailErrorLogger("saved home retention failed");
   const stopHomeRetention =
     email && billing && home instanceof ObjectAgentHomeStore
       ? startHourlySweep(
@@ -631,9 +632,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
             email,
             appUrl: new URL("/app", env.webOrigin).href,
             syncBilling: (customerId) => billing.sync(customerId),
-            onError: (error) => getLogger().error("saved home retention failed", error),
+            onError: onRetentionError,
           }),
-          (error) => getLogger().error("saved home retention failed", error),
+          onRetentionError,
         )
       : undefined;
 

@@ -29,11 +29,13 @@ import {
   Input,
   OptionSelect,
   Spinner,
-  SwitchField,
+  Switch,
 } from "@rakazo/ui-web";
 import { useQueryClient } from "@tanstack/react-query";
-import { XIcon } from "lucide-react";
+import { Play, XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { Notice } from "../../components/Notice";
+import { SettingsGroup, SettingsRow } from "../../components/settings/SettingsRows";
 import { callAutoLanguage } from "../../lib/calls/call-language-preference";
 import { useCallSession } from "../../lib/calls/call-session";
 import { speaker } from "../../lib/calls/tts";
@@ -546,7 +548,7 @@ export function VoiceSettingsOverlay({
   }
 
   const content = (
-    <>
+    <div className="space-y-4">
       {loading && !catalog.length ? (
         <div className="grid place-items-center py-10">
           <Spinner
@@ -555,303 +557,318 @@ export function VoiceSettingsOverlay({
           />
         </div>
       ) : null}
-      {error ? <p className="mb-4 text-body text-destructive">{error}</p> : null}
-      {notice ? <p className="mb-4 text-body text-success">{notice}</p> : null}
-      {catalog.length ? (
-        <Field>
-          <FieldLabel htmlFor={providerSelectId}>
-            <Trans>Provider</Trans>
-          </FieldLabel>
-          <OptionSelect
-            id={providerSelectId}
-            value={provider}
-            disabled={busy || signingIn}
-            options={catalog.map((entry) => ({
-              value: entry.id,
-              label: credentials.some((cred) => cred.provider === entry.id)
-                ? `${entry.name} (${t`Connected`})`
-                : entry.name,
-            }))}
-            onValueChange={(next) => void chooseProvider(next)}
-          />
-        </Field>
-      ) : null}
-      {hiddenSelfHosted && scope === "account" ? (
-        <Button
-          variant="ghost"
-          disabled={busy}
-          onClick={() => void disconnectProvider(OPENAI_COMPATIBLE_PROVIDER_ID)}
-        >
-          <Trans>Disconnect Self-hosted</Trans>
-        </Button>
-      ) : null}
-      {selected ? (
-        <>
-          {managesConnection ? (
-            <>
-              <VoiceModelConnectionActions
-                provider={selected.id}
-                choices={modelConnections}
-                signInLabel={modelSignIn}
-                linked={linked}
-                disabled={busy || signingIn}
-                signIn={signIn}
-                onChoose={connect}
-              />
-              {keyFolded ? (
-                // Only the summary shows here; opening it swaps in the key form below.
-                <Disclosure
-                  className="mt-5 text-body-sm leading-[1.5] text-muted-foreground"
-                  open={false}
-                  onOpenChange={() => setKeyShownFor(selected.id)}
-                  summary={<Trans>Or paste an API key</Trans>}
-                >
-                  {null}
-                </Disclosure>
-              ) : null}
-              {selfHosted ? (
-                <Field className="mt-5">
-                  <FieldLabel htmlFor={baseUrlId}>
-                    <Trans>Server URL</Trans>
-                  </FieldLabel>
-                  <Input
-                    id={baseUrlId}
-                    type="url"
-                    autoComplete="off"
-                    spellCheck={false}
-                    value={baseUrl}
-                    onChange={(event) => {
-                      edited.current.add("baseUrl");
-                      setBaseUrl(event.target.value);
-                    }}
-                    placeholder="http://192.168.1.10:8880/v1"
-                  />
-                </Field>
-              ) : null}
-              {keyless || linked || keyFolded ? null : (
-                <Field className="mt-5">
-                  <FieldLabel htmlFor={apiKeyId}>
-                    <Trans>API key</Trans>
-                  </FieldLabel>
-                  <Input
-                    id={apiKeyId}
-                    type="password"
-                    autoComplete="new-password"
-                    value={apiKey}
-                    onChange={(event) => {
-                      // The key belongs to this address, so a refresh must not swap it.
-                      edited.current.add("baseUrl");
-                      setApiKey(event.target.value);
-                    }}
-                    placeholder={
-                      selfHosted
-                        ? t`Optional`
-                        : credential
-                          ? t`Paste a replacement key`
-                          : t`Paste your API key`
-                    }
-                  />
-                </Field>
-              )}
-              {selfHosted ? (
+      {error ? <Notice tone="error">{error}</Notice> : null}
+      {notice ? <Notice tone="success">{notice}</Notice> : null}
+      {catalog.length || scope === "account" ? (
+        <SettingsGroup>
+          {catalog.length ? (
+            <SettingsRow
+              label={<label htmlFor={providerSelectId}>{t`Provider`}</label>}
+              control={
                 <>
-                  <Field className="mt-5">
-                    <FieldLabel htmlFor={ttsModelId}>
-                      <Trans>Speech model</Trans>
-                    </FieldLabel>
-                    <Input
-                      id={ttsModelId}
-                      autoComplete="off"
-                      spellCheck={false}
-                      value={ttsModel}
-                      maxLength={200}
-                      onChange={(event) => {
-                        edited.current.add("ttsModel");
-                        setTtsModel(event.target.value);
-                      }}
-                      placeholder={DEFAULT_COMPATIBLE_TTS_MODEL}
-                    />
-                  </Field>
-                  <Field className="mt-5">
-                    <FieldLabel htmlFor={sttModelId}>
-                      <Trans>Transcription model</Trans>
-                    </FieldLabel>
-                    <Input
-                      id={sttModelId}
-                      autoComplete="off"
-                      spellCheck={false}
-                      value={sttModel}
-                      maxLength={200}
-                      onChange={(event) => {
-                        edited.current.add("sttModel");
-                        setSttModel(event.target.value);
-                      }}
-                      placeholder={DEFAULT_COMPATIBLE_STT_MODEL}
-                    />
-                  </Field>
-                  {selected.transcriptionVocabulary ? (
-                    <Field className="mt-5">
-                      <FieldLabel htmlFor={transcriptionVocabularyId}>
-                        <Trans>Transcription vocabulary</Trans>
-                      </FieldLabel>
-                      <Input
-                        id={transcriptionVocabularyId}
-                        autoComplete="off"
-                        spellCheck={false}
-                        maxLength={MAX_TRANSCRIPTION_VOCABULARY_LENGTH}
-                        placeholder={t`Names and terms (optional)`}
-                        value={
-                          transcriptionVocabulary ??
-                          savedVoiceTranscriptionVocabulary(credential, baseUrl, sttBaseUrl)
-                        }
-                        onChange={(event) => {
-                          edited.current.add("transcriptionVocabulary");
-                          edited.current.add("baseUrl");
-                          edited.current.add("sttBaseUrl");
-                          setTranscriptionVocabulary(event.target.value);
-                        }}
-                      />
-                    </Field>
-                  ) : null}
-                  <Field className="mt-5">
-                    <FieldLabel htmlFor={sttBaseUrlId}>
-                      <Trans>Transcription server URL</Trans>
-                    </FieldLabel>
-                    <Input
-                      id={sttBaseUrlId}
-                      type="url"
-                      autoComplete="off"
-                      spellCheck={false}
-                      value={sttBaseUrl}
-                      onChange={(event) => {
-                        edited.current.add("sttBaseUrl");
-                        setSttBaseUrl(event.target.value);
-                      }}
-                      placeholder={baseUrl.trim() || "http://192.168.1.10:8880/v1"}
-                    />
-                  </Field>
-                  {sttBaseUrl.trim() ? (
-                    <Field className="mt-5">
-                      <FieldLabel htmlFor={sttApiKeyId}>
-                        <Trans>Transcription API key</Trans>
-                      </FieldLabel>
-                      <Input
-                        id={sttApiKeyId}
-                        type="password"
-                        autoComplete="new-password"
-                        value={sttApiKey}
-                        onChange={(event) => {
-                          // The key belongs to this address, so a refresh must not swap it.
-                          edited.current.add("sttBaseUrl");
-                          setSttApiKey(event.target.value);
-                        }}
-                        placeholder={t`Optional`}
-                      />
-                    </Field>
+                  <OptionSelect
+                    id={providerSelectId}
+                    className="w-56"
+                    value={provider}
+                    disabled={busy || signingIn}
+                    options={catalog.map((entry) => ({
+                      value: entry.id,
+                      label: credentials.some((cred) => cred.provider === entry.id)
+                        ? `${entry.name} (${t`Connected`})`
+                        : entry.name,
+                    }))}
+                    onValueChange={(next) => void chooseProvider(next)}
+                  />
+                  {selected && managesConnection && credential ? (
+                    <Button
+                      variant="secondary"
+                      // A sign-in finishing after a disconnect would connect voice again.
+                      disabled={busy || signingIn}
+                      onClick={() => void disconnectProvider()}
+                    >
+                      {pending === "disconnect" ? (
+                        <Trans>Disconnecting…</Trans>
+                      ) : keyless ? (
+                        <Trans>Turn off</Trans>
+                      ) : (
+                        <Trans>Disconnect</Trans>
+                      )}
+                    </Button>
                   ) : null}
                 </>
-              ) : null}
-              {(keyless && credential) || linked || keyFolded ? null : (
-                <Button
-                  type="button"
-                  className="mt-3"
-                  variant={offersModelConnection ? "outline" : "default"}
-                  disabled={busy || signingIn || !canConnect}
-                  onClick={() => void connect()}
-                >
-                  {/* A keyless option has nothing to connect; choosing it turns voice on. */}
-                  {pending === "connect" ? (
-                    <Trans>Connecting…</Trans>
-                  ) : keyless ? (
-                    <Trans>Turn on</Trans>
-                  ) : credential && selfHosted ? (
-                    <Trans>Reconnect</Trans>
-                  ) : credential ? (
-                    <Trans>Replace key</Trans>
-                  ) : (
-                    <Trans>Connect</Trans>
-                  )}
-                </Button>
-              )}
-              {credential ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="mt-3"
-                  // A sign-in finishing after a disconnect would connect voice again.
-                  disabled={busy || signingIn}
-                  onClick={() => void disconnectProvider()}
-                >
-                  {pending === "disconnect" ? (
-                    <Trans>Disconnecting…</Trans>
-                  ) : keyless ? (
-                    <Trans>Turn off</Trans>
-                  ) : (
-                    <Trans>Disconnect</Trans>
-                  )}
-                </Button>
-              ) : null}
-            </>
-          ) : null}
-
-          {credential ? (
-            <>
-              <Field className="mt-6">
-                <FieldLabel htmlFor={voiceSelectId}>
-                  <Trans>Voice</Trans>
-                </FieldLabel>
-                {typedVoice ? (
-                  <>
-                    <Input
-                      id={voiceSelectId}
-                      list={`${voiceSelectId}-list`}
-                      className="w-full"
-                      value={voiceId}
-                      disabled={busy}
-                      onChange={(event) => {
-                        edited.current.add("voiceId");
-                        setVoiceId(event.target.value);
-                      }}
-                      onBlur={() => {
-                        const next = voiceId.trim();
-                        if (next && next !== credential?.voiceId) void chooseVoice(next);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Enter") return;
-                        event.preventDefault();
-                        event.currentTarget.blur();
-                      }}
-                    />
-                    <datalist id={`${voiceSelectId}-list`}>
-                      {voiceOptions.map((voice) => (
-                        <option key={voice.id} value={voice.id}>
-                          {voice.label}
-                          {voice.description ? ` (${voice.description})` : ""}
-                        </option>
-                      ))}
-                    </datalist>
-                  </>
-                ) : (
-                  <OptionSelect
-                    id={voiceSelectId}
-                    value={voiceId}
+              }
+            >
+              <div className="mt-3 empty:hidden">
+                {hiddenSelfHosted && scope === "account" ? (
+                  <Button
+                    variant="ghost"
                     disabled={busy}
-                    options={voiceOptions.map((voice) => ({
-                      value: voice.id,
-                      label: voice.description
-                        ? `${voice.label} (${voice.description})`
-                        : voice.label,
-                    }))}
-                    onValueChange={(next) => void chooseVoice(next)}
-                  />
-                )}
-              </Field>
-              {selected.speechModel ? (
-                <Field className="mt-6">
-                  <FieldLabel htmlFor={speechModelId}>
-                    <Trans>Speech model</Trans>
-                  </FieldLabel>
+                    onClick={() => void disconnectProvider(OPENAI_COMPATIBLE_PROVIDER_ID)}
+                  >
+                    <Trans>Disconnect Self-hosted</Trans>
+                  </Button>
+                ) : null}
+                {selected && managesConnection ? (
+                  <>
+                    <VoiceModelConnectionActions
+                      provider={selected.id}
+                      choices={modelConnections}
+                      signInLabel={modelSignIn}
+                      linked={linked}
+                      disabled={busy || signingIn}
+                      signIn={signIn}
+                      onChoose={connect}
+                    />
+                    {keyFolded ? (
+                      // Only the summary shows here; opening it swaps in the key form below.
+                      <Disclosure
+                        className="mt-5 text-body-sm leading-[1.5] text-muted-foreground"
+                        open={false}
+                        onOpenChange={() => setKeyShownFor(selected.id)}
+                        summary={<Trans>Or paste an API key</Trans>}
+                      >
+                        {null}
+                      </Disclosure>
+                    ) : null}
+                    {selfHosted ? (
+                      <Field className="mt-5">
+                        <FieldLabel htmlFor={baseUrlId}>
+                          <Trans>Server URL</Trans>
+                        </FieldLabel>
+                        <Input
+                          id={baseUrlId}
+                          type="url"
+                          autoComplete="off"
+                          spellCheck={false}
+                          value={baseUrl}
+                          onChange={(event) => {
+                            edited.current.add("baseUrl");
+                            setBaseUrl(event.target.value);
+                          }}
+                          placeholder="http://192.168.1.10:8880/v1"
+                        />
+                      </Field>
+                    ) : null}
+                    {keyless || linked || keyFolded ? null : (
+                      <Field className="mt-5">
+                        <FieldLabel htmlFor={apiKeyId}>
+                          <Trans>API key</Trans>
+                        </FieldLabel>
+                        <Input
+                          id={apiKeyId}
+                          type="password"
+                          autoComplete="new-password"
+                          value={apiKey}
+                          onChange={(event) => {
+                            // The key belongs to this address, so a refresh must not swap it.
+                            edited.current.add("baseUrl");
+                            setApiKey(event.target.value);
+                          }}
+                          placeholder={
+                            selfHosted
+                              ? t`Optional`
+                              : credential
+                                ? t`Paste a replacement key`
+                                : t`Paste your API key`
+                          }
+                        />
+                      </Field>
+                    )}
+                    {selfHosted ? (
+                      <>
+                        <Field className="mt-5">
+                          <FieldLabel htmlFor={ttsModelId}>
+                            <Trans>Speech model</Trans>
+                          </FieldLabel>
+                          <Input
+                            id={ttsModelId}
+                            autoComplete="off"
+                            spellCheck={false}
+                            value={ttsModel}
+                            maxLength={200}
+                            onChange={(event) => {
+                              edited.current.add("ttsModel");
+                              setTtsModel(event.target.value);
+                            }}
+                            placeholder={DEFAULT_COMPATIBLE_TTS_MODEL}
+                          />
+                        </Field>
+                        <Field className="mt-5">
+                          <FieldLabel htmlFor={sttModelId}>
+                            <Trans>Transcription model</Trans>
+                          </FieldLabel>
+                          <Input
+                            id={sttModelId}
+                            autoComplete="off"
+                            spellCheck={false}
+                            value={sttModel}
+                            maxLength={200}
+                            onChange={(event) => {
+                              edited.current.add("sttModel");
+                              setSttModel(event.target.value);
+                            }}
+                            placeholder={DEFAULT_COMPATIBLE_STT_MODEL}
+                          />
+                        </Field>
+                        {selected.transcriptionVocabulary ? (
+                          <Field className="mt-5">
+                            <FieldLabel htmlFor={transcriptionVocabularyId}>
+                              <Trans>Transcription vocabulary</Trans>
+                            </FieldLabel>
+                            <Input
+                              id={transcriptionVocabularyId}
+                              autoComplete="off"
+                              spellCheck={false}
+                              maxLength={MAX_TRANSCRIPTION_VOCABULARY_LENGTH}
+                              placeholder={t`Names and terms (optional)`}
+                              value={
+                                transcriptionVocabulary ??
+                                savedVoiceTranscriptionVocabulary(credential, baseUrl, sttBaseUrl)
+                              }
+                              onChange={(event) => {
+                                edited.current.add("transcriptionVocabulary");
+                                edited.current.add("baseUrl");
+                                edited.current.add("sttBaseUrl");
+                                setTranscriptionVocabulary(event.target.value);
+                              }}
+                            />
+                          </Field>
+                        ) : null}
+                        <Field className="mt-5">
+                          <FieldLabel htmlFor={sttBaseUrlId}>
+                            <Trans>Transcription server URL</Trans>
+                          </FieldLabel>
+                          <Input
+                            id={sttBaseUrlId}
+                            type="url"
+                            autoComplete="off"
+                            spellCheck={false}
+                            value={sttBaseUrl}
+                            onChange={(event) => {
+                              edited.current.add("sttBaseUrl");
+                              setSttBaseUrl(event.target.value);
+                            }}
+                            placeholder={baseUrl.trim() || "http://192.168.1.10:8880/v1"}
+                          />
+                        </Field>
+                        {sttBaseUrl.trim() ? (
+                          <Field className="mt-5">
+                            <FieldLabel htmlFor={sttApiKeyId}>
+                              <Trans>Transcription API key</Trans>
+                            </FieldLabel>
+                            <Input
+                              id={sttApiKeyId}
+                              type="password"
+                              autoComplete="new-password"
+                              value={sttApiKey}
+                              onChange={(event) => {
+                                // The key belongs to this address, so a refresh must not swap it.
+                                edited.current.add("sttBaseUrl");
+                                setSttApiKey(event.target.value);
+                              }}
+                              placeholder={t`Optional`}
+                            />
+                          </Field>
+                        ) : null}
+                      </>
+                    ) : null}
+                    {(keyless && credential) || linked || keyFolded ? null : (
+                      <Button
+                        type="button"
+                        className="mt-3"
+                        variant={offersModelConnection ? "outline" : "default"}
+                        disabled={busy || signingIn || !canConnect}
+                        onClick={() => void connect()}
+                      >
+                        {/* A keyless option has nothing to connect; choosing it turns voice on. */}
+                        {pending === "connect" ? (
+                          <Trans>Connecting…</Trans>
+                        ) : keyless ? (
+                          <Trans>Turn on</Trans>
+                        ) : credential && selfHosted ? (
+                          <Trans>Reconnect</Trans>
+                        ) : credential ? (
+                          <Trans>Replace key</Trans>
+                        ) : (
+                          <Trans>Connect</Trans>
+                        )}
+                      </Button>
+                    )}
+                  </>
+                ) : null}
+              </div>
+            </SettingsRow>
+          ) : null}
+          {selected && credential ? (
+            <SettingsRow
+              label={<label htmlFor={voiceSelectId}>{t`Voice`}</label>}
+              control={
+                <>
+                  <div className="w-56">
+                    {typedVoice ? (
+                      <>
+                        <Input
+                          id={voiceSelectId}
+                          list={`${voiceSelectId}-list`}
+                          className="w-full"
+                          value={voiceId}
+                          disabled={busy}
+                          onChange={(event) => {
+                            edited.current.add("voiceId");
+                            setVoiceId(event.target.value);
+                          }}
+                          onBlur={() => {
+                            const next = voiceId.trim();
+                            if (next && next !== credential?.voiceId) void chooseVoice(next);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter") return;
+                            event.preventDefault();
+                            event.currentTarget.blur();
+                          }}
+                        />
+                        <datalist id={`${voiceSelectId}-list`}>
+                          {voiceOptions.map((voice) => (
+                            <option key={voice.id} value={voice.id}>
+                              {voice.label}
+                              {voice.description ? ` (${voice.description})` : ""}
+                            </option>
+                          ))}
+                        </datalist>
+                      </>
+                    ) : (
+                      <OptionSelect
+                        id={voiceSelectId}
+                        value={voiceId}
+                        disabled={busy}
+                        options={voiceOptions.map((voice) => ({
+                          value: voice.id,
+                          label: voice.description
+                            ? `${voice.label} (${voice.description})`
+                            : voice.label,
+                        }))}
+                        onValueChange={(next) => void chooseVoice(next)}
+                      />
+                    )}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={pending === "test" ? t`Playing…` : t`Hear a sample`}
+                    disabled={busy || !status?.ready || call !== null}
+                    onClick={() => void testVoice()}
+                  >
+                    {pending === "test" ? <Spinner /> : <Play />}
+                  </Button>
+                </>
+              }
+            />
+          ) : null}
+          {selected && credential && selected.speechModel ? (
+            <SettingsRow
+              label={<label htmlFor={speechModelId}>{t`Speech model`}</label>}
+              control={
+                <div className="w-56">
                   {listsSpeechModels && speechModelChoices.length ? (
                     <OptionSelect
                       id={speechModelId}
@@ -895,30 +912,25 @@ export function VoiceSettingsOverlay({
                       }}
                     />
                   )}
-                </Field>
-              ) : null}
-              <Button
-                type="button"
-                variant="secondary"
-                className="mt-4"
-                disabled={busy || !status?.ready || call !== null}
-                onClick={() => void testVoice()}
-              >
-                {pending === "test" ? <Trans>Playing…</Trans> : <Trans>Hear a sample</Trans>}
-              </Button>
-            </>
+                </div>
+              }
+            />
           ) : null}
-        </>
+          {scope === "account" ? (
+            <SettingsRow
+              label={t`Detect call language automatically`}
+              control={
+                <Switch
+                  aria-label={t`Detect call language automatically`}
+                  checked={autoLanguage}
+                  onCheckedChange={(checked) => callAutoLanguage.set(checked)}
+                />
+              }
+            />
+          ) : null}
+        </SettingsGroup>
       ) : null}
-      {scope === "account" ? (
-        <SwitchField
-          className="mt-6"
-          label={t`Detect call language automatically`}
-          checked={autoLanguage}
-          onCheckedChange={(checked) => callAutoLanguage.set(checked)}
-        />
-      ) : null}
-    </>
+    </div>
   );
 
   if (embedded) {
