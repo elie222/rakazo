@@ -263,12 +263,8 @@ export function keptToolResult(
     return undefined;
   let text: string;
   if (completion.error !== undefined) {
-    const withSecrets = redactToolSecrets(connectorErrorMessage(completion.error), secrets);
-    const preRedacted = redactCredentialJsonFields(
-      redactComposioApiKeyAssignments(withSecrets),
-      false,
-    );
-    text = sanitizeConnectorError(preRedacted, secrets, {
+    const preCleaned = cleanToolText(connectorErrorMessage(completion.error), secrets);
+    text = sanitizeConnectorError(preCleaned, secrets, {
       maxChars: Number.POSITIVE_INFINITY,
     });
   } else {

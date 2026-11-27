@@ -40,7 +40,7 @@ export function sanitizeConnectorError(
   const sanitizeDecoded = (value: string) =>
     redactSecrets(value, secrets)
       .replace(
-        /Bearer\s+(?!Bearer(?:[^\S\r\n]+(?!(?:\S*Bearer\s+\S|[\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:]\s))\S|\s+(?!(?:\{\s*(?:["}]|$)|\[\s*(?:["{[\]]|(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)(?=[\s,\]]|$))|\S*Bearer\s+\S|[\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:]\s))\S))\S+/gi,
+        /Bearer\s+(?!Bearer(?:[^\S\r\n]+(?!(?:\s|\S*Bearer\s+\S|[\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:]\s))\S|\s+(?!(?:\s|\{\s*(?:["}]|$)|\[\s*(?:["{[\]]|(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)(?=[\s,\]]|$))|\S*Bearer\s+\S|[\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:]\s))\S))\S+/gi,
         "Bearer [redacted]",
       )
       .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]");

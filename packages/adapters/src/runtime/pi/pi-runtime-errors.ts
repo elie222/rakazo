@@ -205,11 +205,35 @@ function trailingWhitespaceAfterSeparator(prefix: string): string {
   return prefix.slice(end);
 }
 
+function hasRedactableNextValue(
+  text: string,
+  pos: number,
+  requireSpaceAfterSep: boolean,
+  sameLineSpace: number,
+  decoded: boolean,
+): boolean {
+  if (pos >= text.length) return false;
+  const ch = text[pos]!;
+  if (ch === "\n" || ch === "\r") return false;
+  if (!decoded && ch === "\\" && text[pos + 1] === '"') {
+    return pos + 2 < text.length && text[pos + 2] !== '"';
+  }
+  if (ch === '"' || ch === "'") {
+    if (!requireSpaceAfterSep) {
+      return scanQuotedValueEnd(text, pos, decoded) >= 0;
+    }
+    return scanSingleLineQuotedValueEnd(text, pos, decoded) > pos + 2;
+  }
+  if (!requireSpaceAfterSep) return true;
+  return sameLineSpace > 0 && !/[\s"',;&]/.test(ch);
+}
+
 function defersToNextCredentialKey(
   text: string,
   valueStart: number,
   ws: string,
   requireSpaceAfterSep: boolean,
+  decoded: boolean,
 ): boolean {
   const crossedLine =
     ws.includes("\n") || ws.includes("\r") || ws.includes("\\n") || ws.includes("\\r");
@@ -233,12 +257,17 @@ function defersToNextCredentialKey(
     sameLineSpace += 1;
   }
   if (pos < text.length && text[pos] !== "\n" && text[pos] !== "\r") {
-    if (!requireSpaceAfterSep) return ws.length > 0;
-    return sameLineSpace > 0 || text[pos] === '"' || text[pos] === "'";
+    if (!decoded && isJsonEscapedSpace(text, pos)) {
+      if (!crossedLine || !isBare) return false;
+      const afterEscaped = skipSpaceOrJsonEscapedSpace(text, pos);
+      return hasRedactableNextValue(text, afterEscaped, requireSpaceAfterSep, 1, false);
+    }
+    if (!requireSpaceAfterSep && ws.length === 0) return false;
+    return hasRedactableNextValue(text, pos, requireSpaceAfterSep, sameLineSpace, decoded);
   }
   if (!crossedLine || !isBare) return false;
   while (pos < text.length && /\s/.test(text[pos]!)) pos += 1;
-  return pos < text.length;
+  return hasRedactableNextValue(text, pos, requireSpaceAfterSep, 1, decoded);
 }
 
 function scanQuotedValueEnd(text: string, open: number, decoded: boolean): number {
@@ -361,7 +390,7 @@ function redactComposioRegexAssignments(text: string, decoded: boolean): string 
     }
     if (startsWithBearer(text, valueStart)) continue;
     const ws = trailingWhitespaceAfterSeparator(match[0]);
-    if (defersToNextCredentialKey(text, valueStart, ws, false)) continue;
+    if (defersToNextCredentialKey(text, valueStart, ws, false, decoded)) continue;
     let end = valueStart;
     while (end < text.length && !/[\s=:]/.test(text[end]!)) {
       if (!decoded && text[end] === '"') {
@@ -405,7 +434,7 @@ function redactGenericAssignmentsByPattern(
     ) {
       continue;
     }
-    if (defersToNextCredentialKey(text, valueStart, ws, true)) continue;
+    if (defersToNextCredentialKey(text, valueStart, ws, true, decoded)) continue;
     if (!decoded && text[valueStart] === "\\" && text[valueStart + 1] === '"') {
       const closeAt = scanEscapedDoubleQuotedEnd(text, valueStart);
       if (closeAt >= 0) {

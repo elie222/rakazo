@@ -35,7 +35,7 @@ const RAW_JSON_CONTAINER_START =
 const RAW_ESCAPED_QUOTED_VALUE = /\\(?:\\\\)*"[^\S\r\n]*[^"\s\r\n]/;
 const RAW_QUOTED_VALUE = /"(?!\s*[:,}\]\r\n]|$)[^"\r\n]+"|'[^'"\r\n]+'/;
 const RAW_ASSIGNED_VALUE = new RegExp(
-  `(?:${RAW_ESCAPED_QUOTED_VALUE.source}|${RAW_QUOTED_VALUE.source}|\\\\(?![nrt"\\\\])|[^\\s"',;&\\\\])`,
+  `(?:${RAW_ESCAPED_QUOTED_VALUE.source}|${RAW_QUOTED_VALUE.source}|\\\\(?:\\\\|(?![nrt"]))|[^\\s"',;&\\\\])`,
 );
 const RAW_MID_VALUE_SPLIT = /(?:\\(?![nrt"\\])|[^\s"'\\,;&}:\]])*(?:[:}\]]|\\\\)[^\s"',;&]/;
 const RAW_SPLITTING_CREDENTIAL_KEY = new RegExp(
@@ -48,10 +48,10 @@ const DECODED_SPLITTING_CREDENTIAL_KEY = new RegExp(
   `[\\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\\s*(?::\\s*${DECODED_ASSIGNED_VALUE.source}|=(?:\\s+${DECODED_ASSIGNED_VALUE.source}|${DECODED_QUOTED_VALUE.source}|${DECODED_MID_VALUE_SPLIT.source}))`,
 );
 const RAW_DEFERRED_BEARER_FOLLOWS = new RegExp(
-  `Bearer(?:[^\\S\\r\\n]+(?!(?:\\S*Bearer(?:\\s|\\\\[nrt])+\\S|${RAW_SPLITTING_CREDENTIAL_KEY.source}))\\S|\\s+(?!(?:${JSON_CONTAINER_LINE_START.source}|\\S*Bearer(?:\\s|\\\\[nrt])+\\S|${RAW_SPLITTING_CREDENTIAL_KEY.source}))\\S|\\s*(?:\\\\[nrt])+(?:\\s|\\\\[nrt])*(?!(?:${RAW_JSON_CONTAINER_START.source}|\\S*Bearer(?:\\s|\\\\[nrt])+\\S|${RAW_SPLITTING_CREDENTIAL_KEY.source}))(?:\\\\"|'|\\\\(?![nrt"\\\\])|[^\\s"',;&}:\\]\\\\]))`,
+  `Bearer(?:[^\\S\\r\\n]+(?!(?:\\s|\\\\[nrt]|\\S*Bearer(?:\\s|\\\\[nrt])+\\S|${RAW_SPLITTING_CREDENTIAL_KEY.source}))\\S|\\s+(?!(?:\\s|\\\\[nrt]|${JSON_CONTAINER_LINE_START.source}|\\S*Bearer(?:\\s|\\\\[nrt])+\\S|${RAW_SPLITTING_CREDENTIAL_KEY.source}))\\S|\\s*\\\\[nrt](?:\\s|\\\\[nrt])*(?!(?:\\s|\\\\[nrt]|${RAW_JSON_CONTAINER_START.source}|\\S*Bearer(?:\\s|\\\\[nrt])+\\S|${RAW_SPLITTING_CREDENTIAL_KEY.source}))(?:\\\\"|'|\\\\(?![nrt"\\\\])|[^\\s"',;&}:\\]\\\\]))`,
 );
 const DECODED_DEFERRED_BEARER_FOLLOWS = new RegExp(
-  `Bearer(?:[^\\S\\r\\n]+(?!(?:\\S*Bearer\\s+\\S|${DECODED_SPLITTING_CREDENTIAL_KEY.source}))\\S|\\s+(?!(?:${JSON_CONTAINER_LINE_START.source}|\\S*Bearer\\s+\\S|${DECODED_SPLITTING_CREDENTIAL_KEY.source}))\\S)`,
+  `Bearer(?:[^\\S\\r\\n]+(?!(?:\\s|\\S*Bearer\\s+\\S|${DECODED_SPLITTING_CREDENTIAL_KEY.source}))\\S|\\s+(?!(?:\\s|${JSON_CONTAINER_LINE_START.source}|\\S*Bearer\\s+\\S|${DECODED_SPLITTING_CREDENTIAL_KEY.source}))\\S)`,
 );
 const RAW_ATOM = /(?:\\(?![nrt"\\])|[^\s"',;&}:\]\\])/;
 const RAW_SUFFIX_ATOM = new RegExp(
@@ -71,7 +71,7 @@ const DECODED_BEARER = new RegExp(
   "gi",
 );
 
-const ESCAPED_WS_BEARER_RE = /Bearer\s*(?:\\[nrt])+(?:\s|\\[nrt])*/gi;
+const ESCAPED_WS_BEARER_RE = /Bearer\s*\\[nrt](?:\s|\\[nrt])*/gi;
 const ESCAPED_BEARER_NEXT_STICKY = /Bearer(?:\s|\\[nrt])+/iy;
 const RAW_JSON_CONTAINER_STICKY = new RegExp(RAW_JSON_CONTAINER_START.source, "y");
 const RAW_SPLITTING_CREDENTIAL_STICKY = new RegExp(RAW_SPLITTING_CREDENTIAL_KEY.source, "iy");
