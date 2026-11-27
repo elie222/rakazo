@@ -287,6 +287,11 @@ async function main() {
         process.env.USER_DEVICES_ALLOW_ROUTINES_AFTER_OUTSIDE_CONTENT,
         false,
       ),
+      anyRun: parseEnvFlag(
+        "USER_DEVICES_ALLOW_ANY_RUN",
+        process.env.USER_DEVICES_ALLOW_ANY_RUN,
+        false,
+      ),
     },
     paymentWallet,
     stoppingSignal: shutdown.signal,

@@ -447,37 +447,40 @@ export async function prepareToolRequest(
         "user_computer_unavailable",
         "The user's computer is not available in this run.",
       );
-    if (isSubagentToolExecution(executionId))
-      return refusal("helper_user_computer", "Helpers cannot use the user's computer.");
-    // Turning the switch off or editing the routine mid-run ends its use of the computer, and a
-    // routine the server's switch let on it loses it once the routine watches or is gone.
-    if (
-      ctx.source.ownerComputerRoutine
-        ? !(await routineRunUsesOwnerComputer(deps.prisma, ctx.run))
-        : ctx.run.trigger === "routine" && (await routineRunWatches(deps.prisma, ctx.runId))
-    )
-      return refusal(
-        "user_computer_unavailable",
-        "The user's computer is not available in this run.",
-      );
-    // Text a webhook, Git event or email handed into this run keeps it off the computer, and so
-    // does a routine's unless the server lets routines reach it (see userComputerBlockingOrigins).
-    if (
-      await deps.prisma.steeringMessage.findFirst({
-        where: {
-          runId: ctx.runId,
-          claimedAt: { not: null },
-          originTrigger: {
-            in: userComputerBlockingOrigins(deps.userComputerAccess ?? NO_USER_COMPUTER_ACCESS),
+    // A server that lets any run of the owner's own bot use their computer skips these checks.
+    if (!deps.userComputerAccess?.anyRun) {
+      if (isSubagentToolExecution(executionId))
+        return refusal("helper_user_computer", "Helpers cannot use the user's computer.");
+      // Turning the switch off or editing the routine mid-run ends its use of the computer, and a
+      // routine the server's switch let on it loses it once the routine watches or is gone.
+      if (
+        ctx.source.ownerComputerRoutine
+          ? !(await routineRunUsesOwnerComputer(deps.prisma, ctx.run))
+          : ctx.run.trigger === "routine" && (await routineRunWatches(deps.prisma, ctx.runId))
+      )
+        return refusal(
+          "user_computer_unavailable",
+          "The user's computer is not available in this run.",
+        );
+      // Text a webhook, Git event or email handed into this run keeps it off the computer, and so
+      // does a routine's unless the server lets routines reach it (see userComputerBlockingOrigins).
+      if (
+        await deps.prisma.steeringMessage.findFirst({
+          where: {
+            runId: ctx.runId,
+            claimedAt: { not: null },
+            originTrigger: {
+              in: userComputerBlockingOrigins(deps.userComputerAccess ?? NO_USER_COMPUTER_ACCESS),
+            },
           },
-        },
-        select: { id: true },
-      })
-    )
-      return refusal(
-        "user_computer_unavailable",
-        "The user's computer is not available in this run.",
-      );
+          select: { id: true },
+        })
+      )
+        return refusal(
+          "user_computer_unavailable",
+          "The user's computer is not available in this run.",
+        );
+    }
   }
   // The card shows and the effect stores the events in their short form, so padding can't hide one.
   if ((name === "schedule_create" || name === "schedule_update") && "on" in args) {

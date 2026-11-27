@@ -203,6 +203,29 @@ describe("userComputerOwner", () => {
   ])("is still nobody with the switches on for %o", (change) => {
     expect(userComputerOwner({ ...own, ...change })).toBeUndefined();
   });
+
+  const anyRun = { ...all, anyRun: true };
+  it.each([
+    { trigger: "tickets" },
+    { trigger: "webhook" },
+    { trigger: "helper", helperRun: true },
+    { trigger: "routine", routineWatches: true },
+    { trigger: "bot_message", ownBotChain: false },
+    { trigger: "messaging", ownerMessage: false },
+    { trigger: "user", groupThread: true },
+    { trigger: "follow_up", sourceRole: "bot" },
+  ])("is the owner for any run of their own bot when any run is allowed, %o", (change) => {
+    expect(userComputerOwner({ ...own, sourceRole: undefined, access: anyRun, ...change })).toBe(
+      "user-1",
+    );
+  });
+
+  it.each([{ runUserId: "user-2" }, { botUserId: "user-2" }, { messagingChannelRun: true }])(
+    "is still nobody for another person's run when any run is allowed, %o",
+    (change) => {
+      expect(userComputerOwner({ ...own, access: anyRun, ...change })).toBeUndefined();
+    },
+  );
 });
 
 /** A routine task queued while its routine watched a page: the owner's prompt, then the note. */

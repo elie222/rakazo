@@ -116,6 +116,11 @@ export interface AppEnv extends MessagingEnvironmentValues {
    * owner's computer without asking again after it read outside content. Default off.
    */
   userDevicesAllowRoutinesAfterOutsideContent: boolean;
+  /**
+   * USER_DEVICES_ALLOW_ANY_RUN=true lets every run of a user's own bot use their computer,
+   * whatever started it. Default off.
+   */
+  userDevicesAllowAnyRun: boolean;
   /** COMPUTER_SETTINGS_ENABLED=true lets Settings choose where computers run. Default off. */
   computerSettingsEnabled: boolean;
   /** Operator menu links that frame a same-origin page (RAKAZO_NAV_LINKS). */
@@ -216,6 +221,7 @@ export function userComputerAccess(env: AppEnv) {
     messaging: env.userDevicesAllowMessaging,
     webhookChains: env.userDevicesAllowWebhookChains,
     routinesAfterOutsideContent: env.userDevicesAllowRoutinesAfterOutsideContent,
+    anyRun: env.userDevicesAllowAnyRun,
   };
 }
 
@@ -364,6 +370,11 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     userDevicesAllowRoutinesAfterOutsideContent: parseEnvFlag(
       "USER_DEVICES_ALLOW_ROUTINES_AFTER_OUTSIDE_CONTENT",
       source.USER_DEVICES_ALLOW_ROUTINES_AFTER_OUTSIDE_CONTENT,
+      false,
+    ),
+    userDevicesAllowAnyRun: parseEnvFlag(
+      "USER_DEVICES_ALLOW_ANY_RUN",
+      source.USER_DEVICES_ALLOW_ANY_RUN,
       false,
     ),
     computerSettingsEnabled: source.COMPUTER_SETTINGS_ENABLED === "true",

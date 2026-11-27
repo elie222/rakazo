@@ -9,6 +9,7 @@ import { LOGIN_CODE_FIELD, vaultLoginUseOf } from "../../secrets/vault/vault-car
 import type { ToolRequest } from "./run-tool-request.js";
 import { prepareScheduleUpdateApproval, prepareToolRequest } from "./run-tool-request.js";
 import { taskTools } from "./run-tools-tasks.js";
+import type { UserComputerAccess } from "./run-tools-user-computer.js";
 
 // RFC 6238's test key, written in pieces so it never reads as a saved secret.
 const TEST_KEY = ("GEZDGNBV" + "GY3TQOJQ").repeat(2);
@@ -757,10 +758,7 @@ describe("prepareToolRequest: a saved login that asks first", () => {
 });
 
 describe("the user's computer after a routine or webhook joined the run", () => {
-  function userComputerCall(
-    claimed: boolean,
-    access?: { routines: boolean; ownBots: boolean; messaging: boolean; webhookChains: boolean },
-  ) {
+  function userComputerCall(claimed: boolean, access?: UserComputerAccess) {
     const findFirst = vi.fn(async (_query: { where: Record<string, unknown> }) =>
       claimed ? { id: "steering-1" } : null,
     );
@@ -828,6 +826,19 @@ describe("the user's computer after a routine or webhook joined the run", () => 
     });
     // The bot that took the event in never gets the computer; only bots it messages may.
     expect(findFirst.mock.calls.at(-1)?.[0].where.originTrigger).toEqual({ in: ["webhook"] });
+  });
+
+  it("lets handed-in webhook text and helpers through when any run may use the computer", async () => {
+    const { ctx, request } = userComputerCall(true, {
+      routines: false,
+      ownBots: false,
+      messaging: false,
+      webhookChains: false,
+      anyRun: true,
+    });
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    const helper = { ...request, executionId: JSON.stringify(["pi-tool", "subagent-1", "call-1"]) };
+    await expect(prepareToolRequest(ctx as never, helper)).resolves.toBeUndefined();
   });
 
   /** A routine run the routines switch let on the computer, whose routine is now `routine`. */

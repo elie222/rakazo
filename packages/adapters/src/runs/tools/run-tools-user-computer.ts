@@ -65,6 +65,8 @@ export type UserComputerAccess = {
   verifiedChatApps?: readonly string[];
   /** A routine run keeps the computer without asking again after it read outside content. */
   routinesAfterOutsideContent?: boolean;
+  /** Every run of the owner's own bot may use their computer, whatever started it. */
+  anyRun?: boolean;
 };
 
 export const NO_USER_COMPUTER_ACCESS: UserComputerAccess = {
@@ -82,7 +84,8 @@ export const NO_USER_COMPUTER_ACCESS: UserComputerAccess = {
  * `ownBotChain` says the chain behind it started with them (see botChainFromOwner), none in a group
  * chat. A routine that watches something hands the run text someone else may have written, so it
  * reaches no one's through the switch; nor do webhooks, channels, helpers and other people's
- * messages.
+ * messages. A server can instead let every run of the owner's own bot reach it, whatever started
+ * it; another person's run still never does.
  */
 export function userComputerOwner(input: {
   trigger: string;
@@ -103,6 +106,8 @@ export function userComputerOwner(input: {
   helperRun: boolean;
 }): string | undefined {
   if (input.messagingChannelRun || input.runUserId !== input.botUserId) return undefined;
+  // The server lets every run of the owner's own bot reach their computer, whatever started it.
+  if (input.access.anyRun) return input.runUserId;
   const reachable =
     input.trigger === "user" || input.trigger === "follow_up"
       ? input.sourceRole === "user"
@@ -205,6 +210,8 @@ export async function userComputerTrust(
   ownsBot: boolean,
   access: UserComputerAccess,
 ): Promise<{ ownBotChain: boolean; routineWatches: boolean; ownerMessage: boolean }> {
+  // Every run reaches the computer then (see userComputerOwner), so nothing here is read.
+  if (access.anyRun) return { ownBotChain: false, routineWatches: false, ownerMessage: false };
   return {
     ownBotChain:
       run.trigger === "bot_message" &&
@@ -407,6 +414,7 @@ export async function userComputerGate(
   if (
     ctx.run.trigger === "routine" &&
     !ctx.deps.userComputerAccess?.routinesAfterOutsideContent &&
+    !ctx.deps.userComputerAccess?.anyRun &&
     (await isRunTaintedBeyondOwnComputer(ctx))
   )
     return "ask";

@@ -476,6 +476,15 @@ describe("OIDC environment", () => {
       loadEnv({ ...base, USER_DEVICES_ALLOW_ROUTINES_AFTER_OUTSIDE_CONTENT: "on" }),
     ).toThrow("USER_DEVICES_ALLOW_ROUTINES_AFTER_OUTSIDE_CONTENT must be true or false");
   });
+  it("reads the any-run computer switch strictly, off by default", () => {
+    expect(loadEnv(base).userDevicesAllowAnyRun).toBe(false);
+    expect(loadEnv({ ...base, USER_DEVICES_ALLOW_ANY_RUN: "true" }).userDevicesAllowAnyRun).toBe(
+      true,
+    );
+    expect(() => loadEnv({ ...base, USER_DEVICES_ALLOW_ANY_RUN: "on" })).toThrow(
+      "USER_DEVICES_ALLOW_ANY_RUN must be true or false",
+    );
+  });
   it("refuses a RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC value it can't read", () => {
     for (const value of ["", "0", "false", "1", "TRUE"]) {
       expect(() => loadEnv({ ...base, RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC: value })).not.toThrow();
