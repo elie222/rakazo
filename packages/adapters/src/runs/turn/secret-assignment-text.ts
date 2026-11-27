@@ -56,6 +56,15 @@ function isComposioLabel(text: string, start: number, end: number): boolean {
   );
 }
 
+/** True when `pos` opens `Bearer <non-whitespace>`, so the Bearer pass should redact the token. */
+function startsWithBearerToken(text: string, pos: number): boolean {
+  if (!startsWithIgnoreCase(text, "bearer", pos)) return false;
+  let next = pos + 6;
+  if (!isWhitespace(text[next])) return false;
+  while (next < text.length && isWhitespace(text[next])) next += 1;
+  return next < text.length;
+}
+
 /** A `"` preceded by an odd number of backslashes is an escape, not the start of a string. */
 function quoteIsEscaped(text: string, index: number): boolean {
   let slashes = 0;
@@ -191,6 +200,10 @@ export function redactComposioApiKeyAssignments(text: string): string {
     }
     pos += 1;
     while (isWhitespace(text[pos])) pos += 1;
+    if (startsWithBearerToken(text, pos)) {
+      index = pos;
+      continue;
+    }
     const end = assignmentValueEnd(text, pos);
     if (end < 0) {
       index += COMPOSIO_API_KEY_LABEL.length;

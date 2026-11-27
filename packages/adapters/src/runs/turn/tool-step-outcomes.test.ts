@@ -917,18 +917,38 @@ describe("tool step outcomes", () => {
     const adjacentArray = 'INFO Bearer "fixturePrefix"[1,2]';
     const bearerAfterKey = "password: Bearer fixtureSecond";
     const bearerHyphenAfterKey = "password: Bearer-fixtureSecond";
+    const composioBearer = "COMPOSIO_API_KEY=Bearer fixtureSecond";
+    const composioMultilineBearer = 'COMPOSIO_API_KEY: Bearer\n "fixtureSecond"';
+    const composioBearerHyphen = "COMPOSIO_API_KEY=Bearer-fixtureSecond";
+    const escapedInnerQuoteBearer = String.raw`Bearer "before\" fixtureSuffix"`;
+    const escapedInnerQuoteJson = JSON.stringify({
+      note: escapedInnerQuoteBearer,
+      status: "ok",
+    });
     const bearerWithJwt = "Bearer prefix.eyJaaa.bbb.ccc.fixtureTail";
+    const failed = (text: string) =>
+      keptToolResult(
+        { name: "shell", executionId: "tool-failed", durationMs: 1, error: new Error(text) },
+        [],
+      );
     for (const read of [kept, replay]) {
       expect(read(plainTail)).toBe("Bearer [redacted]");
       expect(read(escapedOpen)).toBe("Bearer [redacted]");
       expect(read(escapedRun)).toBe("Bearer [redacted]");
       expect(read(adjacentBearer)).toBe("Bearer [redacted]Bearer [redacted]");
-      expect(read(adjacentPassword)).not.toContain("fixtureSecond");
-      expect(read(adjacentPassword)).not.toContain("fixturePrefix");
+      expect(read(adjacentPassword)).toBe("Bearer [redacted]password: [redacted]");
       expect(read(adjacentJson)).toBe('INFO Bearer [redacted]{"status":"ok"}');
       expect(read(adjacentArray)).toBe("INFO Bearer [redacted][1,2]");
       expect(read(bearerAfterKey)).toBe("password: Bearer [redacted]");
       expect(read(bearerHyphenAfterKey)).toBe("password: [redacted]");
+      expect(read(composioBearer)).toBe("COMPOSIO_API_KEY=Bearer [redacted]");
+      expect(read(composioMultilineBearer)).toBe("COMPOSIO_API_KEY: Bearer [redacted]");
+      expect(read(composioBearerHyphen)).toBe("COMPOSIO_API_KEY=[redacted]");
+      expect(read(escapedInnerQuoteBearer)).toBe("Bearer [redacted]");
+      expect(JSON.parse(read(escapedInnerQuoteJson) ?? "")).toEqual({
+        note: "Bearer [redacted]",
+        status: "ok",
+      });
       expect(read(bearerWithJwt)).toBe("Bearer [redacted]");
       expect(read("Bearer fixturePrefix\nNext line")).toBe("Bearer [redacted]\nNext line");
       expect(read('Authorization: "Bearer secret"')).toBe('Authorization: "Bearer [redacted]"');
@@ -985,12 +1005,23 @@ describe("tool step outcomes", () => {
       status: "ok",
     });
     expect(sanitizeError(adjacentBearer)).toBe("Bearer [redacted]Bearer [redacted]");
-    expect(sanitizeError(adjacentPassword)).not.toContain("fixtureSecond");
-    expect(sanitizeError(adjacentPassword)).not.toContain("fixturePrefix");
+    expect(sanitizeError(adjacentPassword)).toBe("Bearer [redacted]password: [redacted]");
+    expect(failed(adjacentPassword)).toBe("Bearer [redacted]password: [redacted]");
     expect(sanitizeError(adjacentJson)).toBe('INFO Bearer [redacted]{"status":"ok"}');
     expect(sanitizeError(adjacentArray)).toBe("INFO Bearer [redacted][1,2]");
     expect(sanitizeError(bearerAfterKey)).toBe("password: Bearer [redacted]");
     expect(sanitizeError(bearerHyphenAfterKey)).toBe("password: [redacted]");
+    expect(sanitizeError(composioBearer)).toBe("COMPOSIO_API_KEY=Bearer [redacted]");
+    expect(failed(composioBearer)).toBe("COMPOSIO_API_KEY=Bearer [redacted]");
+    expect(sanitizeError(composioMultilineBearer)).toBe("COMPOSIO_API_KEY: Bearer [redacted]");
+    expect(failed(composioMultilineBearer)).toBe("COMPOSIO_API_KEY: Bearer [redacted]");
+    expect(sanitizeError(composioBearerHyphen)).toBe("COMPOSIO_API_KEY=[redacted]");
+    expect(sanitizeError(escapedInnerQuoteBearer)).toBe("Bearer [redacted]");
+    expect(failed(escapedInnerQuoteBearer)).toBe("Bearer [redacted]");
+    expect(JSON.parse(sanitizeError(escapedInnerQuoteJson))).toEqual({
+      note: "Bearer [redacted]",
+      status: "ok",
+    });
     expect(sanitizeError(bearerWithJwt)).toBe("Bearer [redacted]");
     // Saved replay of already-sanitized output must preserve adjacent JSON openers and Bearer labels.
     expect(replay(kept(adjacentJson) ?? "")).toBe('INFO Bearer [redacted]{"status":"ok"}');
