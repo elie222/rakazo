@@ -720,6 +720,25 @@ describe("chat settings model row", () => {
     });
   });
 
+  it("saves the selected model connection by ID", async () => {
+    mocks.secondConnection = true;
+    mocks.params = { botId: "bot-fixture", model: "openrouter::vendor/model-1" };
+    await render();
+    const menu = mocks.menus.get("Model connection");
+    expect(menu?.actions.map(({ title }) => title)).toEqual(["Automatic", "Work"]);
+    await act(async () =>
+      menu!.onPressAction({ nativeEvent: { event: `choice:${WORK_CREDENTIAL_ID}` } }),
+    );
+    expect(mocks.update).not.toHaveBeenCalled();
+    const save = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Save",
+    );
+    await act(async () => save!.click());
+    expect(mocks.update).toHaveBeenCalledWith(
+      expect.objectContaining({ botId: "bot-fixture", modelCredentialId: WORK_CREDENTIAL_ID }),
+    );
+  });
+
   it("stages the model the list hands back until Save", async () => {
     mocks.params = { botId: "bot-fixture" };
     await render();

@@ -7,6 +7,7 @@
   "infra/sandboxes/supervisor/src/page-browser-helper.test.ts",
   "packages/adapters/src/computers/computer-idle.test.ts",
   "packages/adapters/src/mcp/mcp-package-installer.test.ts",
+  "packages/adapters/src/providers/agent-runtime/claude/runtime.test.ts",
   "packages/adapters/src/providers/computer/createos/createos-sandbox.test.ts",
   "packages/adapters/src/providers/computer/local-vm/apple-container-sandbox.test.ts",
   "packages/adapters/src/runtime/acp/acp-runtime.test.ts",

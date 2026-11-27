@@ -11,6 +11,7 @@ import {
   redactSecrets,
   withoutLastToolStepNotes,
 } from "@rakazo/core";
+import type { NativeDmCommit } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { resolveBotWorkspacePath } from "../../computers/screens/computer-support.js";
 import {
@@ -112,7 +113,7 @@ export async function enqueueConversationRetention(
 }
 
 /** The turn ended: apply a scripted runtime's files and memory, then finalize the reply. */
-export async function completeRun(ctx: RunContext) {
+export async function completeRun(ctx: RunContext, nativeDmSession?: NativeDmCommit) {
   const { deps, run, runId, bot, thread } = ctx;
   const { reply } = ctx.state;
   recordExplicitNoResponse(reply, reply.assistantTurnText);
@@ -150,6 +151,7 @@ export async function completeRun(ctx: RunContext) {
     outcome: "completed",
     blocks,
     markUnread: !groupSilentEnd && marksUnread,
+    ...(nativeDmSession ? { nativeDmSession } : {}),
     // Only a reply that holds the whole turn stands for it; earlier messages of this run would
     // sit between the turn's prompt and the reply.
     ...(reply.transcript && blocks.length > 0 && !reply.publishedMidTurnUserMessage

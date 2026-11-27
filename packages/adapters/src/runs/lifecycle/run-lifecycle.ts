@@ -38,6 +38,7 @@ import {
 } from "../assembly/run-computer.js";
 import type { RunComputerUseState, RunLeaseState } from "../assembly/run-context.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
+import { PrimaryChatRuntimeChangedError } from "../turn/primary-runtime-pilot.js";
 import type { TakeoverResumeCheckpoint } from "../turn/takeover-resume.js";
 import { continueRunClaimFence, TAKEOVER_RESUME_CHECKPOINTS } from "../turn/takeover-resume.js";
 import { wakeRun } from "../wakeups/wake-run.js";
@@ -512,10 +513,13 @@ export async function retryRunSetup(
   // Only Recover brings this computer back, so the run ends now rather than starting it again.
   const recoveryRequired = computerNeedsRecovery(setupError);
   const diskTooLarge = setupError instanceof SandboxDiskTooLargeError;
+  const runtimeChanged = setupError instanceof PrimaryChatRuntimeChangedError;
   const setupMessage = redactSecrets(
     recoveryRequired
       ? computerRunError(setupError)
-      : userRunError(diskTooLarge ? setupError : failure),
+      : runtimeChanged
+        ? setupError.message
+        : userRunError(diskTooLarge ? setupError : failure),
     runSecrets,
   );
   const reportedSetupError = sanitizedError(setupError, (text) => redactSecrets(text, runSecrets));
@@ -530,7 +534,10 @@ export async function retryRunSetup(
     setupError instanceof VaultKeyUnavailableError;
   // Computer recovery needs user action, and a task without authorization must end.
   const cannotContinue =
-    recoveryRequired || diskTooLarge || setupError instanceof RunOriginUnauthorizedError;
+    recoveryRequired ||
+    diskTooLarge ||
+    runtimeChanged ||
+    setupError instanceof RunOriginUnauthorizedError;
   // Named here, not left to the log context, so the line is found by run wherever it is written.
   const runFields = {
     "run.id": runId,

@@ -86,6 +86,7 @@ export function runtimeFallbackModel(runtime: AgentRuntime) {
 export function isTerminalModelSetupError(error: unknown): boolean {
   return (
     error instanceof UnavailableModelForAuthError ||
+    error instanceof ModelConnectionGoneError ||
     error instanceof ModelCreditConnectionUnavailableError ||
     error instanceof HostedModelCreditsRequiredError ||
     isRetiredModelCredentialError(error) ||
@@ -232,7 +233,9 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
     (!credential && deployment.provider === provider && deployment.hostCredentials);
   // Match Pi's OpenRouter fallback only when no explicit key overrides it.
   const runtimeKey =
-    material.apiKey === undefined && (provider === "openrouter" || provider === "scripted")
+    !args[7]?.requireStoredSecret &&
+    material.apiKey === undefined &&
+    (provider === "openrouter" || provider === "scripted")
       ? process.env.OPENROUTER_API_KEY
       : undefined;
   if (!material.apiKey?.trim() && !runtimeKey?.trim() && !keyless) {
@@ -727,9 +730,29 @@ export async function resolveRunModel(
   const override = scope.botId
     ? await deps.prisma.bot.findFirst({
         where: { id: scope.botId, spaceId: scope.spaceId },
-        select: { modelProvider: true, modelId: true, thinkingLevel: true },
+        select: {
+          modelProvider: true,
+          modelId: true,
+          modelCredentialId: true,
+          thinkingLevel: true,
+        },
       })
     : null;
+  if (override?.modelCredentialId) {
+    if (!override.modelProvider || !override.modelId) {
+      throw new UnavailableModelForAuthError(PINNED_PROVIDER_NOT_CONNECTED);
+    }
+    return resolveConnectedRunModel(
+      deps,
+      scope,
+      override.modelProvider,
+      override.modelId,
+      undefined,
+      true,
+      override.thinkingLevel,
+      override.modelCredentialId,
+    );
+  }
   const hasOverride = Boolean(override?.modelProvider && override.modelId);
   const [overrideCredential, main, settings] = await Promise.all([
     hasOverride
