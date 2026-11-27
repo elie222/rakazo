@@ -323,11 +323,14 @@ export function createPageAppInstaller(options: {
    * apps get Rakazo's fixes. An app that is running is left for the next start.
    */
   async function refresh() {
-    await settleStaging();
-    await adoptUntracked();
+    await exclusive(async () => {
+      await settleStaging();
+      await adoptUntracked();
+    });
+    // One app at a time, so an open or install waits for one rebuild, not all of them.
     for (const app of await registry.list()) {
       // One app that cannot be rebuilt or forgotten leaves the others to go ahead.
-      await bestEffort(`refresh page app ${app.appId}`, refreshApp(app));
+      await exclusive(() => bestEffort(`refresh page app ${app.appId}`, refreshApp(app)));
     }
   }
 
@@ -335,7 +338,7 @@ export function createPageAppInstaller(options: {
     install: (request: PageAppInstallRequest, server: string) =>
       exclusive(() => install(request, server)),
     uninstall: (appId: string) => exclusive(() => uninstall(appId)),
-    refresh: () => exclusive(refresh),
+    refresh,
     /** Settles once no install, removal or update is moving a bundle. */
     idle: () => exclusive(async () => undefined),
   };

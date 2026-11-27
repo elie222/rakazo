@@ -5,6 +5,7 @@ import {
   deadlineSignal,
   pageCopyResult,
   pageViewerDocument,
+  retry,
   withSandboxedArtifactCsp,
 } from "@rakazo/core";
 import { bestEffort, getLogger } from "@rakazo/logging";
@@ -17,6 +18,7 @@ import type { PageAppScreen } from "./page-app-shell.js";
 import { FRAME_ORIGIN } from "./page-app-shell.js";
 
 const NOTIFY_INTERVAL_MS = 10_000;
+const SAVE_ATTEMPTS = 8;
 /** Nothing stops a page from asking in a loop, as a browser's popup blocker would. */
 const LINK_INTERVAL_MS = 2_000;
 const COPY_INTERVAL_MS = 1_000;
@@ -88,7 +90,6 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
   /** The reader's values as the shown frame has them: what it opened with and saved since. */
   let known: PageState = {};
   let saving: Promise<void> | null = null;
-  let retrying = false;
   let consenting = false;
 
   function show(next: PageAppScreen) {
@@ -232,30 +233,20 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
       const sending = unsaved;
       unsaved = {};
       try {
-        await api.saveState(sending);
+        await retry(() => api.saveState(sending), {
+          attempts: SAVE_ATTEMPTS,
+          retryable: (error) => !refusedForGood(error) && !isRemoved(error),
+          delayMs: (attempt) => Math.min(2_000 * 2 ** attempt, 60_000),
+          signal: stopped.signal,
+        });
       } catch (error) {
         fail(error);
         if (!refusedForGood(error)) {
+          // Kept for the next save or read once the retries run out.
           unsaved = { ...sending, ...unsaved };
-          void bestEffort("retry page app values", retryState());
           return;
         }
       }
-    }
-  }
-
-  /** Tries unsaved values again after a growing wait, until they save or the app closes. */
-  async function retryState() {
-    if (retrying) return;
-    retrying = true;
-    try {
-      for (let delay = 2_000; Object.keys(unsaved).length; delay = Math.min(delay * 2, 60_000)) {
-        await abortableDelay(delay, stopped.signal);
-        if (stopped.signal.aborted) return;
-        if (!saving) await saveState({});
-      }
-    } finally {
-      retrying = false;
     }
   }
 
