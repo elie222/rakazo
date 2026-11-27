@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { AgentToolExecutionResult, ProcessEvent } from "@rakazo/adapter-kit";
 import type { ApprovalMode } from "@rakazo/core";
-import { BOT_MESSAGE_MAX_HOPS, redactSecrets } from "@rakazo/core";
+import { BOT_MESSAGE_MAX_HOPS, HELPER_RESULT_TRIGGER, redactSecrets } from "@rakazo/core";
 import { sandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import type { PrismaClient } from "@rakazo/db";
 import { mayBeChannelMessage, readMessageBlocks } from "@rakazo/db";
@@ -31,6 +31,7 @@ import { messagingMessageClientNonce } from "../../messaging/intake/messaging-no
 import { ROUTINE_WATCH_NOTE_START } from "../../routines/routine-watch.prompt.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { isRunTaintedBeyondOwnComputer } from "../assembly/run-context.js";
+import { loadRunOrigin } from "../lifecycle/run-origin.js";
 import type { ToolCall } from "./run-tool-gate.js";
 
 export {
@@ -298,58 +299,68 @@ export async function botChainFromOwner(
       select: { runId: true },
     });
     if (!outbound?.runId) return false;
-    const sender = await prisma.run.findUnique({
-      where: { id: outbound.runId },
-      select: {
-        id: true,
-        trigger: true,
-        userId: true,
-        spaceId: true,
-        botId: true,
-        threadId: true,
-        sourceMessageId: true,
-        bot: { select: { userId: true } },
-        thread: { select: { groupId: true } },
-        routine: { select: { watch: true } },
-        task: { select: { prompt: true } },
-      },
-    });
-    if (
-      !sender ||
-      sender.userId !== run.userId ||
-      sender.spaceId !== run.spaceId ||
-      sender.bot.userId !== run.userId ||
-      sender.thread.groupId
-    )
-      return false;
-    const [routineText, events] = await Promise.all([
-      access.routines
-        ? null
-        : prisma.steeringMessage.findFirst({
-            where: {
-              runId: sender.id,
-              claimedAt: { not: null },
-              originTrigger: { in: ["routine"] },
-            },
-            select: { id: true },
-          }),
-      prisma.steeringMessage.findMany({
-        where: { runId: sender.id, claimedAt: { not: null }, originTrigger: "webhook" },
-        select: { message: { select: { id: true, role: true, blocks: true } } },
-      }),
-    ]);
+    const findSender = (id: string) =>
+      prisma.run.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          trigger: true,
+          userId: true,
+          spaceId: true,
+          botId: true,
+          threadId: true,
+          delegatedFromRunId: true,
+          sourceMessageId: true,
+          bot: { select: { userId: true } },
+          thread: { select: { groupId: true } },
+          routine: { select: { watch: true } },
+          task: { select: { prompt: true } },
+        },
+      });
+    const ownSender = (sender: Awaited<ReturnType<typeof findSender>>) =>
+      sender !== null &&
+      sender.userId === run.userId &&
+      sender.spaceId === run.spaceId &&
+      sender.bot.userId === run.userId &&
+      !sender.thread.groupId;
     // Outside events handed into a sender count only as one that may start a chain: allowed,
     // each marked, and never on their way back to the bot that took them in.
-    if (
-      routineText ||
-      (events.length > 0 &&
-        !(
-          access.webhookChains &&
-          sender.botId !== run.botId &&
-          events.every((item) => markedDelivery(item.message))
-        ))
-    )
-      return false;
+    const steeredIn = async (sender: { id: string; botId: string }) => {
+      const [routineText, events] = await Promise.all([
+        access.routines
+          ? null
+          : prisma.steeringMessage.findFirst({
+              where: {
+                runId: sender.id,
+                claimedAt: { not: null },
+                originTrigger: { in: ["routine"] },
+              },
+              select: { id: true },
+            }),
+        prisma.steeringMessage.findMany({
+          where: { runId: sender.id, claimedAt: { not: null }, originTrigger: "webhook" },
+          select: { message: { select: { id: true, role: true, blocks: true } } },
+        }),
+      ]);
+      return (
+        Boolean(routineText) ||
+        (events.length > 0 &&
+          !(
+            access.webhookChains &&
+            sender.botId !== run.botId &&
+            events.every((item) => markedDelivery(item.message))
+          ))
+      );
+    };
+    let sender = await findSender(outbound.runId);
+    // A run that picks up a helper's result goes on with the conversation that started the
+    // helper, so the chain goes on from that conversation, and text handed into either counts.
+    if (sender?.trigger === HELPER_RESULT_TRIGGER) {
+      if (!ownSender(sender) || (await steeredIn(sender))) return false;
+      const origin = await loadRunOrigin(prisma, sender);
+      sender = origin ? await findSender(origin.id) : null;
+    }
+    if (!sender || !ownSender(sender) || (await steeredIn(sender))) return false;
     if (sender.trigger === "routine") return access.routines && scheduledRoutine(sender);
     if (sender.trigger === "messaging")
       return access.messaging && (await ownerDirectMessage(prisma, sender, access));
