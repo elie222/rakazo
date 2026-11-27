@@ -26,7 +26,6 @@ export type PageAppLauncher = {
     config: PageAppConfig;
     icon: ReadonlyMap<number, Buffer>;
     dataDir: string;
-    previous: string | null;
   }) => Promise<string>;
   /** Writes the launcher again when it no longer starts the running Rakazo, which moved. */
   repoint: (app: InstalledPageApp, dataDir: string) => Promise<void>;
@@ -103,7 +102,8 @@ export function createLauncherInstaller(options: {
       server,
     };
     const dataDir = pageAppDataDir(request.appId, appData);
-    const previous = (await registry.list()).find((app) => app.appId === request.appId);
+    // Every install has a new app id, so one already recorded is never replaced.
+    if ((await registry.list()).some((app) => app.appId === request.appId)) return false;
     let written: string | null = null;
     try {
       await writePageAppToken(request.appId, request.token, appData);
@@ -112,14 +112,11 @@ export function createLauncherInstaller(options: {
         config,
         icon: request.icon,
         dataDir,
-        previous: previous?.bundlePath ?? null,
       });
       await registry.put({ ...config, bundlePath: written });
     } catch (error) {
-      if (!previous) {
-        if (written !== null) await launcher.remove(written);
-        await removePageAppData(request.appId, appData);
-      }
+      if (written !== null) await launcher.remove(written);
+      await removePageAppData(request.appId, appData);
       // Nothing will use the token now, so it ends here rather than waiting for the server.
       await bestEffort(
         "revoke an unfinished page app",
