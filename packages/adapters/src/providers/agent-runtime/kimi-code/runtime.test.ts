@@ -74,6 +74,16 @@ describe("dormant Kimi Code runtime", () => {
     expect(f.open).not.toHaveBeenCalled();
   });
 
+  it("does not launch the existing text bridge for a current-turn image", async () => {
+    const f = fake([message("answer"), terminal]);
+    const input: AgentRunRequest = {
+      ...request,
+      currentTurnImages: [{ name: "fixture.png", mimeType: "image/png", data: new Uint8Array(33) }],
+    };
+    await expect(collect(f.runtime, input)).rejects.toThrow("text-only turn");
+    expect(f.open).not.toHaveBeenCalled();
+  });
+
   it("does not publish partial text if the child then requests permissions", async () => {
     const f = fake([
       message("partial"),

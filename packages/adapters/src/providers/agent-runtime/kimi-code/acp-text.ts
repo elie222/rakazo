@@ -1,3 +1,5 @@
+import { detectImageMimeType } from "../../../media/image-mime-type.js";
+
 /**
  * One-turn Kimi Code ACP protocol, as documented for the CLI. This deliberately
  * owns no launcher: denying reverse RPC is not an OS sandbox. Do not register
@@ -20,7 +22,43 @@ function request(id: number, method: string, params: Frame): Request {
   return { jsonrpc: "2.0", id, method, params };
 }
 
-export function createTextTurn(input: { cwd: string; prompt: string }) {
+type TextInput = { cwd: string; prompt: string };
+type InlinePng = { type: "image"; mimeType: "image/png"; data: string };
+
+const MAX_PNG_BYTES = 512 * 1024;
+const MAX_PNG_SIDE = 4096;
+const MAX_PNG_PIXELS = 4 * 1024 * 1024;
+
+export function createTextTurn(input: TextInput) {
+  return createTurn(input);
+}
+
+/** Protocol-only test surface. The existing text bridge does not send or replay attachments. */
+export function createInlinePngTurn(input: TextInput & { png: Uint8Array }) {
+  const { png } = input;
+  if (png.byteLength < 33 || png.byteLength > MAX_PNG_BYTES) return fail();
+  if (detectImageMimeType(png) !== "image/png") return fail();
+  // Bound the declared raster without decoding: upstream must still validate/normalize pixels.
+  const header = new DataView(png.buffer, png.byteOffset, png.byteLength);
+  if (header.getUint32(8) !== 13 || header.getUint32(12) !== 0x49484452) return fail();
+  const width = header.getUint32(16);
+  const height = header.getUint32(20);
+  if (
+    width < 1 ||
+    height < 1 ||
+    width > MAX_PNG_SIDE ||
+    height > MAX_PNG_SIDE ||
+    width * height > MAX_PNG_PIXELS
+  )
+    return fail();
+  return createTurn(input, {
+    type: "image",
+    mimeType: "image/png",
+    data: Buffer.from(png).toString("base64"),
+  });
+}
+
+function createTurn(input: TextInput, image?: InlinePng) {
   const { cwd, prompt } = input;
   if (!cwd.startsWith("/") || !prompt.trim() || Buffer.byteLength(prompt) > 131072) fail();
   let awaiting = 1;
@@ -78,6 +116,8 @@ export function createTextTurn(input: { cwd: string; prompt: string }) {
         switch (awaiting) {
           case 1:
             if (result.protocolVersion !== 1) return fail();
+            if (image && object(object(result.agentCapabilities).promptCapabilities).image !== true)
+              return fail();
             awaiting = 2;
             return { send: request(2, "session/new", { cwd, mcpServers: [] }) };
           case 2:
@@ -93,7 +133,9 @@ export function createTextTurn(input: { cwd: string; prompt: string }) {
             return {
               send: request(3, "session/prompt", {
                 sessionId,
-                prompt: [{ type: "text", text: prompt }],
+                prompt: image
+                  ? [{ type: "text", text: prompt }, image]
+                  : [{ type: "text", text: prompt }],
               }),
             };
           case 3:
