@@ -301,25 +301,36 @@
   accent-color: var(--primary);
 }
 
-.rk-chat-markdown-streaming {
-  position: relative;
-  padding-right: 0.8em;
+/* Streamed text fades in one unit at a time. Every unit already sits at its final position, so
+   only opacity changes: the bubble keeps its height and the transcript keeps its scroll offset.
+   A transition with `@starting-style` keeps running after the unit settles; a keyframe bound to
+   the "new" marker would be removed on the next frame. */
+.rk-chat-markdown [data-rk-reveal] {
+  transition: opacity 300ms ease-out var(--rk-reveal-delay, 0ms);
 }
 
-.rk-chat-markdown-cursor {
-  position: absolute;
-  right: 0;
-  bottom: 0.24em;
-  width: 0.16em;
-  height: 1em;
-  border-radius: 999px;
-  background: var(--muted-foreground);
-  animation: rkMarkdownCursor 1s steps(2, jump-none) infinite;
-}
-
-@keyframes rkMarkdownCursor {
-  50% {
+@starting-style {
+  .rk-chat-markdown [data-rk-reveal="new"] {
     opacity: 0;
+  }
+}
+
+/* A list marker is a pseudo-element, so it fades through its color rather than opacity. The
+   delay uses its own variable: a value on the item would be inherited by every settled unit. */
+.rk-chat-markdown [data-rk-reveal-marker]::marker {
+  transition: color 300ms ease-out var(--rk-reveal-marker-delay, 0ms);
+}
+
+@starting-style {
+  .rk-chat-markdown [data-rk-reveal-marker="new"]::marker {
+    color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rk-chat-markdown [data-rk-reveal],
+  .rk-chat-markdown [data-rk-reveal-marker]::marker {
+    transition: none;
   }
 }
 

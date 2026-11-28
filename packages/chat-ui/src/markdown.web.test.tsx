@@ -838,6 +838,409 @@ describe("web markdown mentions", () => {
 });
 
 describe("web markdown streaming", () => {
+  it("fades in only the words that arrived after the previous frame", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const reveal = () => [...container.querySelectorAll("[data-rk-reveal]")];
+    const render = async (text: string) => {
+      await act(async () => {
+        root.render(<ChatMarkdown streaming>{text}</ChatMarkdown>);
+      });
+    };
+    await render("");
+    await render("First reply");
+    const first = reveal();
+    expect(first).toHaveLength(2);
+    expect(first.every((unit) => unit.getAttribute("data-rk-reveal") === "new")).toBe(true);
+    // The DOM holds the whole text from the first frame; the delay only changes opacity.
+    expect(container.textContent).toBe("First reply");
+
+    await render("First reply continues");
+    const all = reveal();
+    expect(all).toHaveLength(3);
+    expect(all.slice(0, 2).every((unit) => unit.getAttribute("data-rk-reveal") === "settled")).toBe(
+      true,
+    );
+    expect(all[2]?.getAttribute("data-rk-reveal")).toBe("new");
+    expect(all[2]?.getAttribute("style")).toContain("--rk-reveal-delay");
+    expect(container.textContent).toBe("First reply continues");
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("mounts an existing reply without replaying it", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Restored reply."}</ChatMarkdown>);
+    });
+    expect(container.querySelectorAll('[data-rk-reveal="new"]')).toHaveLength(0);
+    expect(container.textContent).toBe("Restored reply.");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("settles existing text when streaming starts", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown>{"Hello."}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Hello. More"}</ChatMarkdown>);
+    });
+    expect(container.querySelectorAll('[data-rk-reveal="new"]')).toHaveLength(0);
+    expect(container.textContent).toBe("Hello. More");
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Hello. More again"}</ChatMarkdown>);
+    });
+    expect(
+      [...container.querySelectorAll('[data-rk-reveal="new"]')].map((unit) => unit.textContent),
+    ).toEqual(["again"]);
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("fades in a new paragraph even when it repeats an earlier one", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Done."}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Done.\n\nDone."}</ChatMarkdown>);
+    });
+    expect(
+      [...container.querySelectorAll('[data-rk-reveal="new"]')].map((unit) => unit.textContent),
+    ).toEqual(["Done", "."]);
+    // The earlier paragraph keeps its spans, so a fade still running is not cut short.
+    expect(
+      [...container.querySelectorAll('[data-rk-reveal="settled"]')].map((unit) => unit.textContent),
+    ).toEqual(["Done", "."]);
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("fades in an image's alt text with the words around it", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const units = (state: string) =>
+      [...container.querySelectorAll(`[data-rk-reveal="${state}"]`)].map(
+        (unit) => unit.textContent,
+      );
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Look"}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(
+        <ChatMarkdown streaming>
+          {"Look ![A picture](https://example.com/picture.png)"}
+        </ChatMarkdown>,
+      );
+    });
+    const fresh = units("new");
+    expect(fresh).toHaveLength(1);
+    expect(fresh[0]).toContain("A picture");
+    expect(container.textContent).toContain("Look A picture");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("continues the reveal rhythm into a new paragraph", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{""}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"One.\n\nTwo."}</ChatMarkdown>);
+    });
+    const units = [...container.querySelectorAll('[data-rk-reveal="new"]')];
+    expect(units.map((unit) => unit.textContent)).toEqual(["One", ".", "Two", "."]);
+    const delayOf = (unit: Element | undefined) =>
+      Number(/--rk-reveal-delay:\s*([\d.]+)ms/.exec(unit?.getAttribute("style") ?? "")?.[1] ?? -1);
+    expect(delayOf(units[0])).toBe(0);
+    expect(delayOf(units[2])).toBeGreaterThan(0);
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("bounds the delay of a large multi-paragraph append", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const text = Array.from({ length: 30 }, (_, index) => `P${index}.`).join("\n\n");
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{""}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{text}</ChatMarkdown>);
+    });
+    const delayOf = (unit: Element) =>
+      Number(/--rk-reveal-delay:\s*([\d.]+)ms/.exec(unit.getAttribute("style") ?? "")?.[1] ?? -1);
+    const units = [...container.querySelectorAll('[data-rk-reveal="new"]')];
+    expect(Math.max(...units.map(delayOf))).toBeLessThanOrEqual(260);
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("draws a block too long to reveal without per-word spans", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const long = "a ".repeat(10_001);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{""}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{long}</ChatMarkdown>);
+    });
+    expect(container.querySelectorAll("[data-rk-reveal]")).toHaveLength(0);
+    expect(container.textContent).toHaveLength(long.trimEnd().length);
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("keeps settled text when a reference definition switches to one block", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{""}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Hello.\n\nWorld."}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(
+        <ChatMarkdown streaming>{"Hello.\n\nWorld.\n\n[ref]: https://example.test"}</ChatMarkdown>,
+      );
+    });
+    expect(container.querySelectorAll('[data-rk-reveal="new"]')).toHaveLength(0);
+    expect(container.textContent).toContain("Hello.");
+    expect(container.textContent).toContain("World.");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("fades in words appended after markdown formatting closes", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{""}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Hello **bold"}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Hello **bold** next"}</ChatMarkdown>);
+    });
+    expect(
+      [...container.querySelectorAll('[data-rk-reveal="new"]')].map((unit) => unit.textContent),
+    ).toEqual(["next"]);
+    expect(container.textContent).toBe("Hello bold next");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("fades in words appended after a character reference", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{""}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Hi &amp;"}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Hi &amp; world"}</ChatMarkdown>);
+    });
+    expect(
+      [...container.querySelectorAll('[data-rk-reveal="new"]')].map((unit) => unit.textContent),
+    ).toEqual(["world"]);
+    expect(container.textContent).toBe("Hi & world");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("fades in words after an entity outside the common set", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{""}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"&euro;"}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"&euro; world"}</ChatMarkdown>);
+    });
+    expect(
+      [...container.querySelectorAll('[data-rk-reveal="new"]')].map((unit) => unit.textContent),
+    ).toEqual(["world"]);
+    expect(container.textContent).toBe("\u20ac world");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("fades in words after a CRLF line break", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{""}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Line\r\n"}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Line\r\nword"}</ChatMarkdown>);
+    });
+    expect(
+      [...container.querySelectorAll('[data-rk-reveal="new"]')].map((unit) => unit.textContent),
+    ).toEqual(["word"]);
+    expect(container.textContent).toBe("Line\r\nword");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("fades in words after a reference completed by the append", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{""}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"&NotEqualTilde"}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"&NotEqualTilde; world"}</ChatMarkdown>);
+    });
+    expect(
+      [...container.querySelectorAll('[data-rk-reveal="new"]')].map((unit) => unit.textContent),
+    ).toEqual(["world"]);
+    expect(container.textContent).toContain("world");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("keeps an escaped character reference literal", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{""}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"A \\&amp;"}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"A \\&amp; world"}</ChatMarkdown>);
+    });
+    expect(
+      [...container.querySelectorAll('[data-rk-reveal="new"]')].map((unit) => unit.textContent),
+    ).toEqual(["world"]);
+    expect(container.textContent).toBe("A &amp; world");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("draws escaped markup as text instead of parsing it", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const text = "&lt;/textarea&gt;&lt;img src=x onerror=alert(1)&gt;";
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{text}</ChatMarkdown>);
+    });
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector("textarea")).toBeNull();
+    expect(container.textContent).toBe("</textarea><img src=x onerror=alert(1)>");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("shows a replaced snapshot at once instead of replaying it", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{""}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"A first reply."}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"A different conversation."}</ChatMarkdown>);
+    });
+    expect(container.querySelectorAll('[data-rk-reveal="new"]')).toHaveLength(0);
+    expect(container.textContent).toBe("A different conversation.");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("draws every streamed prefix as the whole text would be drawn", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     const reply = [
@@ -870,11 +1273,14 @@ describe("web markdown streaming", () => {
       "",
       "Really.",
     ].join("\n");
+    // Reveal spans only carry the fade-in delay; compare the text they draw.
     const shape = (node: Node): string =>
       [...node.childNodes]
-        .map((child) =>
-          child instanceof Element ? `<${child.tagName}>${shape(child)}</>` : child.textContent,
-        )
+        .map((child) => {
+          if (!(child instanceof Element)) return child.textContent;
+          if (child.hasAttribute("data-rk-reveal")) return shape(child);
+          return `<${child.tagName}>${shape(child)}</>`;
+        })
         .join("");
     const streamed = document.createElement("div");
     const whole = document.createElement("div");
@@ -886,9 +1292,7 @@ describe("web markdown streaming", () => {
         streamedRoot.render(<ChatMarkdown streaming>{text}</ChatMarkdown>);
         wholeRoot.render(<ChatMarkdown key={end}>{closeUnterminatedFence(text)}</ChatMarkdown>);
       });
-      expect(shape(streamed.firstChild!), JSON.stringify(text)).toBe(
-        `${shape(whole.firstChild!)}<SPAN></>`,
-      );
+      expect(shape(streamed.firstChild!), JSON.stringify(text)).toBe(shape(whole.firstChild!));
     }
     await act(async () => {
       streamedRoot.render(<ChatMarkdown>{reply}</ChatMarkdown>);

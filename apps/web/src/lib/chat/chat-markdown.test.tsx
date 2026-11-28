@@ -161,7 +161,8 @@ describe("ChatMarkdown", () => {
 
     expect(html).toContain("<pre>");
     expect(html).toContain("const live = true;");
-    expect(html).toContain("rk-chat-markdown-cursor");
+    expect(html).toContain("rk-chat-markdown-streaming");
+    expect(html).not.toContain("rk-chat-markdown-cursor");
   });
 
   it("renders a copy button alongside each code block", () => {
