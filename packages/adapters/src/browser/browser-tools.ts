@@ -15,6 +15,12 @@ import type { PurchaseApproval } from "../payments/purchase-gate.js";
 import { MAX_ACTIONS_PER_CALL } from "../runs/turn/tool-loop.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "../runtime/pi/pi-runtime-limits.js";
 import { cardFillSite } from "../secrets/vault/vault-card-use.js";
+import {
+  PAGE_DIALOG_DESKTOP_NOTE,
+  PAGE_DIALOG_NOTE,
+  PAGE_STEP_FAILED_DESKTOP_NOTE,
+  PAGE_STEP_FAILED_NOTE,
+} from "./browser-tools.prompt.js";
 
 /** The action kinds `browser_act` takes, as its tool schema lists them. */
 export const BROWSER_ACT_KINDS = [
@@ -544,19 +550,19 @@ function formatBrowserResult<
     if (desktopTools) {
       return {
         ...result,
-        note: "Answer it with computer_act, or request_takeover if the user should decide. Do not repeat the step that opened it.",
+        note: PAGE_DIALOG_DESKTOP_NOTE,
       };
     }
     const { fallback: _fallback, ...rest } = result;
     return {
       ...rest,
-      note: "Use request_takeover so the user can answer it. Do not repeat the step that opened it.",
+      note: PAGE_DIALOG_NOTE,
     };
   }
   if (desktopTools) {
     return {
       ...result,
-      note: "Page browser could not complete this step. Inspect the current state before continuing with computer_act if available, otherwise request_takeover. Do not replay completed or uncertain actions.",
+      note: PAGE_STEP_FAILED_DESKTOP_NOTE,
     };
   }
   // Without desktop tools, pointing at computer_act leaves only request_takeover. A browser
@@ -564,6 +570,6 @@ function formatBrowserResult<
   const { fallback: _fallback, ...rest } = result;
   return {
     ...rest,
-    note: "Page browser could not complete this step. The computer or its browser may still be starting, so call browser_snapshot again to check the page. Use request_takeover only if it keeps failing. Do not replay completed or uncertain actions.",
+    note: PAGE_STEP_FAILED_NOTE,
   };
 }
