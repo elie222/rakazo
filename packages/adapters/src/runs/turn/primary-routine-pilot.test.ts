@@ -3,9 +3,11 @@ import type { PrismaClient } from "@rakazo/db";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { routineTimerNonce } from "../../routines/routine-coalescing.js";
 import {
+  assertPrimaryRoutineRuntimePin,
   pilotRoutineModel,
   pilotRoutineRequest,
   routinePilotEnrollment,
+  usesNativeRoutineAdmission,
 } from "./primary-routine-pilot.js";
 
 const prompt = "Summarize this text: hidden-token";
@@ -20,6 +22,8 @@ const bot = {
   userId,
   spaceId,
   archivedAt: null,
+  primaryRuntimePreference: null,
+  primaryRuntimeRevision: 2,
   modelProvider: "anthropic",
   modelId: "test-model",
   modelCredentialId: "named-key",
@@ -48,6 +52,7 @@ const routine = {
 };
 const pin = {
   primaryRuntime: "claude-agent",
+  primaryRuntimeRevision: bot.primaryRuntimeRevision,
   modelId: bot.modelId,
   modelProvider: bot.modelProvider,
   modelCredentialId: bot.modelCredentialId,
@@ -82,6 +87,7 @@ function request(
 
 beforeEach(() => {
   vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", botId);
+  vi.stubEnv("PRIMARY_RUNTIME_PILOT_LAUNCHER", process.execPath);
   vi.stubEnv("PRIMARY_RUNTIME_PILOT_ROUTINES", `${routineId}:${digest}`);
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -94,7 +100,26 @@ it("is off by default and refuses ambiguous explicit enrolments", () => {
       PRIMARY_RUNTIME_PILOT_ROUTINES: `${routineId}:${digest},${routineId}:${digest}`,
     }),
   ).toEqual({ digest: undefined });
-  expect(pilotRoutineModel(routine, threadId, routinePilotEnrollment(routineId))).toEqual(pin);
+  if (process.platform === "linux")
+    expect(pilotRoutineModel(routine, threadId, routinePilotEnrollment(routineId))).toEqual(pin);
+});
+
+it("honors explicit Pi, inherits only configured timers, and sends explicit native through refusal if unenrolled", () => {
+  expect(usesNativeRoutineAdmission(bot, undefined)).toBe(false);
+  expect(usesNativeRoutineAdmission(bot, { digest })).toBe(true);
+  expect(usesNativeRoutineAdmission({ primaryRuntimePreference: "pi" }, { digest })).toBe(false);
+  expect(usesNativeRoutineAdmission({ primaryRuntimePreference: "claude-agent" }, undefined)).toBe(
+    true,
+  );
+});
+
+it.skipIf(process.platform !== "linux")("fences a queued routine before model setup", () => {
+  expect(() => assertPrimaryRoutineRuntimePin(run, bot)).not.toThrow();
+  expect(() => assertPrimaryRoutineRuntimePin(run, { ...bot, primaryRuntimeRevision: 4 })).toThrow(
+    "has changed",
+  );
+  vi.stubEnv("PRIMARY_RUNTIME_PILOT_LAUNCHER", "");
+  expect(() => assertPrimaryRoutineRuntimePin(run, bot)).toThrow("unavailable");
 });
 
 it.each([
@@ -116,39 +141,43 @@ it.each([
   ).toBeUndefined();
 });
 
-it("reads the exact live authorized routine and projects only its redacted text", async () => {
-  const db = prisma();
-  const result = await request(db);
-  expect(db.routine.findFirst).toHaveBeenCalledWith(
-    expect.objectContaining({
-      where: {
-        id: routineId,
-        botId,
-        userId,
-        spaceId,
-        space: { deletingAt: null, memberships: { some: { userId } } },
-      },
-    }),
-  );
-  expect(result).toMatchObject({
-    botId,
-    threadId,
-    model,
-    sourceMessageId: null,
-    history: [],
-    tools: [],
-    instructions: "",
-  });
-  expect(result.prompt).toContain("Summarize this text:");
-  expect(result.prompt).not.toContain("hidden-token");
-  expect(result).not.toHaveProperty("secrets");
-});
+it.skipIf(process.platform !== "linux")(
+  "reads the exact live authorized routine and projects only its redacted text",
+  async () => {
+    const db = prisma();
+    const result = await request(db);
+    expect(db.routine.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: routineId,
+          botId,
+          userId,
+          spaceId,
+          space: { deletingAt: null, memberships: { some: { userId } } },
+        },
+      }),
+    );
+    expect(result).toMatchObject({
+      botId,
+      threadId,
+      model,
+      sourceMessageId: null,
+      history: [],
+      tools: [],
+      instructions: "",
+    });
+    expect(result.prompt).toContain("Summarize this text:");
+    expect(result.prompt).not.toContain("hidden-token");
+    expect(result).not.toHaveProperty("secrets");
+  },
+);
 
 it.each([
   null,
   { ...routine, active: false },
   { ...routine, prompt: "Edited" },
   { ...routine, bot: { ...bot, modelCredentialId: "changed-key" } },
+  { ...routine, bot: { ...bot, primaryRuntimeRevision: 4 } },
   { ...routine, bot: { ...bot, archivedAt: new Date(0) } },
 ])("refuses to launch after the authorized routine or account changes", async (current) => {
   await expect(request(prisma(current))).rejects.toThrow("no longer authorized");

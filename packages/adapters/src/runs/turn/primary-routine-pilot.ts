@@ -4,7 +4,13 @@ import { isOneShotRoutineCrons, redactSecrets } from "@rakazo/core";
 import type { Bot, PrismaClient, Routine, Thread } from "@rakazo/db";
 import { accountDeactivated } from "@rakazo/db";
 import { routineTimerScheduledFor } from "../../routines/routine-coalescing.js";
-import { pilotRunModel, pilotRuntimeForBot } from "./primary-runtime-pilot.js";
+import {
+  assertPrimaryChatRuntimePin,
+  PrimaryChatRuntimeChangedError,
+  pilotLauncher,
+  pilotRunModel,
+  resolvePrimaryDmRuntime,
+} from "./primary-runtime-pilot.js";
 
 /** An operator approves an identified routine's exact stored text, never a mutable name. */
 export function routinePilotEnrollment(routineId: string, environment = process.env) {
@@ -14,6 +20,25 @@ export function routinePilotEnrollment(routineId: string, environment = process.
   const digest = matches.length === 1 ? matches[0]?.split(":").slice(1).join(":") : undefined;
   // A malformed or duplicate assignment refuses instead of silently selecting Pi.
   return { digest: digest && /^[0-9a-f]{64}$/.test(digest) ? digest : undefined };
+}
+
+/** Pi overrides enrollment; an explicit native selection without enrollment must not fall back. */
+export function usesNativeRoutineAdmission(
+  bot: { primaryRuntimePreference: string | null },
+  enrollment: ReturnType<typeof routinePilotEnrollment>,
+) {
+  return (
+    bot.primaryRuntimePreference !== "pi" && (bot.primaryRuntimePreference != null || !!enrollment)
+  );
+}
+
+export function assertPrimaryRoutineRuntimePin(
+  run: Parameters<typeof assertPrimaryChatRuntimePin>[0] & { routineId: string | null },
+  bot: Parameters<typeof assertPrimaryChatRuntimePin>[1],
+) {
+  if (!run.routineId || !routinePilotEnrollment(run.routineId)?.digest || !pilotLauncher())
+    throw new PrimaryChatRuntimeChangedError();
+  assertPrimaryChatRuntimePin(run, bot, "dm");
 }
 
 type PilotRoutine = Pick<
@@ -39,7 +64,15 @@ type PilotRoutine = Pick<
 > & {
   bot: Pick<
     Bot,
-    "id" | "userId" | "spaceId" | "archivedAt" | "modelProvider" | "modelId" | "modelCredentialId"
+    | "id"
+    | "userId"
+    | "spaceId"
+    | "archivedAt"
+    | "modelProvider"
+    | "modelId"
+    | "modelCredentialId"
+    | "primaryRuntimePreference"
+    | "primaryRuntimeRevision"
   > & {
     thread: Pick<
       Thread,
@@ -86,8 +119,10 @@ export function pilotRoutineModel(
     thread.externalConversationId
   )
     return;
-  const runtime = pilotRuntimeForBot(bot.id);
-  return runtime ? pilotRunModel(runtime, bot) : undefined;
+  const selection = resolvePrimaryDmRuntime(bot);
+  if (selection.kind !== "native" || !pilotLauncher()) return;
+  const pin = pilotRunModel(selection.id, bot);
+  return pin && { ...pin, primaryRuntimeRevision: bot.primaryRuntimeRevision };
 }
 
 export async function pilotRoutineRequest(
@@ -104,6 +139,7 @@ export async function pilotRoutineRequest(
     sourceMessageId: string | null;
     retryOfRunId: string | null;
     primaryRuntime: string;
+    primaryRuntimeRevision: number;
     modelProvider: string | null;
     modelId: string | null;
     modelCredentialId: string | null;
@@ -149,6 +185,7 @@ export async function pilotRoutineRequest(
   if (
     !pin ||
     pin.primaryRuntime !== run.primaryRuntime ||
+    pin.primaryRuntimeRevision !== run.primaryRuntimeRevision ||
     pin.modelProvider !== run.modelProvider ||
     pin.modelId !== run.modelId ||
     pin.modelCredentialId !== run.modelCredentialId

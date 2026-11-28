@@ -7,10 +7,13 @@ import {
   asSystem,
   createDb,
   createPendingSteeringRun,
+  createThreadEvents,
   provisionMessagingIdentity,
   runAsSystem,
+  runAsTenant,
   SpaceDeletionInProgressError,
   sendUserMessage,
+  setBotPrimaryRuntimePreference,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { routineTimerNonce } from "../../routines/routine-coalescing.js";
@@ -80,94 +83,287 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
     await system.bot.delete({ where: { id: other.id } });
   });
 
-  it("queues one native run per recurring occurrence and rechecks its authorization", async () => {
-    const dueAt = new Date(Math.floor((Date.now() - 60_000) / 1000) * 1000);
-    const prompt = "Read this local text fixture.";
-    const pin = {
-      modelProvider: "anthropic",
-      modelId: "fixture-model",
-      modelCredentialId: "fixture-named-key",
-    };
-    const savedBot = await system.bot.findUniqueOrThrow({ where: { id: identity.botId } });
-    await system.bot.update({ where: { id: identity.botId }, data: pin });
+  it.skipIf(process.platform !== "linux")(
+    "queues one native run per recurring occurrence and rechecks its authorization",
+    async () => {
+      const dueAt = new Date(Math.floor((Date.now() - 60_000) / 1000) * 1000);
+      const prompt = "Read this local text fixture.";
+      const pin = {
+        modelProvider: "anthropic",
+        modelId: "fixture-model",
+        modelCredentialId: "fixture-named-key",
+      };
+      const savedBot = await system.bot.findUniqueOrThrow({ where: { id: identity.botId } });
+      await system.bot.update({ where: { id: identity.botId }, data: pin });
+      const routine = await system.routine.create({
+        data: {
+          ...identity,
+          name: "native timer fixture",
+          prompt,
+          crons: ["0 * * * *"],
+          active: true,
+          nextRunAt: dueAt,
+        },
+      });
+      vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", identity.botId);
+      vi.stubEnv("PRIMARY_RUNTIME_PILOT_LAUNCHER", process.execPath);
+      vi.stubEnv(
+        "PRIMARY_RUNTIME_PILOT_ROUTINES",
+        `${routine.id}:${createHash("sha256").update(prompt).digest("hex")}`,
+      );
+      try {
+        const executor = createRunExecutor({
+          prisma: system,
+          jobs: {
+            enqueue: async () => undefined,
+            cancel: async () => undefined,
+            close: async () => undefined,
+          },
+          events: {
+            append: (input: Parameters<typeof appendEvent>[1]) => appendEvent(system, input),
+            notify: async () => undefined,
+          },
+        } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+        await Promise.all([
+          executor.wakeRoutine(routine.id, dueAt.toISOString()),
+          executor.wakeRoutine(routine.id, dueAt.toUTCString()),
+        ]);
+        // A racing edit can restore the old due time, even after the scheduler advanced it.
+        await system.routine.update({ where: { id: routine.id }, data: { nextRunAt: dueAt } });
+        await executor.wakeRoutine(routine.id, dueAt.toISOString());
+        const runs = await system.run.findMany({ where: { routineId: routine.id } });
+        expect(runs).toHaveLength(1);
+        const [run] = runs;
+        expect(run).toMatchObject({
+          ...identity,
+          ...pin,
+          modelPinned: true,
+          primaryRuntime: "claude-agent",
+          primaryRuntimeRevision: savedBot.primaryRuntimeRevision,
+          clientNonce: routineTimerNonce(routine.id, dueAt.toISOString()),
+        });
+        const task = await system.task.findUniqueOrThrow({ where: { id: run!.taskId } });
+        const request = () =>
+          pilotRoutineRequest(
+            system,
+            { ...run!, primaryRuntime: run!.primaryRuntime! },
+            task.prompt,
+            { provider: pin.modelProvider, id: pin.modelId, connectionId: pin.modelCredentialId },
+            undefined,
+            [],
+          );
+        await expect(request()).resolves.toMatchObject({ prompt, history: [], tools: [] });
+        await system.routine.update({
+          where: { id: routine.id },
+          data: { endsAt: new Date(dueAt.getTime() - 1) },
+        });
+        await expect(request()).rejects.toThrow("no longer authorized");
+        await system.routine.update({
+          where: { id: routine.id },
+          data: { endsAt: null, active: false },
+        });
+        await expect(request()).rejects.toThrow("no longer authorized");
+        // Restore the eligible schedule, then change only the saved runtime
+        // selection twice. The real worker must fail before opening a model.
+        await system.routine.update({ where: { id: routine.id }, data: { active: true } });
+        const choose = (preference: string, expectedRevision: number) =>
+          runAsTenant(identity, () =>
+            setBotPrimaryRuntimePreference(db.prisma, {
+              ...identity,
+              preference,
+              expectedRevision,
+            }),
+          );
+        await expect(choose("pi", savedBot.primaryRuntimeRevision)).resolves.toHaveProperty(
+          "status",
+          "changed",
+        );
+        await expect(
+          choose("claude-agent", savedBot.primaryRuntimeRevision + 1),
+        ).resolves.toHaveProperty("status", "changed");
+        const runPi = vi.fn();
+        const readSecret = vi.fn(async () => null);
+        const worker = createRunExecutor({
+          prisma: db.prisma,
+          secrets: [],
+          secretStore: { get: readSecret },
+          memoryProviders: { resolve: async () => null },
+          jobs: { enqueue: vi.fn(), cancel: vi.fn(), close: vi.fn() },
+          events: createThreadEvents(db.prisma),
+          runtime: { run: runPi },
+        } as unknown as Parameters<typeof createRunExecutor>[0]);
+        if (!run) throw new Error("fixture did not queue the native routine");
+        await runAsTenant(identity, () => worker.continueRun(run.id, "routine-fixture-worker"));
+        await expect(
+          system.run.findUniqueOrThrow({ where: { id: run.id } }),
+        ).resolves.toHaveProperty("status", "failed");
+        await expect(
+          system.event.findFirstOrThrow({ where: { runId: run.id, type: "run.failed" } }),
+        ).resolves.toMatchObject({ payload: { error: expect.stringContaining("has changed") } });
+        expect(runPi).not.toHaveBeenCalled();
+        expect(readSecret).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllEnvs();
+        await system.run.deleteMany({ where: { routineId: routine.id } });
+        // Teardown deletes the dedicated test Space and any remaining tasks.
+        await system.routine.deleteMany({ where: { id: routine.id } });
+        await system.bot.update({
+          where: { id: identity.botId },
+          data: {
+            primaryRuntimePreference: savedBot.primaryRuntimePreference,
+            primaryRuntimeRevision: savedBot.primaryRuntimeRevision,
+            modelProvider: savedBot.modelProvider,
+            modelId: savedBot.modelId,
+            modelCredentialId: savedBot.modelCredentialId,
+          },
+        });
+      }
+    },
+  );
+
+  it("records a refused final occurrence once and keeps it after routine cleanup", async () => {
+    const dueAt = new Date(Math.floor((Date.now() - 10_000) / 1000) * 1000);
     const routine = await system.routine.create({
       data: {
         ...identity,
-        name: "native timer fixture",
-        prompt,
-        crons: ["0 * * * *"],
+        name: "Closing report",
+        prompt: "Private synthetic prompt",
+        crons: ["0 9 * * *"],
+        active: true,
+        nextRunAt: dueAt,
+        endsAt: dueAt,
+      },
+    });
+    const runtime = vi.fn();
+    const enqueue = vi.fn();
+    const events = createThreadEvents(db.prisma);
+    const executor = createRunExecutor({
+      prisma: db.prisma,
+      secrets: [],
+      jobs: { enqueue, cancel: vi.fn(), close: vi.fn() },
+      events,
+      runtime: { run: runtime },
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+    const bot = await system.bot.findUniqueOrThrow({ where: { id: identity.botId } });
+    try {
+      await runAsTenant(identity, () =>
+        setBotPrimaryRuntimePreference(db.prisma, {
+          ...identity,
+          preference: "claude-agent",
+          expectedRevision: bot.primaryRuntimeRevision,
+        }),
+      );
+      const wake = (at: string) =>
+        runAsTenant(identity, () => executor.wakeRoutine(routine.id, at));
+      await Promise.all([wake(dueAt.toISOString()), wake(dueAt.toUTCString())]);
+      await wake(dueAt.toISOString());
+      expect(await system.routine.findUnique({ where: { id: routine.id } })).toBeNull();
+      const runs = await system.run.findMany({
+        where: {
+          spaceId: identity.spaceId,
+          clientNonce: routineTimerNonce(routine.id, dueAt.toISOString()),
+        },
+      });
+      expect(runs).toHaveLength(1);
+      const [failed] = runs;
+      expect(failed).toMatchObject({ status: "failed", routineId: null, startedAt: null });
+      expect(failed?.error).toContain(`${dueAt.toISOString()}: Closing report`);
+      const failures = await runAsTenant(identity, () =>
+        db.prisma.event.findMany({
+          where: { threadId: identity.threadId, runId: failed!.id, type: "run.failed" },
+        }),
+      );
+      expect(failures).toHaveLength(1);
+      expect(failures[0]?.payload).toEqual({
+        error: expect.stringContaining("No model ran"),
+        routineId: routine.id,
+        routineName: "Closing report",
+        scheduledFor: dueAt.toISOString(),
+      });
+      expect(runtime).not.toHaveBeenCalled();
+      expect(enqueue).not.toHaveBeenCalled();
+    } finally {
+      await system.bot.update({
+        where: { id: identity.botId },
+        data: {
+          primaryRuntimePreference: bot.primaryRuntimePreference,
+          primaryRuntimeRevision: bot.primaryRuntimeRevision,
+        },
+      });
+    }
+  });
+
+  it("does not replay a refused occurrence through Pi after the owner changes runtime", async () => {
+    const dueAt = new Date(Math.floor((Date.now() - 60_000) / 1000) * 1000);
+    const routine = await system.routine.create({
+      data: {
+        ...identity,
+        name: "Daily report",
+        prompt: "Synthetic report",
+        crons: ["0 9 * * *"],
         active: true,
         nextRunAt: dueAt,
       },
     });
-    vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", identity.botId);
-    vi.stubEnv(
-      "PRIMARY_RUNTIME_PILOT_ROUTINES",
-      `${routine.id}:${createHash("sha256").update(prompt).digest("hex")}`,
-    );
+    const enqueue = vi.fn();
+    const executor = createRunExecutor({
+      prisma: db.prisma,
+      jobs: { enqueue, cancel: vi.fn(), close: vi.fn() },
+      events: createThreadEvents(db.prisma),
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+    const actor = identity;
+    const bot = await system.bot.findUniqueOrThrow({ where: { id: actor.botId } });
+    const choose = (preference: string, expectedRevision: number) =>
+      runAsTenant(actor, () =>
+        setBotPrimaryRuntimePreference(db.prisma, {
+          ...actor,
+          preference,
+          expectedRevision,
+        }),
+      );
+    const wake = (at: string) => runAsTenant(actor, () => executor.wakeRoutine(routine.id, at));
     try {
-      const executor = createRunExecutor({
-        prisma: system,
-        jobs: {
-          enqueue: async () => undefined,
-          cancel: async () => undefined,
-          close: async () => undefined,
-        },
-        events: {
-          append: (input: Parameters<typeof appendEvent>[1]) => appendEvent(system, input),
-          notify: async () => undefined,
-        },
-      } as unknown as Parameters<typeof createRunExecutor>[0]);
-
-      await Promise.all([
-        executor.wakeRoutine(routine.id, dueAt.toISOString()),
-        executor.wakeRoutine(routine.id, dueAt.toUTCString()),
-      ]);
-      // A racing edit can restore the old due time, even after the scheduler advanced it.
+      vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", actor.botId);
+      vi.stubEnv("PRIMARY_RUNTIME_PILOT_ROUTINES", `${routine.id}:bad-digest`);
+      await choose("claude-agent", bot.primaryRuntimeRevision);
+      await wake(dueAt.toUTCString());
+      const failed = await system.run.findFirstOrThrow({ where: { routineId: routine.id } });
+      expect(failed.status).toBe("failed");
+      await system.routine.update({
+        where: { id: routine.id },
+        data: { nextRunAt: new Date(Date.now() + 2 * 60 * 60_000) },
+      });
+      await runAsTenant(actor, () => executor.retryRoutineRun(failed.id));
+      expect(await system.run.count({ where: { routineId: routine.id } })).toBe(1);
+      await choose("pi", bot.primaryRuntimeRevision + 1);
       await system.routine.update({ where: { id: routine.id }, data: { nextRunAt: dueAt } });
-      await executor.wakeRoutine(routine.id, dueAt.toISOString());
-      const runs = await system.run.findMany({ where: { routineId: routine.id } });
-      expect(runs).toHaveLength(1);
-      const [run] = runs;
-      expect(run).toMatchObject({
-        ...identity,
-        ...pin,
-        modelPinned: true,
-        primaryRuntime: "claude-agent",
-        clientNonce: routineTimerNonce(routine.id, dueAt.toISOString()),
+      await wake(dueAt.toISOString());
+      expect(await system.run.count({ where: { routineId: routine.id } })).toBe(1);
+
+      const later = new Date(dueAt.getTime() + 1000);
+      await system.routine.update({ where: { id: routine.id }, data: { nextRunAt: later } });
+      await wake(later.toISOString());
+      const ordinary = await system.run.findFirstOrThrow({
+        where: { routineId: routine.id, status: "queued" },
       });
-      const task = await system.task.findUniqueOrThrow({ where: { id: run!.taskId } });
-      const request = () =>
-        pilotRoutineRequest(
-          system,
-          { ...run!, primaryRuntime: run!.primaryRuntime! },
-          task.prompt,
-          { provider: pin.modelProvider, id: pin.modelId, connectionId: pin.modelCredentialId },
-          undefined,
-          [],
-        );
-      await expect(request()).resolves.toMatchObject({ prompt, history: [], tools: [] });
-      await system.routine.update({
-        where: { id: routine.id },
-        data: { endsAt: new Date(dueAt.getTime() - 1) },
+      expect(ordinary).toMatchObject({
+        primaryRuntime: null,
+        clientNonce: routineTimerNonce(routine.id, later.toISOString()),
       });
-      await expect(request()).rejects.toThrow("no longer authorized");
-      await system.routine.update({
-        where: { id: routine.id },
-        data: { endsAt: null, active: false },
-      });
-      await expect(request()).rejects.toThrow("no longer authorized");
+      expect(enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "run.continue",
+          payload: { runId: ordinary.id },
+        }),
+      );
     } finally {
       vi.unstubAllEnvs();
-      await system.run.deleteMany({ where: { routineId: routine.id } });
-      // Teardown deletes the dedicated test Space and any remaining tasks.
-      await system.routine.deleteMany({ where: { id: routine.id } });
       await system.bot.update({
-        where: { id: identity.botId },
+        where: { id: actor.botId },
         data: {
-          modelProvider: savedBot.modelProvider,
-          modelId: savedBot.modelId,
-          modelCredentialId: savedBot.modelCredentialId,
+          primaryRuntimePreference: bot.primaryRuntimePreference,
+          primaryRuntimeRevision: bot.primaryRuntimeRevision,
         },
       });
     }

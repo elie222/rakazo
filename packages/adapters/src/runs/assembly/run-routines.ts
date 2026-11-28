@@ -16,11 +16,12 @@ import {
 } from "@rakazo/core";
 import {
   accountDeactivated,
+  appendEventInTransaction,
   isUniqueViolation,
   SpaceDeletionInProgressError,
   spaceTakesWork,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { routineRunModelPin } from "../../models/model-selection.js";
 import { protectedComputerLifecycleRefusal } from "../../providers/computer/desktop/desktop-command-guard.js";
 import { findPendingRoutineTick, routineTimerNonce } from "../../routines/routine-coalescing.js";
@@ -39,8 +40,15 @@ import {
 import { listAgentSkillRecords } from "../../tools/skill-tools.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 import { notifyRun } from "../lifecycle/run-notifications.js";
-import { pilotRoutineModel, routinePilotEnrollment } from "../turn/primary-routine-pilot.js";
+import {
+  pilotRoutineModel,
+  routinePilotEnrollment,
+  usesNativeRoutineAdmission,
+} from "../turn/primary-routine-pilot.js";
 import { wakeRun } from "../wakeups/wake-run.js";
+
+const ROUTINE_NATIVE_REFUSAL =
+  "This scheduled routine could not use the bot's selected native runtime. No model ran.";
 
 /** A routine run stopped by a transient model error gets one more try this much later. */
 const ROUTINE_RETRY_DELAY_MS = 12 * 60_000;
@@ -195,7 +203,8 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     return;
   }
   if (!bot?.thread) return;
-  const pilot = routinePilotEnrollment(routine.id);
+  const enrollment = routinePilotEnrollment(routine.id);
+  const pilot = usesNativeRoutineAdmission(bot, enrollment);
   const targetThreadId = pilot ? null : await routineGroupThreadId(deps.prisma, routine, bot.id);
   const thread = targetThreadId ? { id: targetThreadId } : bot.thread;
   // A change trigger checks first, without a model; only news becomes a run.
@@ -214,7 +223,14 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
   // already-due run once, then nextRunAt stays null and the routine
   // pauses rather than crash-looping the wakeup job.
   const nextRunAt = runBeforeEnd(
-    watchTick?.run ? watchTick.nextRunAt : nextScheduledRunAt(routine, scheduledAt),
+    watchTick?.run
+      ? watchTick.nextRunAt
+      : pilot && routine.watch !== null
+        ? nextRoutineWatchAt(
+            parseRoutineWatch(routine.watch) ?? { everyMinutes: ROUTINE_WATCH_DEFAULT_MINUTES },
+            new Date(Math.max(Date.now(), scheduledAt.getTime())),
+          )
+        : nextScheduledRunAt(routine, scheduledAt),
     routine.endsAt,
   );
   const lastRunBeforeEnd =
@@ -227,16 +243,25 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
       });
   const claimed = await deps.prisma.$transaction(async (tx) => {
     if (!(await spaceTakesWork(tx, routine.spaceId))) return null;
+    // Native failure events are written atomically in the owner's DM. Take its
+    // lock first, just like bot preference edits and chat admission. Preserve
+    // key-share access for an ordinary tick that is already inserting its task.
+    if (pilot) await tx.$queryRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR NO KEY UPDATE`;
     // The owner is part of the claim: a routine taken over mid-check runs as no one stale.
     const updated = await tx.routine.updateMany({
       where: {
         id: routine.id,
+        spaceId: routine.spaceId,
+        botId: bot.id,
         userId: routine.userId,
         active: true,
         nextRunAt: scheduledAt,
         endsAt: routine.endsAt,
         ...(pilot ? { crons: { equals: routine.crons }, timezone: routine.timezone } : {}),
-        bot: { archivedAt: null },
+        bot: {
+          archivedAt: null,
+          ...(pilot ? {} : { primaryRuntimeRevision: bot.primaryRuntimeRevision }),
+        },
       },
       data: {
         lastRunAt: new Date(),
@@ -245,7 +270,19 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
         ...(watchTick?.run ? { watchState: watchTick.state } : {}),
       },
     });
-    if (updated.count !== 1) return null;
+    if (updated.count !== 1) {
+      const currentBot =
+        !pilot &&
+        (await tx.bot.findUnique({
+          where: { id: bot.id },
+          select: { primaryRuntimeRevision: true },
+        }));
+      // Retry the same occurrence rather than admitting a stale ordinary run or
+      // advancing the schedule using the wrong routing branch.
+      if (currentBot && currentBot.primaryRuntimeRevision !== bot.primaryRuntimeRevision)
+        throw new Error("The bot's runtime selection changed while claiming this routine.");
+      return null;
+    }
     // The claim locks the row, so the prompt and the model are the versions
     // committed when it fired; a prompt edit that lands while the tick gathers
     // its context must not pair with the newer model. Skill expansion runs on
@@ -256,14 +293,71 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
           include: { bot: { include: { thread: true } } },
         })
       : null;
+    // Pilot refusal or admission is keyed to the same UTC occurrence, even if
+    // the wake was replayed with a different timestamp spelling or rewound.
+    const scheduledIso = scheduledAt.toISOString();
+    const nativeNonce = pilot ? routineTimerNonce(routine.id, scheduledIso) : undefined;
+    if (pilot && (!native || native.bot.primaryRuntimeRevision !== bot.primaryRuntimeRevision))
+      throw new Error("The bot's runtime selection changed while claiming this routine.");
     const pin =
       native &&
       (nextRunAt || lastRunBeforeEnd) &&
       native.botId === bot.id &&
       native.spaceId === routine.spaceId
-        ? pilotRoutineModel(native, thread.id, pilot)
+        ? pilotRoutineModel(native, thread.id, enrollment)
         : undefined;
-    if (pilot && !pin) return "pilot-refused" as const;
+    if (native && nativeNonce && !pin) {
+      const ownerThread = native.bot.thread;
+      if (
+        native.bot.userId !== routine.userId ||
+        !ownerThread ||
+        ownerThread.id !== thread.id ||
+        ownerThread.userId !== routine.userId ||
+        ownerThread.spaceId !== routine.spaceId ||
+        ownerThread.botId !== bot.id ||
+        ownerThread.groupId ||
+        ownerThread.externalConversationId
+      )
+        return "skipped" as const;
+      const existing = await tx.run.findUnique({
+        where: { spaceId_clientNonce: { spaceId: routine.spaceId, clientNonce: nativeNonce } },
+        select: { id: true },
+      });
+      if (existing) return "skipped" as const;
+      const name = displayName(native.name, "Routine").slice(0, 80);
+      const error = `${ROUTINE_NATIVE_REFUSAL} Scheduled for ${scheduledIso}: ${name}.`;
+      const base = {
+        spaceId: routine.spaceId,
+        threadId: thread.id,
+        botId: bot.id,
+        userId: routine.userId,
+      };
+      const task = await tx.task.create({ data: { ...base, prompt: "", status: "failed" } });
+      const failed = await tx.run.create({
+        data: {
+          ...base,
+          taskId: task.id,
+          status: "failed",
+          trigger: "routine",
+          routineId: routine.id,
+          clientNonce: nativeNonce,
+          error,
+          completedAt: new Date(),
+        },
+      });
+      const event = await appendEventInTransaction(tx, {
+        ...base,
+        type: "run.failed",
+        runId: failed.id,
+        payload: {
+          error,
+          routineId: native.id,
+          routineName: native.name,
+          scheduledFor: scheduledIso,
+        },
+      });
+      return { kind: "native-refused", seq: event.seq } as const;
+    }
     const current =
       native ??
       (await tx.routine.findUnique({
@@ -275,9 +369,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
       (pin ? current.prompt : expandSkillReferencesInPrompt(current.prompt, skillRecords)) +
       (watchTick?.run ? watchTick.note : "");
     const timerTick = pin || (routine.watch == null && !isOneShotRoutineCrons(routine.crons));
-    const timerNonce = timerTick
-      ? routineTimerNonce(routine.id, pin ? scheduledAt.toISOString() : scheduledFor)
-      : undefined;
+    const timerNonce = timerTick ? routineTimerNonce(routine.id, scheduledIso) : undefined;
     if (timerNonce) {
       const pending =
         !pin &&
@@ -338,9 +430,9 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     return { ...run, coalesced: false };
   });
   if (!claimed) return;
-  if (claimed === "skipped" || claimed === "pilot-refused") {
-    if (claimed === "pilot-refused")
-      getLogger().warn("routine.primary_runtime_refused", { "routine.id": routine.id });
+  if (claimed === "skipped" || ("kind" in claimed && claimed.kind === "native-refused")) {
+    if (claimed !== "skipped" && claimed.seq !== undefined)
+      await bestEffort("notify of refused routine", deps.events.notify(thread.id, claimed.seq));
     if (nextRunAt) await deps.jobs.enqueue(routineWakeupJob(routine.id, nextRunAt));
     else if (routine.endsAt) {
       await deleteSpentRoutine(deps, {
@@ -417,6 +509,7 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
   if (
     !failed?.routineId ||
     failed.primaryRuntime ||
+    failed.error?.startsWith(ROUTINE_NATIVE_REFUSAL) ||
     failed.trigger !== "routine" ||
     failed.status !== "failed" ||
     failed.retryOfRunId
