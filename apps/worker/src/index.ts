@@ -259,6 +259,18 @@ async function main() {
         token: sandboxOptions.hostComputerToken,
       },
     ),
+    userComputerAccess: {
+      routines: parseEnvFlag(
+        "USER_DEVICES_ALLOW_ROUTINES",
+        process.env.USER_DEVICES_ALLOW_ROUTINES,
+        false,
+      ),
+      ownBots: parseEnvFlag(
+        "USER_DEVICES_ALLOW_OWN_BOTS",
+        process.env.USER_DEVICES_ALLOW_OWN_BOTS,
+        false,
+      ),
+    },
     paymentWallet,
     stoppingSignal: shutdown.signal,
     shutdownSignal: runDrain.signal,

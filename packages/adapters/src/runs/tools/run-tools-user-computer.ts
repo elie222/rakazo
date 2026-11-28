@@ -1,8 +1,10 @@
 import path from "node:path";
 import type { AgentToolExecutionResult, ProcessEvent } from "@rakazo/adapter-kit";
 import type { ApprovalMode } from "@rakazo/core";
-import { redactSecrets } from "@rakazo/core";
+import { BOT_MESSAGE_MAX_HOPS, HELPER_RESULT_TRIGGER, redactSecrets } from "@rakazo/core";
 import { sandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
+import type { PrismaClient } from "@rakazo/db";
+import { mayBeChannelMessage, readMessageBlocks } from "@rakazo/db";
 import { z } from "zod";
 import type { HostComputerEnvironment } from "../../computers/host/host-computer-protocol.js";
 import { nativeShellCommandArgv } from "../../computers/host/native-shell.js";
@@ -25,8 +27,10 @@ import type {
   HostScreenObservation,
 } from "../../computers/screens/host-screen.js";
 import { HOST_SCREEN_MAX_ACTIONS, hostScreenAction } from "../../computers/screens/host-screen.js";
+import { ROUTINE_WATCH_NOTE_START } from "../../routines/routine-watch.prompt.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { isRunTaintedBeyondOwnComputer } from "../assembly/run-context.js";
+import { loadRunOrigin } from "../lifecycle/run-origin.js";
 import type { ToolCall } from "./run-tool-gate.js";
 
 export {
@@ -45,9 +49,22 @@ const USER_COMPUTER_UNAVAILABLE =
   'The user\'s computer is not connected. If the task needs it, ask them to open the Rakazo desktop app and turn on "Let bots use this computer" in its settings.';
 
 /**
+ * Which runs besides the owner's own chat may reach their paired computer: their routines, and
+ * chains of their own bots that started where the computer was reachable. Server switches
+ * USER_DEVICES_ALLOW_ROUTINES and USER_DEVICES_ALLOW_OWN_BOTS, both off by default.
+ */
+export type UserComputerAccess = { routines: boolean; ownBots: boolean };
+
+export const NO_USER_COMPUTER_ACCESS: UserComputerAccess = { routines: false, ownBots: false };
+
+/**
  * Whose own computer this run may reach: the bot owner's, when their own message started it or it
- * is one of their routines they let use it (see routineRunUsesOwnerComputer). Other routines,
- * webhooks, channels, other bots and other people's messages reach no one's.
+ * is one of their routines they let use it (see routineRunUsesOwnerComputer). With the server's
+ * switches on, also their own bot's scheduled routine, and a message from another of their bots
+ * when `ownBotChain` says the chain behind it started with them (see botChainFromOwner), neither in
+ * a group chat. A routine that watches something hands the run text someone else may have written,
+ * so it reaches no one's through the switch; nor do webhooks, channels, helpers and other people's
+ * messages.
  */
 export function userComputerOwner(input: {
   trigger: string;
@@ -55,14 +72,145 @@ export function userComputerOwner(input: {
   messagingChannelRun: boolean;
   runUserId: string;
   botUserId: string;
+  access: UserComputerAccess;
+  ownBotChain: boolean;
+  groupThread: boolean;
+  /** The run's routine watches something, or is gone. */
+  routineWatches: boolean;
+  /** The owner turned on "Use my computer" for this routine, and its run still qualifies. */
   ownerComputerRoutine: boolean;
+  /** A helper the run was delegated to, judged by `trigger`, its origin's; no switch reaches it. */
+  helperRun: boolean;
 }): string | undefined {
   if (input.messagingChannelRun || input.runUserId !== input.botUserId) return undefined;
-  const allowed =
-    input.trigger === "routine"
-      ? input.ownerComputerRoutine
-      : (input.trigger === "user" || input.trigger === "follow_up") && input.sourceRole === "user";
-  return allowed ? input.runUserId : undefined;
+  const reachable =
+    input.trigger === "user" || input.trigger === "follow_up"
+      ? input.sourceRole === "user"
+      : (input.trigger === "routine" && input.ownerComputerRoutine) ||
+        (!input.groupThread &&
+          !input.helperRun &&
+          (input.trigger === "routine"
+            ? input.access.routines && !input.routineWatches
+            : input.trigger === "bot_message" && input.access.ownBots && input.ownBotChain));
+  return reachable ? input.runUserId : undefined;
+}
+
+/**
+ * Whether a routine run is only its routine's own prompt: the routine still exists and watches
+ * nothing, and the task quotes no watch. A task queued while its routine watched keeps the note
+ * after the watch is removed, and a retry copies it.
+ */
+function scheduledRoutine(run: {
+  task: { prompt: string };
+  routine: { watch: unknown } | null;
+}): boolean {
+  return (
+    run.routine !== null &&
+    run.routine.watch === null &&
+    !run.task.prompt.includes(ROUTINE_WATCH_NOTE_START)
+  );
+}
+
+/** Whether a routine run may carry text its routine watched for, or no longer has a routine. */
+export async function routineRunWatches(prisma: PrismaClient, runId: string): Promise<boolean> {
+  const run = await prisma.run.findUnique({
+    where: { id: runId },
+    select: { task: { select: { prompt: true } }, routine: { select: { watch: true } } },
+  });
+  return !run || !scheduledRoutine(run);
+}
+
+/** Outside tasks whose text, once handed into a run, keeps it from the owner's computer. */
+export function userComputerBlockingOrigins(access: UserComputerAccess): string[] {
+  return access.routines ? ["webhook"] : ["routine", "webhook"];
+}
+
+/**
+ * Whether the bot message that started a run comes from a chain the owner started: each sender run
+ * is theirs, in this Space, on one of their bots, outside a group chat, took in no blocked outside
+ * task, and the first one started where their computer is reachable (their own message, or a
+ * scheduled routine when allowed). The caller checks that the receiving run is the owner's own.
+ * A link that is missing, unreadable or past the hop limit refuses.
+ */
+export async function botChainFromOwner(
+  prisma: PrismaClient,
+  run: { userId: string; spaceId: string; sourceMessageId: string | null },
+  access: UserComputerAccess,
+  maxHops = BOT_MESSAGE_MAX_HOPS,
+): Promise<boolean> {
+  let messageId = run.sourceMessageId;
+  for (let hop = 0; hop < maxHops && messageId; hop++) {
+    const inbound = await prisma.message.findUnique({
+      where: { id: messageId },
+      select: { id: true, blocks: true },
+    });
+    if (!inbound) return false;
+    const read = readMessageBlocks(inbound);
+    const received = read.blocks.find((block) => block.kind === "bot_message_received");
+    // Stored fields are not checked against today's schema, so check the one this reads.
+    const returnTo =
+      received?.kind === "bot_message_received" ? (received.returnToMessageId as unknown) : null;
+    if (!read.intact || typeof returnTo !== "string" || !returnTo) return false;
+    const outbound = await prisma.message.findUnique({
+      where: { id: returnTo },
+      select: { runId: true },
+    });
+    if (!outbound?.runId) return false;
+    const findSender = (id: string) =>
+      prisma.run.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          trigger: true,
+          userId: true,
+          spaceId: true,
+          botId: true,
+          delegatedFromRunId: true,
+          sourceMessageId: true,
+          bot: { select: { userId: true } },
+          thread: { select: { groupId: true } },
+          routine: { select: { watch: true } },
+          task: { select: { prompt: true } },
+        },
+      });
+    const ownSender = (sender: Awaited<ReturnType<typeof findSender>>) =>
+      sender !== null &&
+      sender.userId === run.userId &&
+      sender.spaceId === run.spaceId &&
+      sender.bot.userId === run.userId &&
+      !sender.thread.groupId;
+    const steeredIn = (runId: string) =>
+      prisma.steeringMessage.findFirst({
+        where: {
+          runId,
+          claimedAt: { not: null },
+          originTrigger: { in: userComputerBlockingOrigins(access) },
+        },
+        select: { id: true },
+      });
+    let sender = await findSender(outbound.runId);
+    // A run that picks up a helper's result goes on with the conversation that started the
+    // helper, so the chain goes on from that conversation, and text handed into either counts.
+    if (sender?.trigger === HELPER_RESULT_TRIGGER) {
+      if (!ownSender(sender) || (await steeredIn(sender.id))) return false;
+      const origin = await loadRunOrigin(prisma, sender);
+      sender = origin ? await findSender(origin.id) : null;
+    }
+    if (!sender || !ownSender(sender) || (await steeredIn(sender.id))) return false;
+    if (sender.trigger === "routine") return access.routines && scheduledRoutine(sender);
+    if (sender.trigger === "user" || sender.trigger === "follow_up") {
+      const source = sender.sourceMessageId
+        ? await prisma.message.findUnique({
+            where: { id: sender.sourceMessageId },
+            select: { id: true, role: true, blocks: true },
+          })
+        : null;
+      return source?.role === "user" && !mayBeChannelMessage(source);
+    }
+    if (sender.trigger !== "bot_message") return false;
+    messageId = sender.sourceMessageId;
+  }
+  return false;
 }
 
 /**

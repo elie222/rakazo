@@ -451,6 +451,22 @@ describe("OIDC environment", () => {
       );
     }
   });
+  it("reads the routine and own-bot computer switches strictly, off by default", () => {
+    expect(loadEnv(base).userDevicesAllowRoutines).toBe(false);
+    expect(loadEnv(base).userDevicesAllowOwnBots).toBe(false);
+    expect(loadEnv({ ...base, USER_DEVICES_ALLOW_ROUTINES: "true" }).userDevicesAllowRoutines).toBe(
+      true,
+    );
+    expect(loadEnv({ ...base, USER_DEVICES_ALLOW_OWN_BOTS: "1" }).userDevicesAllowOwnBots).toBe(
+      true,
+    );
+    expect(() => loadEnv({ ...base, USER_DEVICES_ALLOW_ROUTINES: "yes" })).toThrow(
+      "USER_DEVICES_ALLOW_ROUTINES must be true or false",
+    );
+    expect(() => loadEnv({ ...base, USER_DEVICES_ALLOW_OWN_BOTS: "on" })).toThrow(
+      "USER_DEVICES_ALLOW_OWN_BOTS must be true or false",
+    );
+  });
   it("refuses a RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC value it can't read", () => {
     for (const value of ["", "0", "false", "1", "TRUE"]) {
       expect(() => loadEnv({ ...base, RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC: value })).not.toThrow();

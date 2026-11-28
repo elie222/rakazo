@@ -578,6 +578,10 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         : undefined,
       cloudAgent,
       userDevices: botUserDevices,
+      userComputerAccess: {
+        routines: env.userDevicesAllowRoutines,
+        ownBots: env.userDevicesAllowOwnBots,
+      },
       paymentWallet,
       web,
       browser,

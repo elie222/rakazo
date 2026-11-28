@@ -72,7 +72,13 @@ import {
 } from "../tools/run-tool-selection.js";
 import { historyMyChatsAllowed } from "../tools/run-tools-memory.js";
 import type { UserComputerState } from "../tools/run-tools-user-computer.js";
-import { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from "../tools/run-tools-user-computer.js";
+import {
+  botChainFromOwner,
+  NO_USER_COMPUTER_ACCESS,
+  routineRunWatches,
+  USER_COMPUTER_SHELL_TOOL,
+  userComputerOwner,
+} from "../tools/run-tools-user-computer.js";
 import {
   modelCreditBillingEnabled,
   resolvedModelRunFields,
@@ -558,13 +564,28 @@ export async function resolveRunCapabilities(
     run.trigger !== "bot_message" &&
     !conversationThread.groupId &&
     !nonOwnerChatRun;
+  const userComputerAccess = deps.userComputerAccess ?? NO_USER_COMPUTER_ACCESS;
+  const ownBotChain =
+    conversationRun.trigger === "bot_message" &&
+    userComputerAccess.ownBots &&
+    run.userId === bot.userId &&
+    (await botChainFromOwner(deps.prisma, conversationRun, userComputerAccess));
+  const routineWatches =
+    conversationRun.trigger === "routine" &&
+    userComputerAccess.routines &&
+    (await routineRunWatches(deps.prisma, conversationRun.id));
   const userComputerOwnerId = userComputerOwner({
     trigger: conversationRun.trigger,
     sourceRole: (origin?.sourceMessage ?? sourceMessage)?.role,
     messagingChannelRun: nonOwnerChatRun,
     runUserId: run.userId,
     botUserId: bot.userId,
+    access: userComputerAccess,
+    ownBotChain,
+    groupThread: Boolean(conversationThread.groupId),
+    routineWatches,
     ownerComputerRoutine: parts.records.ownerComputerRoutine,
+    helperRun: run.trigger === BACKGROUND_HELPER_TRIGGER,
   });
   let userComputer: UserComputerState;
   let userComputerShell = false;
@@ -734,7 +755,10 @@ export async function selectRunTools(
             select: { id: true },
           }),
         ),
-      historyRetrievalEnabled: contextStrategy !== "current" && !unknownChannelSourceId,
+      historyRetrievalEnabled:
+        contextStrategy !== "current" &&
+        !unknownChannelSourceId &&
+        !parts.records.switchComputerRoutine,
       historyMyChats: myChatsAllowed,
       ownPromptOnly: ownerComputerRoutine,
       meetingTranscriptsAvailable: parts.meetingTranscriptsAvailable,
