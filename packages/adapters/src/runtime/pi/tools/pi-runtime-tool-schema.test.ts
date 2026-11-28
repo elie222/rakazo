@@ -828,3 +828,32 @@ describe("bot management tool parameters", () => {
     expect(prepareFleetArguments("set_child_instructions", args)).toEqual(args);
   });
 });
+
+describe("ask_user option limits", () => {
+  it("accepts up to six unique options in the tool definition and Pi parameters, and rejects seven", () => {
+    const tool = builtinAgentTools.find((item) => item.name === "ask_user")!;
+    const parameters = parametersFor(tool);
+    const six = ["Berlin", "Seoul", "Toronto", "Paris", "Osaka", "Cairo"];
+    const seven = [...six, "Lima"];
+    const validate = (options: string[]) =>
+      validateToolArguments(
+        { ...tool, parameters },
+        {
+          type: "toolCall",
+          id: "ask-6",
+          name: "ask_user",
+          arguments: { question: "Which?", options },
+        },
+      );
+
+    expect(parseConnectorToolArgs(tool.inputSchema, { question: "Which?", options: six })).toEqual({
+      question: "Which?",
+      options: six,
+    });
+    expect(() =>
+      parseConnectorToolArgs(tool.inputSchema, { question: "Which?", options: seven }),
+    ).toThrow();
+    expect(validate(six)).toEqual({ question: "Which?", options: six });
+    expect(() => validate(seven)).toThrow();
+  });
+});

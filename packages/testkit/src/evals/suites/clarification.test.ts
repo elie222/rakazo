@@ -28,7 +28,25 @@ it("rejects secret input, approval requests, malformed or multiple pending asks"
     [{ ...ask, input: "secret" }],
     [{ ...ask, approvalEffectId: "private-effect" }],
     [{ ...ask, actions: [] }],
+    [
+      {
+        ...ask,
+        actions: ["A", "B", "C", "D", "E", "F", "G"].map((label) => ({ label })),
+      },
+    ],
     [ask, ask],
   ])
     expect(expectedClarificationText(true, "waiting_input", ["ask_user"], blocks)).toBeNull();
+});
+
+it("accepts a six-option ask and includes every option", () => {
+  const labels = ["Aurora", "Borealis", "Comet", "Draco", "Eridanus", "Fornax"];
+  expect(
+    expectedClarificationText(
+      true,
+      "waiting_input",
+      ["ask_user"],
+      [{ ...ask, actions: labels.map((label) => ({ label })) }],
+    ),
+  ).toBe([ask.text, ...labels].join("\n"));
 });

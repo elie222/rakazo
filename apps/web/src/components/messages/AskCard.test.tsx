@@ -488,6 +488,31 @@ it("leaves an unanswered question's options as plain actions", async () => {
   expect(container.querySelector(".sr-only")).toBeNull();
 });
 
+it("renders six question options lettered A through F and submits the sixth", async () => {
+  const labels = ["Berlin", "Seoul", "Toronto", "Paris", "Osaka", "Cairo"];
+  const block: AskBlock = {
+    kind: "ask",
+    text: "Which city?",
+    status: "pending",
+    actions: labels.map((label, index) => ({ id: `choice-${index + 1}`, label })),
+  };
+  const onAnswer = vi.fn(async () => undefined);
+  await render(block, undefined, onAnswer);
+
+  expect([...container.querySelectorAll("button")].map((item) => item.textContent)).toEqual([
+    "ABerlin",
+    "BSeoul",
+    "CToronto",
+    "DParis",
+    "EOsaka",
+    "FCairo",
+  ]);
+  await act(async () => button("FCairo")!.click());
+
+  expect(onAnswer).toHaveBeenCalledWith("choice-6");
+  expect(button("FCairo")!.getAttribute("aria-pressed")).toBe("true");
+});
+
 it("dims a closed question's options without a status line", async () => {
   await act(async () =>
     root.render(

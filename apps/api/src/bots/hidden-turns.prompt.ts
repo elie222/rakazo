@@ -8,7 +8,7 @@ export function botIntroPrompt(input: {
   const canUpdate = !input.disabledBuiltinTools.includes("update_bot");
   const byName = input.userName ? " by first name" : "";
   const options =
-    "two to four short options that fit your name, anything your description or instructions already say, and what you know about them, never a stock list";
+    "short options that fit your name, anything your description or instructions already say, and what you know about them, never a stock list";
   return [
     [
       "You were just created.",
@@ -19,8 +19,8 @@ export function botIntroPrompt(input: {
       .join(" "),
     // The greeting goes in the question itself, so the card stands on its own.
     canAsk
-      ? `Call ask_user right away, with no text before it. Its question greets them${byName} in a few words and asks what they want you for, with ${options}. They can also type their own answer.`
-      : `Greet them${byName} in a few words and ask in one sentence what they want you for, suggesting ${options}.`,
+      ? `Call ask_user right away, with no text before it. Its question greets them${byName} in a few words and asks what they want you for, with two to six ${options}. They can also type their own answer.`
+      : `Greet them${byName} in a few words and ask in one sentence what they want you for, suggesting two to four ${options}.`,
     "If your profile already makes that clear, say in one line what you will do instead of asking.",
     canUpdate
       ? 'Once you know what you are for, use update_bot to set what is already clear: a one-line description of what you do, your instructions on how you do it, and a short name if yours is still a placeholder like "New Bot". Leave anything vague unset to fill in later as the work becomes clearer, and otherwise keep your name and look.'

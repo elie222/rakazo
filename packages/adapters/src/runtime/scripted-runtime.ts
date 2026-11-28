@@ -554,6 +554,8 @@ code-b
                 { id: "choice-2", label: "Seoul" },
                 { id: "choice-3", label: "Toronto" },
                 { id: "choice-4", label: "Lisbon" },
+                { id: "choice-5", label: "Osaka" },
+                { id: "choice-6", label: "Cairo" },
               ],
             }
           : { text: "Which city should I use?", detail: "Reply with one city name." },
