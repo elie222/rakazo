@@ -94,6 +94,33 @@ describe("createSecretMatcher", () => {
       expect(redactSecrets("a".repeat(1_000_000), nested)).toBe("[redacted]");
     });
   });
+
+  it("stays linear in scanningMatcher on long repetitive secrets", () => {
+    const repeated = "q".repeat(50_000);
+    const overlappingText = "q".repeat(300_000);
+    const nearMissText = `${"q".repeat(49_999)}x`.repeat(8);
+    // Single scans stay under BUILD_COST (300k/400k <= 50k * 8), and maxStates = 3 forces scanningMatcher.
+    const budgetedOverlap = createSecretMatcher([repeated]);
+    const budgetedNearMiss = createSecretMatcher([repeated]);
+    const budgetedTest = createSecretMatcher([repeated]);
+    const capped = createIndexedMatcher([repeated], 3);
+    expectLinearTime(() => {
+      expect(budgetedOverlap.ranges(overlappingText)).toEqual([[0, 300_000]]);
+      expect(budgetedNearMiss.ranges(nearMissText)).toEqual([]);
+      expect(budgetedTest.test(nearMissText)).toBe(false);
+      expect(capped.ranges(overlappingText)).toEqual([[0, 300_000]]);
+      expect(capped.ranges(nearMissText)).toEqual([]);
+      expect(capped.test(nearMissText)).toBe(false);
+    });
+    // Values right on both sides of the native/KMP cutoff agree with scanning on overlaps and touching edges.
+    for (const secret of [`${"ab".repeat(64)}`, `${"ab".repeat(64)}a`, `${"\uD83D".repeat(130)}`]) {
+      const sample = `x${secret}${secret}y${secret.slice(0, -1)}z${secret.slice(0, 2)}${secret}`;
+      const expected = scannedRanges(sample, [secret]);
+      const matcher = createIndexedMatcher([secret], 3);
+      expect(matcher.ranges(sample)).toEqual(expected);
+      expect(matcher.test(sample)).toBe(true);
+    }
+  });
 });
 
 describe("redacting with a growing list", () => {
