@@ -41,7 +41,7 @@ import { pageTools } from "./run-tools-pages.js";
 import { preferenceTools } from "./run-tools-preferences.js";
 import { purchaseTools } from "./run-tools-purchases.js";
 import { secretTools } from "./run-tools-secrets.js";
-import { taskTools } from "./run-tools-tasks.js";
+import { markReplayedRoutineReadTaint, taskTools } from "./run-tools-tasks.js";
 import {
   USER_COMPUTER_ACT_TOOL,
   USER_COMPUTER_OBSERVE_TOOL,
@@ -295,10 +295,13 @@ async function dispatchTool(
   const gate = await gateToolCall(ctx, request, observer);
   if ("result" in gate) {
     const ownProfile = name === "update_bot" && !argumentGiven(args.bot_id);
-    if (gate.replayed && toolResultTaintsRun(request.name) && !ownProfile) {
-      await markReadOutsideContent(ctx, gate.result, {
-        ownComputer: ownComputerResult(request.name),
-      });
+    if (gate.replayed) {
+      if (toolResultTaintsRun(request.name) && !ownProfile) {
+        await markReadOutsideContent(ctx, gate.result, {
+          ownComputer: ownComputerResult(request.name),
+        });
+      }
+      await markReplayedRoutineReadTaint(ctx, request.name, request.args, gate.result);
     }
     return refuse(gate.result, request.name);
   }

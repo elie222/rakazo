@@ -360,6 +360,8 @@ export function observedPiStream(
     prepareContext?: (context: Context, model: Model<Api>) => Context;
     imageTokens?: ContextBudget["imageTokens"];
     onUsage?: (usage: AgentUsage) => void;
+    /** Fires once a model call completes without error and its prompt delivery is accepted. */
+    onDeliveryAccepted?: () => void;
     recordUsage?: (event: Extract<AgentRuntimeEvent, { type: "usage" }>) => void | Promise<void>;
     /** Provider failures only; excludes context, reservations and usage settlement. */
     onProviderError?: (message: AssistantMessage) => void;
@@ -585,6 +587,21 @@ export function observedPiStream(
               hooks?.onUsage?.(normalized);
             } catch {
               /* Cache telemetry cannot discard accounted spend. */
+            }
+            if (
+              event.type === "done" &&
+              event.message.stopReason !== "error" &&
+              event.message.stopReason !== "aborted"
+            ) {
+              try {
+                hooks?.onDeliveryAccepted?.();
+              } catch (error) {
+                /* Delivery provenance cannot discard accounted spend. */
+                getLogger().warn("Watch delivery provenance hook failed", {
+                  runId: attribution.runId,
+                  error,
+                });
+              }
             }
           }
           if (event.type === "error") hooks?.onProviderError?.(event.error);

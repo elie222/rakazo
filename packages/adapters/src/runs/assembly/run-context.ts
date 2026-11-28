@@ -45,6 +45,7 @@ import type { inferScript } from "../../runtime/scripted-runtime.js";
 import type { VaultItemUse } from "../../secrets/bot-secrets.js";
 import { secretPausedToolResult } from "../../secrets/run-secret.js";
 import { recordVaultItemUse } from "../../secrets/vault/vault-activity.js";
+import { USE_TOOL } from "../../tools/builtin.tool-definition.js";
 import { partitionTools } from "../../tools/builtin-tool-bridge.js";
 import type { FleetRun } from "../../tools/fleet-tools.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
@@ -61,6 +62,7 @@ import { restoreReply, snapshotReply } from "./reply-snapshot.js";
 import type { lazyRunComputer } from "./run-computer.js";
 import { publishMessage } from "./run-messages.js";
 import type { createRunTrustLoaders } from "./run-trust.js";
+import { watchChecksFromToolResultMessage } from "./watch-outside-text.js";
 
 export type RunningHelper = Omit<Extract<MessageBlock, { kind: "subagent" }>, "kind">;
 
@@ -601,10 +603,70 @@ export function restoreTurnCheckpointEffects(
   const effects = ctx.state.effects;
   try {
     const saved = restoreTurnCheckpoint(turnCheckpoint, model);
+    // A saved watch list is the whole acceptance-ordered evidence. Older checkpoints omit it
+    // and still read watch checks from the retained routine results below.
+    const savedWatchList = Array.isArray(saved.watchOutsideText)
+      ? saved.watchOutsideText
+      : undefined;
+    const restoredWatch = (savedWatchList ?? []).filter(
+      (entry): entry is string => typeof entry === "string" && entry.trim().length > 0,
+    );
+    // A saved tail already interleaves page reads with watch checks. Replaying either side
+    // after the other lets the older text evict the newer one.
+    const savedOutside =
+      typeof saved.outsideText === "string" && saved.outsideText.trim()
+        ? saved.outsideText
+        : undefined;
+    if (restoredWatch.length > 0) {
+      ctx.state.tainted = true;
+      ctx.state.taintedBeyondOwnComputer = true;
+      if (!savedOutside) {
+        ctx.state.outsideText = appendOutsideText(ctx.state.outsideText, restoredWatch);
+      }
+    }
+    if (savedOutside) {
+      ctx.state.outsideText = appendOutsideText(ctx.state.outsideText, savedOutside);
+    }
     // The saved turn's tool results are outside content this run already read.
-    for (const message of saved.messages)
-      if (message.role === "toolResult" && toolResultTaintsRun(message.toolName))
+    // Resolve deferred `use_tool` call IDs in transcript order so a later call reusing an ID
+    // cannot overwrite an earlier `task_catalog` or `schedule_list` mapping.
+    const wrappedToolNames = new Map<string, string>();
+    for (const message of saved.messages) {
+      if (message.role === "assistant") {
+        for (const part of message.content) {
+          if (part.type !== "toolCall") continue;
+          if (
+            part.name === USE_TOOL &&
+            part.arguments &&
+            typeof part.arguments === "object" &&
+            typeof (part.arguments as { name?: unknown }).name === "string"
+          ) {
+            wrappedToolNames.set(part.id, (part.arguments as { name: string }).name);
+          } else {
+            wrappedToolNames.delete(part.id);
+          }
+        }
+        continue;
+      }
+      if (message.role !== "toolResult") continue;
+      const unwrapped =
+        message.toolName === USE_TOOL ? wrappedToolNames.get(message.toolCallId) : undefined;
+      const routineReadTool =
+        unwrapped === "schedule_list" || unwrapped === "task_catalog"
+          ? unwrapped
+          : message.toolName === "schedule_list" || message.toolName === "task_catalog"
+            ? message.toolName
+            : undefined;
+      if (routineReadTool) {
+        if (savedWatchList !== undefined || savedOutside) continue;
+        const watchChecks = watchChecksFromToolResultMessage(message, ctx.deps?.contextStrategy);
+        if (watchChecks.length > 0) {
+          ctx.state.outsideText = appendOutsideText(ctx.state.outsideText, watchChecks);
+        }
+      } else if (!savedOutside && toolResultTaintsRun(message.toolName)) {
         ctx.state.outsideText = appendOutsideText(ctx.state.outsideText, message.content);
+      }
+    }
     const unresolved = new Set(unresolvedTurnCheckpointCalls(saved.messages));
     const namedTools = namedAgentTools(partitionTools(ctx.tools.offered).listed);
     const available = new Set(namedTools.map((tool) => tool.name));

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { AgentContextStrategy, CacheCapabilities } from "@rakazo/adapter-kit";
 import {
+  isRecord,
   MODEL_CONTEXT_TOO_SMALL_ERROR,
   shortenedTextLength,
   textBoundary,
@@ -9,6 +10,7 @@ import {
 } from "@rakazo/core";
 import type { VerbatimMcpServers } from "../../mcp/verbatim-mcp-result.js";
 import { isVerbatimMcpResult, toolCallIdentity } from "../../mcp/verbatim-mcp-result.js";
+import { calledToolName, isRoutineWatchName } from "./routine-watch-tool.js";
 import {
   OMITTED_AFTER_USE,
   OMITTED_BEFORE_USE,
@@ -611,6 +613,7 @@ export function selectContext<T extends ContextMessage>(
   options: ContextSelectionOptions,
 ): {
   messages: T[];
+  selectedIndexes: number[];
   estimatedInputTokens: number;
   droppedMessages: number;
   truncatedToolResults: number;
@@ -702,15 +705,33 @@ export function selectContext<T extends ContextMessage>(
             128,
             Math.min(Math.floor(serialized.length / 2), Math.floor(available / 4)),
           );
+          const afterUse = index < latestAssistant;
           const text = shortenToolResultText(
             serialized,
             size,
             nativeCall ?? { name: message.toolName },
-            { afterUse: index < latestAssistant },
+            { afterUse },
           );
           if (text.length >= serialized.length) return message;
           shortenedCount += 1;
-          return { ...message, content: [{ type: "text", text }, ...images] } as T;
+          const nextMessage = { ...message, content: [{ type: "text", text }, ...images] } as T & {
+            details?: unknown;
+          };
+          // A before-use cut changes what the model first sees on a routine-watch read, so record
+          // that delivery on `details` without duplicating non-routine tool results in checkpoints.
+          const currentDetails = nextMessage.details;
+          if (
+            !afterUse &&
+            isRoutineWatchName(calledToolName(call)) &&
+            isRecord(currentDetails) &&
+            Array.isArray(currentDetails.routines)
+          ) {
+            nextMessage.details = {
+              ...currentDetails,
+              contextBeforeUseText: text,
+            };
+          }
+          return nextMessage as T;
         });
         if (shortenedCount) {
           const retry = selectContext(shortened, options);
@@ -795,8 +816,12 @@ export function selectContext<T extends ContextMessage>(
     }
   }
   const selectedIndexes = new Set([...selected].flatMap((group) => group.indexes));
+  const keptIndexes = messages.flatMap((_message, index) =>
+    selectedIndexes.has(index) ? [index] : [],
+  );
   return {
-    messages: messages.filter((_message, index) => selectedIndexes.has(index)),
+    messages: keptIndexes.map((index) => messages[index]!),
+    selectedIndexes: keptIndexes,
     estimatedInputTokens: fixed + used,
     droppedMessages: messages.length - selectedIndexes.size,
     truncatedToolResults: 0,

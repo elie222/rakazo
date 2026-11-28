@@ -53,7 +53,7 @@ import {
   withoutSavedMeetingResult,
 } from "../../runs/turn/turn-checkpoint.js";
 import { neutralizeSpeakerLabels } from "../context/history-speakers.js";
-import type { RuntimeContextDecision } from "../context/runtime-context.js";
+import type { RuntimeContextDecision, WatchDeliveryState } from "../context/runtime-context.js";
 import { createRuntimeContextPolicy } from "../context/runtime-context.js";
 import type { RejectedProviderRequest } from "../provider-request-shape.js";
 import { attachRejectedRequests, rejectedRequestsOf } from "../provider-request-shape.js";
@@ -431,26 +431,41 @@ export class PiAgentRuntime implements AgentRuntime {
           }
         }
 
+        // Share accepted watch-check deliveries across model switches so later compaction keeps provenance.
+        const runWatchDeliveries = new Map<string, WatchDeliveryState>();
         let contextPolicy = createRuntimeContextPolicy(request, context, {
           credentialScope: apiKey,
           imageTokens: estimatePiImageTokens,
+          watchDeliveries: runWatchDeliveries,
         });
-        const contextPolicyFor = (target: RuntimeModelTarget) =>
+        const contextPolicyFor = (target: RuntimeModelTarget, speculative = false) =>
           createRuntimeContextPolicy({ ...request, model: target.config }, context, {
             credentialScope: target.credentials?.accessToken ?? target.apiKey,
             imageTokens: estimatePiImageTokens,
+            ...(speculative ? {} : { watchDeliveries: runWatchDeliveries }),
           });
-        let sentContext: { context: Context; sourceLength: number } | undefined;
+        let sentContext:
+          | {
+              context: Context;
+              sourceLength: number;
+              sourceIndexes?: ReadonlyArray<number | undefined>;
+            }
+          | undefined;
         const prepareContext = (ctx: Context, m: Model<Api>) => {
           const prepared = contextPolicy.prepareContext(ctx, m);
           // The checkpoint keeps what the policy chose; the opening turn is added to each call.
-          sentContext = { context: prepared, sourceLength: ctx.messages.length };
+          sentContext = {
+            context: prepared,
+            sourceLength: ctx.messages.length,
+            sourceIndexes: contextPolicy.getLastSourceIndexes(),
+          };
           return withLeadingUser(prepared);
         };
         const usageHooks = {
           prepareContext,
           imageTokens: estimatePiImageTokens,
           recordUsage: request.onUsage,
+          onDeliveryAccepted: () => contextPolicy.commitDelivery(),
           onUsage: (usage: AgentUsage) => {
             contextPolicy.onUsage(usage);
             const decision = contextPolicy.getDecision();
@@ -552,7 +567,7 @@ export class PiAgentRuntime implements AgentRuntime {
           // turn is added as on each call, so the backup is judged on what it would be sent.
           prepareForTarget: (target, ctx) => ({
             ...ctx,
-            ...withLeadingUser(contextPolicyFor(target).prepareContext(ctx, target.model)),
+            ...withLeadingUser(contextPolicyFor(target, true).prepareContext(ctx, target.model)),
           }),
           onSwitch: async (target) => {
             await request.onModelChange?.(target.config.provider, target.config.id);
@@ -806,6 +821,11 @@ export class PiAgentRuntime implements AgentRuntime {
             messages: history,
           },
         });
+        // Capture Pi's initialized transcript so restored message indexes match agent.state.messages
+        // even when Pi prepends a leading system message to a legacy checkpoint without one.
+        const initialRestoredMessages = restored
+          ? ([...agent.state.messages] as Message[])
+          : undefined;
 
         let restoringCalls = false;
         // Pi publishes parallel results into state only after the entire batch.
@@ -826,6 +846,11 @@ export class PiAgentRuntime implements AgentRuntime {
             systemPrompt,
             representedHistoryIds,
             foundConnectorTools: host.foundConnectorTools,
+            watchDeliveries: runWatchDeliveries,
+            priorWatchOutsideText: restored?.watchOutsideText,
+            priorOutsideText: restored?.outsideText,
+            restoredMessages: initialRestoredMessages,
+            contextStrategy: request.contextStrategy,
           });
         host.captureCheckpoint = async (toolCallId, executionId) => {
           if (!request.onCheckpoint) return;
