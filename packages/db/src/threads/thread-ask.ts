@@ -745,12 +745,28 @@ export async function eligibleWaitingTextAnswer(
           ...(beforeSeq === undefined ? {} : { seq: { lt: beforeSeq } }),
         },
         orderBy: { seq: "desc" },
-        select: { id: true, seq: true, role: true, blocks: true, replyToMessageId: true },
+        select: {
+          id: true,
+          seq: true,
+          role: true,
+          runId: true,
+          blocks: true,
+          replyToMessageId: true,
+        },
       });
       if (!latest) return null;
-      // A row that lost entries held more than the one emoji a reaction is.
       const { blocks, intact } = readMessageBlocks(latest);
-      if (!intact || !messageReaction({ ...latest, blocks })) {
+      // A delegated pause echoes its status after the question. It is not a new topic,
+      // and must not turn a typed answer into a new run that loses the requester.
+      const onlyBlock =
+        blocks.length === 1 ? MessageBlockSchema.safeParse(blocks[0]).data : undefined;
+      const waitNotice =
+        latest.role === "bot" &&
+        latest.runId === input.runId &&
+        onlyBlock?.kind === "bot_message_sent" &&
+        onlyBlock.intent === "status";
+      // Never skip a row that lost content, even if what remains looks like a notice or reaction.
+      if (!intact || (!waitNotice && !messageReaction({ ...latest, blocks }))) {
         if (latest.id !== found.messageId) return null;
         break;
       }
