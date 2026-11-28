@@ -1,8 +1,19 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { EmailEmulator, FakeSandboxProvider, USER_DEVICE_LIMIT } from "@rakazo/adapters";
-import { USER_DEVICE_PAIR_PATH, USER_DEVICE_PATH } from "@rakazo/contracts";
+import {
+  createUserDeviceToken,
+  EmailEmulator,
+  FakeSandboxProvider,
+  hashUserDeviceToken,
+  USER_DEVICE_LIMIT,
+} from "@rakazo/adapters";
+import {
+  USER_DEVICE_PAIR_PATH,
+  USER_DEVICE_PATH,
+  USER_DEVICE_SESSION_PATH,
+  userDeviceListSchema,
+} from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import { lockOwner, runAsSystem } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -89,6 +100,102 @@ describe.skipIf(!databaseUrl)("paired computers end with the sign-in that paired
       handles.prisma.userDevice.findUniqueOrThrow({ where: { id: deviceId } }),
     ).then((device) => device.revokedAt);
 
+  const deviceState = (id: string) =>
+    runAsSystem("read the device lifecycle for the paired device", () =>
+      handles.prisma.userDevice.findUniqueOrThrow({
+        where: { id },
+        select: { sessionId: true, revokedAt: true, revokedBy: true },
+      }),
+    );
+
+  async function deviceFixture(
+    userId: string,
+    kind: "computer" | "mobile",
+    sessionId: string | null,
+  ) {
+    const token = createUserDeviceToken();
+    const { id } = await runAsSystem("insert a paired device fixture", () =>
+      handles.prisma.userDevice.create({
+        data: {
+          userId,
+          kind,
+          sessionId,
+          name: "Fixture",
+          platform: "darwin",
+          createdAt: new Date("2000-01-01T00:00:00Z"),
+          tokenHash: hashUserDeviceToken(token),
+        },
+        select: { id: true },
+      }),
+    );
+    return { id, token };
+  }
+
+  it("lists only the owner's computers among same-platform mixed devices", async () => {
+    const owner = await newAccount();
+    const cookie = await owner.signIn();
+    const mine = await pair(cookie);
+    await pair(await (await newAccount()).signIn());
+    await deviceFixture(mine.userId, "mobile", null);
+    const legacy = await deviceFixture(mine.userId, "computer", null);
+
+    const list = await handles.app.request(USER_DEVICE_PATH, { headers: { cookie } });
+    expect(list.status).toBe(200);
+    const { devices } = userDeviceListSchema.parse(await list.json());
+    expect(devices.map((row) => row.deviceId)).toEqual([mine.deviceId, legacy.id]);
+  });
+
+  it("binds an unbound legacy computer to the current sign-in", async () => {
+    const cookie = await (await newAccount()).signIn();
+    const mine = await pair(cookie);
+    const mineBefore = await deviceState(mine.deviceId);
+    expect(mineBefore.sessionId).toEqual(expect.any(String));
+    const legacy = await deviceFixture(mine.userId, "computer", null);
+
+    const tied = await handles.app.request(USER_DEVICE_SESSION_PATH, {
+      method: "POST",
+      headers: { cookie, authorization: `Bearer ${legacy.token}` },
+    });
+    expect(tied.status).toBe(204);
+    expect(await deviceState(legacy.id)).toEqual(mineBefore);
+  });
+
+  it("does not remove a same-platform mobile device through the computer route", async () => {
+    const cookie = await (await newAccount()).signIn();
+    const mine = await pair(cookie);
+    const mobile = await deviceFixture(mine.userId, "mobile", null);
+    const mobileBefore = await deviceState(mobile.id);
+
+    const mobileRemoval = await handles.app.request(`${USER_DEVICE_PATH}/${mobile.id}`, {
+      method: "DELETE",
+      headers: { cookie },
+    });
+    expect(mobileRemoval.status).toBe(404);
+    expect(await deviceState(mobile.id)).toEqual(mobileBefore);
+  });
+
+  it("removes only the requested computer", async () => {
+    const cookie = await (await newAccount()).signIn();
+    const mine = await pair(cookie);
+    const other = await pair(await (await newAccount()).signIn());
+    const otherBefore = await deviceState(other.deviceId);
+    const mineBefore = await deviceState(mine.deviceId);
+    const legacy = await deviceFixture(mine.userId, "computer", mineBefore.sessionId);
+
+    const removed = await handles.app.request(`${USER_DEVICE_PATH}/${legacy.id}`, {
+      method: "DELETE",
+      headers: { cookie },
+    });
+    expect(removed.status).toBe(204);
+    expect(await deviceState(legacy.id)).toEqual({
+      sessionId: mineBefore.sessionId,
+      revokedBy: "owner",
+      revokedAt: expect.any(Date),
+    });
+    expect(await deviceState(other.deviceId)).toEqual(otherBefore);
+    expect(await deviceState(mine.deviceId)).toEqual(mineBefore);
+  });
+
   it("signing out ends only the computer that sign-in paired", async () => {
     const owner = await newAccount();
     const desktop = await owner.signIn();
@@ -140,11 +247,17 @@ describe.skipIf(!databaseUrl)("paired computers end with the sign-in that paired
     expect(await apps()).toBe(0);
   });
 
-  it("a password change that signs out other sessions ends their computers, not the caller's", async () => {
+  it("a password change replaces the caller session and ends other sessions for both device kinds", async () => {
     const owner = await newAccount();
     const attacker = await pair(await owner.signIn());
     const desktop = await owner.signIn();
     const mine = await pair(desktop);
+    const mineBefore = (await deviceState(mine.deviceId)).sessionId;
+    const attackerBefore = (await deviceState(attacker.deviceId)).sessionId;
+    expect(mineBefore).toEqual(expect.any(String));
+    expect(attackerBefore).toEqual(expect.any(String));
+    const mineMobile = await deviceFixture(mine.userId, "mobile", mineBefore);
+    const attackerMobile = await deviceFixture(attacker.userId, "mobile", attackerBefore);
     await auth(
       "/change-password",
       {
@@ -154,11 +267,24 @@ describe.skipIf(!databaseUrl)("paired computers end with the sign-in that paired
       },
       desktop,
     );
-    expect(await revokedAt(attacker.deviceId)).toBeInstanceOf(Date);
+    expect(await deviceState(attacker.deviceId)).toMatchObject({
+      revokedAt: expect.any(Date),
+      revokedBy: "session",
+    });
+    expect(await deviceState(attackerMobile.id)).toMatchObject({
+      revokedAt: expect.any(Date),
+      revokedBy: "session",
+    });
     expect(await revokedAt(mine.deviceId)).toBeNull();
     const moved = await runAsSystem("read a paired computer", () =>
       handles.prisma.userDevice.findUniqueOrThrow({ where: { id: mine.deviceId } }),
     );
+    expect(moved.sessionId).not.toBe(mineBefore);
+    expect(await deviceState(mineMobile.id)).toEqual({
+      sessionId: moved.sessionId,
+      revokedAt: null,
+      revokedBy: null,
+    });
     const sessions = await runAsSystem("read sessions", () =>
       handles.prisma.session.findMany({ where: { userId: mine.userId }, select: { id: true } }),
     );
@@ -264,7 +390,7 @@ describe.skipIf(!databaseUrl)("paired computers end with the sign-in that paired
     },
   );
 
-  it("a password reset ends every paired computer, including one paired before sessions were recorded", async () => {
+  it("a password reset ends both device kinds, including devices without a session", async () => {
     const owner = await newAccount();
     const attacker = await pair(await owner.signIn());
     const legacy = await pair(await owner.signIn());
@@ -274,6 +400,11 @@ describe.skipIf(!databaseUrl)("paired computers end with the sign-in that paired
         data: { sessionId: null },
       }),
     );
+
+    const sessionId = (await deviceState(attacker.deviceId)).sessionId;
+    expect(sessionId).toEqual(expect.any(String));
+    const mobile = await deviceFixture(attacker.userId, "mobile", sessionId);
+    const legacyMobile = await deviceFixture(attacker.userId, "mobile", null);
 
     const linkTo = async (path: string) =>
       vi.waitFor(() => {
@@ -296,6 +427,12 @@ describe.skipIf(!databaseUrl)("paired computers end with the sign-in that paired
 
     expect(await active(attacker.token)).toBe(false);
     expect(await active(legacy.token)).toBe(false);
+    for (const { id } of [mobile, legacyMobile]) {
+      expect(await deviceState(id)).toMatchObject({
+        revokedAt: expect.any(Date),
+        revokedBy: "session",
+      });
+    }
   });
 
   it("releases a computer whose sign-in ended while it was offline", async () => {

@@ -31,6 +31,7 @@ interface DeviceRow {
   name: string;
   platform: string;
   tokenHash: string;
+  kind?: string;
   createdAt?: Date;
   revokedAt: Date | null;
   lastSeenAt: Date | null;
@@ -51,8 +52,17 @@ function fakePrisma() {
     typeof where.id === "string" ? [where.id] : (where.id?.in ?? [...devices.keys()]);
   const prisma = {
     userDevice: {
-      findUnique: async ({ where }: { where: { tokenHash: string } }) =>
-        [...devices.values()].find((row) => row.tokenHash === where.tokenHash) ?? null,
+      findUnique: async ({
+        where,
+      }: {
+        where: { tokenHash?: string; id?: string; kind?: string };
+      }) =>
+        [...devices.values()].find(
+          (row) =>
+            (where.id === undefined || row.id === where.id) &&
+            (where.tokenHash === undefined || row.tokenHash === where.tokenHash) &&
+            (where.kind === undefined || (row.kind ?? "computer") === where.kind),
+        ) ?? null,
       update: async ({ where, data }: { where: { id: string }; data: Partial<DeviceRow> }) =>
         Object.assign(devices.get(where.id)!, data),
       updateMany: async ({ where, data }: { where: { id: { in: string[] } }; data: object }) => {
@@ -63,12 +73,17 @@ function fakePrisma() {
         where,
         select,
       }: {
-        where: { id?: { in: string[] }; userId?: string };
+        where: { id?: { in: string[] }; userId?: string; kind?: string };
         select?: { connections?: { where: { heartbeatAt: { gt: Date } } } };
       }) =>
         where.userId !== undefined
           ? [...devices.values()]
-              .filter((row) => row.userId === where.userId && !row.revokedAt)
+              .filter(
+                (row) =>
+                  row.userId === where.userId &&
+                  !row.revokedAt &&
+                  (row.kind ?? "computer") === where.kind,
+              )
               .map((row) => ({
                 ...row,
                 connections: [...connections.values()].filter(
@@ -80,8 +95,27 @@ function fakePrisma() {
           : ids(where)
               .map((id) => devices.get(id))
               .filter((row) => row?.revokedAt),
-      findFirst: async ({ where }: { where: { userId: string; revokedAt: null } }) =>
-        [...devices.values()].find((row) => row.userId === where.userId && !row.revokedAt) ?? null,
+      findFirst: async ({
+        where,
+        orderBy,
+      }: {
+        where: { userId: string; revokedAt: null; kind: string };
+        orderBy?: { createdAt: "asc" | "desc" };
+      }) => {
+        const matches = [...devices.values()].filter(
+          (row) =>
+            row.userId === where.userId &&
+            !row.revokedAt &&
+            (row.kind ?? "computer") === where.kind,
+        );
+        if (orderBy) {
+          const direction = orderBy.createdAt === "asc" ? 1 : -1;
+          matches.sort(
+            (a, b) => direction * ((a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0)),
+          );
+        }
+        return matches[0] ?? null;
+      },
     },
     userDeviceConnection: {
       upsert: async ({ where, create }: { where: { deviceId: string }; create: ConnectionRow }) =>
@@ -102,7 +136,11 @@ function fakePrisma() {
       findFirst: async ({
         where,
       }: {
-        where: { deviceId?: string; heartbeatAt: { gt: Date }; device: { userId: string } };
+        where: {
+          deviceId?: string;
+          heartbeatAt: { gt: Date };
+          device: { userId: string; kind: string };
+        };
       }) => {
         const row = [...connections.values()]
           .filter((connection) => {
@@ -111,6 +149,7 @@ function fakePrisma() {
               device &&
               (where.deviceId === undefined || connection.deviceId === where.deviceId) &&
               device.userId === where.device.userId &&
+              (device.kind ?? "computer") === where.device.kind &&
               !device.revokedAt &&
               connection.heartbeatAt > where.heartbeatAt.gt
             );
@@ -246,6 +285,30 @@ describe("device tokens", () => {
 });
 
 describe("user device gateway in the holding process", () => {
+  it("returns the earliest pairedSince date when the newer computer was inserted first", async () => {
+    const { devices, deviceRows } = setup();
+    const userId = "pair-order-user";
+    const earlier = new Date("2026-01-01T00:00:00.000Z");
+    const later = new Date("2026-01-02T00:00:00.000Z");
+    for (const [name, createdAt] of [
+      ["Later", later],
+      ["Earlier", earlier],
+    ] as const) {
+      deviceRows.set(name, {
+        id: name,
+        userId,
+        name,
+        platform: "linux",
+        kind: "computer",
+        tokenHash: hashUserDeviceToken(createUserDeviceToken()),
+        revokedAt: null,
+        lastSeenAt: null,
+        createdAt,
+      });
+    }
+    await expect(devices.pairedSince(userId)).resolves.toEqual(earlier);
+  });
+
   it("streams values, skipping heartbeats, until done", async () => {
     const { hub, devices, connections } = setup();
     const socket = new FakeSocket();

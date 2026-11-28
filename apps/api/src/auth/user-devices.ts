@@ -12,6 +12,7 @@ import {
 } from "@rakazo/adapters";
 import type { UserDeviceList, UserDevicePairResponse } from "@rakazo/contracts";
 import {
+  PAIRED_DEVICE_KIND,
   USER_DEVICE_CONNECT_PATH,
   USER_DEVICE_PAIR_PATH,
   USER_DEVICE_PATH,
@@ -47,7 +48,12 @@ async function revokeDevice(
 ) {
   const { count } = await runAsSystem("revoke a user device", () =>
     prisma.userDevice.updateMany({
-      where: { id: deviceId, userId, revokedAt: null, ...(by === "session" ? { sessionId } : {}) },
+      where: {
+        id: deviceId,
+        userId,
+        revokedAt: null,
+        ...(by === "session" ? { sessionId } : { kind: PAIRED_DEVICE_KIND.computer }),
+      },
       data: { revokedAt: new Date(), revokedBy: by },
     }),
   );
@@ -161,18 +167,22 @@ export function mountUserDeviceRoutes(app: Hono, deps: UserDeviceRouteDeps) {
         if (!liveSession) return { sessionMismatch: true };
         const existing = await tx.userDevice.findUnique({ where: { tokenHash } });
         if (existing) {
-          if (existing.revokedAt !== null) return null;
+          if (existing.revokedAt !== null || existing.kind !== PAIRED_DEVICE_KIND.computer)
+            return null;
           if (existing.userId !== userId || existing.sessionId !== sessionId)
             return { sessionMismatch: true };
           return { id: existing.id, reused: true };
         }
-        const active = await tx.userDevice.count({ where: { userId, revokedAt: null } });
+        const active = await tx.userDevice.count({
+          where: { userId, revokedAt: null, kind: PAIRED_DEVICE_KIND.computer },
+        });
         if (active >= USER_DEVICE_LIMIT) return null;
         return tx.userDevice.create({
           data: {
             userId,
             name: input.data.name,
             platform: input.data.platform,
+            kind: PAIRED_DEVICE_KIND.computer,
             tokenHash,
             sessionId,
           },
@@ -209,7 +219,13 @@ export function mountUserDeviceRoutes(app: Hono, deps: UserDeviceRouteDeps) {
     if (device.userId !== session.userId) return c.json({ error: "Forbidden" }, 403);
     const { count } = await runAsSystem("tie a user device to its sign-in", () =>
       prisma.userDevice.updateMany({
-        where: { id: device.id, userId: device.userId, revokedAt: null, sessionId: null },
+        where: {
+          id: device.id,
+          userId: device.userId,
+          revokedAt: null,
+          sessionId: null,
+          kind: PAIRED_DEVICE_KIND.computer,
+        },
         data: { sessionId: session.sessionId },
       }),
     );

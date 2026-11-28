@@ -20,6 +20,7 @@ interface Row {
   name: string;
   platform: string;
   tokenHash: string;
+  kind?: string;
   sessionId: string | null;
   createdAt: Date;
   lastSeenAt: Date | null;
@@ -38,7 +39,10 @@ function fakePrisma() {
     sessions.get(id) ?? (id.endsWith("-ended") ? null : new Date(Date.now() + 60_000));
   type Where = Partial<Row> & { OR?: Partial<Row>[] };
   const matches = (row: Row, { OR, ...where }: Where): boolean =>
-    Object.entries(where).every(([key, value]) => row[key as keyof Row] === value) &&
+    Object.entries(where).every(
+      ([key, value]) =>
+        (key === "kind" ? (row.kind ?? "computer") : row[key as keyof Row]) === value,
+    ) &&
     (!OR || OR.some((option) => matches(row, option)));
   const prisma = {
     userDevice: {
@@ -79,8 +83,8 @@ function fakePrisma() {
                 after && heartbeatAt && heartbeatAt > after ? [{ deviceId: row.id }] : [],
             };
           }),
-      findUnique: async ({ where }: { where: { tokenHash: string } }) =>
-        rows.find((row) => row.tokenHash === where.tokenHash) ?? null,
+      findUnique: async ({ where }: { where: { tokenHash: string; kind?: string } }) =>
+        rows.find((row) => matches(row, where)) ?? null,
       update: async () => ({}),
       updateMany: async ({ where, data }: { where: Partial<Row>; data: Partial<Row> }) => {
         const hit = rows.filter((row) => matches(row, where));
@@ -203,6 +207,19 @@ afterEach(async () => {
 });
 
 describe("device pairing", () => {
+  it("keeps the desktop pairing limit independent of other paired device kinds", async () => {
+    const { app, pair, rows } = setup();
+    expect((await pair("user-1")).status).toBe(201);
+    rows[0]!.kind = "mobile";
+    for (let index = 0; index < 10; index += 1) expect((await pair("user-1")).status).toBe(201);
+    expect((await pair("user-1")).status).toBe(409);
+    const remove = await app.request(`/api/devices/${rows[0]!.id}`, {
+      method: "DELETE",
+      headers: { "x-test-user": "user-1" },
+    });
+    expect(remove.status).toBe(404);
+    expect(rows[0]!.revokedAt).toBeNull();
+  });
   it("recovers a lost response without adding devices or repeating security events", async () => {
     const { pair, rows, events } = setup();
     const body = { name: "Laptop", platform: "darwin", pairingKey: "a".repeat(64) };

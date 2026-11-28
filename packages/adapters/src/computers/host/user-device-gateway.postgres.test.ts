@@ -16,12 +16,15 @@ const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe :
 
 class Socket extends EventEmitter implements UserDeviceSocket {
   sent: Array<{ type: string; id?: string }> = [];
+  constructor(readonly reply = "ok") {
+    super();
+  }
   send(data: string) {
     const message = JSON.parse(data);
     this.sent.push(message);
     if (message.type === "request") {
       queueMicrotask(() => {
-        for (const frame of [{ value: "ok" }, { done: true }])
+        for (const frame of [{ value: this.reply }, { done: true }])
           this.emit("message", JSON.stringify({ type: "frame", id: message.id, frame }));
       });
     }
@@ -156,6 +159,57 @@ describePostgres("user devices (PostgreSQL)", () => {
     await prisma.userDevice.deleteMany({ where: { id: { in: [laptop.id, desk.id] } } });
   });
 
+  it("keeps mobile rows out of the legacy computer gateway", async () => {
+    const hub = new UserDeviceHub({ prisma: raw, address: "http://127.0.0.1:1" });
+    hubs.push(hub);
+    const gateway = new UserDevices({ prisma: raw, forwardSecret: "k", hub });
+    const token = createUserDeviceToken();
+    const mobile = await prisma.userDevice.create({
+      data: {
+        userId,
+        name: "Phone",
+        platform: "android",
+        kind: "mobile",
+        tokenHash: hashUserDeviceToken(token),
+        createdAt: new Date(0),
+      },
+    });
+    const computerId = `legacy-${suffix}`;
+    const computerToken = createUserDeviceToken();
+    const computerTokenHash = hashUserDeviceToken(computerToken);
+    const pairedAt = new Date(1000);
+    const session = await prisma.session.create({
+      data: {
+        id: `legacy-session-${suffix}`,
+        token: `legacy-session-token-${suffix}`,
+        userId,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    try {
+      // compat-shim(after v0.16.0): The previous API inserts these columns without naming kind.
+      await prisma.$executeRaw`INSERT INTO "user_devices"
+        ("id", "userId", "name", "platform", "tokenHash", "createdAt", "sessionId")
+        VALUES (${computerId}, ${userId}, 'Legacy computer', 'win32', ${computerTokenHash}, ${pairedAt}, ${session.id})`;
+      const authenticated = await hub.authenticate(`Bearer ${computerToken}`);
+      expect(authenticated).toMatchObject({ id: computerId, userId, platform: "win32" });
+      await hub.attach(authenticated!, new Socket());
+      await prisma.userDeviceConnection.create({
+        data: { deviceId: mobile.id, connectionId: `mobile-${suffix}`, address: hub.address },
+      });
+      await expect(hub.authenticate(`Bearer ${token}`)).resolves.toBeNull();
+      await expect(gateway.connected(userId, mobile.id)).resolves.toBeNull();
+      await expect(gateway.connected(userId)).resolves.toMatchObject({ deviceId: computerId });
+      await expect(gateway.pairedSince(userId)).resolves.toEqual(pairedAt);
+      await expect(gateway.list(userId)).resolves.toMatchObject([
+        { deviceId: computerId, bound: true },
+      ]);
+      await expect(gateway.connected("other-user", computerId)).resolves.toBeNull();
+    } finally {
+      await prisma.userDevice.deleteMany({ where: { id: { in: [mobile.id, computerId] } } });
+    }
+  });
+
   it("revokes a connected device once the sign-in that paired it is gone", async () => {
     const session = await prisma.session.create({
       data: {
@@ -248,6 +302,88 @@ describePostgres("user devices (PostgreSQL)", () => {
     await expect(
       new UserDevices({ prisma: raw, forwardSecret: "k", hub }).connected(userId),
     ).resolves.toBeNull();
+  });
+
+  it("routes default and explicit owner requests to the authenticated computer socket", async () => {
+    const owners = [`route-a-${suffix}`, `route-b-${suffix}`] as const;
+    const hub = new UserDeviceHub({ prisma: raw, address: "http://127.0.0.1:1" });
+    const gateway = new UserDevices({ prisma: raw, forwardSecret: "fixture", hub });
+    try {
+      for (const owner of owners) {
+        await prisma.user.create({
+          data: {
+            id: owner,
+            name: "Owner",
+            email: `${owner}@example.test`,
+            sessions: {
+              create: {
+                id: `session-${owner}`,
+                token: createUserDeviceToken(),
+                expiresAt: new Date(Date.now() + 300_000),
+              },
+            },
+          },
+        });
+      }
+      await prisma.userDevice.create({
+        data: {
+          userId: owners[0],
+          sessionId: `session-${owners[0]}`,
+          name: "Device",
+          platform: "linux",
+          kind: "mobile",
+          createdAt: new Date(0),
+          tokenHash: hashUserDeviceToken(createUserDeviceToken()),
+        },
+      });
+      async function connect(owner: string, reply: string, time: number) {
+        const token = createUserDeviceToken();
+        const device = await prisma.userDevice.create({
+          data: {
+            userId: owner,
+            sessionId: `session-${owner}`,
+            name: "Device",
+            platform: "linux",
+            kind: "computer",
+            createdAt: new Date(time),
+            tokenHash: hashUserDeviceToken(token),
+          },
+        });
+        const authenticated = await hub.authenticate(`Bearer ${token}`);
+        expect(authenticated).toMatchObject({ id: device.id, userId: owner });
+        const socket = new Socket(reply);
+        await hub.attach(authenticated!, socket);
+        return { owner, id: device.id, socket };
+      }
+      const first = await connect(owners[0], "A first", 1000);
+      const extra = await connect(owners[0], "A second", 2000);
+      const second = await connect(owners[1], "B only", 3000);
+      const sockets = [first.socket, extra.socket, second.socket];
+      const deliveries = () =>
+        sockets.map((s) => s.sent.filter((m) => m.type === "request").length);
+      for (const [target, selected] of [
+        [first, undefined],
+        [extra, extra.id],
+        [second, undefined],
+      ] as const) {
+        const before = deliveries();
+        const frames: unknown[] = [];
+        const request = gateway.request(
+          target.owner,
+          { method: "environment", botId: "fixture" },
+          new AbortController().signal,
+          selected,
+        );
+        for await (const value of request) frames.push(value);
+        expect(frames).toEqual([target.socket.reply]);
+        expect(deliveries()).toEqual(
+          before.map((n, i) => n + Number(sockets[i] === target.socket)),
+        );
+      }
+    } finally {
+      await hub.close();
+      await prisma.user.deleteMany({ where: { id: { in: [...owners] } } });
+    }
   });
 
   it("deletes devices and their connections with the user", async () => {

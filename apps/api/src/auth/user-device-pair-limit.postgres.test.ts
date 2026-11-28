@@ -1,7 +1,13 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { EmailEmulator, FakeSandboxProvider, USER_DEVICE_LIMIT } from "@rakazo/adapters";
+import {
+  createUserDeviceToken,
+  EmailEmulator,
+  FakeSandboxProvider,
+  hashUserDeviceToken,
+  USER_DEVICE_LIMIT,
+} from "@rakazo/adapters";
 import { USER_DEVICE_PAIR_PATH } from "@rakazo/contracts";
 import { runAsSystem } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -105,17 +111,50 @@ describe.skipIf(!databaseUrl)("pairing holds the per-user device limit under rac
     expect(a.token).not.toBe(b.token);
   });
 
-  it("keeps exactly the limit when two pairings race at it", async () => {
+  it("keeps the last computer slot when two pairings race alongside an expired mobile", async () => {
     const owner = await newAccount();
     const cookie = await owner.signIn();
     let userId = "";
     for (let index = 0; index < USER_DEVICE_LIMIT - 1; index += 1)
       userId = (await pair(cookie)).userId;
 
+    const mobileFields = {
+      id: true,
+      kind: true,
+      sessionId: true,
+      revokedAt: true,
+      revokedBy: true,
+    };
+    const mobileBefore = await runAsSystem("seed a mobile with an expired sign-in", () =>
+      handles.prisma.$transaction(async (tx) => {
+        const session = await tx.session.create({
+          data: {
+            id: `expired-mobile-${userId}`,
+            token: createUserDeviceToken(),
+            createdAt: new Date(0),
+            expiresAt: new Date(2000),
+            userId,
+          },
+        });
+        return tx.userDevice.create({
+          data: {
+            userId,
+            name: "Fixture phone",
+            kind: "mobile",
+            platform: "darwin",
+            createdAt: new Date(1000),
+            sessionId: session.id,
+            tokenHash: hashUserDeviceToken(createUserDeviceToken()),
+          },
+          select: mobileFields,
+        });
+      }),
+    );
+
     // Hold the account row, so both pairings count before either insert commits:
     // the insert needs a key share of that row and waits for the update lock.
     const racing: Array<Promise<Response>> = [];
-    await runAsSystem("hold the account row while pairings race", () =>
+    const holding = runAsSystem("hold the account row while pairings race", () =>
       handles.prisma.$transaction(
         async (tx) => {
           await tx.$queryRaw`SELECT id FROM "user" WHERE id = ${userId} FOR UPDATE`;
@@ -148,11 +187,24 @@ describe.skipIf(!databaseUrl)("pairing holds the per-user device limit under rac
       ),
     );
 
-    const statuses = (await Promise.all(racing)).map((response) => response.status).sort();
+    let responses: Response[];
+    try {
+      await holding;
+    } finally {
+      responses = await Promise.all(racing);
+    }
+    const statuses = responses.map((response) => response.status).sort();
     expect(statuses).toEqual([201, 409]);
     const active = await runAsSystem("count the account's paired computers", () =>
-      handles.prisma.userDevice.count({ where: { userId, revokedAt: null } }),
+      handles.prisma.userDevice.count({ where: { userId, kind: "computer", revokedAt: null } }),
     );
     expect(active).toBe(USER_DEVICE_LIMIT);
+    const mobileAfter = await runAsSystem("read the mobile after both computer pairings", () =>
+      handles.prisma.userDevice.findUniqueOrThrow({
+        where: { id: mobileBefore.id },
+        select: mobileFields,
+      }),
+    );
+    expect(mobileAfter).toEqual(mobileBefore);
   });
 });

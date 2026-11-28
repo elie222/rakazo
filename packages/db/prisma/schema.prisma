@@ -237,6 +237,7 @@ model UserDevice {
   user        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   name        String
   platform    String
+  kind        String                 @default("computer")
   tokenHash   String                 @unique
   sessionId   String?
   createdAt   DateTime               @default(now())
