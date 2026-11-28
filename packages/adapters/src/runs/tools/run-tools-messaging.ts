@@ -20,7 +20,11 @@ import {
   resolveBotWorkspacePath,
 } from "../../computers/screens/computer-support.js";
 import { messageBot, unresolvedBotError } from "../../messaging/bot-messages.js";
-import { startBackgroundHelper } from "../../tasks/background-helpers.js";
+import {
+  cancelBackgroundHelper,
+  listBackgroundHelpers,
+  startBackgroundHelper,
+} from "../../tasks/background-helpers.js";
 import type { RunContext } from "../assembly/run-context.js";
 import {
   canPostLongTaskHeadsUp,
@@ -274,6 +278,19 @@ export const messagingTools: ToolHandlers = {
         modelId: String(args.model_id ?? "").trim(),
         executionId: call.executionId,
         effectKey: call.effectKey,
+      }),
+    );
+  },
+  async list_subagents(ctx, call) {
+    return call.finish(await listBackgroundHelpers(ctx));
+  },
+  async cancel_subagent(ctx, call) {
+    const { args } = call;
+    return call.finish(
+      await cancelBackgroundHelper(ctx, {
+        id: typeof args.id === "string" ? args.id : undefined,
+        name: typeof args.name === "string" ? args.name : undefined,
+        all: args.all === true,
       }),
     );
   },

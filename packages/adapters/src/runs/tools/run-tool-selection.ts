@@ -46,6 +46,7 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "search_history",
   "request_takeover",
   "run_subagent",
+  "list_subagents",
   "task_catalog",
   "recall_memory",
   "reflect_memory",
@@ -115,6 +116,8 @@ const BACKGROUND_DROPPED_TOOL_NAMES: ReadonlySet<string> = new Set([
 /** Delegation stays one level deep; account settings and direct replies remain the parent's. */
 export const SUBAGENT_HIDDEN_TOOLS: ReadonlySet<string> = new Set([
   "run_subagent",
+  "list_subagents",
+  "cancel_subagent",
   "spawn_bot",
   "message_user",
   "call_user",
@@ -279,6 +282,8 @@ export function selectBuiltinToolsForRun(options: {
             "reflect_memory",
             "task_catalog",
             "board_tickets",
+            "list_subagents",
+            "cancel_subagent",
           ].includes(tool.name) &&
           !tool.name.startsWith("scratchpad_") &&
           !tool.name.startsWith("ticket_"))),

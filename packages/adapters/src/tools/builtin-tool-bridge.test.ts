@@ -75,10 +75,18 @@ describe("built-in tool bridge", () => {
     // the Space's shared memory too, and says what stays out of memory and how to make room
     // without abbreviating; shell says to open the bot's screen when a graphical program
     // finds no display; schedule_create takes an end date for a repeat or watch, so a limited
-    // stretch is one routine; find_tool also finds apps and paid services.
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(38_343);
+    // stretch is one routine; find_tool also finds apps and paid services, and indexes
+    // list_subagents and cancel_subagent under subagents.
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(38_390);
     expect(deferred.map((tool) => tool.name)).toEqual(
-      expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
+      expect.arrayContaining([
+        "render_plot",
+        "create_space",
+        "generate_secret",
+        "scratchpad_add",
+        "list_subagents",
+        "cancel_subagent",
+      ]),
     );
   });
 
@@ -96,6 +104,7 @@ describe("built-in tool bridge", () => {
     const description = listed.find((tool) => tool.name === FIND_TOOL)!.description;
     for (const tool of deferred) expect(description).toContain(tool.name);
     expect(description).toContain("secrets:\n");
+    expect(description).toContain("subagents:\n");
     expect(description).not.toContain("inputSchema");
     expect(listed.some((tool) => tool.name === USE_TOOL)).toBe(true);
   });

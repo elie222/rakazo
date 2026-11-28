@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { agentConnectionTools } from "../../tools/builtin.tool-definition.js";
 import {
   BUILTIN_AGENT_TOOL_NAMES,
+  READ_ONLY_AGENT_TOOLS,
+  SUBAGENT_HIDDEN_TOOLS,
   selectBuiltinToolsForRun,
   unavailableBuiltinToolReasons,
 } from "./run-tool-selection.js";
@@ -147,5 +149,48 @@ describe("selectBuiltinToolsForRun", () => {
     expect(shellFor(true, true)).toContain("call computer_observe to open it");
     expect(shellFor(false, true)).toContain("call browser_snapshot,");
     expect(shellFor(false, false)).not.toContain("open a display");
+  });
+
+  it("classifies list_subagents as read-only, hides subagent controls from helpers, and respects disabled tools", () => {
+    expect(READ_ONLY_AGENT_TOOLS.has("list_subagents")).toBe(true);
+    expect(READ_ONLY_AGENT_TOOLS.has("cancel_subagent")).toBe(false);
+    expect(SUBAGENT_HIDDEN_TOOLS.has("list_subagents")).toBe(true);
+    expect(SUBAGENT_HIDDEN_TOOLS.has("cancel_subagent")).toBe(true);
+
+    const base = {
+      graphicalToolsAllowed: false,
+      groupId: null,
+      semanticMemoryEnabled: false,
+      messagingChannelRun: false,
+    };
+    const helperNames = selectBuiltinToolsForRun({ ...base, trigger: "helper" }).map((t) => t.name);
+    expect(helperNames).not.toContain("list_subagents");
+    expect(helperNames).not.toContain("cancel_subagent");
+
+    // Turning off run_subagent still lets the bot list or cancel already-running subagents.
+    const noSpawn = selectBuiltinToolsForRun({
+      ...base,
+      trigger: "user",
+      disabledBuiltinTools: ["run_subagent"],
+    }).map((t) => t.name);
+    expect(noSpawn).not.toContain("run_subagent");
+    expect(noSpawn).toContain("list_subagents");
+    expect(noSpawn).toContain("cancel_subagent");
+
+    const disabledControls = selectBuiltinToolsForRun({
+      ...base,
+      trigger: "user",
+      disabledBuiltinTools: ["list_subagents", "cancel_subagent"],
+    }).map((t) => t.name);
+    expect(disabledControls).not.toContain("list_subagents");
+    expect(disabledControls).not.toContain("cancel_subagent");
+
+    const channelNames = selectBuiltinToolsForRun({
+      ...base,
+      trigger: "messaging",
+      messagingChannelRun: true,
+    }).map((t) => t.name);
+    expect(channelNames).not.toContain("list_subagents");
+    expect(channelNames).not.toContain("cancel_subagent");
   });
 });

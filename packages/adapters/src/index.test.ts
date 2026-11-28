@@ -217,6 +217,8 @@ describe("builtin tools", () => {
     }
     for (const name of [
       "run_subagent",
+      "list_subagents",
+      "cancel_subagent",
       "spawn_bot",
       "update_bot",
       "message_user",

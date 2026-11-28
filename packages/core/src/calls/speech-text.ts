@@ -304,6 +304,8 @@ export function narrateTool(toolName: string): string | null {
     [/^list_bots$/, "checking who's around"],
     [/^ask_bot$/, "asking a teammate"],
     [/^run_subagent$/, "starting a subagent"],
+    [/^list_subagents$/, "checking running subagents"],
+    [/^cancel_subagent$/, "stopping a subagent"],
     [/^spawn_bot$/, "creating a bot"],
     [/^create_space$/, "creating a space"],
     [/^list_fleet$/, "checking your bots"],

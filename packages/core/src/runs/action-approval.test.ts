@@ -95,9 +95,13 @@ describe("toolRequiresApproval", () => {
       "remember",
       "spawn_bot",
       "run_subagent",
+      "list_subagents",
+      "cancel_subagent",
     ]) {
       expect(toolRequiresApproval(name, false)).toBe(false);
     }
+    expect(outsideRunToolRequiresApproval("webhook", "list_subagents")).toBe(false);
+    expect(outsideRunToolRequiresApproval("webhook", "cancel_subagent")).toBe(true);
   });
 
   it("always asks a person before rewriting another bot's instructions", () => {
@@ -1160,6 +1164,8 @@ describe("toolResultTaintsRun", () => {
     // A skill write confirms the bot's own arguments, so a second save in a clean run stays clean.
     for (const tool of [
       "ask_user",
+      "list_subagents",
+      "cancel_subagent",
       "remember",
       "recall_memory",
       "skill_create",
