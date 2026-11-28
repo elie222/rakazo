@@ -41,6 +41,10 @@ contextBridge.exposeInMainWorld("rakazoDesktop", {
     state: () => ipcRenderer.invoke("desktop.device.state"),
     setAllowed: (allowed) => ipcRenderer.invoke("desktop.device.setAllowed", allowed),
   },
+  proxy: {
+    state: () => ipcRenderer.invoke("desktop.proxy.state"),
+    setEnabled: (enabled) => ipcRenderer.invoke("desktop.proxy.setEnabled", enabled),
+  },
   locale: {
     set: (locale) => ipcRenderer.invoke("desktop.locale.set", locale),
   },

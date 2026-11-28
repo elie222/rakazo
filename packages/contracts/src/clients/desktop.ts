@@ -60,6 +60,12 @@ export interface RakazoDesktopDevice {
   allowed: boolean;
 }
 
+export interface RakazoDesktopProxyState {
+  enabled: boolean;
+  /** Loopback proxy URL when running (e.g. http://127.0.0.1:49152), null while stopped. */
+  url: string | null;
+}
+
 /**
  * What the system recognizer reports for one listening session, shaped after Web Speech:
  * `result` carries the session's whole text so far, `error` a Web Speech error code,
@@ -135,6 +141,11 @@ export interface RakazoDesktop {
     state: () => Promise<RakazoDesktopDevice | null>;
     /** Turning it on asks with a native prompt the page cannot answer. */
     setAllowed: (allowed: boolean) => Promise<RakazoDesktopDevice | null>;
+  };
+  /** Optional opt-in loopback web proxy for routing bot web traffic through this computer. */
+  proxy?: {
+    state: () => Promise<RakazoDesktopProxyState>;
+    setEnabled: (enabled: boolean) => Promise<RakazoDesktopProxyState>;
   };
   /** Absent on older desktop releases, whose menus carry no app commands. */
   menu?: {

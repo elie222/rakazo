@@ -67,6 +67,7 @@ describe("desktop preload bridge", () => {
       "oauth",
       "passkeys",
       "platform",
+      "proxy",
       "server",
       "settings",
       "update",
@@ -95,6 +96,9 @@ describe("desktop preload bridge", () => {
     await bridge.device?.state();
     await bridge.device?.setAllowed(true);
     expect(invoke).toHaveBeenCalledWith("desktop.device.setAllowed", true);
+    await bridge.proxy?.state();
+    await bridge.proxy?.setEnabled(true);
+    expect(invoke).toHaveBeenCalledWith("desktop.proxy.setEnabled", true);
     await bridge.locale?.set("es-CL");
     expect(invoke).toHaveBeenCalledWith("desktop.locale.set", "es-CL");
     await bridge.oauth.open?.("https://provider.example.com/authorize");
@@ -117,6 +121,8 @@ describe("desktop preload bridge", () => {
       "desktop.clipboard.write",
       "desktop.device.state",
       "desktop.device.setAllowed",
+      "desktop.proxy.state",
+      "desktop.proxy.setEnabled",
       "desktop.locale.set",
       "desktop.oauth.open",
       "desktop.oauth.cancel",

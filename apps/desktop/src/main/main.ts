@@ -63,6 +63,7 @@ import {
 } from "./setup/setup-window.js";
 import { createBadgeHandler } from "./system/badge.js";
 import { createClipboardHandler } from "./system/clipboard.js";
+import { startDesktopLocalProxy } from "./system/local-proxy.js";
 import {
   configureDesktopMonitoring,
   desktopReportsErrors,
@@ -867,6 +868,7 @@ app.whenReady().then(async () => {
     "desktop.locale.set",
     createLocaleHandler((locale) => writeUiLocale(userDataDir, locale), installApplicationMenu),
   );
+  await startDesktopLocalProxy(userDataDir);
   handleIpc(
     "desktop.badge.set",
     createBadgeHandler((count) => app.setBadgeCount(count)),

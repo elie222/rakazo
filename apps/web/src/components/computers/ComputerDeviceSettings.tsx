@@ -70,32 +70,49 @@ export function useThisComputer() {
   };
 }
 
+function desktopProxyQuery(userId: string | null) {
+  const desktop = desktopBridge();
+  return queryOptions({
+    queryKey: [`user:${userId ?? ""}`, "desktopProxy"],
+    queryFn: async () => (await desktop?.proxy?.state()) ?? null,
+    enabled: Boolean(desktop?.proxy),
+  });
+}
+
 export function ComputerDeviceSettings() {
   const { t } = useLingui();
+  const userId = useQueryUserId();
   const { thisComputer, plainHttp, queryKey: thisComputerKey } = useThisComputer();
   const queryClient = useQueryClient();
-  const devicesQuery = userDevicesQuery(useQueryUserId());
+  const devicesQuery = userDevicesQuery(userId);
   const devicesRead = useQuery(devicesQuery);
   const devices = devicesRead.data ?? [];
   const devicesFailed = !devicesRead.data && devicesRead.isError;
+  const proxyBridge = desktopBridge()?.proxy;
+  const proxyQuery = desktopProxyQuery(userId);
+  const proxyRead = useQuery(proxyQuery);
+  const proxyState = proxyRead.data ?? null;
   const switchId = useId();
+  const proxySwitchId = useId();
 
   // Neither change goes through the API: one is the desktop app's, the other a device route.
   const change = useSave({
     save: async ({ action }: { action: () => Promise<unknown>; failure: string }) => {
       await action();
     },
-    stale: [devicesQuery.queryKey, thisComputerKey],
+    stale: [devicesQuery.queryKey, thisComputerKey, proxyQuery.queryKey],
     // A failed removal or pairing may still have changed something, so both are read again.
     onFailed: () =>
       Promise.all([
         queryClient.invalidateQueries({ queryKey: devicesQuery.queryKey }),
         queryClient.invalidateQueries({ queryKey: thisComputerKey }),
+        queryClient.invalidateQueries({ queryKey: proxyQuery.queryKey }),
       ]),
   });
   const pending = change.pending;
 
-  if (devices.length === 0 && !devicesFailed && !thisComputer && !plainHttp) return null;
+  if (devices.length === 0 && !devicesFailed && !thisComputer && !plainHttp && !proxyState)
+    return null;
 
   return (
     <SettingsGroup title={<Trans>Your devices</Trans>} data-testid="computer-devices">
@@ -120,6 +137,36 @@ export function ComputerDeviceSettings() {
                 change.run({
                   action: () => thisComputer.setAllowed(allowed),
                   failure: t`Could not change`,
+                })
+              }
+            />
+          }
+        />
+      ) : null}
+      {proxyBridge && proxyState ? (
+        <SettingsRow
+          label={
+            <div className="min-w-0">
+              <Label htmlFor={proxySwitchId} className="text-body font-normal text-foreground">
+                <Trans>Route web traffic through this computer</Trans>
+              </Label>
+              {proxyState.enabled && proxyState.url ? (
+                <p className="truncate font-mono text-caption text-muted-foreground">
+                  {proxyState.url}
+                </p>
+              ) : null}
+            </div>
+          }
+          control={
+            <Switch
+              id={proxySwitchId}
+              data-testid="local-proxy-toggle"
+              checked={proxyState.enabled}
+              disabled={pending}
+              onCheckedChange={(enabled) =>
+                change.run({
+                  action: () => proxyBridge.setEnabled(enabled),
+                  failure: t`Could not update web proxy`,
                 })
               }
             />

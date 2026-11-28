@@ -102,6 +102,11 @@ export const ipcChannels = {
   "desktop.pageApps.open": appPage<Desktop["pageApps"]["open"]>(false),
   "desktop.pageApps.uninstall": appPage<Desktop["pageApps"]["uninstall"]>(false),
   "desktop.passkeys.rpIds": appPage<Desktop["passkeys"]["rpIds"]>([]),
+  "desktop.proxy.setEnabled": appPage<Desktop["proxy"]["setEnabled"]>({
+    enabled: false,
+    url: null,
+  }),
+  "desktop.proxy.state": appPage<Desktop["proxy"]["state"]>({ enabled: false, url: null }),
   "desktop.server.change": appPage<Desktop["server"]["change"]>(undefined),
   "desktop.speech.abort": appPage<Desktop["speech"]["abort"]>(undefined),
   "desktop.speech.start": appPage<Desktop["speech"]["start"]>(false),
