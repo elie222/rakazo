@@ -42,18 +42,30 @@ const HISTORY_MESSAGE_SELECT = (botId: string) =>
 const OWNER_TURN_TRIGGERS = ["user", "follow_up", "routine"];
 
 /**
- * What a routine run may read of its chat (messages aliased `m`): its owner's own messages and this
- * bot's replies in turns the owner started. A message from a connected channel, or whose blocks
- * cannot all be read as entries with a kind, is left out.
+ * Joins the owning run for a bot reply (messages aliased `m`, runs aliased `owned`).
+ * Pair with `routineReadableSql` so PostgreSQL probes `runs_pkey` per candidate message instead of
+ * scanning all runs owned by the user in a correlated `EXISTS` under `OR`.
  */
-export function routineReadableSql(ownerId: string, botId: string): Prisma.Sql {
+export function routineReadableJoinSql(ownerId: string, botId: string): Prisma.Sql {
+  return Prisma.sql`LEFT JOIN runs owned ON m.role = 'bot'
+    AND m."botId" = ${botId}
+    AND owned.id = m."runId"
+    AND owned."userId" = ${ownerId}
+    AND owned.trigger IN (${Prisma.join(OWNER_TURN_TRIGGERS)})`;
+}
+
+/**
+ * What a routine run may read of its chat (messages aliased `m`, paired with
+ * `routineReadableJoinSql`): its owner's own messages and this bot's replies in turns the owner
+ * started. A message from a connected channel, or whose blocks cannot all be read as entries with
+ * a kind, is left out.
+ */
+export function routineReadableSql(ownerId: string): Prisma.Sql {
   return Prisma.sql`(
     (m.role = 'user' AND m."authorUserId" = ${ownerId}
       AND jsonb_typeof(m.blocks) = 'array'
       AND NOT jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "channel_message" || !(exists(@.kind)))'))
-    OR (m.role = 'bot' AND m."botId" = ${botId} AND EXISTS (
-      SELECT 1 FROM runs owned WHERE owned.id = m."runId" AND owned."userId" = ${ownerId}
-        AND owned.trigger IN (${Prisma.join(OWNER_TURN_TRIGGERS)}))))`;
+    OR owned.id IS NOT NULL)`;
 }
 
 /**
@@ -77,7 +89,8 @@ export async function loadRunHistoryMessages(
     ? (
         await prisma.$queryRaw<Array<{ id: string }>>`
           SELECT m.id FROM messages m
-          WHERE m."threadId" = ${run.threadId} AND ${routineReadableSql(run.userId, run.botId)}
+          ${routineReadableJoinSql(run.userId, run.botId)}
+          WHERE m."threadId" = ${run.threadId} AND ${routineReadableSql(run.userId)}
           ORDER BY m.seq DESC
           LIMIT ${limit}`
       ).map(({ id }) => id)
