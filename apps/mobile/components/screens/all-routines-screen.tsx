@@ -4,7 +4,7 @@ import { ROUTINE_MENTION_BATCH_MAX } from "@rakazo/contracts";
 import { useRouter } from "expo-router";
 import { useMemo, useSyncExternalStore } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
-import { selectedSpaceId } from "../../lib/api/api";
+import { selectedSpaceId, subscribeSpaceSelection } from "../../lib/api/api";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { rpcQuery } from "../../lib/query/query";
@@ -15,6 +15,22 @@ import { FALLBACK_COLOR } from "../inbox/inbox-rows";
 import { NativeActionButton } from "../native/native-action-button";
 import { SettingsGroup, SettingsRow } from "../settings/settings-group";
 
+/** Every bot's routines, asked in batches the API accepts, as one read. */
+function routinesForBots(botIds: string[]) {
+  const batches: string[][] = [];
+  for (let start = 0; start < botIds.length; start += ROUTINE_MENTION_BATCH_MAX) {
+    batches.push(botIds.slice(start, start + ROUTINE_MENTION_BATCH_MAX));
+  }
+  const reads = batches.map((ids) => rpcQuery("routines/listForMentions", { botIds: ids }));
+  const first = reads[0] ?? rpcQuery("routines/listForMentions", { botIds: [] });
+  return {
+    queryKey: [...first.queryKey.slice(0, -1), "batches", ...batches],
+    queryFn: async (context: Parameters<typeof first.queryFn>[0]) =>
+      (await Promise.all(reads.map((read) => read.queryFn(context)))).flat(),
+    meta: first.meta,
+  };
+}
+
 /** The Routines tab: every bot in the Space that runs routines, each opening its own list. */
 export default function AllRoutines() {
   const { t } = useLingui();
@@ -22,14 +38,14 @@ export default function AllRoutines() {
   const styles = useThemedStyles(createStyles);
   const sideInsets = useSideInsets();
   const spaces = useSyncExternalStore(subscribeSearchInbox, getSearchInbox);
+  // Space selection can change without the search inbox republishing, so follow it directly.
+  const spaceId = useSyncExternalStore(subscribeSpaceSelection, selectedSpaceId);
   const bots = useMemo(() => {
-    const spaceId = selectedSpaceId();
     const space = spaces.find((candidate) => candidate.id === spaceId) ?? spaces[0];
-    return (space?.bots ?? []).slice(0, ROUTINE_MENTION_BATCH_MAX);
-  }, [spaces]);
-  const botIds = bots.map((bot) => bot.id);
-  const read = useScreenQuery(rpcQuery("routines/listForMentions", { botIds }), {
-    enabled: botIds.length > 0,
+    return space?.bots ?? [];
+  }, [spaces, spaceId]);
+  const read = useScreenQuery(routinesForBots(bots.map((bot) => bot.id)), {
+    enabled: bots.length > 0,
   });
   const withRoutines = useMemo(() => {
     const counts = new Map(
@@ -100,7 +116,7 @@ export default function AllRoutines() {
             onPress={() => void read.refetch()}
           />
         </>
-      ) : read.isPending && botIds.length > 0 ? (
+      ) : read.isPending && bots.length > 0 ? (
         <ActivityIndicator color={native.secondaryLabel} />
       ) : (
         <Text style={styles.message}>{t`Ask a bot in chat to set up a routine.`}</Text>

@@ -38,7 +38,7 @@ import { MessageMenuHost } from "../components/messages/message-action-menu";
 import { MessageActionSheetHost } from "../components/messages/message-action-sheet-host";
 import { floatingHeaderOptions, glassHeaderOptions } from "../components/native/glass-title";
 import { NativeSymbol } from "../components/native/native-symbol";
-import { InboxPane } from "../components/screens/home-screen";
+import { InboxPane } from "../components/screens/inbox-pane";
 import { chatRouteHeader } from "../components/thread/header/chat-route-header";
 import { AppErrorBoundary } from "../components/ui/app-error-boundary";
 import {
@@ -81,6 +81,7 @@ import {
   loadInboxWidth,
   useSplitView,
 } from "../lib/layout/split-view";
+import { useTabBarHoldsBottomBars } from "../lib/layout/tab-accessory";
 import { loadLinkFavicon } from "../lib/messages/link-favicons";
 import { OpenPageContext } from "../lib/messages/message-mentions";
 import { loadHapticsPreference } from "../lib/native/haptics";
@@ -287,6 +288,7 @@ function LayoutContent() {
   const call = useCallActive();
   const { t } = useLingui();
   const insets = useSafeAreaInsets();
+  const tabBarHoldsBars = useTabBarHoldsBottomBars();
   // Beside the list a chat swaps in place, the way it does when picked from a sidebar.
   const { split, inboxHidden, foldActive } = useSplitView();
   const canInvite = Boolean(useReferral());
@@ -663,7 +665,9 @@ function LayoutContent() {
                     style={{ flexGrow: 0, flexShrink: 1, maxHeight: "50%" }}
                   >
                     <CallCard />
-                    <VoicePlayerBar style={{ marginTop: 8, marginBottom: insets.bottom + 8 }} />
+                    {tabBarHoldsBars ? null : (
+                      <VoicePlayerBar style={{ marginTop: 8, marginBottom: insets.bottom + 8 }} />
+                    )}
                   </ScrollView>
                 </KeyboardAvoidingView>
               </CallKeyboardContext.Provider>

@@ -135,23 +135,14 @@ export default function HomeRoute() {
   return split ? <PickChatPane /> : <HomeSession />;
 }
 
-/** The Activity tab: the same inbox, showing what needs you, what is running and what finished. */
-export function ActivityRoute() {
-  return <HomeSession view="activity" />;
-}
-
 /** Chats lists every conversation; Activity lists runs by what they need. */
-type InboxView = "chats" | "activity";
+export type InboxView = "chats" | "activity";
 
 /** The chat list beside the open chat on a wide window. */
-type InboxPaneProps = {
+export type InboxPaneProps = {
   onSelectSpace?: (spaceId: string) => void;
   onShareSelect?: (bot: MobileBot | SpaceBot) => void;
 };
-
-export function InboxPane({ onSelectSpace, onShareSelect }: InboxPaneProps) {
-  return <HomeSession embedded onSelectSpace={onSelectSpace} onShareSelect={onShareSelect} />;
-}
 
 export function HomeSession({
   embedded = false,

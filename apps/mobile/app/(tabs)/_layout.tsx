@@ -1,17 +1,29 @@
 import { useLingui } from "@lingui/react/macro";
 import { NativeTabs } from "expo-router/native-tabs";
+import { useSyncExternalStore } from "react";
+import { TabBarAccessoryContent } from "../../components/screens/tab-bar-accessory";
+import { tabAccessorySupported } from "../../lib/layout/tab-accessory";
 import { useMobileTokens } from "../../lib/native/native";
+import { getVoicePlaybackState, subscribeVoicePlayback } from "../../lib/voice/voice";
 
 /**
  * The app's sections as the platform tab bar (Liquid Glass on iOS 26). Each tab keeps its own
  * stack, so Pages and Routines stay under the bar; a chat or a settings screen opens over it
- * from the root stack.
+ * from the root stack. On iOS 26 the voice player rides in the bar's accessory instead of
+ * stacking under it.
  */
 export default function TabsLayout() {
   const { t } = useLingui();
   const tokens = useMobileTokens();
+  const playing =
+    useSyncExternalStore(subscribeVoicePlayback, getVoicePlaybackState).status !== "idle";
   return (
     <NativeTabs tintColor={tokens.primary} minimizeBehavior="onScrollDown">
+      {tabAccessorySupported() && playing ? (
+        <NativeTabs.BottomAccessory>
+          <TabBarAccessoryContent />
+        </NativeTabs.BottomAccessory>
+      ) : null}
       <NativeTabs.Trigger name="(chats)">
         <NativeTabs.Trigger.Icon
           sf={{
