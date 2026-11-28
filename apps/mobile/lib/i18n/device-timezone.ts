@@ -76,7 +76,8 @@ export async function checkDeviceTimezone(
     void SecureStore.setItemAsync(keptKey(userId), JSON.stringify(answer)).catch(() => undefined);
   };
   const place = timeZonePlace(device);
-  Alert.alert(t`Switch to ${place} time?`, undefined, [
+  const accountPlace = timeZonePlace(accountZone);
+  Alert.alert(t`Switch to ${place} time?`, t`Your account is set to ${accountPlace} time.`, [
     { text: t`Keep`, style: "cancel", onPress: keep },
     {
       text: t`Switch`,
