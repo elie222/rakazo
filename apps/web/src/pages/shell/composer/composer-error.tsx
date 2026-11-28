@@ -1,7 +1,7 @@
 import { i18n } from "@lingui/core";
 import { useLingui } from "@lingui/react/macro";
 import { computerHoursOut } from "@rakazo/contracts";
-import { isModelRequiredSendError, normalizeRunError } from "@rakazo/core";
+import { isModelRequiredSendError, normalizeRunError, runErrorOffersRetry } from "@rakazo/core";
 import { translateRunError } from "@rakazo/i18n/run-error";
 import { Button } from "@rakazo/ui-web";
 import { FileIcon, RotateCw, X } from "lucide-react";
@@ -215,7 +215,7 @@ export function ComposerError({
           </details>
         ) : null}
       </div>
-      {!sendError && runError && !recovery && onRetryRun ? (
+      {!sendError && normalizedRunError && runErrorOffersRetry(normalizedRunError) && onRetryRun ? (
         <Button
           type="button"
           variant="outline"

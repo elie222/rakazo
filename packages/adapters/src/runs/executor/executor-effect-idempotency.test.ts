@@ -5,7 +5,11 @@ import type {
   MemoryReadRequest,
   MemorySnapshot,
 } from "@rakazo/adapter-kit";
-import { MemoryRevisionConflictError, TransientModelError } from "@rakazo/adapter-kit";
+import {
+  MemoryRevisionConflictError,
+  ModelOutputError,
+  TransientModelError,
+} from "@rakazo/adapter-kit";
 import {
   legacyScopedToolEffectIdempotencyKey,
   toolEffectIdempotencyKey,
@@ -317,8 +321,8 @@ function fixture(runId = "run-1") {
     setCalls(next: ToolCall[]) {
       calls = next;
     },
-    async failFromModel() {
-      modelError = new TransientModelError("Model overloaded");
+    async failFromModel(error: Error = new TransientModelError("Model overloaded")) {
+      modelError = error;
       await executor.continueRun(run.id, "worker-1");
       return finalizeRun;
     },
@@ -337,6 +341,26 @@ describe("retrying a failed typed reply", () => {
     const finalize = await fixture().failFromModel();
     expect(finalize).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: "failed", retryable: true }),
+    );
+  });
+
+  it("offers a fresh reply when the first answer was unusable", async () => {
+    const finalize = await fixture().failFromModel(
+      new ModelOutputError("Provider returned an empty response"),
+    );
+    expect(finalize).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "failed", retryable: true }),
+    );
+  });
+
+  it.each([
+    "The model refused to complete the request",
+    '400: {"code":"data_inspection_failed","param":null,"message":"Input text data may contain inappropriate content.","type":"data_inspection_failed"}',
+    "The model hit its output limit before writing a response.",
+  ])("does not offer a fresh reply that would fail the same way: %s", async (message) => {
+    const finalize = await fixture().failFromModel(new ModelOutputError(message));
+    expect(finalize).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "failed", retryable: false }),
     );
   });
 

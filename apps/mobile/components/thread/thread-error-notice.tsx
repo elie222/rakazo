@@ -19,7 +19,7 @@ export function ThreadErrorNotice({
   summary: string | null;
   resetAt?: number;
   onDetails?: () => void;
-  /** The one action that fixes the failure. */
+  /** The action that fixes the failure. It sits under the retry when the reply can run again. */
   action?: { label: string; onPress: () => void } | null;
   /** Runs the failed reply again. */
   retry?: { onPress: () => void; busy: boolean } | null;
@@ -70,10 +70,13 @@ export function ThreadErrorNotice({
           {upcomingReset ? (
             <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{upcomingReset}</Text>
           ) : null}
-          {action ? (
-            <RunErrorAction label={action.label} onPress={action.onPress} />
-          ) : retry ? (
+          {retry ? (
             <RunErrorAction label={t`Try again`} onPress={retry.onPress} busy={retry.busy} />
+          ) : null}
+          {action && retry ? (
+            <RunErrorTextAction label={action.label} onPress={action.onPress} />
+          ) : action ? (
+            <RunErrorAction label={action.label} onPress={action.onPress} />
           ) : null}
           {summary && onDetails ? (
             <RunErrorTextAction label={t`Details`} onPress={onDetails} />
