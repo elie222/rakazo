@@ -8,15 +8,15 @@ import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useTextEditDialog } from "../components/bots/profile-edit-dialog";
-import { SettingsGroup, SettingsRow } from "../components/settings/settings-group";
-import { LongPressMenu } from "../components/ui/long-press-menu";
-import { rpc } from "../lib/api/api";
-import { formatActivityRelativeTime } from "../lib/inbox/activity";
-import { useMobileTokens, useResolvedAppearance } from "../lib/native/native";
-import { PageLoadFailure } from "../lib/pages/page-load-failure";
-import { getLatestPage, removePage, renamePage } from "../lib/pages/pages";
-import { usePagedPages } from "../lib/pages/use-paged-pages";
+import { useTextEditDialog } from "../../components/bots/profile-edit-dialog";
+import { SettingsGroup, SettingsRow } from "../../components/settings/settings-group";
+import { LongPressMenu } from "../../components/ui/long-press-menu";
+import { rpc } from "../../lib/api/api";
+import { formatActivityRelativeTime } from "../../lib/inbox/activity";
+import { useMobileTokens, useResolvedAppearance } from "../../lib/native/native";
+import { PageLoadFailure } from "../../lib/pages/page-load-failure";
+import { getLatestPage, removePage, renamePage } from "../../lib/pages/pages";
+import { usePagedPages } from "../../lib/pages/use-paged-pages";
 
 /** The bot's pages, pinned first and then most recently updated. */
 export default function PagesScreen() {
@@ -50,7 +50,9 @@ export default function PagesScreen() {
         <Text style={[styles.message, { color: tokens.mutedForeground }]}>
           {groupId
             ? t`Pages this group builds for you appear here.`
-            : t`Pages this bot builds for you appear here.`}
+            : botId
+              ? t`Pages this bot builds for you appear here.`
+              : t`Pages your bots build for you appear here.`}
         </Text>
       </View>
     );
@@ -138,7 +140,7 @@ export default function PagesScreen() {
   const rest = listed.items.filter((page) => !page.pinned);
   const displayedProblem = problem ?? (listed.paginationFailed ? t`Could not load pages.` : null);
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic">
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
       {displayedProblem ? (
         <Text accessibilityRole="alert" style={[styles.problem, { color: tokens.destructive }]}>
           {displayedProblem}
@@ -162,7 +164,8 @@ export default function PagesScreen() {
 }
 
 const styles = StyleSheet.create({
+  content: { padding: 16, gap: 16 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
   message: { fontSize: 15, textAlign: "center" },
-  problem: { paddingHorizontal: 20, paddingTop: 12, fontSize: 13 },
+  problem: { paddingHorizontal: 4, fontSize: 13 },
 });

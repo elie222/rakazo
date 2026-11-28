@@ -38,6 +38,7 @@ import { MessageMenuHost } from "../components/messages/message-action-menu";
 import { MessageActionSheetHost } from "../components/messages/message-action-sheet-host";
 import { floatingHeaderOptions, glassHeaderOptions } from "../components/native/glass-title";
 import { NativeSymbol } from "../components/native/native-symbol";
+import { InboxPane } from "../components/screens/home-screen";
 import { chatRouteHeader } from "../components/thread/header/chat-route-header";
 import { AppErrorBoundary } from "../components/ui/app-error-boundary";
 import {
@@ -114,7 +115,6 @@ import {
   useTrustedLinkSites,
 } from "../lib/settings/trusted-link-sites";
 import { startUnsentSends } from "../lib/thread/send/unsent-sends";
-import { InboxPane } from "./index";
 
 // Before anything renders: text grows with the iOS text size only up to a fixed maximum.
 capTextScaling();
@@ -281,7 +281,7 @@ function ChatContentProviders({
   );
 }
 
-export const unstable_settings = { anchor: "index" };
+export const unstable_settings = { anchor: "(tabs)" };
 
 function LayoutContent() {
   const call = useCallActive();
@@ -469,18 +469,8 @@ function LayoutContent() {
                       }}
                     >
                       <Stack.Screen
-                        name="index"
+                        name="(tabs)"
                         options={{ headerShown: false, title: "Rakazo" }}
-                      />
-                      <Stack.Screen
-                        name="search"
-                        options={{
-                          headerShown: false,
-                          presentation: Platform.OS === "ios" ? "formSheet" : "card",
-                          sheetAllowedDetents: [1],
-                          sheetGrabberVisible: false,
-                          sheetExpandsWhenScrolledToEdge: false,
-                        }}
                       />
                       <Stack.Screen name="share" options={{ headerShown: false }} />
                       <Stack.Screen name="sign-in" options={{ headerShown: false }} />
@@ -571,8 +561,9 @@ function LayoutContent() {
                       />
                       <Stack.Screen name="artifacts" options={glassHeaderOptions(t`Artifacts`)} />
                       <Stack.Screen name="artifact" options={{ title: t`Artifact` }} />
-                      <Stack.Screen name="pages" options={glassHeaderOptions(t`Pages`)} />
                       <Stack.Screen name="shared-pages" />
+                      <Stack.Screen name="bot-pages" options={glassHeaderOptions(t`Pages`)} />
+                      <Stack.Screen name="bot-routines" options={glassHeaderOptions(t`Routines`)} />
                       <Stack.Screen name="page-review" options={glassHeaderOptions(t`Page`)} />
                       <Stack.Screen
                         name="page"
@@ -649,7 +640,6 @@ function LayoutContent() {
                           ),
                         })}
                       />
-                      <Stack.Screen name="routines" options={glassHeaderOptions(t`Routines`)} />
                       <Stack.Screen name="routine" options={glassHeaderOptions(t`Routine`)} />
                       <Stack.Screen
                         name="routine-runs"

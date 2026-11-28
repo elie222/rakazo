@@ -229,7 +229,7 @@ export default function GroupSettingsScreen() {
         {groupId ? (
           <NativeActionButton
             label={t`Pages`}
-            onPress={() => router.push({ pathname: "/pages", params: { groupId } })}
+            onPress={() => router.push({ pathname: "/bot-pages", params: { groupId } })}
             style={{ marginTop: 16 }}
           />
         ) : null}

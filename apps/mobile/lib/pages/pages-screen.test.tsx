@@ -122,7 +122,7 @@ vi.mock("../api/api", () => ({
   }),
 }));
 
-const { default: PagesScreen } = await import("../../app/pages");
+const { default: PagesScreen } = await import("../../components/screens/pages-screen");
 const { rpc } = await import("../api/api");
 
 const rows = (container: HTMLElement) =>

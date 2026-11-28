@@ -32,9 +32,9 @@ const state = vi.hoisted(() => {
     reportBlocked: undefined as undefined | ((action: NavigationAction) => void),
   };
 });
-const stackRouter = StackRouter({ initialRouteName: "index" });
+const stackRouter = StackRouter({ initialRouteName: "(tabs)" });
 const config = {
-  routeNames: ["index", "note", "share", "thread", "sign-in"],
+  routeNames: ["(tabs)", "note", "share", "thread", "sign-in"],
   routeParamList: {},
   routeGetIdList: {},
 };
@@ -138,7 +138,7 @@ vi.mock("../../components/native/glass-icon-button", () => ({
     createElement("button", { type: "button", onClick: onPress }, "Close"),
 }));
 vi.mock("../../components/native/native-symbol", () => ({ NativeSymbol: () => null }));
-vi.mock("../../app/index", () => ({
+vi.mock("../../components/screens/home-screen", () => ({
   HomeSession: ({
     onShareSelect,
   }: {
@@ -166,7 +166,7 @@ const click = (index: number) => container.querySelectorAll("button")[index]?.cl
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  shareOnStack("index");
+  shareOnStack("(tabs)");
 });
 afterEach(async () => {
   await act(async () => root?.unmount());
@@ -182,21 +182,21 @@ describe("share route", () => {
     state.pending = null;
     shareOnStack();
     await render();
-    expect(routeNames()).toEqual(["index"]);
+    expect(routeNames()).toEqual(["(tabs)"]);
   });
   it("closes the picker without removing the screen underneath", async () => {
-    shareOnStack("index", "note");
+    shareOnStack("(tabs)", "note");
     state.protect.add("note");
     await render();
     await act(async () => click(0));
     expect(state.cancel).toHaveBeenCalledOnce();
-    expect(routeNames()).toEqual(["index", "note"]);
+    expect(routeNames()).toEqual(["(tabs)", "note"]);
   });
   it("preserves the pending share while redirecting to sign-in", async () => {
     await render();
     expect(state.prevented.has("share")).toBe(true);
     await act(async () => dispatch({ type: "REPLACE", payload: { name: "sign-in" } }));
-    expect(routeNames()).toEqual(["index", "sign-in"]);
+    expect(routeNames()).toEqual(["(tabs)", "sign-in"]);
     expect(state.prevented.has("share")).toBe(false);
     expect(state.cancel).not.toHaveBeenCalled();
   });
@@ -204,10 +204,10 @@ describe("share route", () => {
     await render();
     await act(async () => dispatch({ type: "GO_BACK" }));
     expect(state.cancel).toHaveBeenCalledOnce();
-    expect(routeNames()).toEqual(["index"]);
+    expect(routeNames()).toEqual(["(tabs)"]);
   });
   it("opens the selected thread while preserving a protected screen and the share", async () => {
-    shareOnStack("index", "note");
+    shareOnStack("(tabs)", "note");
     state.protect.add("note");
     const share = {
       text: "",
@@ -222,7 +222,7 @@ describe("share route", () => {
     expect(state.cancel).not.toHaveBeenCalled();
     expect(state.pending).toBe(share);
     expect(state.choose).toHaveBeenCalledExactlyOnceWith("example");
-    expect(routeNames()).toEqual(["index", "note", "thread"]);
+    expect(routeNames()).toEqual(["(tabs)", "note", "thread"]);
     expect(stack.routes.at(-1)?.params).toEqual({ botId: "example", name: "Bot" });
   });
   it("reports dropped navigation and lets the user close the picker", async () => {
@@ -230,7 +230,7 @@ describe("share route", () => {
     state.dropNextAction = true;
     await render();
     await act(async () => click(1));
-    expect(routeNames()).toEqual(["index", "share"]);
+    expect(routeNames()).toEqual(["(tabs)", "share"]);
     expect(state.breadcrumb).toHaveBeenCalledWith("select");
     await act(async () => vi.runOnlyPendingTimersAsync());
     expect(state.releaseChoice).toHaveBeenCalledOnce();
@@ -239,23 +239,23 @@ describe("share route", () => {
       action: "select",
     });
     await act(async () => click(0));
-    expect(routeNames()).toEqual(["index"]);
+    expect(routeNames()).toEqual(["(tabs)"]);
   });
   it("keeps the choice when navigation succeeded and the picker is still mounted", async () => {
     vi.useFakeTimers();
     await render();
     await act(async () => click(1));
-    expect(routeNames()).toEqual(["index", "thread"]);
+    expect(routeNames()).toEqual(["(tabs)", "thread"]);
     await act(async () => vi.runOnlyPendingTimersAsync());
     expect(state.releaseChoice).not.toHaveBeenCalled();
     expect(state.report).not.toHaveBeenCalled();
   });
   it("returns to the existing chat when the picker is above the selected chat", async () => {
-    shareOnStack("index", "thread");
+    shareOnStack("(tabs)", "thread");
     stack.routes[1] = { name: "thread", key: "thread", params: { botId: "example" } };
     await render();
     await act(async () => click(1));
-    expect(routeNames()).toEqual(["index", "thread"]);
+    expect(routeNames()).toEqual(["(tabs)", "thread"]);
     expect(stack.routes[1]?.key).toBe("thread");
   });
   it("ignores a second selection before leaving the picker", async () => {

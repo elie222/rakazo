@@ -65,7 +65,7 @@ type SheetNavigation = {
 export function settingsSheetCloser(sheet: SheetNavigation): () => void {
   return () => {
     if (sheet.canGoBack()) sheet.goBack();
-    else sheet.dispatch({ type: "REPLACE", payload: { name: "index" } });
+    else sheet.dispatch({ type: "REPLACE", payload: { name: "(tabs)" } });
   };
 }
 
