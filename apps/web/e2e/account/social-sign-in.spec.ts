@@ -230,6 +230,29 @@ test("sign-in hides the chooser when none are configured", async ({ page }, test
   await captureScreenshot(page, testInfo, "sign-in-no-social");
 });
 
+test("invite sign-in sends an email code without asking for a password", async ({
+  page,
+}, testInfo) => {
+  await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
+  await page.route("**/api/auth/capabilities", (route) =>
+    route.fulfill({ json: { ...passwordOnly, providers: [], emailCode: true } }),
+  );
+  await page.route("**/api/auth/email-otp/send-verification-otp", (route) =>
+    route.fulfill({ json: { success: true } }),
+  );
+  await page.goto("/sign-in?next=%2Fjoin%2Finvitation-1");
+  const email = page.getByLabel("Email", { exact: true });
+  await expect(email).toBeVisible();
+  await expect(page.locator('input[type="password"]')).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Forgot password?" })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "sign-in-invite-code");
+
+  await email.fill("invitee@example.com");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Check your email", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "sign-in-invite-code-sent");
+});
+
 test("chooser stacks the providers on a phone", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockSignedOut(page, both);

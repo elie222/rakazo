@@ -25,7 +25,11 @@ import { WindowChrome } from "../../components/WindowChrome";
 import { authClient } from "../../lib/auth/auth";
 import type { AuthCapabilities } from "../../lib/auth/auth-capabilities";
 import { fetchAuthCapabilities } from "../../lib/auth/auth-capabilities";
-import { newAccountDestination, signInNext } from "../../lib/auth/sign-in-next";
+import {
+  isInviteDestination,
+  newAccountDestination,
+  signInNext,
+} from "../../lib/auth/sign-in-next";
 import { holdSsoAutoStart, ssoAutoStartAllowed } from "../../lib/auth/sso-auto-start";
 import { runSsoFlow } from "../../lib/auth/sso-flow";
 import { desktopBridge } from "../../lib/platform/desktop";
@@ -84,7 +88,9 @@ export function AuthPage({
   const [code, setCode] = useState("");
   const useCode = Boolean(reset?.passwordAuth && reset.emailCode) && mode !== "forgot";
   // A blank password asks for an emailed code, so code-only accounts need no toggle.
-  const codeMode = useCode && !password;
+  // An invited person has no password yet: the sign-in form drops the field and sends a code.
+  const inviteSignIn = mode === "in" && useCode && isInviteDestination(next);
+  const codeMode = useCode && (!password || inviteSignIn);
   const codeStep = useCode && codeSent;
   const providers = reset ? signInProviders(reset) : [];
   const chooser = Boolean(
@@ -494,7 +500,7 @@ export function AuthPage({
                   ) : null}
                 </div>
               )}
-              {mode !== "forgot" && !codeStep ? (
+              {mode !== "forgot" && !codeStep && !inviteSignIn ? (
                 <div className="mt-4 w-full">
                   <Label htmlFor={passwordFieldId} className="text-muted-foreground">
                     <Trans>Password</Trans>
