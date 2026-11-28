@@ -2,9 +2,38 @@ import { describe, expect, it } from "vitest";
 import {
   answerableAskMessageIds,
   dismissableAskMessageIds,
+  isWaitingAskBlock,
   resolveAskChoice,
   selectedAskActionLabel,
 } from "./answerable-ask.js";
+
+describe("isWaitingAskBlock", () => {
+  it("recognizes unanswered ask cards and pending unexpired tool questions", () => {
+    const future = new Date(Date.now() + 60_000).toISOString();
+    const past = new Date(Date.now() - 60_000).toISOString();
+    expect(isWaitingAskBlock({ kind: "ask", text: "Proceed?", status: "pending" })).toBe(true);
+    expect(isWaitingAskBlock({ kind: "ask", text: "Proceed?", status: "answered" })).toBe(false);
+    expect(
+      isWaitingAskBlock({
+        kind: "tool_question",
+        question: { source: "Calendar", message: "Pick a slot", fields: [] },
+        status: "pending",
+        expiresAt: future,
+        publicKey: "key",
+      }),
+    ).toBe(true);
+    expect(
+      isWaitingAskBlock({
+        kind: "tool_question",
+        question: { source: "Calendar", message: "Pick a slot", fields: [] },
+        status: "pending",
+        expiresAt: past,
+        publicKey: "key",
+      }),
+    ).toBe(false);
+    expect(isWaitingAskBlock({ kind: "text", text: "Done" })).toBe(false);
+  });
+});
 
 describe("answerableAskMessageIds", () => {
   it("offers a tool's open question only to the user of its running run", () => {

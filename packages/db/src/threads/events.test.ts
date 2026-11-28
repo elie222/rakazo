@@ -1380,6 +1380,16 @@ describe("pauseRunForInput", () => {
       expect(tx.event.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           runId: "run-1",
+          type: "thread.message.created",
+          payload: expect.objectContaining({
+            role: "bot",
+            ...(owner ? { runUserId: owner } : {}),
+          }),
+        }),
+      });
+      expect(tx.event.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          runId: "run-1",
           type: "run.waiting_input",
           payload: owner ? { userId: owner } : {},
         }),

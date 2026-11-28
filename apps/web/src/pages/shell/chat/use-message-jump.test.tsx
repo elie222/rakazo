@@ -25,6 +25,7 @@ import type { ThreadState } from "./use-thread-state";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const transcript = foldPeerReplies([], { includePeerReceipts: true });
+const emptyRoutines: ThreadState["routines"] = [];
 const queries = {
   routines: {
     list: {
@@ -61,10 +62,12 @@ function Harness({
   rpc,
   locations,
   navigateRef,
+  reconcileSnapshot,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   locations: string[];
   navigateRef: { current: NavigateFunction | null };
+  reconcileSnapshot?: (snap: unknown) => void;
 }) {
   const { kind, id } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -78,7 +81,7 @@ function Harness({
   const thread = {
     snapshot: null,
     commitSnapshot: () => undefined,
-    routines: [],
+    routines: emptyRoutines,
     setRoutines: () => undefined,
     routinesBotId: null,
     setRoutinesBotId: () => undefined,
@@ -104,6 +107,7 @@ function Harness({
     setPanelState: () => undefined,
     editRoutine: () => undefined,
     resetRoutineTarget: () => undefined,
+    reconcileSnapshot,
   });
   useEffect(() => {
     locations.push(`${location.pathname}${location.search}`);
@@ -257,4 +261,54 @@ it.each([
   });
 
   expect(locations.at(-1)).toBe("/app/artifacts?view=grid");
+});
+
+it("passes the unmodified threads.get snapshot to reconcileSnapshot on a search jump", async () => {
+  const rawSnap = {
+    threadId: "thread-a",
+    cursor: 20,
+    olderCursor: 10,
+    messages: [{ id: "message-latest", blocks: [{ kind: "text", text: "Latest" }] }],
+  };
+  const aroundPage = {
+    threadId: "thread-a",
+    olderCursor: null,
+    messages: [{ id: "message-a", blocks: [{ kind: "text", text: "Older hit" }] }],
+  };
+  const rpc = {
+    threads: {
+      get: vi.fn(async () => rawSnap),
+      messages: vi.fn(async () => aroundPage),
+    },
+  } as unknown as ReturnType<typeof createSpaceRpc>;
+  const reconcileSnapshot = vi.fn();
+  const locations: string[] = [];
+  const navigateRef: { current: NavigateFunction | null } = { current: null };
+  const container = document.createElement("div");
+  root = createRoot(container);
+  act(() =>
+    root?.render(
+      <MemoryRouter initialEntries={["/app/bot/bot-a?m=message-a"]}>
+        <Routes>
+          <Route
+            path="/app/:kind/:id"
+            element={
+              <Harness
+                rpc={rpc}
+                locations={locations}
+                navigateRef={navigateRef}
+                reconcileSnapshot={reconcileSnapshot}
+              />
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    ),
+  );
+  await act(async () => {
+    await flush();
+  });
+
+  expect(reconcileSnapshot).toHaveBeenCalledTimes(1);
+  expect(reconcileSnapshot).toHaveBeenCalledWith(rawSnap);
 });

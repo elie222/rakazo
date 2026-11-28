@@ -2,6 +2,7 @@ import type { HistoryToolStep, MessageBlock } from "@rakazo/contracts";
 import {
   callIdFromClientNonce,
   isBackgroundRunTrigger,
+  isWaitingAskBlock,
   redactSecrets,
   splitToolHistory,
 } from "@rakazo/core";
@@ -154,7 +155,7 @@ export async function publishMessage(
 
 export async function persistMessageInTransaction(
   tx: Prisma.TransactionClient,
-  run: { id: string; spaceId: string; threadId: string; botId: string },
+  run: { id: string; spaceId: string; threadId: string; botId: string; userId?: string | null },
   role: "user" | "bot" | "system",
   blocks: MessageBlock[],
   markUnread?: boolean,
@@ -190,6 +191,9 @@ export async function persistMessageInTransaction(
       role,
       blocks,
       callId: callIdFromClientNonce(clientNonce),
+      ...(role === "bot" && run.userId && blocks.some(isWaitingAskBlock)
+        ? { runUserId: run.userId }
+        : {}),
     },
   });
   return {
