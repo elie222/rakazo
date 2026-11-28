@@ -48,9 +48,22 @@ const untilReload = new Promise<never>(() => {});
  */
 export function importChunk<T>(load: () => Promise<T>): Promise<T> {
   return load().catch((error: unknown) => {
-    if (reloading) return untilReload;
+    // A chunk failure reloads even when no `vite:preloadError` announced it first.
+    if (reloading || (isChunkLoadError(error) && reloadOnce())) return untilReload;
     throw error;
   });
+}
+
+/** A lazy chunk that did not load, in Chrome, Safari and Firefox wording. */
+const CHUNK_LOAD =
+  /^(?:Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module)/;
+
+export function isChunkLoadMessage(message: string): boolean {
+  return CHUNK_LOAD.test(message);
+}
+
+function isChunkLoadError(error: unknown): boolean {
+  return error instanceof Error && isChunkLoadMessage(error.message);
 }
 
 /** `React.lazy` for a named export, held pending like `importChunk` during recovery. */
@@ -66,7 +79,6 @@ type PreloadRecoveryWindow = Pick<
   | "navigator"
   | "removeEventListener"
   | "sessionStorage"
-  | "setTimeout"
 >;
 
 /**
@@ -90,15 +102,17 @@ export function installPreloadRecovery(
     return () => {};
   }
   restoredState = readPreloadRecoveryState(storage);
-  const clearRecovery = target.setTimeout(
-    () => storage.removeItem(PRELOAD_RECOVERY_KEY),
-    PRELOAD_RECOVERY_COOLDOWN_MS,
-  );
   reloadOnce = () => {
-    if (reloading) return false;
-    if (!target.navigator.onLine || storage.getItem(PRELOAD_RECOVERY_KEY)) return false;
+    if (reloading || !target.navigator.onLine) return false;
+    // The guard is the time of the last recovery reload, not a flag a timer clears: a timer
+    // throttled or frozen in a background tab left the flag set and refused every later recovery.
+    const last = Number(storage.getItem(PRELOAD_RECOVERY_KEY));
+    const now = Date.now();
+    if (Number.isFinite(last) && now - last >= 0 && now - last < PRELOAD_RECOVERY_COOLDOWN_MS) {
+      return false;
+    }
     try {
-      storage.setItem(PRELOAD_RECOVERY_KEY, "1");
+      storage.setItem(PRELOAD_RECOVERY_KEY, String(now));
     } catch {
       // Without a persistent loop guard, leave the failure to the app.
       return false;
@@ -118,7 +132,6 @@ export function installPreloadRecovery(
   return () => {
     reloading = false;
     reloadOnce = () => false;
-    target.clearTimeout(clearRecovery);
     target.removeEventListener("vite:preloadError", onPreloadError);
   };
 }

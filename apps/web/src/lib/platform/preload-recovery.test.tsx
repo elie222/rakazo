@@ -33,7 +33,6 @@ function createTarget(store = new Map<string, string>(), onLine = true, state = 
     addEventListener: (_type: string, next: EventListener) => {
       listener = next;
     },
-    clearTimeout: vi.fn(),
     removeEventListener: vi.fn(),
     location: { reload },
     navigator: { onLine },
@@ -42,7 +41,6 @@ function createTarget(store = new Map<string, string>(), onLine = true, state = 
       setItem: (key: string, value: string) => store.set(key, value),
       removeItem: (key: string) => store.delete(key),
     },
-    setTimeout: vi.fn(() => 1),
   };
   uninstalls.push(installPreloadRecovery(target as unknown as Window, () => state));
   /** What Vite's preload helper does when a chunk is missing: announce it, then reject unless cancelled. */
@@ -82,7 +80,7 @@ describe("preload recovery", () => {
     void importChunk(failChunk);
     expect(readPreloadRecoveryState(storage)).toEqual(state);
     expect(readPreloadRecoveryState(storage)).toEqual({});
-    expect(store.get("rk:preload-recovery")).toBe("1");
+    expect(Number(store.get("rk:preload-recovery"))).toBeGreaterThan(0);
   });
 
   it("does not block startup when session storage access is restricted", () => {
@@ -120,7 +118,9 @@ describe("preload recovery", () => {
   });
 
   it("lets a failure after the recovery reload reach the error boundary", async () => {
-    const { failChunk, reload } = createTarget(new Map([["rk:preload-recovery", "1"]]));
+    const { failChunk, reload } = createTarget(
+      new Map([["rk:preload-recovery", String(Date.now())]]),
+    );
 
     await expect(importChunk(failChunk)).rejects.toThrow("dynamically imported module");
     expect(reload).not.toHaveBeenCalled();
@@ -160,7 +160,7 @@ describe("preload recovery", () => {
 
     expect(recoveryReload()).toBe(true);
     expect(reload).toHaveBeenCalledOnce();
-    expect(store.get("rk:preload-recovery")).toBe("1");
+    expect(Number(store.get("rk:preload-recovery"))).toBeGreaterThan(0);
   });
 
   it("passes through imports that load", async () => {
@@ -195,8 +195,36 @@ describe("preload recovery", () => {
     expect(reload).toHaveBeenCalledOnce();
   });
 
+  it("reloads for a chunk failure that Vite did not announce", async () => {
+    const { reload } = createTarget();
+    const missingChunk = async (): Promise<() => ReactNode> => {
+      throw new TypeError("Failed to fetch dynamically imported module: https://x/assets/a.js");
+    };
+
+    expect(await renderLazy(missingChunk)).toBe("loading");
+    expect(reload).toHaveBeenCalledOnce();
+  });
+
+  it("does not reload for an error that is not a missing chunk", async () => {
+    const { reload } = createTarget();
+
+    await expect(importChunk(() => Promise.reject(new Error("boom")))).rejects.toThrow("boom");
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("reloads again once the last recovery reload is past the cooldown", async () => {
+    // The guard outlived its cooldown (its clearing timer never ran, as in a frozen background tab).
+    const earlier = String(Date.now() - 31_000);
+    const { failChunk, reload } = createTarget(new Map([["rk:preload-recovery", earlier]]));
+
+    expect(await renderLazy(failChunk)).toBe("loading");
+    expect(reload).toHaveBeenCalledOnce();
+  });
+
   it("shows the error fallback when the loop guard stops another reload", async () => {
-    const { failChunk, reload } = createTarget(new Map([["rk:preload-recovery", "1"]]));
+    const { failChunk, reload } = createTarget(
+      new Map([["rk:preload-recovery", String(Date.now())]]),
+    );
 
     expect(await renderLazy(failChunk)).toBe("failed");
     expect(reload).not.toHaveBeenCalled();

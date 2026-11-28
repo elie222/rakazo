@@ -13,7 +13,7 @@ import {
 import type * as SentryReact from "@sentry/react";
 import type { ErrorInfo } from "react";
 import { desktopBridge } from "./desktop";
-import { importChunk, recoveringByReload } from "./preload-recovery";
+import { importChunk, isChunkLoadMessage, recoveringByReload } from "./preload-recovery";
 
 const MAX_PENDING = 20;
 
@@ -171,13 +171,6 @@ const INJECTED =
   /window\.(?:__firefox__|ethereum)\b|Failed to execute '(?:removeChild|insertBefore)' on 'Node'|^Object Not Found Matching Id:/;
 
 /**
- * A lazy chunk that did not load (Chrome, Safari, Firefox wording): a dropped connection or a
- * deploy the recovery reload could not fix. The error boundary offers a refresh.
- */
-const CHUNK_LOAD =
-  /^(?:Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module)/;
-
-/**
  * A window error event that carries no error object, as a ResizeObserver loop notice does, has
  * nothing to trace; errors the app throws always carry one.
  */
@@ -199,7 +192,7 @@ function isNotAppBug(error: unknown): boolean {
   if (typeof error === "object" && error !== null && !(error instanceof Error)) return true;
   if (isAbandonedRequest(error) || isServerUnreachable(error)) return true;
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
-  return INJECTED.test(message) || CHUNK_LOAD.test(message);
+  return INJECTED.test(message) || isChunkLoadMessage(message);
 }
 
 /**
