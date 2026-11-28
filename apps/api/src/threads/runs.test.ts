@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { activityNotificationsEnabled, activityPreview } from "./runs.js";
+import {
+  activityNotificationsEnabled,
+  activityPreview,
+  INLINE_APPROVAL_DETAIL_MAX,
+  pendingApprovalFromBlocks,
+} from "./runs.js";
 
 describe("run activity copy", () => {
   it.each([
@@ -125,6 +130,84 @@ describe("run activity notification preference", () => {
   it("silences only direct messages", () => {
     expect(activityNotificationsEnabled(null, false)).toBe(false);
     expect(activityNotificationsEnabled("group-1", false)).toBe(true);
+  });
+});
+
+describe("pending approval for inline Activity answers (#4181)", () => {
+  const approval = (over: Record<string, unknown> = {}) => ({
+    kind: "ask",
+    approvalEffectId: "eff-1",
+    text: "Run command?",
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow once" },
+      { id: "always", label: "Always allow" },
+      { id: "deny", label: "Deny" },
+    ],
+    ...over,
+  });
+
+  const message = (block: unknown) => ({ id: "msg-1", blocks: [block] });
+
+  it("maps a pending approval ask with an always action to inlineAllow", () => {
+    expect(pendingApprovalFromBlocks(message(approval({ detail: "shell: ls -la" })))).toEqual({
+      messageId: "msg-1",
+      text: "Run command?",
+      detail: "shell: ls -la",
+      inlineAllow: true,
+    });
+  });
+
+  it("withholds inline Allow for once-only (explicit) cards", () => {
+    const onceOnly = approval({
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "deny", label: "Deny" },
+      ],
+    });
+    expect(pendingApprovalFromBlocks(message(onceOnly))?.inlineAllow).toBe(false);
+  });
+
+  it("withholds inline Allow when the detail must be read in full", () => {
+    const long = approval({ detail: "x".repeat(INLINE_APPROVAL_DETAIL_MAX + 1) });
+    expect(pendingApprovalFromBlocks(message(long))?.inlineAllow).toBe(false);
+  });
+
+  it.each([
+    ["a code-formatted detail", { detail: "before\nafter", detailFormat: "code" }],
+    [
+      "a payment receipt",
+      { receipt: { items: [{ name: "Plan", amount: "$5" }], amountSource: "page" as const } },
+    ],
+    ["a secret form", { input: "secret" as const }],
+    ["a saved login", { replaces: { id: "login-1", origin: "https://example.com" } }],
+  ])("withholds inline Allow for %s the row cannot show", (_name, over) => {
+    expect(pendingApprovalFromBlocks(message(approval(over)))?.inlineAllow).toBe(false);
+  });
+
+  it("offers no card when the stored row lost entries", () => {
+    expect(
+      pendingApprovalFromBlocks({ id: "msg-1", blocks: [approval(), { notABlock: true }] }),
+    ).toBeNull();
+    expect(pendingApprovalFromBlocks({ id: "msg-1", blocks: "not a list" })).toBeNull();
+  });
+
+  it.each([
+    [{ kind: "text", text: "hi" }],
+    [approval({ status: "answered" })],
+    [approval({ dismissed: true })],
+    [
+      {
+        kind: "ask",
+        text: "no effect",
+        actions: [
+          { id: "allow", label: "a" },
+          { id: "deny", label: "d" },
+        ],
+      },
+    ],
+  ])("returns null for non-approval or resolved cards: %j", (block) => {
+    expect(pendingApprovalFromBlocks(message(block))).toBeNull();
   });
 });
 

@@ -7,10 +7,11 @@ import { createRoot } from "react-dom/client";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 
 const runs = vi.hoisted(() => ({ list: vi.fn() }));
+const answer = vi.hoisted(() => vi.fn());
 vi.mock("../../lib/query/rpc", () => ({
-  rpc: { runs },
-  rpcForSpace: () => ({ runs }),
-  createSpaceRpc: () => ({ runs }),
+  rpc: { runs, threads: { answer } },
+  rpcForSpace: () => ({ runs, threads: { answer } }),
+  createSpaceRpc: () => ({ runs, threads: { answer } }),
   selectedSpaceId: () => null,
 }));
 vi.mock("@lingui/react/macro", () => {
@@ -169,6 +170,110 @@ it("groups attention, work and unread chats under folding headers", async () => 
   } finally {
     await act(async () => root.unmount());
     client.clear();
+  }
+});
+
+it("answers a pending approval inline with Allow once / Deny (#4181)", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  answer.mockResolvedValue({ ok: true });
+  runs.list.mockImplementation(async ({ filter }: { filter: string }) => ({
+    runs:
+      filter === "active"
+        ? [
+            {
+              ...run,
+              runId: "run-ask",
+              botId: "bot-1",
+              botName: "Scout",
+              status: "waiting_input",
+              pendingApproval: {
+                messageId: "msg-1",
+                text: "Run command?",
+                detail: "shell: ls -la /srv",
+                inlineAllow: true,
+              },
+            },
+          ]
+        : [],
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ActivityList {...listProps} />
+        </QueryClientProvider>,
+      ),
+    );
+    await vi.waitFor(() => expect(container.textContent).toContain("Allow once"));
+    // The row names the card's own action and its target, not the prompt that started the run.
+    expect(container.textContent).toContain("Run command?");
+    expect(container.textContent).toContain("shell: ls -la /srv");
+    const allow = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent === "Allow once",
+    )!;
+    await act(async () => allow.click());
+    expect(answer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        botId: "bot-1",
+        runId: "run-ask",
+        messageId: "msg-1",
+        answer: "allow",
+      }),
+    );
+    const deny = [...container.querySelectorAll("button")].find((b) => b.textContent === "Deny")!;
+    await act(async () => deny.click());
+    expect(answer).toHaveBeenCalledWith(expect.objectContaining({ answer: "deny" }));
+  } finally {
+    await act(async () => root.unmount());
+    client.clear();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("offers Open + Deny (no Allow) for cards that must be read in full", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  runs.list.mockImplementation(async ({ filter }: { filter: string }) => ({
+    runs:
+      filter === "active"
+        ? [
+            {
+              ...run,
+              runId: "run-explicit",
+              status: "waiting_input",
+              pendingApproval: {
+                messageId: "msg-2",
+                text: "Change instructions?",
+                detail: "x".repeat(400),
+                inlineAllow: false,
+              },
+            },
+          ]
+        : [],
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const openRun = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ActivityList {...listProps} onOpenRun={openRun} />
+        </QueryClientProvider>,
+      ),
+    );
+    await vi.waitFor(() => expect(container.textContent).toContain("Deny"));
+    expect(container.textContent).not.toContain("Allow once");
+    const open = [...container.querySelectorAll("button")].find((b) => b.textContent === "Open")!;
+    await act(async () => open.click());
+    expect(openRun).toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    client.clear();
+    vi.unstubAllGlobals();
   }
 });
 

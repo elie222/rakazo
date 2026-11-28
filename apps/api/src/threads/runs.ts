@@ -7,10 +7,11 @@ import {
   botMessageContext,
   displayName,
   HELPER_RESULT_TRIGGER,
+  isApprovalAskBlock,
   truncatePlainText,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { Prisma } from "@rakazo/db";
+import { Prisma, readMessageBlocks } from "@rakazo/db";
 
 const RECENT_LIMIT = 20;
 // Background ticket work belongs on the board, not in the activity list. A background helper and
@@ -72,6 +73,93 @@ export function activityNotificationsEnabled(
   return groupId !== null || notifyOnFinish;
 }
 
+/** Above this detail length the card must be read in full, so the list offers Open/Deny only. */
+export const INLINE_APPROVAL_DETAIL_MAX = 280;
+
+type ApprovalAskBlock = Extract<MessageBlock, { kind: "ask" }>;
+
+/**
+ * The approval card among a message's blocks, read the way every other reader reads them: the
+ * stored row through `readMessageBlocks`, then the card's own fields through the block schema.
+ * A row that lost entries proves nothing about what it still holds, so it offers no card.
+ */
+function approvalAskBlock(message: { id: string; blocks: unknown }): ApprovalAskBlock | null {
+  const { blocks, intact } = readMessageBlocks(message);
+  if (!intact) return null;
+  const block = blocks.find((entry) => entry.kind === "ask");
+  const parsed = MessageBlock.safeParse(block);
+  return parsed.success && parsed.data.kind === "ask" ? parsed.data : null;
+}
+
+/**
+ * The pending approval card to answer from the Activity list (#4181), or null when the run has
+ * none. `inlineAllow` is false for once-only cards (explicit approval / purchase) and for a card
+ * whose detail, receipt or extra fields cannot be shown whole in the row: those are opened and
+ * read in full before allowing, so the owner never approves a target the row did not show.
+ */
+export function pendingApprovalFromBlocks(message: {
+  id: string;
+  blocks: unknown;
+}): NonNullable<RunActivityRow["pendingApproval"]> | null {
+  const ask = approvalAskBlock(message);
+  if (!ask) return null;
+  if (ask.status === "answered" || ask.dismissed) return null;
+  if (!isApprovalAskBlock(ask)) return null;
+  const detail = ask.detail ?? null;
+  const shownWhole =
+    detail === null ||
+    (detail.length <= INLINE_APPROVAL_DETAIL_MAX && (ask.detailFormat ?? "text") === "text");
+  // Anything the row cannot render — a receipt, a login or secret form, a settings/instruction
+  // diff — has to be read on the card itself.
+  const carriesUnshownFields = Boolean(
+    ask.receipt ||
+      ask.input ||
+      ask.credential ||
+      ask.oneTimeCode ||
+      ask.replaces ||
+      ask.loginFields ||
+      ask.instructionUpdate ||
+      ask.settingsUpdate,
+  );
+  const inlineAllow =
+    shownWhole &&
+    !carriesUnshownFields &&
+    (ask.actions ?? []).some((action) => action.id === "always");
+  return { messageId: message.id, text: ask.text, detail, inlineAllow };
+}
+
+/** How many of a waiting run's newest messages the list reads to find its card. */
+const WAITING_APPROVAL_SCAN = 5;
+
+/**
+ * Each waiting run's pending card, from its newest message that carries one. A run keeps waiting
+ * while ordinary messages arrive after the card, so the scan covers a few newest rows rather than
+ * the run's whole history; a card already answered or dismissed never comes back.
+ */
+async function pendingApprovalsByRun(
+  prisma: PrismaClient,
+  runIds: readonly string[],
+): Promise<Map<string, NonNullable<RunActivityRow["pendingApproval"]>>> {
+  const found = new Map<string, NonNullable<RunActivityRow["pendingApproval"]>>();
+  if (runIds.length === 0) return found;
+  const messages = await prisma.message.findMany({
+    where: { runId: { in: [...runIds] } },
+    orderBy: { seq: "desc" },
+    select: { runId: true, id: true, blocks: true },
+  });
+  const scanned = new Map<string, number>();
+  for (const message of messages) {
+    const runId = message.runId;
+    if (!runId || found.has(runId)) continue;
+    const seen = (scanned.get(runId) ?? 0) + 1;
+    scanned.set(runId, seen);
+    if (seen > WAITING_APPROVAL_SCAN) continue;
+    const approval = pendingApprovalFromBlocks(message);
+    if (approval) found.set(runId, approval);
+  }
+  return found;
+}
+
 export async function listSpaceRuns(
   prisma: PrismaClient,
   actor: Actor,
@@ -109,6 +197,16 @@ export async function listSpaceRuns(
         : [{ completedAt: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
   });
 
+  // Owner-only: surface a waiting run's pending approval card so the Activity list can
+  // answer Allow-once / Deny inline (#4181). Other members' runs never carry the card.
+  const waitingOwn = rows.filter(
+    (row) => row.status === "waiting_input" && row.userId === actor.userId,
+  );
+  const approvalByRun = await pendingApprovalsByRun(
+    prisma,
+    waitingOwn.map((row) => row.id),
+  );
+
   return rows.map((row) => ({
     runId: row.id,
     botId: row.botId,
@@ -128,6 +226,7 @@ export async function listSpaceRuns(
       ? row.completedAt
       : row.updatedAt
     ).toISOString(),
+    pendingApproval: approvalByRun.get(row.id) ?? null,
   }));
 }
 

@@ -27,7 +27,8 @@ import {
   filterActivityRuns,
 } from "../../lib/activity-list-filters";
 import { formatRelativeTime } from "../../lib/locale/relative-time";
-import { useSpaceQueries } from "../../lib/query/query";
+import { useSave, useSpaceQueries } from "../../lib/query/query";
+import { errorText } from "../../lib/query/user-error";
 
 export function statusTone(status: RunActivityRow["status"]): string {
   if (status === "failed") return "text-destructive";
@@ -420,6 +421,61 @@ function ActivitySection({
   );
 }
 
+/**
+ * Inline Allow-once / Deny for a waiting run's approval card (#4181). Cards that must be read
+ * in full (explicit approval / long detail) offer Open + Deny instead of Allow. Answers go
+ * through the same owner-only threads.answer path as the chat card; never "Always allow".
+ */
+function InlineApproval({ run, onOpen }: { run: RunActivityRow; onOpen: () => void }) {
+  const { t } = useLingui();
+  const queries = useSpaceQueries();
+  const approval = run.pendingApproval;
+  const answer = useSave({
+    save: (value: "allow" | "deny", rpc) =>
+      rpc.threads.answer({
+        ...(run.groupId ? { groupId: run.groupId } : { botId: run.botId }),
+        runId: run.runId,
+        messageId: approval?.messageId ?? "",
+        answer: value,
+      }),
+    stale: [queries.runs.list.key()],
+  });
+  if (!approval) return null;
+  const busy = answer.pending;
+  return (
+    <div className="flex shrink-0 flex-col items-end gap-1">
+      <div className="flex items-center gap-1">
+        {approval.inlineAllow ? (
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={() => answer.run("allow")}
+            aria-label={t`Allow once`}
+          >
+            <Trans>Allow once</Trans>
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline" disabled={busy} onClick={onOpen}>
+            <Trans>Open</Trans>
+          </Button>
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => answer.run("deny")}
+          aria-label={t`Deny`}
+        >
+          <Trans>Deny</Trans>
+        </Button>
+      </div>
+      {answer.error ? (
+        <span className="text-label text-destructive">{errorText(answer.error)}</span>
+      ) : null}
+    </div>
+  );
+}
+
 function ActivityRow({
   run,
   bot,
@@ -436,47 +492,58 @@ function ActivityRow({
   const title = run.groupName ? `${run.botName}, ${run.groupName}` : run.botName;
   const label = runStatusLabel(run.status);
   const activityLabel = t`${title}, ${label}`;
-  const preview = activityPreview(run);
+  // A waiting approval names its own action, so the row shows the card rather than the prompt
+  // that started the run: the owner reads what they are about to allow (#4181).
+  const approval = run.pendingApproval;
+  const preview = approval ? approval.text : activityPreview(run);
   return (
-    <button
-      type="button"
-      aria-label={activityLabel}
-      onClick={onOpen}
-      className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-start hover:bg-accent"
-    >
-      <BotAvatar
-        identity={run.botId}
-        color={bot?.color ?? ""}
-        avatarSet={bot?.avatarSet}
-        status={run.status}
-        size={28}
-      />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="flex min-w-0 gap-2 text-body font-medium">
-            <span className="truncate text-foreground">{run.botName}</span>
-            {run.groupName ? (
-              <span className="truncate text-muted-foreground">{run.groupName}</span>
+    <div className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 hover:bg-accent">
+      <button
+        type="button"
+        aria-label={activityLabel}
+        onClick={onOpen}
+        className="flex min-w-0 flex-1 items-center gap-3 text-start"
+      >
+        <BotAvatar
+          identity={run.botId}
+          color={bot?.color ?? ""}
+          avatarSet={bot?.avatarSet}
+          status={run.status}
+          size={28}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="flex min-w-0 gap-2 text-body font-medium">
+              <span className="truncate text-foreground">{run.botName}</span>
+              {run.groupName ? (
+                <span className="truncate text-muted-foreground">{run.groupName}</span>
+              ) : null}
+            </span>
+            {detailed ? (
+              <span className="shrink-0 text-label text-muted-foreground/80">
+                {formatRelativeTime(run.updatedAt)}
+              </span>
             ) : null}
-          </span>
-          {detailed ? (
-            <span className="shrink-0 text-label text-muted-foreground/80">
-              {formatRelativeTime(run.updatedAt)}
-            </span>
+          </div>
+          <div className="flex items-baseline gap-2">
+            {preview ? (
+              <span className="min-w-0 flex-1 truncate text-body-sm text-muted-foreground">
+                {preview}
+              </span>
+            ) : null}
+            {detailed ? (
+              <span className={`ms-auto shrink-0 text-label ${statusTone(run.status)}`}>
+                {label}
+              </span>
+            ) : null}
+          </div>
+          {approval?.inlineAllow && approval.detail ? (
+            <div className="truncate text-label text-muted-foreground/80">{approval.detail}</div>
           ) : null}
         </div>
-        <div className="flex items-baseline gap-2">
-          {preview ? (
-            <span className="min-w-0 flex-1 truncate text-body-sm text-muted-foreground">
-              {preview}
-            </span>
-          ) : null}
-          {detailed ? (
-            <span className={`ms-auto shrink-0 text-label ${statusTone(run.status)}`}>{label}</span>
-          ) : null}
-        </div>
-      </div>
-    </button>
+      </button>
+      <InlineApproval run={run} onOpen={onOpen} />
+    </div>
   );
 }
 
