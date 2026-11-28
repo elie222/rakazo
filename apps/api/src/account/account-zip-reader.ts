@@ -79,9 +79,14 @@ export function crc32(data: Uint8Array, previous = 0): number {
   return ~crc >>> 0;
 }
 
+const MAX_SAFE_U64 = BigInt(Number.MAX_SAFE_INTEGER);
 const u16 = (view: DataView, offset: number) => view.getUint16(offset, true);
 const u32 = (view: DataView, offset: number) => view.getUint32(offset, true);
-const u64 = (view: DataView, offset: number) => Number(view.getBigUint64(offset, true));
+const u64 = (view: DataView, offset: number): number => {
+  const value = view.getBigUint64(offset, true);
+  if (value > MAX_SAFE_U64) throw new ZipFormatError();
+  return Number(value);
+};
 
 /** Reads exactly `buffer.length` bytes from `position`, or throws.
  * Exported so the importer can stream a spilled entry back to its sink. */
@@ -205,12 +210,6 @@ async function readCentralDirectory(
     size = u64(recordView, 40);
     offset = u64(recordView, 48);
   }
-  if (
-    !Number.isSafeInteger(entries) ||
-    !Number.isSafeInteger(size) ||
-    !Number.isSafeInteger(offset)
-  )
-    throw new ZipFormatError();
   // Enforce the metadata budget before any record is accumulated: an
   // archive over either bound is refused here, not after its records have
   // been read, sorted, and validated.

@@ -97,22 +97,28 @@ async function falsifyUncompressedSize(
  * field declares two 8-byte ZIP64 values but holds only one, so its declared
  * end runs past its actual bytes. */
 function buildZip64Archive(
-  options: { truncateLocalExtra?: boolean; truncateCentralExtra?: boolean } = {},
+  options: {
+    truncateLocalExtra?: boolean;
+    truncateCentralExtra?: boolean;
+    locatorRecordOffset?: bigint;
+    centralUncompressedSize?: bigint;
+    localUncompressedSize?: bigint;
+  } = {},
 ): Uint8Array {
   const name = new TextEncoder().encode("a.txt");
   const data = new TextEncoder().encode("hi");
   const crc = crc32(data);
-  const buildExtra = (truncate: boolean | undefined): Uint8Array => {
+  const buildExtra = (truncate: boolean | undefined, uncompressedSize = 2n): Uint8Array => {
     const extra = new Uint8Array(truncate ? 12 : 20);
     const extraView = new DataView(extra.buffer);
     extraView.setUint16(0, 0x0001, true);
     extraView.setUint16(2, 16, true);
-    extraView.setBigUint64(4, 2n, true);
+    extraView.setBigUint64(4, uncompressedSize, true);
     if (!truncate) extraView.setBigUint64(12, 2n, true);
     return extra;
   };
-  const localExtra = buildExtra(options.truncateLocalExtra);
-  const centralExtra = buildExtra(options.truncateCentralExtra);
+  const localExtra = buildExtra(options.truncateLocalExtra, options.localUncompressedSize);
+  const centralExtra = buildExtra(options.truncateCentralExtra, options.centralUncompressedSize);
   const local = new Uint8Array(30 + name.length + localExtra.length + data.length);
   const localView = new DataView(local.buffer);
   localView.setUint32(0, 0x04034b50, true);
@@ -154,7 +160,7 @@ function buildZip64Archive(
   const locator = new Uint8Array(20);
   const locatorView = new DataView(locator.buffer);
   locatorView.setUint32(0, 0x07064b50, true);
-  locatorView.setBigUint64(8, BigInt(zip64EocdOffset), true);
+  locatorView.setBigUint64(8, options.locatorRecordOffset ?? BigInt(zip64EocdOffset), true);
   locatorView.setUint32(16, 1, true);
   const eocd = new Uint8Array(22);
   const eocdView = new DataView(eocd.buffer);
@@ -351,6 +357,26 @@ describe("account zip reader", () => {
     await expect(
       withArchive(buildZip64Archive({ truncateLocalExtra: true }), (handle) =>
         inflateAll(handle, "a.txt"),
+      ),
+    ).rejects.toBeInstanceOf(ZipFormatError);
+  });
+
+  it("rejects a ZIP64 locator whose record offset exceeds safe integer range", async () => {
+    await expect(
+      withArchive(buildZip64Archive({ locatorRecordOffset: 0xffffffffffffffffn }), (handle) =>
+        parseZipArchive(handle),
+      ),
+    ).rejects.toBeInstanceOf(ZipFormatError);
+  });
+
+  it("rejects a ZIP64 entry whose size exceeds safe integer range", async () => {
+    await expect(
+      withArchive(
+        buildZip64Archive({
+          centralUncompressedSize: (1n << 53n) + 1n,
+          localUncompressedSize: 1n << 53n,
+        }),
+        (handle) => parseZipArchive(handle),
       ),
     ).rejects.toBeInstanceOf(ZipFormatError);
   });
