@@ -232,3 +232,176 @@ describe("routine tools on a bot this bot manages", () => {
     expect(deleteMany).not.toHaveBeenCalled();
   });
 });
+
+describe("scratchpad and ticket tool secret redaction", () => {
+  it("redacts padded credentials in title and notes before trimming on add and update", async () => {
+    const paddedSecret = "  sp&sec<4>val  ";
+    const create = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: "sp-1",
+      ...data,
+      createdAt: new Date("2026-10-20T00:00:00.000Z"),
+      updatedAt: new Date("2026-10-20T00:00:00.000Z"),
+    }));
+    const updateManyAndReturn = vi.fn(async ({ data }: { data: Record<string, unknown> }) => [
+      {
+        id: "sp-1",
+        botId: "b",
+        status: "open",
+        ...data,
+        createdAt: new Date("2026-10-20T00:00:00.000Z"),
+        updatedAt: new Date("2026-10-20T00:00:00.000Z"),
+      },
+    ]);
+    const ctx = {
+      deps: {
+        prisma: {
+          scratchpadItem: {
+            create,
+            updateManyAndReturn,
+            findFirst: vi.fn(async () => ({
+              id: "sp-1",
+              spaceId: "s",
+              botId: "b",
+              title: "Old",
+              status: "open",
+              notes: "",
+            })),
+          },
+        },
+      },
+      run: { id: "run-1", spaceId: "s", userId: "u", threadId: "t" },
+      bot: { id: "b", name: "Bot" },
+      secrets: [paddedSecret],
+    } as unknown as RunContext;
+    const call = (name: string, args: Record<string, unknown>) =>
+      ({ name, args, finish: async (result: unknown) => result }) as unknown as ToolCall;
+
+    await taskTools.scratchpad_add!(
+      ctx,
+      call("scratchpad_add", { title: paddedSecret, notes: paddedSecret }),
+    );
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ title: "[redacted]", notes: "[redacted]" }),
+      }),
+    );
+
+    await taskTools.scratchpad_update!(
+      ctx,
+      call("scratchpad_update", { itemId: "sp-1", title: paddedSecret, notes: paddedSecret }),
+    );
+    expect(updateManyAndReturn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ title: "[redacted]", notes: "[redacted]" }),
+      }),
+    );
+
+    const blankCtx = { ...ctx, secrets: ["  "] } as unknown as RunContext;
+    await expect(
+      taskTools.scratchpad_add!(blankCtx, call("scratchpad_add", { title: "   " })),
+    ).resolves.toEqual({ error: "title is required." });
+  });
+
+  it("redacts padded credentials in ticket titles, descriptions, and comments before trimming", async () => {
+    const paddedSecret = "  tk&sec<7>val  ";
+    const createdTicket = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: "ticket-1",
+      number: 1,
+      status: "open",
+      ...data,
+      completedAt: null,
+      createdAt: new Date("2026-10-20T00:00:00.000Z"),
+      updatedAt: new Date("2026-10-20T00:00:00.000Z"),
+    }));
+    const updatedTicket = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: "ticket-1",
+      number: 1,
+      status: "open",
+      priority: "normal",
+      assigneeBotId: "b",
+      title: "Old",
+      description: null,
+      ...data,
+      completedAt: null,
+      createdAt: new Date("2026-10-20T00:00:00.000Z"),
+      updatedAt: new Date("2026-10-20T00:00:00.000Z"),
+    }));
+    const createdComment = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: "comment-1",
+      ...data,
+      authorBot: { name: "Bot" },
+      authorUser: null,
+      createdAt: new Date("2026-10-20T00:00:00.000Z"),
+      updatedAt: new Date("2026-10-20T00:00:00.000Z"),
+    }));
+    const prisma = {
+      bot: { findFirst: vi.fn(async () => ({ id: "b" })) },
+      board: {
+        findUnique: vi.fn(async () => ({ id: "board-1", spaceId: "s", ticketPrefix: "ENG" })),
+      },
+      ticket: {
+        findFirst: vi.fn(async () => ({
+          id: "ticket-1",
+          assigneeBotId: "b",
+          completedAt: null,
+        })),
+      },
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          $queryRaw: vi.fn(async () => []),
+          board: { update: vi.fn(async () => ({ nextNumber: 2 })) },
+          ticket: {
+            findFirst: vi.fn(async () => ({
+              id: "ticket-1",
+              assigneeBotId: "b",
+              completedAt: null,
+            })),
+            create: createdTicket,
+            update: updatedTicket,
+          },
+          ticketComment: {
+            create: createdComment,
+          },
+        }),
+      ),
+    };
+    const ctx = {
+      deps: { prisma },
+      run: { id: "run-1", spaceId: "s", userId: "u", threadId: "t" },
+      bot: { id: "b", name: "Bot" },
+      secrets: [paddedSecret],
+    } as unknown as RunContext;
+    const call = (name: string, args: Record<string, unknown>) =>
+      ({ name, args, finish: async (result: unknown) => result }) as unknown as ToolCall;
+
+    await taskTools.ticket_create!(
+      ctx,
+      call("ticket_create", { title: paddedSecret, description: paddedSecret }),
+    );
+    expect(createdTicket).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ title: "[redacted]", description: "[redacted]" }),
+      }),
+    );
+
+    await taskTools.ticket_update!(
+      ctx,
+      call("ticket_update", { id: "ticket-1", title: paddedSecret, description: paddedSecret }),
+    );
+    expect(updatedTicket).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ title: "[redacted]", description: "[redacted]" }),
+      }),
+    );
+
+    await taskTools.ticket_comment!(
+      ctx,
+      call("ticket_comment", { id: "ticket-1", body: paddedSecret }),
+    );
+    expect(createdComment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ body: "[redacted]" }),
+      }),
+    );
+  });
+});

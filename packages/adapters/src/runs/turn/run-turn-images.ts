@@ -376,6 +376,7 @@ export async function claimRunSteering(
     messageId?: string;
     hasImages: boolean;
     resumeAnswerReplyContexts?: ReadonlyMap<string, string>;
+    redact?: (text: string) => string;
   },
 ): Promise<AgentSteeringMessage[]> {
   const steering = await deps.events.claimSteering({ ...lease, seenIds });
@@ -388,17 +389,27 @@ export async function claimRunSteering(
         context.signal,
       );
       if (files.length) pendingTurnFiles.push(item.blocks);
-      const filesInstruction = currentTurnFilesInstruction(files);
+      const filesInstruction = currentTurnFilesInstruction(files, currentTurn.redact);
       const answerReplyContext = currentTurn.resumeAnswerReplyContexts?.get(item.messageId);
+      const bodyText = currentTurn.redact
+        ? item.blocks.length && item.text === blocksToAgentHistoryText(item.blocks)
+          ? blocksToAgentHistoryText(item.blocks, currentTurn.redact)
+          : currentTurn.redact(item.text)
+        : item.text;
       return {
         id: item.id,
         messageId: item.messageId,
         origin: item.origin,
-        historyText: item.text,
+        historyText: bodyText,
         text: [
           answerReplyContext ??
-            (await loadReplyContext(deps.prisma, lease.threadId, item.messageId)),
-          answerReplyContext === undefined ? item.text : undefined,
+            (await loadReplyContext(
+              deps.prisma,
+              lease.threadId,
+              item.messageId,
+              currentTurn.redact,
+            )),
+          answerReplyContext === undefined ? bodyText : undefined,
           filesInstruction,
           unavailableInstruction,
         ]

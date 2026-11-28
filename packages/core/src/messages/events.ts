@@ -502,12 +502,14 @@ export function withToolHistory(
   if (!history) return [...blocks];
   let index = 0;
   return blocks.map((block) =>
-    block.kind === "steps"
+    block.kind === "steps" && Array.isArray(block.steps)
       ? {
           ...block,
           steps: block.steps.map((step): HistoryToolStep => {
             const kept = history.steps[index++];
-            return kept ? { ...step, tool: kept.tool, calls: kept.calls } : step;
+            return kept && step !== null && typeof step === "object"
+              ? { ...step, tool: kept.tool, calls: kept.calls }
+              : step;
           }),
         }
       : block,

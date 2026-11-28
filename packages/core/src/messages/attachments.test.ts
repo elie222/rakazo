@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import {
   AttachmentValidationError,
@@ -18,6 +19,15 @@ import {
   userTurnMessageForRun,
   validateAttachmentMimeType,
 } from "./attachments.js";
+import { redactSecrets, withToolHistory } from "./events.js";
+import {
+  redactJsonStringsAndPlainText,
+  redactJsonText,
+  redactPlainBearerTokens,
+} from "./json-redaction.js";
+
+const secretRedactor = (secrets: readonly string[]) => (text: string) =>
+  redactSecrets(text, secrets);
 
 describe("attachment helpers", () => {
   it("keeps the stored feedback receipt in both history formats", () => {
@@ -695,6 +705,624 @@ describe("tool step history", () => {
     expect(blocksToAgentHistoryText([{ kind: "steps", steps: [] }])).toBe("");
   });
 
+  it("redacts raw tool notes, ask option labels, and draft details before whitespace folding, trimming, or escaping", () => {
+    const paddedSecret = "  step&sec\n  <7>val  ";
+    const draftSecret = "tok</draft>secret";
+    const text = blocksToAgentHistoryText(
+      [
+        {
+          kind: "steps",
+          steps: [{ label: "Shell", count: 1, note: `${paddedSecret}  done` }],
+        },
+        {
+          kind: "ask",
+          text: "Send draft?",
+          detail: `Body: ${draftSecret} and </draft> tag`,
+          actions: [{ id: "send", label: `Send ${paddedSecret}` }],
+        },
+      ],
+      secretRedactor([paddedSecret, draftSecret]),
+    );
+
+    expect(text).toContain("- Shell: [redacted] done");
+    expect(text).toContain("A. Send [redacted]");
+    expect(text).toContain("Body: [redacted] and &lt;/draft&gt; tag");
+    expect(text).not.toContain("step&sec");
+    expect(text).not.toContain("<7>val");
+    expect(text).not.toContain("tok</draft>secret");
+    expect(text).not.toContain("tok&lt;/draft&gt;secret");
+  });
+
+  it("does not throw on legacy or malformed stored blocks with missing string fields when redacting", () => {
+    const legacyBlocks = [
+      { kind: "image", artifactId: "a-1", mimeType: "image/png" },
+      { kind: "text" },
+      { kind: "tool_question", status: "expired" },
+      { kind: "ask", text: "Proceed?", status: "answered", answer: "yes", actions: [null] },
+      {
+        kind: "steps",
+        steps: [
+          {
+            label: "Shell",
+            count: Object.create(null),
+            outcomes: { succeeded: Object.create(null) },
+          },
+        ],
+      },
+    ] as unknown as MessageBlock[];
+
+    expect(blocksToAgentHistoryText(legacyBlocks, secretRedactor([]))).toBe(
+      blocksToAgentHistoryText(legacyBlocks),
+    );
+    expect(blocksToAgentHistoryText(legacyBlocks, secretRedactor([]))).toContain("Answer: yes");
+    expect(blocksToAgentHistoryText(legacyBlocks, secretRedactor([]))).toContain("- Shell");
+  });
+
+  it("redacts text and structured tool steps in blocksToAgentHistorySegments", () => {
+    const secret = "  seg&sec<9>val  ";
+    const jsonSecret = 'line1\n"quoted"\\val';
+    const blocks = [
+      { kind: "text", text: `Before ${secret}` },
+      {
+        kind: "steps",
+        steps: [
+          {
+            label: `Shell ${secret}`,
+            tool: "shell",
+            count: 1,
+            note: `Note ${secret}`,
+            calls: [
+              null,
+              {
+                arguments: `{"cmd":${JSON.stringify(`echo ${secret}`)},"body":${JSON.stringify(jsonSecret)},"pin":987654321,"retries":2,"__proto__":{"keep":true}}`,
+                result: `out=${secret}`,
+              },
+            ],
+          },
+          {
+            label: "Malformed calls",
+            tool: "shell",
+            count: 1,
+            note: 42,
+            calls: "not-an-array",
+          },
+          {
+            label: "Malformed call result",
+            tool: "shell",
+            count: 1,
+            calls: [{ arguments: 123, result: 99 }],
+          },
+        ],
+      },
+      { kind: "text", text: `After ${secret}` },
+    ] as unknown as MessageBlock[];
+
+    const segments = blocksToAgentHistorySegments(
+      blocks,
+      secretRedactor([secret, jsonSecret, "987654321"]),
+    );
+    expect(segments).toEqual([
+      { text: "Before [redacted]" },
+      {
+        steps: [
+          {
+            label: "Shell [redacted]",
+            tool: "shell",
+            count: 1,
+            note: "Note [redacted]",
+            calls: [
+              {
+                arguments:
+                  '{"cmd":"echo [redacted]","body":"[redacted]","pin":"[redacted]","retries":2,"__proto__":{"keep":true}}',
+                result: "out=[redacted]",
+              },
+            ],
+          },
+          {
+            label: "Malformed calls",
+            tool: "shell",
+            count: 1,
+          },
+          {
+            label: "Malformed call result",
+            tool: "shell",
+            count: 1,
+            calls: [{}],
+          },
+        ],
+      },
+      { text: "After [redacted]" },
+    ]);
+  });
+
+  it("redacts JSON-escaped secrets in saved tool results as well as tool arguments", () => {
+    const jsonSecret = 'line1\n"quoted"\\val';
+    const blocks = [
+      {
+        kind: "steps",
+        steps: [
+          {
+            label: "Shell",
+            tool: "shell",
+            count: 2,
+            calls: [
+              {
+                arguments: JSON.stringify({ cmd: `echo ${jsonSecret}` }),
+                result: JSON.stringify({ stdout: `got ${jsonSecret}`, ok: true }),
+              },
+              {
+                arguments: JSON.stringify(jsonSecret),
+                result: JSON.stringify(`raw ${jsonSecret}`),
+              },
+            ],
+          },
+        ],
+      },
+    ] as unknown as MessageBlock[];
+
+    const segments = blocksToAgentHistorySegments(blocks, secretRedactor([jsonSecret]));
+    expect(segments).toEqual([
+      {
+        steps: [
+          {
+            label: "Shell",
+            tool: "shell",
+            count: 2,
+            calls: [
+              {
+                arguments: '{"cmd":"echo [redacted]"}',
+                result: '{"stdout":"got [redacted]","ok":true}',
+              },
+              {
+                arguments: '"[redacted]"',
+                result: '"raw [redacted]"',
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("redacts JSON-escaped multiline secrets inside truncated JSON tool results", () => {
+    const multilineSecret = 'line1\n"quoted"\\val';
+    const truncated = `{"stdout":${JSON.stringify(`got ${multilineSecret}`)},"rest":"${"x".repeat(40)}… [200 characters not kept]`;
+    const headTailMidString = `{"stdout":"${"a".repeat(30)}\n… [500 characters not kept] …\n${"b".repeat(12)}","tail":${JSON.stringify(`got ${multilineSecret}`)}}`;
+    const headTailInCutValue = `{"stdout":"${"a".repeat(30)}\n… [500 characters not kept] …\n${JSON.stringify(`tail ${multilineSecret}`).slice(1, -1)}"}`;
+    const trailingLoneBackslash = `{"stdout":"got ${JSON.stringify(multilineSecret).slice(1, -1)} tail\\`;
+    const trailingCompleteEscapedBackslash = `{"stdout":"got ${JSON.stringify(multilineSecret).slice(1, -1)}\\\\`;
+    const tailEndingCompleteEscapedBackslash = `{"stdout":"${"a".repeat(30)}\n… [500 characters not kept] …\ngot ${JSON.stringify(multilineSecret).slice(1, -1)}\\\\`;
+    const cutBetweenEscapedBackslashes = `{"stdout":"${"a".repeat(30)}\\\n… [500 characters not kept] …\n\\x ${JSON.stringify(multilineSecret).slice(1, -1)}"}`;
+    const cutBeforeClosingQuote = `{"stdout":"${"a".repeat(30)}\\\n… [500 characters not kept] …\n\\","tail":${JSON.stringify(`got ${multilineSecret}`)}}`;
+    const blocks = [
+      {
+        kind: "steps",
+        steps: [
+          {
+            label: "Shell",
+            tool: "shell",
+            count: 8,
+            calls: [
+              { arguments: "{}", result: truncated },
+              { arguments: "{}", result: headTailMidString },
+              { arguments: "{}", result: headTailInCutValue },
+              { arguments: "{}", result: trailingLoneBackslash },
+              { arguments: "{}", result: cutBetweenEscapedBackslashes },
+              { arguments: "{}", result: cutBeforeClosingQuote },
+              { arguments: "{}", result: trailingCompleteEscapedBackslash },
+              { arguments: "{}", result: tailEndingCompleteEscapedBackslash },
+            ],
+          },
+        ],
+      },
+    ] as unknown as MessageBlock[];
+
+    const segments = blocksToAgentHistorySegments(blocks, secretRedactor([multilineSecret]));
+    const calls = segments[0] && "steps" in segments[0] ? segments[0].steps[0]?.calls : undefined;
+    expect(calls?.[0]?.result).toContain('"stdout":"got [redacted]"');
+    expect(calls?.[1]?.result).toContain('"tail":"got [redacted]"');
+    expect(calls?.[2]?.result).toContain("tail [redacted]");
+    expect(calls?.[3]?.result).toContain('"stdout":"got [redacted] tail\\');
+    expect(calls?.[4]?.result).toContain('\\x [redacted]"');
+    expect(calls?.[5]?.result).toContain('"tail":"got [redacted]"');
+    expect(calls?.[6]?.result).toContain('"stdout":"got [redacted]\\\\');
+    expect(calls?.[7]?.result).toContain("got [redacted]\\\\");
+    for (const call of calls ?? []) {
+      expect(call.result).not.toContain(multilineSecret);
+      expect(call.result).not.toContain(JSON.stringify(multilineSecret).slice(1, -1));
+    }
+
+    const longDigitTail = `{"a":"head\n… [500 characters not kept] …\n${"1".repeat(50_000)}x","b":"ok"}`;
+    const largeNumericArray = `[${Array.from({ length: 15_000 }, (_, i) => String(i)).join(",")}]`;
+    expectLinearTime(() =>
+      blocksToAgentHistorySegments(
+        [
+          {
+            kind: "steps",
+            steps: [
+              {
+                label: "Shell",
+                tool: "shell",
+                count: 2,
+                calls: [{ result: longDigitTail }, { result: largeNumericArray }],
+              },
+            ],
+          },
+        ] as unknown as MessageBlock[],
+        secretRedactor([multilineSecret]),
+      ),
+    );
+  });
+
+  it("preserves raw JSON tool results verbatim when no secrets match and keeps untouched large integers exact when siblings redact", () => {
+    const raw = '{"invoiceId":9007199254740993}';
+    const withSiblingSecret = '{"invoiceId":9007199254740993,"note":"line1\\nsecret-val"}';
+    const blocks = [
+      {
+        kind: "steps",
+        steps: [
+          {
+            label: "Lookup",
+            tool: "lookup",
+            count: 2,
+            calls: [
+              { arguments: raw, result: raw },
+              { arguments: withSiblingSecret, result: withSiblingSecret },
+            ],
+          },
+        ],
+      },
+    ] as unknown as MessageBlock[];
+
+    const segments = blocksToAgentHistorySegments(blocks, secretRedactor(["line1\nsecret-val"]));
+    expect(segments).toEqual([
+      {
+        steps: [
+          {
+            label: "Lookup",
+            tool: "lookup",
+            count: 2,
+            calls: [
+              { arguments: raw, result: raw },
+              {
+                arguments: '{"invoiceId":9007199254740993,"note":"[redacted]"}',
+                result: '{"invoiceId":9007199254740993,"note":"[redacted]"}',
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("keeps escaped-quote neighbors intact when redacting trailing-backslash secrets in JSON tool calls", () => {
+    const escapedQuote = '{"safe":"prefix\\"kept","secret":"prefix\\\\"}';
+    const slashSegments = blocksToAgentHistorySegments(
+      [
+        {
+          kind: "steps",
+          steps: [
+            {
+              label: "Lookup",
+              tool: "lookup",
+              count: 1,
+              calls: [{ arguments: escapedQuote, result: escapedQuote }],
+            },
+          ],
+        },
+      ] as unknown as MessageBlock[],
+      secretRedactor(["prefix\\"]),
+    );
+    const slashCall =
+      slashSegments[0] && "steps" in slashSegments[0]
+        ? slashSegments[0].steps[0]?.calls?.[0]
+        : undefined;
+    expect(JSON.parse(slashCall?.arguments ?? "")).toEqual({
+      safe: 'prefix"kept',
+      secret: "[redacted]",
+    });
+    expect(JSON.parse(slashCall?.result ?? "")).toEqual({
+      safe: 'prefix"kept',
+      secret: "[redacted]",
+    });
+  });
+
+  it("redacts root primitives, log-prefixed JSON, and labeled quoted secrets in tool results", () => {
+    const segments = blocksToAgentHistorySegments(
+      [
+        {
+          kind: "steps",
+          steps: [
+            {
+              label: "Lookup",
+              tool: "lookup",
+              count: 5,
+              calls: [
+                { result: "731428" },
+                { result: 'Log prefix: {"safe":"prefix\\"kept","secret":"prefix\\\\"}' },
+                { result: 'Rejected values: ["opaque-123"]' },
+                { result: 'Rejected fixture:\n"opaque-123"' },
+                { result: 'Response body: "s\\u00e9cret-123". HTTP 400' },
+              ],
+            },
+          ],
+        },
+      ] as unknown as MessageBlock[],
+      secretRedactor([
+        "731428",
+        "prefix\\",
+        '"opaque-123"',
+        'fixture:\n"opaque-123"',
+        "sécret-123",
+      ]),
+    );
+    const calls = segments[0] && "steps" in segments[0] ? segments[0].steps[0]?.calls : undefined;
+    expect(calls?.[0]?.result).toBe("[redacted]");
+    const embeddedJson = calls?.[1]?.result?.replace(/^Log prefix: /, "") ?? "";
+    expect(JSON.parse(embeddedJson)).toEqual({
+      safe: 'prefix"kept',
+      secret: "[redacted]",
+    });
+    expect(calls?.[2]?.result).toBe('Rejected values: ["[redacted]"]');
+    expect(calls?.[3]?.result).toBe("Rejected [redacted]");
+    expect(calls?.[4]?.result).toBe('Response body: "[redacted]". HTTP 400');
+  });
+
+  it("redacts whole JSON object/array values, deep nesting, and JSON Lines tool results without breaking JSON", () => {
+    const segments = blocksToAgentHistorySegments(
+      [
+        {
+          kind: "steps",
+          steps: [
+            {
+              label: "Lookup",
+              tool: "lookup",
+              count: 5,
+              calls: [
+                { result: '{"value":{"mode":"opaque-123"},"next":"ok"}' },
+                { result: '{"value":[731428,918273],"next":"ok"}' },
+                { result: '{"value":{"mode":"opaque-123"},"next":"ok"}\n{"done":true}' },
+                {
+                  result: `${"[".repeat(19)}{"filler":"${"x".repeat(900)}","value":{"mode":"opaque-123"}}${"]".repeat(19)}`,
+                },
+                { result: '{"done":true}\n731428' },
+              ],
+            },
+          ],
+        },
+      ] as unknown as MessageBlock[],
+      secretRedactor(["731428", '{"mode":"opaque-123"}', "[731428,918273]"]),
+    );
+    const calls = segments[0] && "steps" in segments[0] ? segments[0].steps[0]?.calls : undefined;
+    expect(JSON.parse(calls?.[0]?.result ?? "")).toEqual({
+      value: "[redacted]",
+      next: "ok",
+    });
+    expect(JSON.parse(calls?.[1]?.result ?? "")).toEqual({
+      value: "[redacted]",
+      next: "ok",
+    });
+    expect((calls?.[2]?.result ?? "").split("\n").map((line) => JSON.parse(line))).toEqual([
+      { value: "[redacted]", next: "ok" },
+      { done: true },
+    ]);
+    expect(calls?.[3]?.result).not.toContain("opaque-123");
+    expect(() => JSON.parse(calls?.[3]?.result ?? "")).not.toThrow();
+    expect((calls?.[4]?.result ?? "").split("\n").map((line) => JSON.parse(line))).toEqual([
+      { done: true },
+      "[redacted]",
+    ]);
+  });
+
+  it("redacts escaped and unicode-escaped raw secrets inside valid and truncated JSON strings", () => {
+    const segments = blocksToAgentHistorySegments(
+      [
+        {
+          kind: "steps",
+          steps: [
+            {
+              label: "Lookup",
+              tool: "lookup",
+              count: 5,
+              calls: [
+                { result: '{"message":"details: [\\"opaque-123\\"]","next":"ok"}' },
+                { result: '{"message":"details: [\\"opaque-123\\"]' },
+                { result: '{"message":"\\u006fpaque-123006\\u0074oken-456"}' },
+                { result: '{"message":"\\u006fpaque-123 and other-secret"}' },
+                { result: '{"message":"opaque-1234567890"}' },
+              ],
+            },
+          ],
+        },
+      ] as unknown as MessageBlock[],
+      secretRedactor([
+        '\\"opaque-123\\"',
+        "\\u006fpaque-123",
+        "\\u0074oken-456",
+        "other-secret",
+        'heading\n"opaque-1234567890"\nfooter',
+      ]),
+    );
+    const calls = segments[0] && "steps" in segments[0] ? segments[0].steps[0]?.calls : undefined;
+    expect(calls?.[0]?.result).not.toContain('\\"opaque-123\\"');
+    expect(JSON.parse(calls?.[0]?.result ?? "")).toEqual({
+      message: "details: [[redacted]]",
+      next: "ok",
+    });
+    expect(calls?.[1]?.result).toBe('{"message":"details: [[redacted]]');
+    expect(JSON.parse(calls?.[2]?.result ?? "")).toEqual({
+      message: "[redacted]006[redacted]",
+    });
+    expect(JSON.parse(calls?.[3]?.result ?? "")).toEqual({
+      message: "[redacted] and [redacted]",
+    });
+    expect(JSON.parse(calls?.[4]?.result ?? "")).toEqual({
+      message: "[redacted]",
+    });
+  });
+
+  it("scans overlapping labeled and quoted secrets linearly without re-scanning growing prefixes", () => {
+    const overlapping = 'fixture:\n"opaque-123"\n'.repeat(2_000);
+    let inspectedChars = 0;
+    const countingRedactor = (text: string) => {
+      inspectedChars += text.length;
+      return redactSecrets(text, ['fixture:\n"opaque-123"', '"opaque-123"']);
+    };
+    const linearSegments = blocksToAgentHistorySegments(
+      [
+        {
+          kind: "steps",
+          steps: [{ label: "Lookup", tool: "lookup", count: 1, calls: [{ result: overlapping }] }],
+        },
+      ] as unknown as MessageBlock[],
+      countingRedactor,
+    );
+    const linearResult =
+      linearSegments[0] && "steps" in linearSegments[0]
+        ? linearSegments[0].steps[0]?.calls?.[0]?.result
+        : undefined;
+    expect(linearResult).toBe("[redacted]\n".repeat(2_000));
+    expect(inspectedChars).toBeLessThan(overlapping.length * 6);
+  });
+
+  it("leaves JSON delimiters after an unquoted Bearer token", () => {
+    expect(redactPlainBearerTokens("Bearer abc]")).toBe("Bearer [redacted]]");
+    expect(redactPlainBearerTokens("Bearer abc: detail")).toBe("Bearer [redacted]: detail");
+    expect(redactPlainBearerTokens("Bearer abc, next")).toBe("Bearer [redacted], next");
+    expect(redactPlainBearerTokens("Bearer abc} tail")).toBe("Bearer [redacted]} tail");
+    expect(redactPlainBearerTokens("Authorization: Bearer [redacted]")).toBe(
+      "Authorization: Bearer [redacted]",
+    );
+    expect(redactPlainBearerTokens("Bearer [redacted]")).toBe("Bearer [redacted]");
+    expect(redactPlainBearerTokens("Bearer [redacted]]")).toBe("Bearer [redacted]]");
+    expect(redactPlainBearerTokens("Bearer [redacted]: detail")).toBe("Bearer [redacted]: detail");
+    expect(redactPlainBearerTokens("Bearer [redacted]extra")).toBe("Bearer [redacted]");
+    expect(redactPlainBearerTokens("Bearer [redacted]FixtureTail]")).toBe("Bearer [redacted]]");
+    expect(redactPlainBearerTokens("Bearer [redacted]\\fixtureTail")).toBe("Bearer [redacted]");
+    expect(redactPlainBearerTokens("Bearer fixturePrefix\\fixtureTail")).toBe("Bearer [redacted]");
+    expect(redactPlainBearerTokens("Bearer [redacted]\nmore")).toBe("Bearer [redacted]\nmore");
+    expect(redactPlainBearerTokens('Bearer [redacted]\\"')).toBe('Bearer [redacted]\\"');
+    const bearerSlash = JSON.stringify({ message: "Bearer [redacted]\\", status: "ok" });
+    expect(JSON.parse(redactPlainBearerTokens(bearerSlash))).toEqual({
+      message: "Bearer [redacted]\\",
+      status: "ok",
+    });
+    const bearerLine = JSON.stringify({ message: "Bearer [redacted]\nNext line", status: "ok" });
+    expect(JSON.parse(redactPlainBearerTokens(bearerLine))).toEqual({
+      message: "Bearer [redacted]\nNext line",
+      status: "ok",
+    });
+    for (const suffix of ["\\nameTail", "\\rTail", "\\tTail", "\\\\Tail", '\\"Tail']) {
+      expect(redactPlainBearerTokens(`Bearer fixturePrefix${suffix}`, { decoded: true })).toBe(
+        "Bearer [redacted]",
+      );
+    }
+    expect(redactPlainBearerTokens('Authorization: "Bearer secret"', { decoded: true })).toBe(
+      'Authorization: "Bearer [redacted]"',
+    );
+    expect(
+      redactPlainBearerTokens('Bearer \\"fixturePrefix\\"fixtureTail', { decoded: true }),
+    ).toBe("Bearer [redacted]");
+    expect(redactPlainBearerTokens('Bearer "fixturePrefix"fixtureTail', { decoded: true })).toBe(
+      "Bearer [redacted]",
+    );
+    expect(redactPlainBearerTokens("Bearer 'fixturePrefix'fixtureTail", { decoded: true })).toBe(
+      "Bearer [redacted]",
+    );
+    expect(redactPlainBearerTokens('{"message":"Bearer \\"fixturePrefix\\"fixtureTail')).toBe(
+      '{"message":"Bearer [redacted]',
+    );
+    expect(
+      redactPlainBearerTokens('Bearer "fixturePrefix"Bearer fixtureSecond', { decoded: true }),
+    ).toBe("Bearer [redacted]Bearer [redacted]");
+    expect(
+      redactPlainBearerTokens('INFO Bearer "fixturePrefix"{"status":"ok"}', { decoded: true }),
+    ).toBe('INFO Bearer [redacted]{"status":"ok"}');
+    expect(redactPlainBearerTokens('INFO Bearer "fixturePrefix"[1,2]', { decoded: true })).toBe(
+      "INFO Bearer [redacted][1,2]",
+    );
+    expect(redactPlainBearerTokens('Bearer fixturePrefix\\\\\\"Tail', { decoded: true })).toBe(
+      "Bearer [redacted]",
+    );
+    expect(redactPlainBearerTokens("Bearer fixturePrefix\nNext line", { decoded: true })).toBe(
+      "Bearer [redacted]\nNext line",
+    );
+    const bearerJson = JSON.stringify({ msg: "Bearer fixturePrefix\\fixtureTail" });
+    const bearerRedacted = redactJsonStringsAndPlainText(
+      bearerJson,
+      (value) => redactPlainBearerTokens(redactSecrets(value, ["fixturePrefix"])),
+      (value) => redactPlainBearerTokens(redactSecrets(value, ["fixturePrefix"])),
+      ["fixturePrefix"],
+    );
+    expect(JSON.parse(bearerRedacted)).toEqual({ msg: "Bearer [redacted]" });
+    const many =
+      "Bearer abc] Bearer abc: detail Bearer [redacted]extra Bearer [redacted]\\fixtureTail ".repeat(
+        4_000,
+      );
+    expectLinearTime(() => {
+      const redacted = redactPlainBearerTokens(many);
+      expect(redacted).not.toContain("abc]");
+      expect(redacted).not.toContain("abc:");
+      expect(redacted).not.toContain("extra");
+      expect(redacted).not.toContain("fixtureTail");
+      expect(redacted).toContain("Bearer [redacted]]");
+      expect(redacted).toContain("Bearer [redacted]:");
+    });
+  });
+
+  it("scans unclosed escaped-quote strings linearly without regex backtracking", () => {
+    const redact = secretRedactor(["opaque-123"]);
+    const payload = `"${'\\"'.repeat(50_000)}opaque-123`;
+    expectLinearTime(() => {
+      const plain = redactJsonStringsAndPlainText(payload, redact, redact, ["opaque-123"]);
+      const json = redactJsonText(payload, redact);
+      expect(plain).not.toContain("opaque-123");
+      expect(json).not.toContain("opaque-123");
+    });
+  });
+
+  it("ignores fractional step counts and non-string ask action labels in flat history", () => {
+    const blocks = [
+      { kind: "steps", steps: [{ label: "Shell", count: 1.5 }] },
+      {
+        kind: "ask",
+        text: "Proceed?",
+        status: "answered",
+        answer: "choice-1",
+        actions: [{ id: "choice-1", label: 42 }],
+      },
+    ] as unknown as MessageBlock[];
+
+    expect(blocksToAgentHistoryText(blocks, secretRedactor([]))).toBe(
+      "[tool calls this reply made]\n- Shell\nProceed?\nAnswer: choice-1",
+    );
+  });
+
+  it("ignores malformed non-array steps in withToolHistory", () => {
+    const blocks = [{ kind: "steps", steps: "not-an-array" }] as unknown as MessageBlock[];
+    expect(withToolHistory(blocks, { steps: [{ tool: "shell", calls: [] }] })).toEqual(blocks);
+  });
+
+  it("renders malformed imported blocks with shadowed toString without throwing", () => {
+    const poisoned = JSON.parse('{"toString":null}');
+    const blocks = [
+      null,
+      { kind: "text", text: poisoned },
+      { kind: "chart", name: poisoned },
+      { kind: "page", title: poisoned, pageId: poisoned, version: poisoned },
+      { kind: "ask", text: poisoned, status: "answered", answer: poisoned, actions: [poisoned] },
+      { kind: "call_request", reason: poisoned, status: poisoned, opening: poisoned },
+      { kind: "call_request", reason: "Check", status: "toString" },
+      { kind: "tool_question", question: { source: poisoned }, status: poisoned },
+      { kind: "text", text: "Surviving text" },
+    ] as unknown as MessageBlock[];
+
+    const text = blocksToAgentHistoryText(blocks, secretRedactor([]));
+    expect(text).toContain("Surviving text");
+    expect(text).not.toContain("function toString");
+    expect(blocksToAgentHistorySegments(blocks, secretRedactor([]))).toEqual([{ text }]);
+  });
+
   it("splits a reply at its tool steps, in order, rendering the rest as the text form does", () => {
     const steps = [{ label: "Shell", tool: "shell", count: 1, note: "Checking." }];
     const blocks = [
@@ -712,6 +1340,31 @@ describe("tool step history", () => {
     expect(blocksToAgentHistorySegments([{ kind: "text", text: "Hi." }])).toEqual([
       { text: "Hi." },
     ]);
+  });
+
+  it("redacts secrets inside feedback_receipt JSON before serialization escapes them", () => {
+    const secret = 'tok-"line1"\nline2';
+    const redact = (text: string) => text.replaceAll(secret, "[redacted]");
+    const rendered = blocksToAgentHistoryText(
+      [
+        {
+          kind: "feedback_receipt",
+          reportId: "rep-1",
+          reportKind: "bug",
+          description: `Saw ${secret} in logs`,
+        },
+      ],
+      redact,
+    );
+    expect(rendered).not.toContain("tok-");
+    expect(rendered).not.toContain("line2");
+    expect(JSON.parse(rendered)).toEqual({
+      kind: "feedback_receipt",
+      reportId: "rep-1",
+      reportKind: "bug",
+      description: "Saw [redacted] in logs",
+      status: "submitted",
+    });
   });
 });
 

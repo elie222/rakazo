@@ -46,13 +46,19 @@ export async function loadSpacePeople(
   memberCount: number,
   runnerUserId: string,
   rows: Array<{ authorUserId?: string | null }>,
+  redact?: (text: string) => string,
 ): Promise<Map<string, string> | null> {
   if (memberCount < 2) return null;
   const authors = await loadMessageAuthors(prisma, [
     runnerUserId,
     ...rows.map((row) => row.authorUserId),
   ]);
-  return new Map([...authors].map(([id, author]) => [id, personSpeakerName(author.name)]));
+  return new Map(
+    [...authors].map(([id, author]) => [
+      id,
+      personSpeakerName(redact ? redact(author.name) : author.name),
+    ]),
+  );
 }
 
 /** The label of a person's line: their name in a shared space, otherwise "User". */
@@ -98,13 +104,14 @@ export async function loadBotNames(
   prisma: Pick<PrismaClient, "bot">,
   spaceId: string,
   ids: string[],
+  redact?: (text: string) => string,
 ): Promise<Map<string, string>> {
   if (ids.length === 0) return new Map();
   const bots = await prisma.bot.findMany({
     where: { id: { in: ids }, spaceId },
     select: { id: true, name: true },
   });
-  return new Map(bots.map((bot) => [bot.id, speakerName(bot.name)]));
+  return new Map(bots.map((bot) => [bot.id, speakerName(redact ? redact(bot.name) : bot.name)]));
 }
 
 /** Null for a direct chat in a personal space, which needs neither labels nor a lookup. */
@@ -114,6 +121,7 @@ export async function loadThreadSpeakers(
   run: { spaceId: string; bot: { id: string } },
   rows: SpeakerRow[],
   people?: ReadonlyMap<string, string> | null,
+  redact?: (text: string) => string,
 ): Promise<ThreadSpeakers | null> {
   if (!thread.groupId && !people) return null;
   const others = new Set(
@@ -123,7 +131,7 @@ export async function loadThreadSpeakers(
   );
   return {
     botId: run.bot.id,
-    names: await loadBotNames(prisma, run.spaceId, [...others]),
+    names: await loadBotNames(prisma, run.spaceId, [...others], redact),
     ...(people ? { people } : {}),
   };
 }

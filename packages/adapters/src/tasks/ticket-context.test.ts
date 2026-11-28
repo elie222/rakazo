@@ -68,6 +68,30 @@ describe("renderTicketContext", () => {
     expect(Buffer.byteLength(block ?? "", "utf8")).toBeLessThanOrEqual(220);
     expect(block?.endsWith("</tickets_referenced>")).toBe(true);
   });
+
+  it("redacts secrets containing XML-escaped characters and boundary-straddling text before formatting", () => {
+    const secret = "tok<a&b>99";
+    const longSecret = `secret-${"z".repeat(120)}-end`;
+    const redact = (text: string) =>
+      text.replaceAll(secret, "[redacted]").replaceAll(longSecret, "[redacted]");
+    const block = renderTicketContext(
+      [
+        {
+          ref: "RAK-2",
+          title: `Key ${secret}`,
+          status: "doing",
+          assignee: `bot ${secret}`,
+          lastComment: `${"x".repeat(80)} ${longSecret} tail`,
+        },
+      ],
+      240,
+      redact,
+    );
+    expect(block).toContain("Key [redacted]");
+    expect(block).toContain("assignee: bot [redacted]");
+    expect(block).not.toContain("tok&lt;");
+    expect(block).not.toContain("secret-zzzz");
+  });
 });
 
 it("does not query tickets for an out-of-range reference in a message", async () => {

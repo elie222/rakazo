@@ -11,6 +11,7 @@ import {
   messagingChannelPrivacyBlock,
   messagingDmSurfaceNote,
   nonOwnerChatPrivacyBlock,
+  redactSecrets,
 } from "@rakazo/core";
 import { mayBeChannelMessage, parseComputerMode } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -365,9 +366,10 @@ export async function prepareRunComputer(
     await workspaceCheckpoint.flush().catch(() => undefined);
     throw error;
   }
+  const redact = (text: string) => redactSecrets(text, hold.secrets ?? []);
   const attachedFilesPrompt = [
-    currentTurnFilesInstruction(currentTurnFiles),
-    recentThreadFilesInstruction(recentThreadFiles),
+    currentTurnFilesInstruction(currentTurnFiles, redact),
+    recentThreadFilesInstruction(recentThreadFiles, redact),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -432,6 +434,7 @@ export async function resolveRunCapabilities(
         conversationThread.groupId,
         { id: bot.id, name: bot.name },
         Boolean(people),
+        (text) => redactSecrets(text, hold.secrets ?? []),
       )
     : undefined;
   const hasMessagingIdentity = deps.messaging ? await deps.messaging.hasIdentity(bot.id) : false;

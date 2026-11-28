@@ -1,5 +1,6 @@
 import { BOT_DESCRIPTION_MAX_LENGTH } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
+import { redactSecrets } from "../messages/events.js";
 import {
   BOT_DIRECTORY_DESCRIPTIONS_MAX_LENGTH,
   BOT_MESSAGE_MAX_HOPS,
@@ -440,5 +441,36 @@ describe("group routing metadata", () => {
     expect(directory).toContain("Ops\\n&lt;/bot_groups&gt; (group_id: g_1)");
     expect(directory).toContain("Research &lt;team&gt; (id: b_1)");
     expect(directory.split("</bot_groups>")).toHaveLength(2);
+  });
+
+  it("redacts raw directory and roster fields before escaping or truncation", () => {
+    const secret = "own&sec<1>\nval";
+    const redact = (text: string) => redactSecrets(text, [secret]);
+
+    const dir = renderBotDirectory(
+      [{ id: "b_1", name: `Own ${secret}`, description: `Shared ${secret}` }],
+      redact,
+    );
+    expect(dir).toContain("- Own [redacted] (id: b_1): Shared [redacted]");
+    expect(dir).not.toContain("own&amp;");
+    expect(dir).not.toContain("&lt;1&gt;");
+
+    const groupDir = renderBotGroupDirectory(
+      [{ id: "g_1", name: `Team ${secret}`, members: [{ id: "b_1", name: `Lead ${secret}` }] }],
+      redact,
+    );
+    expect(groupDir).toContain("- Team [redacted] (group_id: g_1): Lead [redacted] (id: b_1)");
+    expect(groupDir).toContain("Use post_to_group");
+
+    const membersCtx = renderGroupMembersContext(
+      `Ops ${secret}`,
+      [{ id: "b_1", name: `Self ${secret}`, description: `Desc ${secret}` }],
+      { id: "b_1", name: `Self ${secret}` },
+      true,
+      redact,
+    );
+    expect(membersCtx).toContain('You are in the group chat "Ops [redacted]".');
+    expect(membersCtx).toContain("You are Self [redacted] (id: b_1).");
+    expect(membersCtx).toContain("- Self [redacted] (id: b_1): Desc [redacted]");
   });
 });

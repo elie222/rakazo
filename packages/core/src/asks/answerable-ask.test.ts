@@ -111,6 +111,19 @@ describe("resolveAskChoice", () => {
   it("leaves unmatched free-text as a custom answer", () => {
     expect(resolveAskChoice("Toronto", actions)).toBeUndefined();
   });
+
+  it("ignores non-array or malformed action entries", () => {
+    expect(
+      resolveAskChoice("choice-2", "not-an-array" as unknown as typeof actions),
+    ).toBeUndefined();
+    expect(
+      resolveAskChoice("choice-2", [
+        null,
+        { id: 123, label: "Bad" },
+        { id: "choice-2", label: "Seoul" },
+      ] as unknown as typeof actions),
+    ).toEqual({ id: "choice-2", label: "Seoul" });
+  });
 });
 
 describe("dismissableAskMessageIds", () => {

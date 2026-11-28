@@ -203,3 +203,157 @@ describe("remembering in another private memory document", () => {
     );
   });
 });
+
+describe("memory tool secret redaction", () => {
+  it("redacts padded credentials before trimming or stamping on remember and save_memory", async () => {
+    const paddedSecret = "  mem&sec<4>val  ";
+    const commit = vi.fn(async (input: { path: string; content: string }) => ({
+      path: input.path,
+      revision: 1,
+    }));
+    const save = vi.fn(async (input: { content: string }) => ({
+      ok: true,
+      content: input.content,
+    }));
+    const ctx = {
+      runId: "run-1",
+      run: { userId: "user-1" },
+      bot: { id: "bot-1" },
+      thread: { id: "thread-1" },
+      context: { spaceId: "space-1" },
+      secrets: [paddedSecret],
+      memory: {
+        scope: { kind: "bot", botId: "bot-1" },
+        semantic: { save },
+      },
+      deps: {
+        now: () => new Date("2026-03-05T23:30:00Z"),
+        prisma: { user: { findUnique: async () => ({ timezone: "Pacific/Auckland" }) } },
+        memory: {
+          read: vi.fn(async () => ({ documents: [] })),
+          commit,
+        },
+      },
+    };
+
+    await memoryTools.remember!(
+      ctx as never,
+      {
+        args: {
+          operations: [
+            { action: "add", content: paddedSecret },
+            { action: "add", content: `wait=${paddedSecret}`, until: `after ${paddedSecret}` },
+          ],
+        },
+        finish: (v: unknown) => v,
+      } as never,
+    );
+    expect(commit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: "bot",
+        content:
+          "[redacted] (saved 2026-03-06)\nwait=[redacted] (saved 2026-03-06, ends when after [redacted])\n",
+      }),
+      expect.anything(),
+    );
+
+    await memoryTools.remember!(
+      ctx as never,
+      {
+        args: {
+          shared: true,
+          operations: [{ action: "add", content: `key=${paddedSecret}` }],
+        },
+        finish: (v: unknown) => v,
+      } as never,
+    );
+    expect(commit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: "user",
+        path: "MEMORY.md",
+        content: "key=[redacted] (saved 2026-03-06)\n",
+      }),
+      expect.anything(),
+    );
+
+    await memoryTools.save_memory!(
+      ctx as never,
+      { args: { content: `fact=${paddedSecret}` }, finish: (v: unknown) => v } as never,
+    );
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({ content: "fact=[redacted]" }),
+      expect.anything(),
+    );
+
+    const blankCommit = vi.fn(async (input: { path: string; content: string }) => ({
+      path: input.path,
+      revision: 2,
+    }));
+    const blankCtx = {
+      ...ctx,
+      secrets: ["  "],
+      deps: {
+        ...ctx.deps,
+        memory: {
+          read: vi.fn(async () => ({
+            documents: [{ path: "MEMORY.md", content: "keep\nremove-me\n", revision: 1 }],
+          })),
+          commit: blankCommit,
+        },
+      },
+    };
+    await expect(
+      memoryTools.remember!(
+        blankCtx as never,
+        {
+          args: { operations: [{ action: "replace", old_text: "remove-me", content: "  " }] },
+          finish: (v: unknown) => v,
+        } as never,
+      ),
+    ).resolves.toMatchObject({ error: expect.stringContaining("replace needs content") });
+    expect(blankCommit).not.toHaveBeenCalled();
+
+    await expect(
+      memoryTools.remember!(
+        blankCtx as never,
+        {
+          args: { operations: [{ action: "remove", old_text: "remove-me", content: "  " }] },
+          finish: (v: unknown) => v,
+        } as never,
+      ),
+    ).resolves.toEqual({ ok: true });
+    expect(blankCommit).toHaveBeenCalledWith(
+      expect.objectContaining({ content: "keep\n" }),
+      expect.anything(),
+    );
+
+    const datedCommit = vi.fn();
+    const datedCtx = {
+      ...ctx,
+      secrets: ["2026-03-19"],
+      deps: {
+        ...ctx.deps,
+        memory: {
+          read: vi.fn(async () => ({
+            documents: [{ path: "MEMORY.md", content: "", revision: 1 }],
+          })),
+          commit: datedCommit,
+        },
+      },
+    };
+    await expect(
+      memoryTools.remember!(
+        datedCtx as never,
+        {
+          args: {
+            operations: [{ action: "add", content: "Pause alerts", until: "until ( 2026-03-19 )" }],
+          },
+          finish: (v: unknown) => v,
+        } as never,
+      ),
+    ).resolves.toMatchObject({
+      error: expect.stringContaining("end date matched a protected value"),
+    });
+    expect(datedCommit).not.toHaveBeenCalled();
+  });
+});

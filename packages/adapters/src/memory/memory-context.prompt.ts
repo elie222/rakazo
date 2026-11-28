@@ -35,6 +35,7 @@ function memoryUsage(used: number) {
 export function buildAgentMemoryPrompt(
   input: readonly MemoryPromptDocument[],
   maxBytes = AGENT_MEMORY_MAX_BYTES,
+  redact?: (text: string) => string,
 ): { text?: string; plan: MemoryPromptBudget } {
   const plan: MemoryPromptBudget = {
     limitBytes: maxBytes,
@@ -50,7 +51,7 @@ export function buildAgentMemoryPrompt(
   if (maxBytes <= fixedBytes) {
     const text = truncateUtf8(`${PREAMBLE}${CLOSING}`, maxBytes);
     plan.usedBytes = byteLength(text);
-    plan.omitted = documents.map((document) => leaveOut(document));
+    plan.omitted = documents.map((document) => leaveOut(document, redact));
     return { text, plan };
   }
 
@@ -59,23 +60,26 @@ export function buildAgentMemoryPrompt(
   let ranOut = false;
   for (const document of documents) {
     if (ranOut) {
-      plan.omitted.push(leaveOut(document));
+      plan.omitted.push(leaveOut(document, redact));
       continue;
     }
     const usage =
       document.path === MEMORY_INDEX_PATH ? memoryUsage(byteLength(document.content)) : "";
-    const heading = `${sections.length === 0 ? "" : "\n\n"}## ${SCOPE_LABELS[document.scope]}: ${escapePromptData(document.path)} (revision ${document.revision}${usage})\n`;
+    // Redact raw text before delimiter escaping so secrets containing &, < or > still match.
+    const safePath = redact ? redact(document.path) : document.path;
+    const heading = `${sections.length === 0 ? "" : "\n\n"}## ${SCOPE_LABELS[document.scope]}: ${escapePromptData(safePath)} (revision ${document.revision}${usage})\n`;
     const headingBytes = byteLength(heading);
     if (headingBytes > remainingBytes) {
       ranOut = true;
-      plan.omitted.push(leaveOut(document));
+      plan.omitted.push(leaveOut(document, redact));
       continue;
     }
     sections.push(heading);
     remainingBytes -= headingBytes;
 
     // Memory is data inside the block: a closing tag in it must not end the block.
-    const escaped = escapePromptData(document.content);
+    const safeContent = redact ? redact(document.content) : document.content;
+    const escaped = escapePromptData(safeContent);
     const content = truncateUtf8(
       escaped,
       remainingBytes,
@@ -101,12 +105,16 @@ export function buildAgentMemoryPrompt(
   return { text, plan };
 }
 
-function leaveOut(document: MemoryPromptDocument): MemoryPromptDocumentUse {
+function leaveOut(
+  document: MemoryPromptDocument,
+  redact?: (text: string) => string,
+): MemoryPromptDocumentUse {
+  const safeContent = redact ? redact(document.content) : document.content;
   return {
     scope: document.scope,
     path: document.path,
     revision: document.revision,
-    totalBytes: byteLength(escapePromptData(document.content)),
+    totalBytes: byteLength(escapePromptData(safeContent)),
     includedBytes: 0,
     truncated: false,
   };

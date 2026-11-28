@@ -244,6 +244,7 @@ export async function loadGroupContext(
   groupId: string,
   self: { id: string; name: string },
   sharedSpace = false,
+  redact?: (text: string) => string,
 ): Promise<string | undefined> {
   const group = await prisma.chatGroup.findUnique({
     where: { id: groupId },
@@ -263,6 +264,7 @@ export async function loadGroupContext(
     group.members.map((member) => member.bot),
     self,
     sharedSpace,
+    redact,
   );
 }
 
@@ -270,6 +272,7 @@ export async function loadGroupContext(
 export async function loadBotGroupDirectory(
   prisma: PrismaClient,
   actor: { botId: string; spaceId: string },
+  redact?: (text: string) => string,
 ): Promise<string | undefined> {
   const groups = await prisma.chatGroup.findMany({
     where: {
@@ -296,5 +299,6 @@ export async function loadBotGroupDirectory(
       name: group.name,
       members: group.members.map((member) => member.bot),
     })),
+    redact,
   );
 }

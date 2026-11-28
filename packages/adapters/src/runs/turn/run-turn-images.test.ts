@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { blocksToAgentHistoryText, redactSecrets } from "@rakazo/core";
 import sharp from "sharp";
 import { expect, it, vi } from "vitest";
 import {
@@ -8,6 +9,7 @@ import {
 } from "../../media/tool-result-image.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 import {
+  claimRunSteering,
   loadCurrentTurnImages,
   withLatestStepScreenshot,
   withRecentTurnImages,
@@ -223,4 +225,80 @@ it("drops an oversized unreadable image on the current turn and marks it unavail
   );
   expect(hydrated[0]?.images).toBeUndefined();
   expect(hydrated[0]?.content).toBe("[image: corrupt.png (unavailable)]");
+});
+
+it("redacts quoted reply context, steering text, and attachment display names while keeping tool paths", async () => {
+  const secret = "steer&sec<7>val";
+  const deps = {
+    prisma: {
+      artifact: {
+        findMany: vi.fn(async () => [
+          {
+            id: "art-steer-1",
+            name: `${secret}-schedule.txt`,
+            mimeType: "text/plain",
+            size: 42,
+            storageKey: "stored-steer-1",
+          },
+        ]),
+      },
+      message: {
+        findFirst: vi.fn(async () => ({
+          id: "m-steer",
+          threadId: "thread-1",
+          replyQuote: `quoted ${secret}`,
+          replyTo: {
+            id: "m-prev",
+            threadId: "thread-1",
+            role: "bot",
+            botId: "bot-1",
+            blocks: [{ kind: "text", text: `target ${secret}` }],
+          },
+        })),
+      },
+    },
+    artifacts: { get: vi.fn() },
+    events: {
+      claimSteering: vi.fn(async () => {
+        const blocks: MessageBlock[] = [
+          { kind: "text", text: `follow up ${secret}` },
+          {
+            kind: "file",
+            artifactId: "art-steer-1",
+            name: `${secret}-schedule.txt`,
+            mimeType: "text/plain",
+            size: 42,
+          },
+        ];
+        return [
+          {
+            id: "s-1",
+            messageId: "m-steer",
+            origin: "user" as const,
+            text: blocksToAgentHistoryText(blocks),
+            blocks,
+          },
+        ];
+      }),
+    },
+  } as unknown as ExecutorDeps;
+
+  const claimed = await claimRunSteering(
+    deps,
+    { threadId: "thread-1", botId: "bot-1", runId: "run-1", leaseOwner: "w", leaseFence: 1 },
+    [],
+    imageContext,
+    [],
+    { hasImages: false, redact: (text) => redactSecrets(text, [secret]) },
+  );
+  expect(claimed).toHaveLength(1);
+  expect(claimed[0]?.text).toContain("quoted [redacted]");
+  expect(claimed[0]?.text).toContain("follow up [redacted]");
+  expect(claimed[0]?.text).toContain('"[redacted]-schedule.txt"');
+  expect(claimed[0]?.text).toContain('"attachments/art-steer-1.txt"');
+  expect(claimed[0]?.text).not.toContain(secret);
+  expect(claimed[0]?.text).not.toContain("steer&amp;sec");
+  expect(claimed[0]?.historyText).toContain("follow up [redacted]");
+  expect(claimed[0]?.historyText).toContain("[file: [redacted]-schedule.txt");
+  expect(claimed[0]?.historyText).not.toContain(secret);
 });

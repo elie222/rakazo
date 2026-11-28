@@ -1,4 +1,4 @@
-import { botMessageAllowsSilence, userTurnMessageForRun } from "@rakazo/core";
+import { botMessageAllowsSilence, redactSecrets, userTurnMessageForRun } from "@rakazo/core";
 import { isPartialReplyClientNonce, storedMessageBlocks } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { loadAgentMemoryContext } from "../../memory/memory-context.js";
@@ -24,6 +24,7 @@ import { mapTurnTranscript } from "../../runtime/pi/pi-runtime-transcript.js";
 import { loadAgentTicketContext } from "../../tasks/ticket-context.js";
 import type { RunHold } from "../lifecycle/run-attempt.js";
 import { loadCurrentTurnImages } from "../turn/run-turn-images.js";
+import { keptTurnTranscript } from "../turn/tool-step-calls.js";
 import {
   messageToAgentHistorySegments,
   messageToAgentHistoryText,
@@ -37,13 +38,16 @@ export async function readThreadHistory(hold: RunHold, parts: { records: RunReco
   const { deps, run } = hold;
   const { bot, historyReach, messages, nonOwnerChatRun, replaysToolHistory, thread } =
     parts.records;
+  const secrets = hold.secrets ?? [];
   // Group threads and spaces several people share: who wrote each message, so the model can
   // tell the bots and the people apart. A personal space's direct chat stays plain turns.
+  const redact = (value: string) => redactSecrets(value, secrets);
   const people = await loadSpacePeople(
     deps.prisma,
     thread.space?._count.memberships ?? 0,
     run.userId,
     messages,
+    redact,
   );
   const speakers = await loadThreadSpeakers(
     deps.prisma,
@@ -51,6 +55,7 @@ export async function readThreadHistory(hold: RunHold, parts: { records: RunReco
     { spaceId: run.spaceId, bot },
     messages,
     people,
+    redact,
   );
   const threadContext = threadContextForRun(
     run.trigger,
@@ -59,13 +64,13 @@ export async function readThreadHistory(hold: RunHold, parts: { records: RunReco
         const speaker = historySpeaker(speakers, m);
         // In a group, turns from several speakers are joined, so no line may pose as a label.
         const neutral = (value: string) => (speakers ? neutralizeSpeakerLabels(value) : value);
-        const text = neutral(messageToAgentHistoryText(m));
+        const text = neutral(messageToAgentHistoryText(m, redact));
         const partial = isPartialReplyClientNonce(m.clientNonce);
         // Runs for someone other than the owner replay replies as everyone saw them.
         const segments =
           m.role === "user" || m.role === "system" || speaker || !replaysToolHistory
             ? undefined
-            : messageToAgentHistorySegments(m)?.map((segment) =>
+            : messageToAgentHistorySegments(m, redact)?.map((segment) =>
                 "text" in segment
                   ? { text: neutral(segment.text) }
                   : {
@@ -88,12 +93,14 @@ export async function readThreadHistory(hold: RunHold, parts: { records: RunReco
           m.role === "bot" && !speaker && replaysToolHistory && !partial
             ? messageTranscript(m)
             : undefined;
+        const redactedStored =
+          stored && secrets.length > 0 ? keptTurnTranscript(stored, secrets) : stored;
         const transcript =
-          stored && speakers
-            ? mapTurnTranscript(stored, (value, kind) =>
+          redactedStored && speakers
+            ? mapTurnTranscript(redactedStored, (value, kind) =>
                 kind === "result" || kind === "reply" ? neutral(value) : value,
               )
-            : stored;
+            : redactedStored;
         return {
           id: m.id,
           createdAt: m.createdAt?.toISOString(),
@@ -245,6 +252,7 @@ export async function loadTurnContext(
           context,
         )
       : Promise.resolve(null);
+  const redact = (text: string) => redactSecrets(text, hold.secrets ?? []);
   const [discovered, currentTurnImages, memoryContext, scratchpadContext, ticketContext, recalled] =
     await Promise.all([
       discoveredPromise,
@@ -253,19 +261,30 @@ export async function loadTurnContext(
         ? Promise.resolve("")
         : loadAgentMemoryContext(deps.memory, bot.id, context, {
             today: latestEndedDate(deps.now?.() ?? new Date()),
+            redact,
           }),
       savedContextHidden
         ? Promise.resolve("")
-        : loadAgentScratchpadContext(deps, {
-            spaceId: run.spaceId,
-            botId: bot.id,
-          }),
+        : loadAgentScratchpadContext(
+            deps,
+            {
+              spaceId: run.spaceId,
+              botId: bot.id,
+            },
+            undefined,
+            redact,
+          ),
       savedContextHidden || !ticketBoardEnabled
         ? Promise.resolve(undefined)
-        : loadAgentTicketContext(deps, {
-            spaceId: run.spaceId,
-            text: task.prompt,
-          }),
+        : loadAgentTicketContext(
+            deps,
+            {
+              spaceId: run.spaceId,
+              text: task.prompt,
+            },
+            undefined,
+            redact,
+          ),
       recallPromise,
     ]);
   const semanticMemoryEnabled = Boolean(semanticMemory) && !savedContextHidden;
@@ -277,7 +296,17 @@ export async function loadTurnContext(
       recallSucceeded = stored.length > 0;
       // Provider extraction and recall return derived knowledge, even when the original
       // conversation was this bot's own. Storage cannot promote it to owner authority.
-      recalledMemory = stored.length ? formatRecalledMemory(stored) : "";
+      recalledMemory = stored.length
+        ? formatRecalledMemory(
+            stored.map((item) => ({
+              ...item,
+              memory: redact(item.memory),
+              ...(item.provenance ? { provenance: redact(item.provenance) } : {}),
+              ...(item.id ? { id: redact(item.id) } : {}),
+              ...(item.entity ? { entity: redact(item.entity) } : {}),
+            })),
+          )
+        : "";
     } else {
       reportRecallFailure(recalled);
     }

@@ -6,6 +6,7 @@ export async function loadSharedSpaceNote(
   prisma: Pick<PrismaClient, "spaceMember">,
   spaceId: string,
   requesterUserId: string,
+  redact?: (text: string) => string,
 ): Promise<string | undefined> {
   const members = await prisma.spaceMember.findMany({
     where: { spaceId },
@@ -14,9 +15,10 @@ export async function loadSharedSpaceNote(
   });
   if (members.length < 2) return undefined;
   const requester = members.find((member) => member.userId === requesterUserId);
+  const safeName = (name: string) => personSpeakerName(redact ? redact(name) : name);
   // The same names the history labels use, so the model can match them.
   return formatSharedSpaceNote(
-    members.map((member) => personSpeakerName(member.member.user.name)),
-    requester && personSpeakerName(requester.member.user.name),
+    members.map((member) => safeName(member.member.user.name)),
+    requester && safeName(requester.member.user.name),
   );
 }

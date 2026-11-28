@@ -92,6 +92,8 @@ export * from "./messages/message-text.js";
 export * from "./messages/message-visibility.js";
 export * from "./messages/page-links.js";
 export * from "./messages/remote-images.js";
+export type { SecretMatcher } from "./messages/secret-matcher.js";
+export { createSecretMatcher } from "./messages/secret-matcher.js";
 export * from "./messages/text-safety.js";
 export * from "./messages/time-separators.js";
 export * from "./messages/unread-divider.js";

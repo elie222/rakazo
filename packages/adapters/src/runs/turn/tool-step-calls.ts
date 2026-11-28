@@ -1,11 +1,20 @@
 import type { AgentRunRequest, AgentToolCompletion } from "@rakazo/adapter-kit";
 import type { ToolStepCall } from "@rakazo/contracts";
 import { storedImageMimeType } from "@rakazo/contracts";
-import { redactSecrets } from "@rakazo/core";
+import {
+  createSecretMatcher,
+  escapePromptData,
+  redactJsonStringsAndPlainText,
+  redactSecrets,
+  sliceWellFormed,
+} from "@rakazo/core";
 import { isForeignKeyViolation } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { redactToolArgsForReview } from "../../approvals/auto-review.js";
-import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
+import {
+  connectorErrorMessage,
+  sanitizeConnectorError,
+} from "../../integrations/connector-safety.js";
 import { PICTURE_READING_TOOLS } from "../../media/tool-result-image.js";
 import { READ_MEETING_TRANSCRIPT } from "../../meetings/meeting-chat.tool-definition.js";
 import { sanitizeSensitiveText } from "../../runtime/pi/pi-runtime-errors.js";
@@ -15,6 +24,10 @@ import {
 } from "../../runtime/pi/pi-runtime-transcript.js";
 import { storeStepScreenshot } from "../../storage/thread-artifacts.js";
 import type { ReplyState, RunContext } from "../assembly/run-context.js";
+import {
+  redactComposioApiKeyAssignments,
+  redactCredentialJsonFields,
+} from "./secret-assignment-text.js";
 import { toolCompletionOutcome } from "./tool-completion-audit.js";
 
 /**
@@ -32,37 +45,178 @@ const ARGUMENT_DEPTH_MAX = 8;
 /** Stands in for an image a call returned; replay says what the bot wrote after seeing it. */
 export const IMAGE_NOT_KEPT = "[image not kept]";
 
-/**
- * Text bounded to `max` characters, keeping its start and end (where a command's output usually
- * ends with what matters) and saying how much was left out, so it never reads as unfinished.
- * Secrets are redacted in each kept part, with a margin so one cut at the edge is still caught.
- */
-/** A JSON field whose name says it holds a credential, with its string value. */
-const CREDENTIAL_FIELD =
-  /("[\w-]*(?:api[_-]?key|token|password|passwd|secret|authorization|credential)[\w-]*"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
-
-function cleanToolText(text: string, secrets: string[]): string {
-  return sanitizeSensitiveText(redactSecrets(text, secrets)).replace(
-    CREDENTIAL_FIELD,
-    '$1"[redacted]"',
-  );
-}
-
 const notKept = (chars: number) => `\n… [${chars} characters not kept] …\n`;
+const OMISSION_MARKER_PREFIX = "\n… [";
+const OMISSION_MARKER_SUFFIX = " characters not kept] …\n";
+/** A saved count fits in this many digits; a longer run is not the omission marker. */
+const OMISSION_MARKER_MAX_DIGITS = 16;
+
+/**
+ * End index of an omission marker starting at `index`, or -1. The check is a fixed prefix, a
+ * bounded digit run, and a fixed suffix, so it stays linear.
+ */
+function omissionMarkerEnd(text: string, index: number): number {
+  if (!text.startsWith(OMISSION_MARKER_PREFIX, index)) return -1;
+  let pos = index + OMISSION_MARKER_PREFIX.length;
+  const digitStart = pos;
+  const digitLimit = Math.min(text.length, pos + OMISSION_MARKER_MAX_DIGITS);
+  while (pos < digitLimit) {
+    const code = text.charCodeAt(pos);
+    if (code < 48 || code > 57) break;
+    pos += 1;
+  }
+  if (pos === digitStart || !text.startsWith(OMISSION_MARKER_SUFFIX, pos)) return -1;
+  return pos + OMISSION_MARKER_SUFFIX.length;
+}
 
 /** The largest a saved result gets: its kept text and the note of what was left out. */
 export const TOOL_CALL_SAVED_TEXT_MAX_CHARS =
   TOOL_CALL_TEXT_MAX_CHARS + notKept(Number.MAX_SAFE_INTEGER).length;
 
-export function bounded(text: string, max: number, secrets: string[] = []): string {
-  const clean = (part: string) => cleanToolText(part, secrets);
-  if (text.length <= max) return clean(text);
-  const margin = 200;
+/** Assignment scan, then the shared text sanitizer. Used on decoded JSON strings and plain gaps. */
+function redactDecodedToolText(value: string, options?: { decoded?: boolean }): string {
+  return sanitizeSensitiveText(value, options);
+}
+
+function redactToolSecrets(text: string, secrets: string[]): string {
+  if (secrets.length === 0) return text;
+  const secretForms = secrets.flatMap((value) => {
+    if (!value) return [];
+    const encoded = JSON.stringify(value).slice(1, -1);
+    return [value, encoded, encoded.replaceAll("<", "\\u003c").replaceAll(">", "\\u003e")];
+  });
+  return redactJsonStringsAndPlainText(
+    text,
+    (value) => redactSecrets(value, secrets),
+    (value) => redactSecrets(value, secretForms),
+    secrets,
+  );
+}
+
+function cleanToolText(text: string, secrets: string[], honorOmissionMarker = false): string {
+  // Exact secrets first. A later pattern must not change the text a registered secret matches.
+  const withSecrets = redactToolSecrets(text, secrets);
+  const assigned = redactCredentialJsonFields(
+    redactComposioApiKeyAssignments(withSecrets),
+    honorOmissionMarker,
+  );
+  const cleaned = redactJsonStringsAndPlainText(
+    assigned,
+    (value) => redactDecodedToolText(value, { decoded: true }),
+    (value) => redactDecodedToolText(value, { decoded: true }),
+  );
+  return redactCredentialJsonFields(cleaned, honorOmissionMarker);
+}
+
+function sliceTailWellFormed(text: string, maxChars: number): string {
+  if (maxChars <= 0) return "";
+  if (text.length <= maxChars) return text;
+  let start = text.length - maxChars;
+  if (start > 0 && start < text.length) {
+    const code = text.charCodeAt(start);
+    const prev = text.charCodeAt(start - 1);
+    if (code >= 0xdc00 && code <= 0xdfff && prev >= 0xd800 && prev <= 0xdbff) {
+      start += 1;
+    }
+  }
+  return text.slice(start);
+}
+
+/** Spans of omission markers. Each character is visited once and each check is bounded. */
+function omissionSpans(text: string): Array<[number, number]> {
+  const spans: Array<[number, number]> = [];
+  let index = 0;
+  while (index < text.length) {
+    if (text[index] !== "\n") {
+      index += 1;
+      continue;
+    }
+    const end = omissionMarkerEnd(text, index);
+    if (end < 0) {
+      index += 1;
+      continue;
+    }
+    spans.push([index, end]);
+    // The trailing newline can open the next marker. It is strictly after this marker's start.
+    const shared = end - 1;
+    index = shared > index ? shared : index + 1;
+  }
+  return spans;
+}
+
+function truncateBounded(cleaned: string, max: number, preserveMarkers = false): string {
+  if (cleaned.length <= max) return cleaned;
   const headLength = Math.floor(max * 0.7);
   const tailLength = max - headLength;
-  const head = clean(text.slice(0, headLength + margin)).slice(0, headLength);
-  const tail = clean(text.slice(-(tailLength + margin))).slice(-tailLength);
-  return `${head}${notKept(text.length - max)}${tail}`;
+  if (!preserveMarkers) {
+    const head = sliceWellFormed(cleaned, headLength);
+    const tail = sliceTailWellFormed(cleaned, tailLength);
+    const omitted = cleaned.length - head.length - tail.length;
+    if (omitted <= 0) return cleaned;
+    return `${head}${notKept(omitted)}${tail}`;
+  }
+  // Replay stays within max, including the new note. A cut inside a marker moves once, against
+  // the original cut: the head pulls back to the marker start and the tail pushes forward to the
+  // marker's trailing newline. A chain of markers that share that newline cannot walk the cut
+  // forward, so the kept text shrinks and a later marker stays whole.
+  const noteRoom = notKept(Number.MAX_SAFE_INTEGER).length;
+  const budget = Math.max(0, max - noteRoom);
+  const headCut = Math.min(Math.floor(budget * 0.7), cleaned.length);
+  const tailCut = Math.max(cleaned.length - (budget - headCut), 0);
+  const spans = omissionSpans(cleaned);
+  let headEnd = headCut;
+  let tailStart = tailCut;
+  for (const [start, end] of spans) {
+    if (headCut > start && headCut < end) headEnd = start;
+    if (tailCut > start && tailCut < end) tailStart = end - 1;
+  }
+  if (tailStart < headEnd) tailStart = headEnd;
+  const head = sliceWellFormed(cleaned, headEnd);
+  let from = tailStart;
+  if (from > 0 && from < cleaned.length) {
+    const code = cleaned.charCodeAt(from);
+    const prev = cleaned.charCodeAt(from - 1);
+    if (code >= 0xdc00 && code <= 0xdfff && prev >= 0xd800 && prev <= 0xdbff) {
+      from += 1;
+      for (const [start, end] of spans) {
+        if (from > start && from < end) {
+          from = end - 1;
+          break;
+        }
+      }
+    }
+  }
+  if (from < head.length) from = head.length;
+  const tail = cleaned.slice(from);
+  const omitted = cleaned.length - head.length - tail.length;
+  if (omitted <= 0) {
+    let end = Math.min(max, cleaned.length);
+    for (const [start, markerEnd] of spans) {
+      if (end > start && end < markerEnd) end = start;
+    }
+    return sliceWellFormed(cleaned, end);
+  }
+  return `${head}${notKept(omitted)}${tail}`;
+}
+
+/**
+ * Text bounded to `max` characters, keeping its start and end (where a command's output usually
+ * ends with what matters) and saying how much was left out, so it never reads as unfinished.
+ * Secrets are redacted before slicing, so a value cut at the edge is still caught.
+ * `replaySaved` is only for text already saved: it may keep a real omission marker and still
+ * redact a credential that marker split. Fresh tool output never treats that line as a cut.
+ */
+export function bounded(
+  text: string,
+  max: number,
+  secrets: string[] = [],
+  options?: { replaySaved?: boolean },
+): string {
+  return truncateBounded(
+    cleanToolText(text, secrets, options?.replaySaved === true),
+    max,
+    options?.replaySaved === true,
+  );
 }
 
 function keptArgument(value: unknown, depth: number, secrets: string[]): unknown {
@@ -108,8 +262,12 @@ export function keptToolResult(
   )
     return undefined;
   let text: string;
-  if (completion.error !== undefined) text = sanitizeConnectorError(completion.error, secrets);
-  else {
+  if (completion.error !== undefined) {
+    const preCleaned = cleanToolText(connectorErrorMessage(completion.error), secrets);
+    text = sanitizeConnectorError(preCleaned, secrets, {
+      maxChars: Number.POSITIVE_INFINITY,
+    });
+  } else {
     const content = (completion.result as { content?: unknown } | undefined)?.content;
     if (!Array.isArray(content)) return undefined;
     text = content
@@ -123,8 +281,10 @@ export function keptToolResult(
       .filter(Boolean)
       .join("\n");
   }
-  const whole = text.trim();
-  return whole ? bounded(whole, max, secrets) : undefined;
+  if (!text.trim()) return undefined;
+  const cleaned = cleanToolText(text, secrets).trim();
+  const limit = completion.error !== undefined ? Math.min(max, 2_000) : max;
+  return cleaned ? truncateBounded(cleaned, limit) : undefined;
 }
 
 /**
@@ -156,6 +316,124 @@ export function runReplaysToolHistory(
   }
 }
 
+const REPLY_TARGET_TAGS = [
+  { open: "<reply_target>", close: "</reply_target>" },
+  { open: "<reaction_target>", close: "</reaction_target>" },
+] as const;
+
+function overlapsSortedRange(
+  ranges: ReadonlyArray<readonly [number, number]>,
+  start: number,
+  end: number,
+): boolean {
+  let lo = 0;
+  let hi = ranges.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1;
+    const [rStart, rEnd] = ranges[mid]!;
+    if (rEnd <= start) lo = mid + 1;
+    else if (rStart >= end) hi = mid - 1;
+    else return true;
+  }
+  return false;
+}
+
+/**
+ * Redact known secrets in a stored turn's prompt, decoding JSON strings inside `<reply_target>` /
+ * `<reaction_target>` blocks while preserving their `\u003c`/`\u003e` framing, and matching
+ * XML-escaped secrets in recalled memory or framed prompt sections.
+ */
+function redactStoredPrompt(text: string, secrets: string[]): string {
+  if (secrets.length === 0 || !text) return text;
+  const promptForms = secrets.flatMap((value) => {
+    if (!value) return [];
+    const xmlEscaped = escapePromptData(value);
+    return xmlEscaped === value ? [value] : [value, xmlEscaped];
+  });
+  if (promptForms.length === 0) return text;
+  const quoteSecretForms = secrets.flatMap((value) => {
+    if (!value) return [];
+    const encoded = JSON.stringify(value).slice(1, -1);
+    const xmlEscaped = escapePromptData(value);
+    return [
+      value,
+      xmlEscaped,
+      encoded,
+      encoded.replaceAll("<", "\\u003c").replaceAll(">", "\\u003e"),
+    ];
+  });
+  const wholeMatches = createSecretMatcher(promptForms).ranges(text);
+  const redactOutside = (chunk: string) => redactSecrets(chunk, promptForms);
+  const redactQuoteBody = (body: string) => {
+    const cleaned = redactJsonStringsAndPlainText(
+      body,
+      (value) => redactSecrets(value, promptForms),
+      (value) => redactSecrets(value, quoteSecretForms),
+      promptForms,
+    );
+    return cleaned === body ? body : cleaned.replaceAll("<", "\\u003c").replaceAll(">", "\\u003e");
+  };
+  let out = "";
+  let emitCursor = 0;
+  let scanPos = 0;
+  const exhausted = [false, false];
+  const cachedOpen = [-1, -1];
+  const cachedClose = [-1, -1];
+  while (scanPos < text.length) {
+    let nextIndex = -1;
+    let nextTagIndex = -1;
+    for (let i = 0; i < REPLY_TARGET_TAGS.length; i += 1) {
+      if (exhausted[i]) continue;
+      if (cachedOpen[i]! < scanPos) {
+        cachedOpen[i] = text.indexOf(REPLY_TARGET_TAGS[i]!.open, scanPos);
+      }
+      const at = cachedOpen[i]!;
+      if (at === -1) {
+        exhausted[i] = true;
+        continue;
+      }
+      if (nextIndex === -1 || at < nextIndex) {
+        nextIndex = at;
+        nextTagIndex = i;
+      }
+    }
+    if (nextIndex === -1 || nextTagIndex === -1) break;
+    const tag = REPLY_TARGET_TAGS[nextTagIndex]!;
+    const bodyStart = nextIndex + tag.open.length;
+    if (cachedClose[nextTagIndex]! < bodyStart) {
+      cachedClose[nextTagIndex] = text.indexOf(tag.close, bodyStart);
+    }
+    const closeIndex = cachedClose[nextTagIndex]!;
+    if (closeIndex === -1) {
+      exhausted[nextTagIndex] = true;
+      scanPos = bodyStart;
+      continue;
+    }
+    if (cachedOpen[nextTagIndex]! < bodyStart) {
+      cachedOpen[nextTagIndex] = text.indexOf(tag.open, bodyStart);
+    }
+    const innerOpen = cachedOpen[nextTagIndex]!;
+    if (innerOpen !== -1 && innerOpen < closeIndex) {
+      scanPos = innerOpen;
+      continue;
+    }
+    const closeEnd = closeIndex + tag.close.length;
+    if (
+      overlapsSortedRange(wholeMatches, nextIndex, bodyStart) ||
+      overlapsSortedRange(wholeMatches, closeIndex, closeEnd)
+    ) {
+      scanPos = bodyStart;
+      continue;
+    }
+    out += redactOutside(text.slice(emitCursor, nextIndex));
+    out += tag.open + redactQuoteBody(text.slice(bodyStart, closeIndex)) + tag.close;
+    emitCursor = closeEnd;
+    scanPos = closeEnd;
+  }
+  if (emitCursor < text.length) out += redactOutside(text.slice(emitCursor));
+  return out;
+}
+
 /**
  * The runtime's record of a turn as the reply keeps it: tool arguments and results cleaned as
  * kept calls are, the run's secrets redacted everywhere, and none for a turn that used a tool
@@ -167,7 +445,9 @@ export function keptTurnTranscript(transcript: string, secrets: string[]): strin
     (text, kind) =>
       kind === "arguments" || kind === "result"
         ? cleanToolText(text, secrets)
-        : redactSecrets(text, secrets),
+        : kind === "prompt"
+          ? redactStoredPrompt(text, secrets)
+          : redactSecrets(text, secrets),
     (name) => !SECRET_TOOL.test(name),
     (args) => redactToolArgsForReview(args, secrets),
   );

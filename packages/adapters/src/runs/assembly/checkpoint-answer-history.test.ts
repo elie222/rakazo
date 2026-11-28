@@ -1,5 +1,6 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
+import { redactSecrets } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import { checkpointAnswerHistory } from "./checkpoint-answer-history.js";
 import { messageToAgentHistoryText } from "./reply-context.js";
@@ -32,12 +33,17 @@ const reply = {
   blocks: [{ kind: "text", text: answer }] satisfies MessageBlock[],
 };
 type Source = Parameters<typeof checkpointAnswerHistory>[3][number];
-async function project(messages: Source[], cards = [card], labelled = false) {
+async function project(
+  messages: Source[],
+  cards = [card],
+  labelled = false,
+  redact?: (text: string) => string,
+) {
   const findMany = vi.fn(async () => cards);
   const history: AgentRunRequest["history"] = messages.map((message) => ({
     id: message.id,
     role: message.role === "bot" ? "assistant" : "user",
-    content: messageToAgentHistoryText(message),
+    content: messageToAgentHistoryText(message, redact),
   }));
   const result = await checkpointAnswerHistory(
     { message: { findMany } } as never,
@@ -45,6 +51,7 @@ async function project(messages: Source[], cards = [card], labelled = false) {
     history,
     messages,
     labelled,
+    redact,
   );
   expect(findMany).toHaveBeenCalledWith({
     where: { runId: "run", threadId: "thread", botId: "bot", role: "bot" },
@@ -139,5 +146,27 @@ describe("checkpoint answer history", () => {
       { ...reply, replyToMessageId: "card", replyQuote: answer, replyTo: card },
     ]);
     expect(result.history[0]?.content).toContain(`"quotedText":"${answer}"`);
+  });
+
+  it("redacts quoted reply context and residual history before formatting", async () => {
+    const secret = "resume&sec<9>val";
+    const result = await project(
+      [
+        {
+          ...reply,
+          replyToMessageId: "card",
+          replyQuote: `see ${secret}`,
+          replyTo: card,
+        },
+      ],
+      [card],
+      false,
+      (text) => redactSecrets(text, [secret]),
+    );
+    const steeringReply = result.answerReplyContexts.get("answer");
+    expect(steeringReply).toContain("see [redacted]");
+    expect(steeringReply).not.toContain(secret);
+    expect(result.history[0]?.content).toContain("see [redacted]");
+    expect(result.history[0]?.content).not.toContain(secret);
   });
 });

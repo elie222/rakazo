@@ -10,6 +10,13 @@ import {
 import { askOptionLetter, isQuestionAskBlock } from "../asks/ask-kind.js";
 import { sliceWellFormed } from "../primitives/utf8.js";
 import { isApprovalAskBlock, isSecretAskBlock } from "../runs/action-approval.js";
+import { redactJsonText } from "./json-redaction.js";
+
+export {
+  redactJsonStringsAndPlainText,
+  redactJsonText,
+  redactPlainBearerTokens,
+} from "./json-redaction.js";
 
 export class AttachmentValidationError extends Error {
   constructor(message: string) {
@@ -180,21 +187,29 @@ const TOOL_STEP_LABEL_MAX_CHARS = 80;
  */
 export function toolStepsHistoryText(
   steps: Extract<MessageBlock, { kind: "steps" }>["steps"],
-  { full = false }: { full?: boolean } = {},
+  { full = false, redact }: { full?: boolean; redact?: (text: string) => string } = {},
 ): string {
   // Stored blocks can come from an account import, so skip malformed entries instead of throwing.
   const valid = Array.isArray(steps) ? steps.filter((step) => typeof step?.label === "string") : [];
   if (valid.length === 0) return "";
   const shown = full ? valid : valid.slice(0, TOOL_STEP_MAX_LINES);
   const lines = shown.map((step) => {
+    // Redact raw label and note before whitespace folding, trimming or truncation so
+    // padded or long credentials still match.
+    const rawLabel = redact ? redact(step.label) : step.label;
     const name =
-      !full && step.label.length > TOOL_STEP_LABEL_MAX_CHARS
-        ? `${sliceWellFormed(step.label, TOOL_STEP_LABEL_MAX_CHARS)}…`
-        : step.label;
-    const counted = Number(step.count) > 1 ? `${name} ×${step.count}` : name;
+      !full && rawLabel.length > TOOL_STEP_LABEL_MAX_CHARS
+        ? `${sliceWellFormed(rawLabel, TOOL_STEP_LABEL_MAX_CHARS)}…`
+        : rawLabel;
+    const stepCount =
+      typeof step.count === "number" && Number.isInteger(step.count) && step.count > 0
+        ? step.count
+        : Number.NaN;
+    const counted = stepCount > 1 ? `${name} ×${stepCount}` : name;
     const outcome = toolStepOutcomeText(step);
     const label = outcome ? `${counted} (${outcome})` : counted;
-    const whole = typeof step.note === "string" ? step.note.replace(/\s+/g, " ").trim() : "";
+    const rawNote = typeof step.note === "string" ? (redact ? redact(step.note) : step.note) : "";
+    const whole = rawNote.replace(/\s+/g, " ").trim();
     const note =
       !full && whole.length > TOOL_STEP_NOTE_MAX_CHARS
         ? `${sliceWellFormed(whole, TOOL_STEP_NOTE_MAX_CHARS)}…`
@@ -212,18 +227,30 @@ const TOOL_STEP_OUTCOMES = ["succeeded", "failed", "stopped"] as const;
 /** "succeeded" when every call ended the same way, else "2 succeeded, 1 failed". */
 export function toolStepOutcomeText(step: { count: number; outcomes?: unknown }): string {
   const outcomes = (step.outcomes ?? {}) as Partial<Record<string, unknown>>;
-  if (typeof outcomes !== "object") return "";
+  if (typeof outcomes !== "object" || outcomes === null) return "";
   const counts = TOOL_STEP_OUTCOMES.flatMap((outcome) => {
-    const count = Number(outcomes[outcome]);
-    return Number.isInteger(count) && count > 0 ? [{ outcome, count }] : [];
+    const raw = outcomes[outcome];
+    return typeof raw === "number" && Number.isInteger(raw) && raw > 0
+      ? [{ outcome, count: raw }]
+      : [];
   });
   const [only] = counts;
-  if (counts.length === 1 && only?.count === Number(step.count)) return only.outcome;
+  const stepCount =
+    typeof step.count === "number" && Number.isInteger(step.count) && step.count > 0
+      ? step.count
+      : Number.NaN;
+  if (counts.length === 1 && only?.count === stepCount) return only.outcome;
   return counts.map(({ outcome, count }) => `${count} ${outcome}`).join(", ");
 }
 
-export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
-  return blocks.map(blockHistoryText).filter(Boolean).join("\n");
+export function blocksToAgentHistoryText(
+  blocks: MessageBlock[],
+  redact?: (text: string) => string,
+): string {
+  return blocks
+    .map((block) => blockHistoryText(block, redact))
+    .filter(Boolean)
+    .join("\n");
 }
 
 /** A reply in order, with its tool steps apart from the text around them. */
@@ -233,7 +260,10 @@ export type AgentHistorySegment = { text: string } | { steps: HistoryToolStep[] 
  * The same reply as blocksToAgentHistoryText, split at its tool steps so a runtime can replay
  * them as tool calls. Text between steps is joined as blocksToAgentHistoryText joins it.
  */
-export function blocksToAgentHistorySegments(blocks: MessageBlock[]): AgentHistorySegment[] {
+export function blocksToAgentHistorySegments(
+  blocks: MessageBlock[],
+  redact?: (text: string) => string,
+): AgentHistorySegment[] {
   const segments: AgentHistorySegment[] = [];
   let text: string[] = [];
   const flush = () => {
@@ -241,46 +271,108 @@ export function blocksToAgentHistorySegments(blocks: MessageBlock[]): AgentHisto
     text = [];
   };
   for (const block of blocks) {
+    if (!block || typeof block !== "object") continue;
     if (block.kind === "steps") {
       // Stored blocks can come from an account import, so skip malformed entries.
       const steps = Array.isArray(block.steps)
-        ? (block.steps as HistoryToolStep[]).filter((step) => typeof step?.label === "string")
+        ? (block.steps as HistoryToolStep[])
+            .filter(
+              (step) => step !== null && typeof step === "object" && typeof step.label === "string",
+            )
+            .map((step) => {
+              const { calls: rawCalls, note: rawNote, count: rawCount, ...rest } = step;
+              const count =
+                typeof rawCount === "number" && Number.isInteger(rawCount) && rawCount > 0
+                  ? rawCount
+                  : 0;
+              const note =
+                typeof rawNote === "string" ? (redact ? redact(rawNote) : rawNote) : undefined;
+              const calls = Array.isArray(rawCalls)
+                ? rawCalls
+                    .filter(
+                      (call): call is NonNullable<HistoryToolStep["calls"]>[number] =>
+                        call !== null && typeof call === "object",
+                    )
+                    .map((call) => {
+                      const { arguments: rawArguments, result: rawResult, ...callRest } = call;
+                      return {
+                        ...callRest,
+                        ...(typeof rawArguments === "string"
+                          ? {
+                              arguments: redact
+                                ? redactJsonText(rawArguments, redact)
+                                : rawArguments,
+                            }
+                          : {}),
+                        ...(typeof rawResult === "string"
+                          ? { result: redact ? redactJsonText(rawResult, redact) : rawResult }
+                          : {}),
+                      };
+                    })
+                : undefined;
+              return {
+                ...rest,
+                label: redact ? redact(step.label) : step.label,
+                count,
+                ...(note !== undefined ? { note } : {}),
+                ...(calls ? { calls } : {}),
+              };
+            })
         : [];
       if (!steps.length) continue;
       flush();
       segments.push({ steps });
       continue;
     }
-    const rendered = blockHistoryText(block);
+    const rendered = blockHistoryText(block, redact);
     if (rendered) text.push(rendered);
   }
   flush();
   return segments;
 }
 
-function blockHistoryText(block: MessageBlock): string {
-  if (block.kind === "text") return block.text;
-  if (block.kind === "feedback_receipt") return JSON.stringify({ ...block, status: "submitted" });
+function safeHistoryText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return "";
+}
+
+function blockHistoryText(block: MessageBlock, redact?: (text: string) => string): string {
+  if (!block || typeof block !== "object") return "";
+  const clean = (value: unknown): string => {
+    const text = safeHistoryText(value);
+    return redact ? redact(text) : text;
+  };
+  if (block.kind === "text") {
+    return clean(block.text);
+  }
+  if (block.kind === "feedback_receipt") {
+    const raw = JSON.stringify({ ...block, status: "submitted" });
+    return redact ? redactJsonText(raw, redact) : raw;
+  }
   // The tools a reply used, and what the bot wrote before each, are kept out of its text;
   // without them a later turn cannot tell what it already did.
-  if (block.kind === "steps") return toolStepsHistoryText(block.steps);
-  if (block.kind === "chart") return `[chart: ${block.name}]`;
-  if (block.kind === "app") return `[app: ${block.server} showed ${block.tool}]`;
-  if (block.kind === "image") return `[image: ${block.name}]`;
+  if (block.kind === "steps") return toolStepsHistoryText(block.steps, { redact });
+  if (block.kind === "chart") return `[chart: ${clean(block.name)}]`;
+  if (block.kind === "app") return `[app: ${clean(block.server)} showed ${clean(block.tool)}]`;
+  if (block.kind === "image") return `[image: ${clean(block.name)}]`;
   // The id lets a later turn, or another chat, update this page instead of making a new one.
   if (block.kind === "page") {
-    return `[page: ${block.title} (pageId ${block.pageId}, version ${block.version})]`;
+    return `[page: ${clean(block.title)} (pageId ${safeHistoryText(block.pageId)}, version ${safeHistoryText(block.version)})]`;
   }
   if (block.kind === "file") {
-    return `[file: ${block.name} (${block.mimeType}, ${block.size} bytes)]`;
+    return `[file: ${clean(block.name)} (${safeHistoryText(block.mimeType)}, ${safeHistoryText(block.size)} bytes)]`;
   }
   // Keep attribution on peer messages: without it a later turn cannot tell
   // which lines came from another bot rather than the user.
-  if (block.kind === "bot_message_received") return `[from ${block.fromBotName}] ${block.text}`;
-  if (block.kind === "bot_message_sent") return `[to ${block.toBotName}] ${block.text}`;
-  if (block.kind === "channel_message") return `[from ${block.fromLabel}] ${block.text}`;
+  if (block.kind === "bot_message_received")
+    return `[from ${clean(block.fromBotName)}] ${clean(block.text)}`;
+  if (block.kind === "bot_message_sent")
+    return `[to ${clean(block.toBotName)}] ${clean(block.text)}`;
+  if (block.kind === "channel_message")
+    return `[from ${clean(block.fromLabel)}] ${clean(block.text)}`;
   if (block.kind === "handoff") {
-    return `[handoff ${block.fromBotId} -> ${block.toBotId}] ${block.text}`;
+    return `[handoff ${safeHistoryText(block.fromBotId)} -> ${safeHistoryText(block.toBotId)}] ${clean(block.text)}`;
   }
   // Without the answer a later turn sees the question as still open and asks it again.
   if (block.kind === "ask") {
@@ -291,46 +383,73 @@ function blockHistoryText(block: MessageBlock): string {
     // spacing) is escaped, so the bot reads the rest of its draft verbatim (an address
     // like "Ana <ana@example.test>" stays as written).
     const detail =
-      block.detail && !isApprovalAskBlock(block) && !isSecretAskBlock(block)
-        ? `\n<draft>\n${block.detail.replace(/<\s*\/\s*draft\s*>/gi, "&lt;/draft&gt;")}\n</draft>`
+      typeof block.detail === "string" &&
+      block.detail &&
+      !isApprovalAskBlock(block) &&
+      !isSecretAskBlock(block)
+        ? `\n<draft>\n${clean(block.detail).replace(/<\s*\/\s*draft\s*>/gi, "&lt;/draft&gt;")}\n</draft>`
         : "";
     // The card shows its options lettered, and a typed reply like "A and C" refers to them.
     // The import button opens a flow rather than answering, so it is not an option here. A
     // label is kept to one line so it cannot pass for the answer.
+    const validActions = Array.isArray(block.actions)
+      ? block.actions.filter(
+          (action): action is { id: string; label: string } =>
+            action !== null &&
+            typeof action === "object" &&
+            typeof action.id === "string" &&
+            typeof action.label === "string",
+        )
+      : [];
     const options = isQuestionAskBlock(block)
-      ? (block.actions ?? [])
+      ? validActions
           .filter((action) => action.id !== AGENT_IMPORT_ASK_ACTION_ID)
           .map(
-            (action, index) => `\n${askOptionLetter(index)}. ${action.label.replace(/\s+/g, " ")}`,
+            (action, index) =>
+              `\n${askOptionLetter(index)}. ${clean(action.label).replace(/\s+/g, " ")}`,
           )
       : [];
-    const question = `${block.text}${options.join("")}${detail}`;
-    if (block.status !== "answered" || !block.answer) return question;
-    const choice = block.actions?.find((action) => action.id === block.answer);
-    return `${question}\nAnswer: ${choice?.label ?? block.answer}`;
+    const question = `${clean(block.text)}${options.join("")}${detail}`;
+    const rawAnswer = safeHistoryText(block.answer);
+    if (block.status !== "answered" || !rawAnswer) return question;
+    const choice = validActions.find((action) => action.id === rawAnswer);
+    const answerText = choice ? choice.label : rawAnswer;
+    return `${question}\nAnswer: ${clean(answerText)}`;
   }
   // The bot needs the outcome of its own call: a missed call is its cue to follow up.
   if (block.kind === "call_request") {
-    const outcome = {
+    const outcomes = {
       ringing: "still ringing",
       answered: "the user answered",
       declined: "the user declined it",
       missed: "the user did not answer",
-    }[block.status];
-    return `[you called the user about: ${block.reason}; ${outcome}]${block.status === "answered" ? `\n${block.opening}` : ""}`;
+    } as const;
+    const outcome =
+      typeof block.status === "string" && Object.hasOwn(outcomes, block.status)
+        ? outcomes[block.status as keyof typeof outcomes]
+        : "";
+    return `[you called the user about: ${clean(block.reason)}; ${outcome}]${block.status === "answered" ? `\n${clean(block.opening)}` : ""}`;
   }
   // Whether the person answered a tool's question, never what was asked or sent: the question
   // is the server's own text and the answer went to the server.
   if (block.kind === "tool_question") {
-    const outcome = {
+    const outcomes = {
       pending: "waiting for the user",
       accepted: "the user answered",
       declined: "the user declined",
       expired: "the user did not answer",
-    }[block.status];
-    return `[${block.question.source} asked the user a question during a tool call; ${outcome}]`;
+    } as const;
+    const outcome =
+      typeof block.status === "string" && Object.hasOwn(outcomes, block.status)
+        ? outcomes[block.status as keyof typeof outcomes]
+        : "";
+    const source =
+      block.question && typeof block.question === "object"
+        ? clean((block.question as { source?: unknown }).source)
+        : "";
+    return `[${source} asked the user a question during a tool call; ${outcome}]`;
   }
-  if ("text" in block && typeof block.text === "string") return block.text;
+  if ("text" in block && typeof block.text === "string") return clean(block.text);
   return "";
 }
 

@@ -16,7 +16,7 @@ import type { BotSecretScope } from "./vault-access.js";
 import { VAULT_UNLOCK_CONCURRENCY, vaultFields, vaultRow } from "./vault-access.js";
 import { openVaultValue } from "./vault-values.js";
 
-export function commandRedactionForms(value: string): string[] {
+function singleCommandRedactionForms(value: string): string[] {
   const forms = [value, Buffer.from(value).toString("base64")];
   const encoded = percentEncoded(value);
   if (encoded !== undefined) forms.push(encoded);
@@ -27,12 +27,48 @@ export function commandRedactionForms(value: string): string[] {
 const MIN_REDACTED_VISIBLE_VALUE = 6;
 export const MIN_REDACTED_HIDDEN_VALUE_EVERY_RUN = MIN_REDACTED_VISIBLE_VALUE;
 
+/** Matches the persisted reply-quote cleanup in message-quote.ts (NFC + keeps single/double newlines). */
+function excerptNormalized(value: string): string {
+  return value
+    .normalize("NFC")
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/[^\S\r\n]+/gu, " ").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function normalizedVariants(value: string): string[] {
+  const nfc = value.normalize("NFC");
+  const trimmed = value.trim();
+  const nfcTrimmed = nfc.trim();
+  const excerpt = excerptNormalized(value);
+  const collapsed = trimmed.replace(/\s+/g, " ");
+  const nfcCollapsed = nfcTrimmed.replace(/\s+/g, " ");
+  return [...new Set([nfc, trimmed, nfcTrimmed, excerpt, collapsed, nfcCollapsed])].filter(
+    (variant) => variant !== value && variant.length >= MIN_REDACTED_HIDDEN_VALUE_EVERY_RUN,
+  );
+}
+
+export function commandRedactionForms(value: string): string[] {
+  return [
+    ...new Set([
+      ...singleCommandRedactionForms(value),
+      ...normalizedVariants(value).flatMap(singleCommandRedactionForms),
+    ]),
+  ];
+}
+
 export function passwordRedactionForms(password: string): string[] {
   return [
     ...new Set([
       ...commandRedactionForms(password),
       // A submitted form encodes `+` for spaces and escapes `!'()~`, unlike encodeURIComponent.
       new URLSearchParams({ v: password }).toString().slice(2),
+      ...normalizedVariants(password).map((variant) =>
+        new URLSearchParams({ v: variant }).toString().slice(2),
+      ),
     ]),
   ];
 }
@@ -66,6 +102,11 @@ export function apiKeyRedactionForms(
       Buffer.from(plaintext).toString("base64"),
       encodeURIComponent(plaintext),
       headerValue.replace(/^Basic /, ""),
+      ...normalizedVariants(plaintext).flatMap((variant) => [
+        variant,
+        Buffer.from(variant).toString("base64"),
+        encodeURIComponent(variant),
+      ]),
     ]),
   ].filter(Boolean);
 }

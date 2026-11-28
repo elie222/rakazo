@@ -14,6 +14,7 @@ export async function checkpointAnswerHistory(
   history: AgentRunRequest["history"],
   messages: readonly HistorySource[],
   labelled: boolean,
+  redact?: (text: string) => string,
 ) {
   // Read independently of the history window: a reply can outlive the card it answers.
   const cards = await prisma.message.findMany({
@@ -91,15 +92,18 @@ export async function checkpointAnswerHistory(
     };
     residuals.set(source.id, residual);
     if (removeAnswer)
-      answerReplyContexts.set(source.id, messageToAgentHistoryText({ ...residual, blocks: [] }));
+      answerReplyContexts.set(
+        source.id,
+        messageToAgentHistoryText({ ...residual, blocks: [] }, redact),
+      );
   }
   const projected = history.flatMap((entry) => {
     if (entry.id && cardIds.has(entry.id)) return [];
     const residual = entry.id ? residuals.get(entry.id) : undefined;
     if (!residual) return [entry];
     const content = labelled
-      ? neutralizeSpeakerLabels(messageToAgentHistoryText(residual))
-      : messageToAgentHistoryText(residual);
+      ? neutralizeSpeakerLabels(messageToAgentHistoryText(residual, redact))
+      : messageToAgentHistoryText(residual, redact);
     if (!content.trim() && !entry.images?.length) {
       representedMessageIds.push(residual.id);
       return [];

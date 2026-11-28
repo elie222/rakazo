@@ -75,11 +75,18 @@ export function resolveAskChoice(
   answer: string,
   actions?: readonly { id: string; label: string }[],
 ): { id: string; label: string } | undefined {
-  if (!actions?.length) return undefined;
+  if (!Array.isArray(actions) || !actions.length) return undefined;
   const trimmed = answer.trim();
   if (!trimmed) return undefined;
-  const byId = actions.find((action) => action.id === trimmed);
+  const validActions = actions.filter(
+    (action): action is { id: string; label: string } =>
+      action !== null &&
+      typeof action === "object" &&
+      typeof action.id === "string" &&
+      typeof action.label === "string",
+  );
+  const byId = validActions.find((action) => action.id === trimmed);
   if (byId) return byId;
   const lower = trimmed.toLowerCase();
-  return actions.find((action) => action.label.trim().toLowerCase() === lower);
+  return validActions.find((action) => action.label.trim().toLowerCase() === lower);
 }

@@ -9,7 +9,13 @@ import {
   MODEL_OUTPUT_LIMIT_ERROR,
   normalizeRunError,
   parseModelFallbackFailure,
+  redactJsonStringsAndPlainText,
+  redactPlainBearerTokens,
 } from "@rakazo/core";
+import {
+  redactComposioApiKeyAssignments,
+  redactCredentialJsonFields,
+} from "../../runs/turn/secret-assignment-text.js";
 import { LOCAL_PROVIDER_ID } from "./models/pi-local-provider-id.js";
 import { terminalOAuthRefreshErrorMarker } from "./models/pi-oauth.js";
 import { isOpenCodeProvider } from "./stream/pi-runtime-stream.js";
@@ -65,22 +71,448 @@ export function providerFailureText(message: unknown): string | undefined {
   return undefined;
 }
 
-export function sanitizeSensitiveText(message: string) {
-  return message
+function redactJwts(text: string): string {
+  if (!text.includes("eyJ")) return text;
+  // Scan each base64url+dot run once so repeated "eyJ" prefixes stay linear.
+  return text.replace(/[a-zA-Z0-9_.-]+/g, (run) => {
+    if (!run.includes("eyJ") || !run.includes(".")) return run;
+    const parts = run.split(".");
+    const out: string[] = [];
+    let changed = false;
+    for (let index = 0; index < parts.length; index += 1) {
+      const part = parts[index]!;
+      const jwtAt = part.indexOf("eyJ");
+      if (
+        jwtAt !== -1 &&
+        part.length > jwtAt + 3 &&
+        index + 2 < parts.length &&
+        parts[index + 1]!.length > 0 &&
+        parts[index + 2]!.length > 0
+      ) {
+        out.push(`${part.slice(0, jwtAt)}[redacted]`);
+        changed = true;
+        index += 2;
+      } else {
+        out.push(part);
+      }
+    }
+    return changed ? out.join(".") : run;
+  });
+}
+
+const CREDENTIAL_KEY_WORD = "(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)";
+const BARE_CREDENTIAL_KEY_STICKY = new RegExp(
+  `(?:composio_api_key|${CREDENTIAL_KEY_WORD})(?=[^A-Za-z0-9_-]|$)`,
+  "iy",
+);
+const PREFIXED_CREDENTIAL_KEY_STICKY = new RegExp(
+  `[\\w-]*${CREDENTIAL_KEY_WORD}(?=[^A-Za-z0-9_-]|$)`,
+  "iy",
+);
+const BEARER_FOLLOWS_STICKY = /\\*[^\s\w"']?["']?Bearer\s+\S/iy;
+const COMPOSIO_KEY_PREFIX_RE =
+  /COMPOSIO_API_KEY(?:\\(?:\\\\)*")?(?:\s*[=:]\s*|\s+)(?:\\(?:\\\\)*")?/gi;
+const SECRET_ASSIGNMENT_KEY_RE = /(?:api[_-]?key|access[_-]?token|password|secret)\s*[=:]\s*/gi;
+const AUTH_ASSIGNMENT_KEY_RE = /(?:auth|authorization)\s*[=:]\s*/gi;
+
+function isJsonEscapedSpace(text: string, index: number): boolean {
+  return (
+    text[index] === "\\" &&
+    (text[index + 1] === "n" || text[index + 1] === "r" || text[index + 1] === "t")
+  );
+}
+
+function skipSpaceOrJsonEscapedSpace(text: string, pos: number): number {
+  let cur = pos;
+  while (cur < text.length) {
+    if (/\s/.test(text[cur]!)) {
+      cur += 1;
+      continue;
+    }
+    if (isJsonEscapedSpace(text, cur)) {
+      cur += 2;
+      continue;
+    }
+    break;
+  }
+  return cur;
+}
+
+/**
+ * True when `text` at `pos` opens a valid JSON object header (`{}` or `{"key":`, handling raw or
+ * backslash-escaped quotes and whitespace/escaped newlines) in linear time.
+ */
+function startsWithJsonObjectHeader(text: string, pos: number): boolean {
+  if (text[pos] !== "{") return false;
+  let cur = skipSpaceOrJsonEscapedSpace(text, pos + 1);
+  if (text[cur] === "}") return true;
+  if (text[cur] === '"') {
+    cur += 1;
+    while (cur < text.length) {
+      const ch = text[cur]!;
+      if (ch === "\n" || ch === "\r") return false;
+      if (ch === "\\") {
+        if (cur + 1 >= text.length) return false;
+        cur += 2;
+        continue;
+      }
+      if (ch === '"') {
+        cur = skipSpaceOrJsonEscapedSpace(text, cur + 1);
+        return text[cur] === ":";
+      }
+      cur += 1;
+    }
+    return false;
+  }
+  if (text[cur] === "\\") {
+    const slashStart = cur;
+    while (cur < text.length && text[cur] === "\\") cur += 1;
+    const openSlashes = cur - slashStart;
+    if (text[cur] !== '"') return false;
+    cur += 1;
+    while (cur < text.length) {
+      const ch = text[cur]!;
+      if (ch === "\n" || ch === "\r") return false;
+      if (ch === "\\") {
+        const runStart = cur;
+        while (cur < text.length && text[cur] === "\\") cur += 1;
+        const runLen = cur - runStart;
+        if (text[cur] === '"') {
+          if (runLen === openSlashes) {
+            cur = skipSpaceOrJsonEscapedSpace(text, cur + 1);
+            return text[cur] === ":";
+          }
+          cur += 1;
+        }
+        continue;
+      }
+      if (ch === '"') return false;
+      cur += 1;
+    }
+    return false;
+  }
+  return false;
+}
+
+function startsWithBearer(text: string, pos: number): boolean {
+  BEARER_FOLLOWS_STICKY.lastIndex = pos;
+  return BEARER_FOLLOWS_STICKY.test(text);
+}
+
+function trailingWhitespaceAfterSeparator(prefix: string): string {
+  let end = prefix.length;
+  while (end > 0 && /\s/.test(prefix[end - 1]!)) end -= 1;
+  return prefix.slice(end);
+}
+
+function hasRedactableNextValue(
+  text: string,
+  pos: number,
+  requireSpaceAfterSep: boolean,
+  sameLineSpace: number,
+  decoded: boolean,
+): boolean {
+  if (pos >= text.length) return false;
+  const ch = text[pos]!;
+  if (ch === "\n" || ch === "\r") return false;
+  if (!decoded && ch === "\\" && text[pos + 1] === '"') {
+    const closeAt = scanEscapedDoubleQuotedEnd(text, pos);
+    if (closeAt >= 0) return closeAt > pos + 2;
+    return pos + 2 < text.length && !/[\s"',;&]/.test(text[pos + 2]!);
+  }
+  if (ch === '"' || ch === "'") {
+    if (!requireSpaceAfterSep) {
+      return scanQuotedValueEnd(text, pos, decoded) >= 0;
+    }
+    return scanSingleLineQuotedValueEnd(text, pos, decoded) > pos + 2;
+  }
+  if (!requireSpaceAfterSep) return true;
+  return sameLineSpace > 0 && !/[\s"',;&]/.test(ch);
+}
+
+function defersToNextCredentialKey(
+  text: string,
+  valueStart: number,
+  ws: string,
+  requireSpaceAfterSep: boolean,
+  decoded: boolean,
+): boolean {
+  const crossedLine =
+    ws.includes("\n") || ws.includes("\r") || ws.includes("\\n") || ws.includes("\\r");
+  const keyRe = crossedLine ? PREFIXED_CREDENTIAL_KEY_STICKY : BARE_CREDENTIAL_KEY_STICKY;
+  keyRe.lastIndex = valueStart;
+  const keyMatch = keyRe.exec(text);
+  if (!keyMatch) return false;
+  BARE_CREDENTIAL_KEY_STICKY.lastIndex = valueStart;
+  const isBare = BARE_CREDENTIAL_KEY_STICKY.test(text);
+  if (ws.length === 0 && !isBare) return false;
+  let pos = valueStart + keyMatch[0].length;
+  while (pos < text.length && text[pos] !== "\n" && text[pos] !== "\r" && /\s/.test(text[pos]!)) {
+    pos += 1;
+  }
+  const sep = text[pos];
+  if (sep !== "=" && sep !== ":") return false;
+  pos += 1;
+  let sameLineSpace = 0;
+  while (pos < text.length && text[pos] !== "\n" && text[pos] !== "\r" && /\s/.test(text[pos]!)) {
+    pos += 1;
+    sameLineSpace += 1;
+  }
+  if (pos < text.length && text[pos] !== "\n" && text[pos] !== "\r") {
+    if (!decoded && isJsonEscapedSpace(text, pos)) {
+      if (!crossedLine || !isBare) return false;
+      const afterEscaped = skipSpaceOrJsonEscapedSpace(text, pos);
+      return hasRedactableNextValue(text, afterEscaped, requireSpaceAfterSep, 1, false);
+    }
+    if (!requireSpaceAfterSep && ws.length === 0) return false;
+    return hasRedactableNextValue(text, pos, requireSpaceAfterSep, sameLineSpace, decoded);
+  }
+  if (!crossedLine || !isBare) return false;
+  while (pos < text.length && /\s/.test(text[pos]!)) pos += 1;
+  return hasRedactableNextValue(text, pos, requireSpaceAfterSep, 1, decoded);
+}
+
+function scanQuotedValueEnd(text: string, open: number, decoded: boolean): number {
+  const quote = text[open];
+  if (quote !== '"' && quote !== "'") return -1;
+  if (!decoded && quote === '"') {
+    let probe = open + 1;
+    while (probe < text.length && /\s/.test(text[probe]!)) probe += 1;
+    if (
+      probe >= text.length ||
+      text[probe] === "," ||
+      text[probe] === "}" ||
+      text[probe] === "]" ||
+      text[probe] === ":"
+    ) {
+      return -1;
+    }
+  }
+  let cur = open + 1;
+  while (cur < text.length) {
+    const ch = text[cur]!;
+    if (ch === "\\") {
+      if (cur + 1 >= text.length) return -1;
+      cur += 2;
+      continue;
+    }
+    if (ch === quote) return cur + 1;
+    if (!decoded && quote === "'" && ch === '"') return -1;
+    cur += 1;
+  }
+  return -1;
+}
+
+/**
+ * End of a closed single-line quoted value (`"..."` or `'...'`), or -1. In raw mode a single-quoted
+ * scan stops before an unescaped `"` and a double-quoted scan rejects an opening `"` that looks
+ * like the closing delimiter of an outer JSON string (`","`, `"}`, `"]`).
+ */
+function scanSingleLineQuotedValueEnd(text: string, open: number, decoded: boolean): number {
+  const quote = text[open];
+  if (quote !== '"' && quote !== "'") return -1;
+  if (!decoded && quote === '"') {
+    let probe = open + 1;
+    while (probe < text.length && /\s/.test(text[probe]!)) probe += 1;
+    if (
+      probe >= text.length ||
+      text[probe] === "," ||
+      text[probe] === "}" ||
+      text[probe] === "]" ||
+      text[probe] === ":"
+    ) {
+      return -1;
+    }
+  }
+  let cur = open + 1;
+  while (cur < text.length) {
+    const ch = text[cur]!;
+    if (ch === "\n" || ch === "\r") return -1;
+    if (ch === "\\") {
+      if (cur + 1 >= text.length || text[cur + 1] === "\n" || text[cur + 1] === "\r") return -1;
+      cur += 2;
+      continue;
+    }
+    if (ch === quote) return cur + 1;
+    if (!decoded && quote === "'" && ch === '"') return -1;
+    cur += 1;
+  }
+  return -1;
+}
+
+/** Index of the closing `\"` of a JSON-escaped quoted value starting at `open`, or -1. */
+function scanEscapedDoubleQuotedEnd(text: string, open: number): number {
+  let cur = open + 2;
+  while (cur < text.length) {
+    const ch = text[cur]!;
+    if (ch === "\n" || ch === "\r" || ch === '"') return -1;
+    if (ch === "\\") {
+      const runStart = cur;
+      while (cur < text.length && text[cur] === "\\") cur += 1;
+      const runLen = cur - runStart;
+      if (text[cur] === '"') {
+        if (runLen % 4 === 1) return cur - 1;
+        if (runLen % 2 === 0) return -1;
+        cur += 1;
+      }
+      continue;
+    }
+    cur += 1;
+  }
+  return -1;
+}
+
+function redactComposioRegexAssignments(text: string, decoded: boolean): string {
+  COMPOSIO_KEY_PREFIX_RE.lastIndex = 0;
+  let out = "";
+  let cursor = 0;
+  for (
+    let match = COMPOSIO_KEY_PREFIX_RE.exec(text);
+    match !== null;
+    match = COMPOSIO_KEY_PREFIX_RE.exec(text)
+  ) {
+    const start = match.index;
+    const valueStart = start + match[0].length;
+    if (valueStart >= text.length) break;
+    if (
+      text.startsWith("[redacted]", valueStart) &&
+      startsWithJsonObjectHeader(text, valueStart + 10)
+    ) {
+      out += `${text.slice(cursor, start)}COMPOSIO_API_KEY=[redacted]`;
+      cursor = valueStart + 10;
+      COMPOSIO_KEY_PREFIX_RE.lastIndex = cursor;
+      continue;
+    }
+    const quotedEnd = scanQuotedValueEnd(text, valueStart, decoded);
+    if (quotedEnd >= 0) {
+      out += `${text.slice(cursor, start)}COMPOSIO_API_KEY=[redacted]`;
+      cursor = quotedEnd;
+      COMPOSIO_KEY_PREFIX_RE.lastIndex = cursor;
+      continue;
+    }
+    if (startsWithBearer(text, valueStart)) continue;
+    const ws = trailingWhitespaceAfterSeparator(match[0]);
+    if (defersToNextCredentialKey(text, valueStart, ws, false, decoded)) continue;
+    let end = valueStart;
+    while (end < text.length && !/[\s=:]/.test(text[end]!)) {
+      if (!decoded && text[end] === '"') {
+        let slashes = 0;
+        while (end - 1 - slashes >= valueStart && text[end - 1 - slashes] === "\\") slashes += 1;
+        if (slashes % 2 === 0) break;
+      }
+      end += 1;
+    }
+    if (end === valueStart) continue;
+    out += `${text.slice(cursor, start)}COMPOSIO_API_KEY=[redacted]`;
+    cursor = end;
+    COMPOSIO_KEY_PREFIX_RE.lastIndex = cursor;
+  }
+  return cursor === 0 ? text : out + text.slice(cursor);
+}
+
+function redactGenericAssignmentsByPattern(
+  text: string,
+  pattern: RegExp,
+  decoded: boolean,
+): string {
+  pattern.lastIndex = 0;
+  let out = "";
+  let cursor = 0;
+  for (let match = pattern.exec(text); match !== null; match = pattern.exec(text)) {
+    const start = match.index;
+    let valueStart = start + match[0].length;
+    if (valueStart >= text.length) break;
+    let ws = trailingWhitespaceAfterSeparator(match[0]);
+    if (!decoded && isJsonEscapedSpace(text, valueStart)) {
+      const afterEscapedWs = skipSpaceOrJsonEscapedSpace(text, valueStart);
+      ws += text.slice(valueStart, afterEscapedWs);
+      valueStart = afterEscapedWs;
+      if (valueStart >= text.length) break;
+    }
+    if (startsWithBearer(text, valueStart)) continue;
+    if (
+      text.startsWith("[redacted]", valueStart) &&
+      startsWithJsonObjectHeader(text, valueStart + 10)
+    ) {
+      continue;
+    }
+    if (defersToNextCredentialKey(text, valueStart, ws, true, decoded)) continue;
+    if (!decoded && text[valueStart] === "\\" && text[valueStart + 1] === '"') {
+      const closeAt = scanEscapedDoubleQuotedEnd(text, valueStart);
+      if (closeAt >= 0) {
+        if (closeAt > valueStart + 2) {
+          out += `${text.slice(cursor, valueStart)}\\"[redacted]\\"`;
+          cursor = closeAt + 2;
+          pattern.lastIndex = cursor;
+        }
+        continue;
+      }
+      let end = valueStart + 2;
+      while (end < text.length && !/[\s"',;&]/.test(text[end]!)) end += 1;
+      if (end < text.length && text[end] === '"') {
+        let slashes = 0;
+        while (end - 1 - slashes >= valueStart + 2 && text[end - 1 - slashes] === "\\") {
+          slashes += 1;
+        }
+        if (slashes % 2 === 1) end -= 1;
+      }
+      out += `${text.slice(cursor, valueStart)}\\"[redacted]`;
+      cursor = end;
+      pattern.lastIndex = cursor;
+      continue;
+    }
+    if (text[valueStart] === '"' || text[valueStart] === "'") {
+      const quote = text[valueStart]!;
+      const quoteEnd = scanSingleLineQuotedValueEnd(text, valueStart, decoded);
+      if (quoteEnd > valueStart + 2) {
+        out += `${text.slice(cursor, valueStart)}${quote}[redacted]${quote}`;
+        cursor = quoteEnd;
+        pattern.lastIndex = cursor;
+      }
+      continue;
+    }
+    let end = valueStart;
+    while (end < text.length && !/[\s"',;&]/.test(text[end]!)) end += 1;
+    if (!decoded && end < text.length && text[end] === '"') {
+      let slashes = 0;
+      while (end - 1 - slashes >= valueStart && text[end - 1 - slashes] === "\\") slashes += 1;
+      if (slashes % 2 === 1) end -= 1;
+    }
+    if (end === valueStart) continue;
+    out += `${text.slice(cursor, valueStart)}[redacted]`;
+    cursor = end;
+    pattern.lastIndex = cursor;
+  }
+  return cursor === 0 ? text : out + text.slice(cursor);
+}
+
+export function sanitizeSensitiveText(message: string, options?: { decoded?: boolean }) {
+  const decoded = options?.decoded === true;
+  const bearerMasked = redactPlainBearerTokens(message, options);
+  const composioMasked = redactComposioApiKeyAssignments(bearerMasked);
+  const keyMasked = composioMasked
     .replace(/sk-or-v1-[a-zA-Z0-9]+/g, "[redacted]")
-    .replace(/sk-[a-zA-Z0-9-]+/g, "[redacted]")
-    .replace(/Bearer\s+[^\s"',;&]+/gi, "Bearer [redacted]")
-    .replace(/eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g, "[redacted]")
-    .replace(/COMPOSIO_API_KEY[=:]?\s*\S+/gi, "COMPOSIO_API_KEY=[redacted]")
-    .replace(
-      /((?:api[_-]?key|access[_-]?token|password|secret)\s*[=:]\s*)[^\s"',;&]+/gi,
-      "$1[redacted]",
-    )
-    .replace(/((?:auth|authorization)\s*[=:]\s*)(?!Bearer\b)[^\s"',;&]+/gi, "$1[redacted]");
+    .replace(/sk-[a-zA-Z0-9-]+/g, "[redacted]");
+  const composioRegexMasked = redactComposioRegexAssignments(keyMasked, decoded);
+  const secretMasked = redactGenericAssignmentsByPattern(
+    composioRegexMasked,
+    SECRET_ASSIGNMENT_KEY_RE,
+    decoded,
+  );
+  const assignmentsMasked = redactGenericAssignmentsByPattern(
+    secretMasked,
+    AUTH_ASSIGNMENT_KEY_RE,
+    decoded,
+  );
+  return redactJwts(assignmentsMasked);
 }
 
 export function sanitizeError(message: string) {
-  return sanitizeSensitiveText(message);
+  // Scan assignments before the JSON walker. The walker splits a label from its quoted value,
+  // and the value would otherwise stay visible. Decoded pieces use the same assignment scan.
+  const assigned = redactCredentialJsonFields(redactComposioApiKeyAssignments(message), false);
+  const redact = (value: string) => sanitizeSensitiveText(value, { decoded: true });
+  return redactJsonStringsAndPlainText(assigned, redact, redact);
 }
 
 const OPENCODE_SESSION_ERROR = "OpenCode rejected this chat session. Send the message again.";

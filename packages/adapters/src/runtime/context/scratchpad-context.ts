@@ -15,11 +15,15 @@ const MAX_OPEN_ITEMS = 40;
 const NOTES_SEPARATOR = " — ";
 const CUT = "…";
 
-export async function loadAgentScratchpadContext(
+type AgentScratchpadSnapshot = {
+  items: Awaited<ReturnType<typeof listScratchpadItems>>;
+  parked: number;
+};
+
+async function readAgentScratchpad(
   deps: ScratchpadToolDeps | { prisma: PrismaClient },
   input: { spaceId: string; botId: string },
-  maxBytes = MAX_SCRATCHPAD_CONTEXT_BYTES,
-): Promise<string | undefined> {
+): Promise<AgentScratchpadSnapshot> {
   // Parked work is set aside: it is counted here and read on demand, so it never crowds out open work.
   const [items, parked] = await Promise.all([
     listScratchpadItems(deps, { spaceId: input.spaceId, botId: input.botId, status: "open" }),
@@ -27,16 +31,26 @@ export async function loadAgentScratchpadContext(
       where: { spaceId: input.spaceId, botId: input.botId, status: "parked" },
     }),
   ]);
+  return { items, parked };
+}
+
+function formatAgentScratchpadContext(
+  snapshot: AgentScratchpadSnapshot,
+  maxBytes = MAX_SCRATCHPAD_CONTEXT_BYTES,
+  redact?: (text: string) => string,
+): string | undefined {
+  const { items, parked } = snapshot;
   if (items.length === 0 && parked === 0) return undefined;
 
   const fixedBytes = byteLength(SCRATCHPAD_PREAMBLE) + byteLength(SCRATCHPAD_CLOSING);
   if (maxBytes <= fixedBytes)
     return truncateUtf8(`${SCRATCHPAD_PREAMBLE}${SCRATCHPAD_CLOSING}`, maxBytes);
 
+  const safe = (value: string) => escapePromptData(redact ? redact(value) : value);
   const entries = items.slice(0, MAX_OPEN_ITEMS).map((item, index) => ({
-    head: `${index === 0 ? "" : "\n"}- [${item.status}] ${escapePromptData(item.title)}`,
-    notes: escapePromptData(item.notes.trim()),
-    tail: ` (id: ${escapePromptData(item.id)})`,
+    head: `${index === 0 ? "" : "\n"}- [${item.status}] ${safe(item.title)}`,
+    notes: escapePromptData((redact ? redact(item.notes) : item.notes).trim()),
+    tail: ` (id: ${safe(item.id)})`,
   }));
   const more =
     (items.length > MAX_OPEN_ITEMS ? scratchpadMoreItemsNote(items.length - MAX_OPEN_ITEMS) : "") +
@@ -73,6 +87,15 @@ export async function loadAgentScratchpadContext(
     return `${entry.head}${cutNote}${entry.tail}`;
   });
   return `${SCRATCHPAD_PREAMBLE}${lines.join("")}${more}${hint}${SCRATCHPAD_CLOSING}`;
+}
+
+export async function loadAgentScratchpadContext(
+  deps: ScratchpadToolDeps | { prisma: PrismaClient },
+  input: { spaceId: string; botId: string },
+  maxBytes = MAX_SCRATCHPAD_CONTEXT_BYTES,
+  redact?: (text: string) => string,
+): Promise<string | undefined> {
+  return formatAgentScratchpadContext(await readAgentScratchpad(deps, input), maxBytes, redact);
 }
 
 /** Cuts `text` so `ending` still fits after it within `maxBytes`. */
