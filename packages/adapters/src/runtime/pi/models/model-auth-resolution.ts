@@ -9,6 +9,7 @@ import {
   parseModelSecret,
   serializeModelSecret,
 } from "../../../models/model-secret.js";
+import { ANTIGRAVITY_CLI_PROVIDER_ID } from "../../../providers/agent-cli/antigravity/provider-id.js";
 
 export const MIN_OAUTH_VALIDITY_MS = 5 * 60 * 1000;
 
@@ -199,6 +200,8 @@ export async function tryRetireModelCredential(
  * apart. Read from the stored token only; never logged.
  */
 export function oauthCredentialEmail(credential: OAuthCredential): string | undefined {
+  const direct = nonBlankString((credential as { email?: unknown }).email);
+  if (direct) return direct;
   const payload = decodeJwtPayload(credential.access);
   if (!payload) return undefined;
   const profile = payload["https://api.openai.com/profile"];
@@ -267,9 +270,22 @@ export function codexComputeResidency(accessToken: string | undefined): string |
   return claim;
 }
 
+const antigravityCliOAuth: OAuthAuth = {
+  name: "Antigravity",
+  loginLabel: "Sign in with Google (Antigravity CLI)",
+  isSubscription: true,
+  login: async () => {
+    throw new Error("Use the Antigravity CLI login flow.");
+  },
+  // `agy` refreshes its own Google tokens inside the connection's isolated GEMINI_HOME.
+  refresh: async (credential) => credential,
+  toAuth: async (credential) => ({ apiKey: credential.access }),
+};
+
 export function loadProviderOAuth(providerId: string): OAuthAuth | undefined {
   // pi 1.3 adds ChatGPT OAuth to OpenAI; keep subscription sign-in on Codex.
   if (providerId === "openai") return undefined;
+  if (providerId === ANTIGRAVITY_CLI_PROVIDER_ID) return antigravityCliOAuth;
   return providerCatalog().getProvider(canonicalPiProviderId(providerId))?.auth.oauth;
 }
 

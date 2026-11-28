@@ -2,7 +2,12 @@ import type { ModelOAuthBegin } from "@rakazo/contracts";
 import { waitForModelOAuthCompletion } from "@rakazo/core";
 import { rpc } from "../api/api";
 
-export { cancelModelOAuthAttempt, finishModelOAuthAttempt } from "@rakazo/core";
+export type { ModelOAuthPhase } from "@rakazo/core";
+export {
+  cancelModelOAuthAttempt,
+  finishModelOAuthAttempt,
+  modelOAuthPhaseFlags,
+} from "@rakazo/core";
 
 /** Polls with the caller's calls, which go to the Space that began the sign-in. */
 export async function waitForModelOAuth(

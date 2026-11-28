@@ -795,6 +795,306 @@ describe("acpAgentRuntime", () => {
     expect(prompt.prompt.map((block) => block.type)).toEqual(["text"]);
   });
 
+  it("applies thought_level config options for thinkingLevel choices", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor({ supportsThinking: true }), {
+      accessCheck: allowed,
+    });
+
+    await collect(
+      runtime,
+      request({
+        model: { provider: "fake-agent", id: "fake/large", thinkingLevel: "high" },
+      }),
+    );
+
+    expect(requests("session/set_config_option").map((event) => event.params)).toEqual([
+      expect.objectContaining({ configId: "model", value: "fake/large" }),
+      expect.objectContaining({ configId: "thought_level", value: "high" }),
+    ]);
+  });
+
+  it("clamps minimal and max thinking levels to the closest available thought_level option", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor({ supportsThinking: true }), {
+      accessCheck: allowed,
+    });
+
+    await collect(
+      runtime,
+      request({
+        model: { provider: "fake-agent", id: "fake/default", thinkingLevel: "minimal" },
+      }),
+    );
+    await collect(
+      runtime,
+      request({
+        model: { provider: "fake-agent", id: "fake/default", thinkingLevel: "max" },
+      }),
+    );
+
+    const thoughtCalls = requests("session/set_config_option")
+      .map((event) => event.params as { configId: string; value: string })
+      .filter((params) => params.configId === "thought_level");
+    expect(thoughtCalls.map((params) => params.value)).toEqual(["low", "xhigh"]);
+  });
+
+  it("maps legacy suffixed model ids to base model plus thought_level", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor({ supportsThinking: true }), {
+      accessCheck: allowed,
+    });
+
+    await collect(
+      runtime,
+      request({
+        model: { provider: "fake-agent", id: "fake/large-low" },
+      }),
+    );
+
+    expect(requests("session/set_config_option").map((event) => event.params)).toEqual([
+      expect.objectContaining({ configId: "model", value: "fake/large" }),
+      expect.objectContaining({ configId: "thought_level", value: "low" }),
+    ]);
+  });
+
+  it("maps base model plus thinkingLevel to suffixed ACP model ids when no thought_level option exists", async () => {
+    const runtime = acpAgentRuntime(
+      fallback,
+      descriptor({
+        supportsThinking: true,
+        sessionMeta: () => ({ fake: { suffixedModelsOnly: true } }),
+      }),
+      { accessCheck: allowed },
+    );
+
+    await collect(
+      runtime,
+      request({
+        model: { provider: "fake-agent", id: "fake/neon", thinkingLevel: "high" },
+      }),
+    );
+    await collect(
+      runtime,
+      request({
+        model: { provider: "fake-agent", id: "fake/neon", thinkingLevel: "low" },
+      }),
+    );
+
+    // High matches the already-selected `fake/neon-high` (no redundant switch); Low switches to `fake/neon`.
+    expect(requests("session/set_config_option").map((event) => event.params)).toEqual([
+      expect.objectContaining({ configId: "model", value: "fake/neon" }),
+    ]);
+  });
+
+  it("passes accountId as profileId to launch and isolates cached sessions per account", async () => {
+    const launchedProfiles: Array<string | undefined> = [];
+    const runtime = acpAgentRuntime(
+      fallback,
+      descriptor({
+        async launch({ files, instructions, toolServer, env, profileId }) {
+          launchedProfiles.push(profileId);
+          return { args: [FAKE_AGENT, recordFile, files, instructions, toolServer], env };
+        },
+      }),
+      { accessCheck: allowed },
+    );
+    const threadId = `thread-${randomUUID()}`;
+    const accountA = randomUUID();
+    const accountB = randomUUID();
+
+    await collect(
+      runtime,
+      request({
+        threadId,
+        model: {
+          provider: "fake-agent",
+          id: "fake/large",
+          oauth: {
+            credential: {
+              type: "oauth",
+              access: `fake-agent:${accountA}`,
+              refresh: `fake-agent:${accountA}`,
+              expires: Number.MAX_SAFE_INTEGER,
+              accountId: accountA,
+            },
+          },
+        },
+      }),
+    );
+    await collect(
+      runtime,
+      request({
+        threadId,
+        model: {
+          provider: "fake-agent",
+          id: "fake/large",
+          oauth: {
+            credential: {
+              type: "oauth",
+              access: `fake-agent:${accountB}`,
+              refresh: `fake-agent:${accountB}`,
+              expires: Number.MAX_SAFE_INTEGER,
+              accountId: accountB,
+            },
+          },
+        },
+      }),
+    );
+
+    expect(launchedProfiles).toEqual([accountA, accountB]);
+    expect(requests("session/new")).toHaveLength(2);
+    expect(requests("session/resume")).toHaveLength(0);
+  });
+
+  it("claims pending steering messages before prompting and delivers them once without duplicating history", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
+    const threadId = `thread-${randomUUID()}`;
+    const claimedSeenCalls: string[][] = [];
+
+    await collect(
+      runtime,
+      request({
+        threadId,
+        prompt: "Review the follow-up.",
+        sourceMessageId: "msg-steer-1",
+        history: [
+          { id: "msg-1", role: "user", content: "Initial request." },
+          { id: "msg-steer-1", role: "user", content: "Switch reasoning to low." },
+        ],
+        async claimSteering(seenIds) {
+          claimedSeenCalls.push(seenIds);
+          return [
+            {
+              id: "steer-1",
+              messageId: "msg-steer-1",
+              text: "Switch reasoning to low.",
+              origin: "user",
+            },
+          ];
+        },
+      }),
+    );
+
+    await collect(
+      runtime,
+      request({
+        threadId,
+        prompt: "Next question.",
+        sourceMessageId: "msg-2",
+        history: [
+          { id: "msg-1", role: "user", content: "Initial request." },
+          { id: "msg-steer-1", role: "user", content: "Switch reasoning to low." },
+          { id: "msg-2", role: "user", content: "Next question." },
+        ],
+        async claimSteering(seenIds) {
+          claimedSeenCalls.push(seenIds);
+          return [];
+        },
+      }),
+    );
+
+    expect(claimedSeenCalls).toEqual([[], []]);
+    const prompts = requests("session/prompt").map((event) =>
+      ((event.params as { prompt: Array<{ text?: string }> }).prompt ?? [])
+        .map((block) => block.text ?? "")
+        .join("\n"),
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).toContain("Additional user context:\nSwitch reasoning to low.");
+    expect(prompts[0]?.match(/Switch reasoning to low\./g)).toHaveLength(1);
+    expect(prompts[1]).toBe("Next question.");
+  });
+
+  it("does not duplicate a webhook or routine continuation prompt already carried as source steering", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
+    const threadId = `thread-${randomUUID()}`;
+
+    await collect(
+      runtime,
+      request({
+        threadId,
+        prompt: "Webhook payload arrived.",
+        sourceMessageId: "msg-webhook-1",
+        history: [{ id: "msg-webhook-1", role: "user", content: "Webhook payload arrived." }],
+        async claimSteering() {
+          return [
+            {
+              id: "steer-webhook-1",
+              messageId: "msg-webhook-1",
+              text: "Webhook payload arrived.",
+              origin: "webhook",
+            },
+          ];
+        },
+      }),
+    );
+
+    const prompt = (
+      (
+        requests("session/prompt")[0]?.params as
+          | {
+              prompt?: Array<{ text?: string }>;
+            }
+          | undefined
+      )?.prompt ?? []
+    )
+      .map((block) => block.text ?? "")
+      .join("\n");
+    expect(prompt).toBe("Webhook payload arrived.");
+  });
+
+  it("records claimed steering images under their own message ids so later turns do not resend them", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+      accessCheck: allowed,
+    });
+    const threadId = `thread-${randomUUID()}`;
+    const photo = { name: "steer.png", mimeType: "image/png" as const, data: new Uint8Array([42]) };
+
+    await collect(
+      runtime,
+      request({
+        threadId,
+        prompt: "Review the follow-up.",
+        sourceMessageId: "msg-source",
+        history: [{ id: "msg-steer-img", role: "user", content: "Look at this.", images: [photo] }],
+        async claimSteering() {
+          return [
+            {
+              id: "steer-img-1",
+              messageId: "msg-steer-img",
+              text: "Look at this.",
+              images: [photo],
+              origin: "user",
+            },
+          ];
+        },
+      }),
+    );
+
+    await collect(
+      runtime,
+      request({
+        threadId,
+        prompt: "Anything else?",
+        sourceMessageId: "msg-next",
+        history: [
+          { id: "msg-steer-img", role: "user", content: "Look at this.", images: [photo] },
+          { id: "msg-next", role: "user", content: "Anything else?" },
+        ],
+        async claimSteering() {
+          return [];
+        },
+      }),
+    );
+
+    const firstBlocks =
+      (requests("session/prompt")[0]?.params as { prompt?: Array<{ type: string }> } | undefined)
+        ?.prompt ?? [];
+    const secondBlocks =
+      (requests("session/prompt")[1]?.params as { prompt?: Array<{ type: string }> } | undefined)
+        ?.prompt ?? [];
+    expect(firstBlocks.filter((block) => block.type === "image")).toHaveLength(1);
+    expect(secondBlocks.map((block) => block.type)).toEqual(["text"]);
+  });
+
   it("leaves every other model to the runtime it wraps", async () => {
     const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
 

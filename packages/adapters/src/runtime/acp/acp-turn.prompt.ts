@@ -41,3 +41,6 @@ export function imageList(sources: readonly string[]): string {
 export function unknownToolText(name: string): string {
   return `${name} is not one of this turn's tools.`;
 }
+
+/** Introduces claimed steering messages delivered alongside this turn's prompt. */
+export const STEERING_CONTEXT_HEADER = "Additional user context:";

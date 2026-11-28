@@ -36,6 +36,7 @@ export {
   createApnsVoipProvider,
 } from "./calls/apns-voip-config.js";
 export { loadUserIncomingCalls, settleCallRequest } from "./calls/call-request.js";
+export { personalCliAccessCheck } from "./cli-models/personal-access.js";
 export * from "./cloud-agents/cloud-agent-emulator.js";
 export * from "./cloud-agents/cloud-agent-factory.js";
 export * from "./cloud-agents/cloud-agent-poll.js";
@@ -149,6 +150,10 @@ export * from "./models/model-connect-check.js";
 export * from "./models/model-credential-list.js";
 export * from "./models/model-credential-refresh.js";
 export * from "./models/model-provider-allowlist.js";
+export {
+  cleanupProviderCliProfile,
+  modelProviderCliProfile,
+} from "./models/model-provider-registry.js";
 export * from "./models/model-roles.js";
 export * from "./models/model-secret.js";
 export * from "./models/model-selection.js";

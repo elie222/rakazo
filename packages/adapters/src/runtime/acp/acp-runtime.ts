@@ -33,6 +33,7 @@ import {
 } from "../pi/tools/pi-runtime-tools.js";
 import { fallbackSystemPrompt } from "../runtime.prompt.js";
 import type { AcpAgentDescriptor } from "./acp-agent.js";
+import { selectModel, selectThoughtLevel } from "./acp-config.js";
 import type { AcpConnection } from "./acp-connection.js";
 import { AcpRequestError, startAcpAgent } from "./acp-connection.js";
 import type { AgentSession } from "./acp-sessions.js";
@@ -184,7 +185,12 @@ async function runAcpTurn(
   const oneShot =
     request.tools.length === 0 ||
     (request.usageOperationKind !== "answer" && request.usageOperationKind !== "subagent");
-  const key = sessionKey(descriptor.id, request.botId, request.threadId);
+  const profileId =
+    typeof request.model.oauth?.credential?.accountId === "string" &&
+    request.model.oauth.credential.accountId.trim()
+      ? request.model.oauth.credential.accountId.trim()
+      : undefined;
+  const key = sessionKey(descriptor.id, request.botId, request.threadId, profileId);
   const cwd = join(
     agentFolder(),
     createHash("sha256").update(`${descriptor.id}\0${request.botId}`).digest("hex").slice(0, 24),
@@ -263,6 +269,7 @@ async function runAcpTurn(
       if (!tool) return errorResult(unknownToolText(name));
       toolsRunning += 1;
       afterTool = true;
+      thinking = false;
       try {
         const id = randomUUID();
         const prepared = tool.prepareArguments ? tool.prepareArguments(args) : args;
@@ -366,6 +373,7 @@ async function runAcpTurn(
       instructions: request.instructions || fallbackSystemPrompt(false),
       toolServer: ACP_TOOL_SERVER,
       env: cliEnv(process.env),
+      ...(profileId ? { profileId } : {}),
     });
     signal.throwIfAborted();
     const agent = startAcpAgent(
@@ -382,8 +390,25 @@ async function runAcpTurn(
         },
         async onRequest(method, params) {
           if (method === "session/request_permission") {
-            // Rakazo's own tools are allowed up front, so a request is for one of the CLI's.
             const toolCall = (params.toolCall ?? {}) as Update;
+            const toolName = descriptor.reportedToolName
+              ? descriptor.reportedToolName({ ...toolCall, sessionUpdate: "tool_call" })
+              : typeof toolCall.name === "string"
+                ? toolCall.name
+                : typeof toolCall.title === "string"
+                  ? toolCall.title
+                  : undefined;
+            // Some ACP servers ask permission even for client-provided MCP tools; Rakazo's own
+            // tool server enforces approvals, so allow those while refusing any CLI built-in tool.
+            if (toolName && ownToolCalls.has(toolName)) {
+              const options = Array.isArray(params.options) ? (params.options as Update[]) : [];
+              const allow = options.find(
+                (option) => option.kind === "allow_once" || option.kind === "allow_always",
+              );
+              if (typeof allow?.optionId === "string") {
+                return { outcome: { outcome: "selected", optionId: allow.optionId } };
+              }
+            }
             refuse(String(toolCall.name ?? toolCall.title ?? "a permission request"));
             return { outcome: { outcome: "cancelled" } };
           }
@@ -465,7 +490,27 @@ async function runAcpTurn(
       createdSession = true;
     }
     const activeSessionId = sessionId!;
-    await selectModel(agent, activeSessionId, opened, request.model.id, descriptor, step);
+    const selectedModel = await selectModel(
+      agent,
+      activeSessionId,
+      opened,
+      request.model.id,
+      request.model.thinkingLevel,
+      descriptor,
+      step,
+    );
+    await selectThoughtLevel(
+      agent,
+      activeSessionId,
+      selectedModel.configOptions,
+      request.model.thinkingLevel ?? selectedModel.inferredEffort,
+      step,
+    );
+
+    // Claim any steering messages waiting for this run (including follow-up continuations) before
+    // prompting the CLI, matching PiRuntime so `discardAnsweredSteering` clears them on reply
+    // instead of re-queueing an endless loop of follow-up runs.
+    const initialSteering = request.claimSteering ? await request.claimSteering([]) : [];
 
     const fresh = !session;
     const current: AgentSession = session ?? {
@@ -478,7 +523,14 @@ async function runAcpTurn(
       usedAt: Date.now(),
     };
     const takesImages = Boolean((capabilities.promptCapabilities as Update | undefined)?.image);
-    const turn = turnText(request, current, fresh, includeOwnReplies, seesImages && takesImages);
+    const turn = turnText(
+      request,
+      current,
+      fresh,
+      includeOwnReplies,
+      seesImages && takesImages,
+      initialSteering,
+    );
     if (turn.leftOut) {
       getLogger().warn("The agent CLI does not take images; the message's images were left out", {
         agent: descriptor.id,
@@ -703,46 +755,6 @@ async function awaitStep<T>(
   }
 }
 
-/** Chooses the deployment model when the CLI offers a model choice for the session. */
-async function selectModel(
-  agent: AcpConnection,
-  sessionId: string,
-  opened: Update | undefined,
-  modelId: string,
-  descriptor: AcpAgentDescriptor,
-  step: <T>(work: Promise<T>) => Promise<T>,
-): Promise<void> {
-  const options = Array.isArray(opened?.configOptions) ? (opened.configOptions as Update[]) : [];
-  const choice = options.find((option) => option.category === "model" || option.id === "model");
-  // Running on whatever the CLI defaults to would spend the plan on a model nobody chose.
-  if (!choice) throw new Error(`${descriptor.label} offers no model choice for its sessions.`);
-  if (choice.currentValue === modelId) return;
-  const values = flattenValues(choice.options);
-  if (values.length && !values.includes(modelId)) {
-    throw new Error(
-      `${descriptor.label} on this server has no model "${modelId}". Set PI_DEFAULT_MODEL to one of: ${values.slice(0, 20).join(", ")}${values.length > 20 ? `, and ${values.length - 20} more the CLI lists` : ""}.`,
-    );
-  }
-  await step(
-    agent.request("session/set_config_option", {
-      sessionId,
-      configId: choice.id,
-      value: modelId,
-    }),
-  );
-}
-
-function flattenValues(options: unknown): string[] {
-  if (!Array.isArray(options)) return [];
-  return options.flatMap((option: Update) =>
-    Array.isArray(option?.options)
-      ? flattenValues(option.options)
-      : typeof option?.value === "string"
-        ? [option.value]
-        : [],
-  );
-}
-
 /** Usage is reported only when the CLI gives it; the plan pays, so its cost is unknown. */
 async function reportUsage(
   request: AgentRunRequest,
@@ -799,7 +811,7 @@ function toolHost(
     api: "acp",
     provider: request.model.provider,
     baseUrl: "",
-    reasoning: false,
+    reasoning: Boolean(request.model.reasoning || request.model.thinkingLevel),
     input: ["text", "image"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 0,

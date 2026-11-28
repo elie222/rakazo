@@ -16,18 +16,22 @@ export interface AcpAgentDescriptor {
    * whether the bot can see screenshots and the images people send.
    */
   acceptsImages?: boolean;
+  /** Whether the CLI accepts ACP `thought_level` reasoning configuration. */
+  supportsThinking?: boolean;
   /** How the operator signs the CLI in, shown when it says it is not signed in. */
   signIn?: string;
   /**
    * How one turn starts the CLI: with every one of its own tools, settings, instruction files and
    * plugins off, the tool server's tools allowed, and Rakazo's instructions as its system prompt.
    * `files` is a private folder for this turn only.
+   * `profileId` selects an isolated per-account CLI home when the user connected multiple accounts.
    */
   launch(input: {
     files: string;
     instructions: string;
     toolServer: string;
     env: Record<string, string>;
+    profileId?: string;
   }): Promise<{ args: string[]; env: Record<string, string> }>;
   /**
    * The `_meta` every session request carries, for a CLI that takes its settings (its own tools

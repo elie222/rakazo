@@ -14,9 +14,11 @@ import { Linking } from "react-native";
 import type { rpc as apiRpc } from "../api/api";
 import type { MobileModel, MobileModelCredential } from "../api/mobile-types";
 import { errorText } from "../api/user-error";
+import type { ModelOAuthPhase } from "../models/model-auth";
 import {
   cancelModelOAuthAttempt,
   finishModelOAuthAttempt,
+  modelOAuthPhaseFlags,
   waitForModelOAuth,
 } from "../models/model-auth";
 import { analyticsClient } from "../native/analytics-surface";
@@ -60,7 +62,8 @@ export function useSubscriptionSignIn({
   const { t } = useLingui();
   const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
   const [pasteCode, setPasteCode] = useState("");
-  const [oauthPending, setOauthPending] = useState(false);
+  const [oauthPhase, setOauthPhase] = useState<ModelOAuthPhase>("idle");
+  const { oauthPending, submittingCode } = modelOAuthPhaseFlags(oauthPhase);
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
   const oauthCodeSubmittingRef = useRef(false);
@@ -115,7 +118,7 @@ export function useSubscriptionSignIn({
       oauthCodeSubmittingRef.current = false;
       cancelModelOAuthAttempt(oauthAbortRef, () => {
         setOauth(null);
-        setOauthPending(false);
+        setOauthPhase("idle");
       });
       if (loginId) void rpc("models/cancelOAuth", { loginId, reason }).catch(() => undefined);
     },
@@ -152,7 +155,7 @@ export function useSubscriptionSignIn({
   async function startSubscriptionSignIn() {
     if (!selected) return;
     clearFeedback();
-    setOauthPending(true);
+    setOauthPhase("pending");
     const controller = new AbortController();
     oauthAbortRef.current = controller;
     let waitingForCode = false;
@@ -196,7 +199,7 @@ export function useSubscriptionSignIn({
       setOauth(null);
     } finally {
       if (!waitingForCode) {
-        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
+        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPhase("idle"));
       }
     }
   }
@@ -207,7 +210,7 @@ export function useSubscriptionSignIn({
     const code = pasteCode.trim();
     if (!controller || !code) return;
     oauthCodeSubmittingRef.current = true;
-    setPasteCode("");
+    setOauthPhase("submitting");
     clearFeedback();
     let submitted = false;
     let retryable = false;
@@ -221,11 +224,13 @@ export function useSubscriptionSignIn({
       );
       submitted = true;
       await finishSubscriptionSignIn(oauth, controller);
+      setPasteCode("");
     } catch (err) {
       if (controller.signal.aborted) return;
       if (submitted) {
         oauthLoginIdRef.current = null;
         setOauth(null);
+        setPasteCode("");
         void rpc("models/cancelOAuth", { loginId: oauth.loginId, reason: "interrupted" }).catch(
           () => undefined,
         );
@@ -238,9 +243,12 @@ export function useSubscriptionSignIn({
       });
     } finally {
       // A newer sign-in started by Start over owns the guard now; leave it alone.
-      if (oauthAbortRef.current === controller) oauthCodeSubmittingRef.current = false;
+      if (oauthAbortRef.current === controller) {
+        oauthCodeSubmittingRef.current = false;
+        if (retryable) setOauthPhase("pending");
+      }
       if (!retryable) {
-        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
+        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPhase("idle"));
       }
     }
   }
@@ -262,6 +270,7 @@ export function useSubscriptionSignIn({
     pasteCode,
     setPasteCode,
     oauthPending,
+    submittingCode,
     cancelOAuth,
     leaveSignIn,
     openSignInPage,

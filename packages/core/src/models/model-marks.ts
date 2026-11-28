@@ -79,6 +79,8 @@ const MAKERS: Record<string, string> = {
   google: "google",
   googlevertex: "google",
   googlegeminicli: "google",
+  antigravitycli: "google",
+  antigravity: "google",
   gemini: "google",
   meta: "meta",
   metallama: "meta",

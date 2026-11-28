@@ -11,6 +11,7 @@ const PRIVACY_URLS: Record<string, string> = {
   "openai-codex": "https://openai.com/policies/privacy-policy/",
   anthropic: "https://www.anthropic.com/legal/privacy",
   google: "https://policies.google.com/privacy",
+  "antigravity-cli": "https://policies.google.com/privacy",
   "vercel-ai-gateway": "https://vercel.com/legal/privacy-policy",
   elevenlabs: "https://elevenlabs.io/privacy-policy",
   cartesia: "https://cartesia.ai/legal/privacy",

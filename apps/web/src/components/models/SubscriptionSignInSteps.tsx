@@ -21,6 +21,7 @@ export function SubscriptionSignInSteps({
   codeCopied,
   onCopyCode,
   pasteCode,
+  submittingCode = false,
   onPasteCodeChange,
   onSubmitCode,
   onPageOpened,
@@ -37,6 +38,8 @@ export function SubscriptionSignInSteps({
   codeCopied: boolean;
   onCopyCode: (code: string) => void;
   pasteCode: string;
+  /** True while a submitted code is being exchanged and saved. */
+  submittingCode?: boolean;
   onPasteCodeChange: (code: string) => void;
   onSubmitCode: () => void;
   onPageOpened: () => void;
@@ -133,7 +136,7 @@ export function SubscriptionSignInSteps({
       ...setupStep,
       {
         id: "open",
-        status: "current",
+        status: submittingCode ? "complete" : "current",
         title: <Trans>Sign in at {host}</Trans>,
         description: (
           <a
@@ -150,21 +153,33 @@ export function SubscriptionSignInSteps({
       },
       {
         id: "paste",
-        status: "upcoming",
-        title: t`Paste the code it shows you`,
+        status: submittingCode ? "current" : "upcoming",
+        busy: submittingCode,
+        title: submittingCode ? t`Finishing sign-in…` : t`Paste the code it shows you`,
         description: (
           <>
             <span className="mt-2 flex items-center gap-2">
               <Input
                 value={pasteCode}
+                disabled={submittingCode}
                 onChange={(e) => onPasteCodeChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !submittingCode && pasteCode.trim()) {
+                    e.preventDefault();
+                    onSubmitCode();
+                  }
+                }}
                 aria-label={t`Code from ${host}`}
                 placeholder={t`Paste code`}
                 autoComplete="off"
                 spellCheck={false}
               />
-              <Button variant="outline" disabled={!pasteCode.trim()} onClick={onSubmitCode}>
-                <Trans>Submit</Trans>
+              <Button
+                variant="outline"
+                disabled={submittingCode || !pasteCode.trim()}
+                onClick={onSubmitCode}
+              >
+                {submittingCode ? <Trans>Signing in…</Trans> : <Trans>Submit</Trans>}
               </Button>
             </span>
             <Button variant="text" size="sm" className="mt-2" onClick={onRestart}>

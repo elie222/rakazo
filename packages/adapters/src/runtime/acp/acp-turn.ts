@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { AgentInputImage, AgentRunRequest } from "@rakazo/adapter-kit";
+import type { AgentInputImage, AgentRunRequest, AgentSteeringMessage } from "@rakazo/adapter-kit";
 import type { AgentSession } from "./acp-sessions.js";
 import {
   conversationClose,
@@ -9,6 +9,7 @@ import {
   imageSource,
   OWN_SPEAKER,
   PERSON_SPEAKER,
+  STEERING_CONTEXT_HEADER,
 } from "./acp-turn.prompt.js";
 
 type Block = Record<string, unknown>;
@@ -59,13 +60,20 @@ export function turnText(
   fresh: boolean,
   includeOwn: boolean,
   withImages: boolean,
+  steering: readonly AgentSteeringMessage[] = [],
 ): { blocks: Block[]; leftOut: number } {
+  const steeringIds = new Set(steering.map((item) => item.messageId));
   const lines: Array<{ line: string; images: readonly AgentInputImage[]; id?: string }> = [];
   const late: Array<{ line: string; images: readonly AgentInputImage[] }> = [];
   for (const item of request.history) {
     const content = item.content.trim();
-    // The new message itself goes last, as the prompt.
-    if (!content || (item.id && item.id === request.sourceMessageId)) continue;
+    // The new message and claimed steering messages go last, as this turn's prompt.
+    if (
+      !content ||
+      (item.id && (item.id === request.sourceMessageId || steeringIds.has(item.id)))
+    ) {
+      continue;
+    }
     const own = item.role === "assistant" && !item.speaker;
     if (item.id) {
       if (session.seen.has(item.id)) {
@@ -95,6 +103,7 @@ export function turnText(
     });
   }
   if (request.sourceMessageId) session.seen.add(request.sourceMessageId);
+  for (const id of steeringIds) session.seen.add(id);
   // As with ids: only summaries and recall still in this turn's history can come up again.
   const inContext = new Set(
     request.history.filter((item) => !item.id).map((item) => contentHash(item.content.trim())),
@@ -102,6 +111,7 @@ export function turnText(
   for (const hash of session.context) if (!inContext.has(hash)) session.context.delete(hash);
   // Only ids still in the chat's history window can come up again, so the rest are let go.
   const inWindow = new Set(request.history.map((item) => item.id).filter(Boolean));
+  for (const id of steeringIds) inWindow.add(id);
   for (const id of session.seen) {
     if (!inWindow.has(id) && id !== request.sourceMessageId) session.seen.delete(id);
   }
@@ -169,6 +179,35 @@ export function turnText(
   for (const { line, images } of late) attach(images, line);
   text(message);
   attach(newImages);
+  let wroteSteeringHeader = false;
+  for (const item of steering) {
+    const trimmed = item.text.trim();
+    const sameAsPrompt =
+      Boolean(request.sourceMessageId) &&
+      item.messageId === request.sourceMessageId &&
+      trimmed === request.prompt.trim();
+    const steerImages = item.images?.length
+      ? withImages
+        ? unsentImages(session, item.messageId, item.images)
+        : item.images
+      : [];
+    if (sameAsPrompt) {
+      if (steerImages.length) attach(steerImages);
+      continue;
+    }
+    if (trimmed || steerImages.length) {
+      const chunk = wroteSteeringHeader
+        ? trimmed
+        : trimmed
+          ? `${STEERING_CONTEXT_HEADER}\n${trimmed}`
+          : STEERING_CONTEXT_HEADER;
+      if (chunk) {
+        text(chunk);
+        wroteSteeringHeader = true;
+      }
+      if (steerImages.length) attach(steerImages);
+    }
+  }
   // An image from an earlier message is named, since a CLI may show images apart from the text and
   // the model would take it for the new message's.
   const newImage = imageSource(undefined);

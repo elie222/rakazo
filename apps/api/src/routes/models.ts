@@ -7,16 +7,20 @@ import {
 import type { CatalogReads, PiOAuthPersist } from "@rakazo/adapters";
 import {
   assertModelProviderAllowed,
+  cleanupProviderCliProfile,
   compatibleEndpointPreset,
   listModelCredentials,
   listPiCatalog,
   ModelSignInError,
   mediaModelsView,
+  modelProviderCliProfile,
   oauthCredentialEmail,
+  personalCliAccessCheck,
   prepareStoredModelAuth,
   probeCatalogProviderModels,
   probeOpenAiCompatibleModels,
   providerCatalogCache,
+  providerCliProfileIdFromSecret,
   selectDefaultCredentialId,
   serializeModelSecret,
   setMediaModel,
@@ -51,7 +55,7 @@ import {
   withTransactionRetry,
   writeModelRole,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import {
   assertCompatibleDefaultChange,
@@ -116,6 +120,18 @@ export function modelsRoutes(ctx: RouterContext) {
     validateRoleChoices,
     authed,
   } = ctx;
+  const loadCliProfileId = (
+    provider: string,
+    secret: { id: string; ciphertext: string | null },
+  ): Promise<string | undefined> =>
+    secret.ciphertext
+      ? bestEffort(
+          "read stored model secret for cli profile cleanup",
+          deps.secrets
+            .load(secret.ciphertext, secret.id)
+            .then((plaintext) => providerCliProfileIdFromSecret(provider, plaintext)),
+        )
+      : Promise.resolve(undefined);
   const saveSignIn =
     (actor: Actor): PiOAuthPersist<ModelCredential> =>
     async (login) => {
@@ -123,6 +139,11 @@ export function modelsRoutes(ctx: RouterContext) {
         const record = signInRecorder(deps.analytics, actor.userId, login.measure);
         const target = await modelConnectionTarget(deps, actor, login.provider, login.credentialId);
         const retained = await prepareModelReconnectSettings(deps, actor, target);
+        const cliProfile = modelProviderCliProfile(login.provider);
+        const previousProfileId =
+          cliProfile && retained.expectedSecret?.ciphertext
+            ? await loadCliProfileId(login.provider, retained.expectedSecret)
+            : undefined;
         const choice = target
           ? { modelId: login.modelId, thinkingLevel: login.thinkingLevel }
           : subscriptionSignInChoice(login.provider, login.modelId, login.thinkingLevel);
@@ -151,6 +172,13 @@ export function modelsRoutes(ctx: RouterContext) {
           },
           codexCatalog,
         );
+        const currentProfileId = cliProfile?.profileIdFromCredential(login.credential);
+        if (cliProfile && previousProfileId && previousProfileId !== currentProfileId) {
+          await bestEffort(
+            "remove previous cli profile dir",
+            cliProfile.removeProfile(previousProfileId),
+          );
+        }
         record(login.provider, {
           name: "model_connected",
           ...(login.mode ? { flow: signInFlow(login.mode) } : {}),
@@ -158,6 +186,7 @@ export function modelsRoutes(ctx: RouterContext) {
         });
         return saved;
       } catch (error) {
+        await cleanupProviderCliProfile(login.provider, login.credential);
         // The member is told why a save was refused; anything else is reported generically.
         if (error instanceof ORPCError) throw new ModelSignInError(error.message);
         throw error;
@@ -367,6 +396,18 @@ export function modelsRoutes(ctx: RouterContext) {
       }),
       beginOAuth: authed.models.beginOAuth.handler(async ({ context, input }) => {
         assertModelProviderAllowed(input.provider);
+        const cliProfile = modelProviderCliProfile(input.provider);
+        if (cliProfile) {
+          if (!cliProfile.enabled()) {
+            throw new ORPCError("BAD_REQUEST", { message: cliProfile.disabledMessage });
+          }
+          if (cliProfile.requiresPersonalAccess) {
+            const refusal = await personalCliAccessCheck({ prisma: deps.prisma })();
+            if (refusal) {
+              throw new ORPCError("FORBIDDEN", { message: refusal });
+            }
+          }
+        }
         // An older app's sign-in renews the provider's newest connection, bound now so a
         // disconnect of that connection retires it and it never lands on another one.
         const target = await modelConnectionTarget(
@@ -666,9 +707,12 @@ export function modelsRoutes(ctx: RouterContext) {
           provider: input.provider,
           credentialId: input.credentialId,
         });
+        const cliProfile = modelProviderCliProfile(input.provider);
+        let removedSecrets: Array<{ id: string; ciphertext: string }> = [];
         await withTransactionRetry(() =>
           deps.prisma.$transaction(
             async (tx) => {
+              removedSecrets = [];
               const provider = modelCredentialProviderFilter(input.provider);
               const connections = await tx.userModelCredential.findMany({
                 where: { userId: context.actor.userId, provider },
@@ -698,6 +742,16 @@ export function modelsRoutes(ctx: RouterContext) {
                 },
               );
               if (existing.length === 0) return;
+              if (cliProfile) {
+                removedSecrets = await tx.secret.findMany({
+                  where: {
+                    id: { in: existing.map((row) => row.secretId) },
+                    userId: context.actor.userId,
+                    spaceId: null,
+                  },
+                  select: { id: true, ciphertext: true },
+                });
+              }
               await tx.userModelCredential.deleteMany({
                 where: { userId: context.actor.userId, id: { in: ids } },
               });
@@ -712,6 +766,17 @@ export function modelsRoutes(ctx: RouterContext) {
             { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
           ),
         );
+        if (cliProfile && removedSecrets.length > 0) {
+          for (const row of removedSecrets) {
+            const profileId = await loadCliProfileId(input.provider, row);
+            if (profileId) {
+              await bestEffort(
+                "remove disconnected cli profile dir",
+                cliProfile.removeProfile(profileId),
+              );
+            }
+          }
+        }
         (deps.providerCatalog ?? providerCatalogCache).invalidate(
           canonicalPiProviderId(input.provider),
         );

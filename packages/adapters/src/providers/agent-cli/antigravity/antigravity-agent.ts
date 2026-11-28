@@ -4,6 +4,13 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { privateFolder } from "../../../cli-models/cli-process.js";
 import type { AcpAgentDescriptor } from "../../../runtime/acp/acp-agent.js";
+import { antigravityToolRoutingRule } from "./antigravity.prompt.js";
+import {
+  antigravityProfileArgs,
+  antigravityProfileEnv,
+  ensureAntigravityProfileDir,
+  isAntigravityProfileId,
+} from "./antigravity-profiles.js";
 import { ANTIGRAVITY_CLI_PROVIDER_ID } from "./provider-id.js";
 
 /** The CLI's own folder inside its home, which holds its sessions and, off macOS, its sign-in. */
@@ -62,10 +69,23 @@ export const antigravityAgent: AcpAgentDescriptor = {
   label: "Antigravity",
   command: "agy",
   acceptsImages: true,
+  supportsThinking: true,
   notInstalled:
     "The Antigravity CLI is not installed on this server. Install it for the user that runs the Rakazo worker.",
-  signIn: "Run `agy acp --login` in a terminal as the user that runs the Rakazo worker.",
-  async launch({ env }) {
+  signIn:
+    "Sign in with Google under Settings → Models → Antigravity, or run `agy acp --login` as the worker user.",
+  async launch({ env, profileId }) {
+    if (isAntigravityProfileId(profileId)) {
+      // `env` is the scrubbed child environment from `cliEnv(process.env)` (which omits server
+      // vars like `DATA_DIR`), so resolve the profile root against `process.env` unless `env`
+      // explicitly provides `DATA_DIR` (e.g. in tests).
+      const profileRootEnv = env.DATA_DIR !== undefined ? env : process.env;
+      const home = await ensureAntigravityProfileDir(profileId, profileRootEnv);
+      return {
+        args: antigravityProfileArgs(home),
+        env: antigravityProfileEnv(home, env),
+      };
+    }
     const home = botHome();
     await linkSignIn(home, join(homedir(), ".gemini"));
     return { args: ["acp"], env: { ...env, GEMINI_HOME: home } };
@@ -74,10 +94,10 @@ export const antigravityAgent: AcpAgentDescriptor = {
     antigravity: {
       enabledTools: [],
       eagerMcpServers: toolServer ? [toolServer] : [],
-      systemPrompt: { append: instructions },
+      systemPrompt: { append: `${instructions}${antigravityToolRoutingRule(toolServer)}` },
     },
   }),
-  toolCallName: (toolServer, tool) => `${toolServer}_${tool}`,
+  toolCallName: (toolServer, tool) => `mcp_${toolServer}_${tool}`,
   // The CLI names a call in its first update's title, prefixed with its MCP server's name.
   reportedToolName: (update) =>
     typeof update.name === "string"
