@@ -22,6 +22,7 @@ import {
   runGeneratorAsTenant,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import type { ZipInputFile } from "fflate";
 import { Zip, ZipDeflate } from "fflate";
 import type { Hono } from "hono";
 import { isAccountHomePath } from "./account-home-path.js";
@@ -39,6 +40,8 @@ export type AccountExportStores = {
 type ArchiveFile = { path: string; data: AsyncIterable<Uint8Array> | Iterable<Uint8Array> };
 
 const encoder = new TextEncoder();
+/** Fixed-Huffman empty deflate stream, byte-identical to `ZipDeflate` for a zero-byte file. */
+const EMPTY_DEFLATE_BLOCK = new Uint8Array([0x03, 0x00]);
 /** Records are batched into chunks about this size, so deflate is not fed one line at a time. */
 const RECORD_CHUNK_BYTES = 64 * 1024;
 /** Files go to deflate in slices this size, so the archive limit is checked between them. */
@@ -58,6 +61,7 @@ export function zipStream(
   const maxBytes = options.maxBytes ?? ACCOUNT_EXPORT_MAX_ARCHIVE_BYTES;
   const zip = new Zip();
   const output: Uint8Array[] = [];
+  let outputBytes = 0;
   let finished = false;
   let failure: Error | null = null;
   let written = 0;
@@ -69,7 +73,10 @@ export function zipStream(
       const bytes = final ? withZip64EntryCount(chunk, entries) : chunk;
       written += bytes.length;
       if (written > maxBytes) failure = new Error("Account export exceeds the zip size limit");
-      if (bytes.length) output.push(bytes);
+      if (bytes.length) {
+        output.push(bytes);
+        outputBytes += bytes.length;
+      }
       if (final) finished = true;
     }
   };
@@ -81,17 +88,34 @@ export function zipStream(
       if (entries > MAX_ARCHIVE_ENTRIES || directoryBytes > MAX_CENTRAL_DIRECTORY_BYTES)
         throw new Error("Account export has too many files or file names that are too long");
       let fileBytes = 0;
-      const entry = new ZipDeflate(file.path, { level: 6 });
-      zip.add(entry);
+      let entry: ZipDeflate | undefined;
       for await (const chunk of file.data) {
+        if (!chunk.length) continue;
         fileBytes += chunk.length;
         if (fileBytes >= 0xffffffff) throw new Error("A file exceeds the export ZIP size limit");
+        if (!entry) {
+          entry = new ZipDeflate(file.path, { level: 6 });
+          zip.add(entry);
+        }
         for (let offset = 0; offset < chunk.length; offset += FILE_SLICE_BYTES) {
           entry.push(chunk.subarray(offset, offset + FILE_SLICE_BYTES));
           yield;
         }
       }
-      entry.push(new Uint8Array(0), true);
+      if (entry) {
+        entry.push(new Uint8Array(0), true);
+      } else {
+        // Emit the empty deflate block without allocating a deflate window per empty entry.
+        const empty: ZipInputFile = {
+          filename: file.path,
+          compression: 8,
+          flag: 0,
+          size: 0,
+          crc: 0,
+        };
+        zip.add(empty);
+        empty.ondata?.(null, EMPTY_DEFLATE_BLOCK, true);
+      }
       yield;
     }
     zip.end();
@@ -123,8 +147,20 @@ export function zipStream(
           if (cancelled) return;
           throw error;
         }
-        for (const chunk of output.splice(0)) controller.enqueue(chunk);
-        if (finished && !output.length) controller.close();
+        if (output.length === 1) {
+          controller.enqueue(output[0]!);
+        } else if (output.length > 1) {
+          const merged = new Uint8Array(outputBytes);
+          let offset = 0;
+          for (const chunk of output) {
+            merged.set(chunk, offset);
+            offset += chunk.length;
+          }
+          controller.enqueue(merged);
+        }
+        output.length = 0;
+        outputBytes = 0;
+        if (finished) controller.close();
       },
       async cancel() {
         cancelled = true;

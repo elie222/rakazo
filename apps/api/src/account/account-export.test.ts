@@ -194,6 +194,72 @@ describe("account export archive", () => {
     );
   });
 
+  it("writes empty files as deflated entries with data descriptors", async () => {
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of zipStream(
+      generate([
+        { path: "empty.txt", data: [] },
+        { path: "zero-chunk.txt", data: [new Uint8Array(0)] },
+        { path: "filled.txt", data: [new TextEncoder().encode("hello")] },
+      ]),
+    )) {
+      chunks.push(chunk);
+    }
+    const zip = Buffer.concat(chunks);
+    const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+    // Streaming readers such as Java ZipInputStream only accept data descriptors on deflated entries.
+    const methods: number[] = [];
+    for (let at = 0; at + 30 <= zip.byteLength; at++) {
+      if (view.getUint32(at, true) === 0x04034b50) methods.push(view.getUint16(at + 8, true));
+    }
+    expect(methods).toEqual([8, 8, 8]);
+    const entries = await unzipStream(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(zip);
+          controller.close();
+        },
+      }),
+    );
+    expect(entries.map(({ name, data }) => [name, decoder.decode(data)])).toEqual([
+      ["empty.txt", ""],
+      ["zero-chunk.txt", ""],
+      ["filled.txt", "hello"],
+    ]);
+  });
+
+  it("flushes earlier entries before waiting on a slow file source", async () => {
+    const waiting = deferred();
+    async function* files() {
+      yield { path: "manifest.json", data: [new TextEncoder().encode("{}")] };
+      await waiting.promise;
+      yield { path: "later.txt", data: [new TextEncoder().encode("done")] };
+    }
+    const reader = zipStream(files()).getReader();
+    const first = await reader.read();
+    expect(first.done).toBe(false);
+    expect(first.value?.byteLength).toBeGreaterThan(0);
+    waiting.resolve();
+    const rest: Uint8Array[] = [first.value!];
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) break;
+      rest.push(next.value);
+    }
+    const entries = await unzipStream(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(Buffer.concat(rest));
+          controller.close();
+        },
+      }),
+    );
+    expect(entries.map(({ name, data }) => [name, decoder.decode(data)])).toEqual([
+      ["manifest.json", "{}"],
+      ["later.txt", "done"],
+    ]);
+  });
+
   it("asks the home store to enforce the import limit before reading workspace files", async () => {
     const fakes = stores();
     const exportHome = vi.fn(fakes.home.exportHome);
