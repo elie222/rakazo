@@ -103,8 +103,45 @@ export async function readExact(
   }
 }
 
+const utf8Decoder = new TextDecoder("utf-8");
+const legacyDecoder = new TextDecoder("windows-1252");
+
 function decodeName(bytes: Uint8Array, utf8: boolean): string {
-  return new TextDecoder(utf8 ? "utf-8" : "windows-1252").decode(bytes);
+  return (utf8 ? utf8Decoder : legacyDecoder).decode(bytes);
+}
+
+const EMPTY_BYTES = new Uint8Array(0);
+
+/**
+ * Reusable forward-sliding window over a FileHandle for sequential local-header validation.
+ * Callers must consume returned subarrays before the next read.
+ */
+class WindowedReader {
+  private readonly window = new Uint8Array(CENTRAL_DIRECTORY_WINDOW_BYTES);
+  private start = 0;
+  private length = 0;
+
+  constructor(
+    private readonly handle: FileHandle,
+    private readonly fileSize: number,
+  ) {}
+
+  async slice(offset: number, size: number): Promise<Uint8Array> {
+    if (offset < 0 || size < 0 || offset > this.fileSize - size) throw new ZipFormatError();
+    if (size === 0) return EMPTY_BYTES;
+    if (size > this.window.byteLength) {
+      const exact = new Uint8Array(size);
+      await readExact(this.handle, offset, exact);
+      return exact;
+    }
+    if (offset < this.start || offset + size > this.start + this.length) {
+      const want = Math.min(this.window.byteLength, this.fileSize - offset);
+      await readExact(this.handle, offset, this.window.subarray(0, want));
+      this.start = offset;
+      this.length = want;
+    }
+    return this.window.subarray(offset - this.start, offset - this.start + size);
+  }
 }
 
 /**
@@ -323,11 +360,12 @@ export async function parseZipArchive(handle: FileHandle): Promise<ZipEntry[]> {
   }
   if (entries.length !== directory.entries) throw new ZipFormatError();
   entries.sort((a, b) => a.localHeaderOffset - b.localHeaderOffset);
+  const reader = new WindowedReader(handle, fileSize);
   for (let index = 0; index < entries.length; index++) {
     const entry = entries[index]!;
     if (index > 0 && entry.localHeaderOffset <= entries[index - 1]!.localHeaderOffset)
       throw new ZipFormatError();
-    await validateLocalHeader(handle, fileSize, entry, directory.offset);
+    await validateLocalHeader(reader, fileSize, entry, directory.offset);
     const nextOffset =
       index + 1 < entries.length ? entries[index + 1]!.localHeaderOffset : directory.offset;
     if (entry.dataOffset + entry.compressedSize > nextOffset) throw new ZipFormatError();
@@ -336,67 +374,58 @@ export async function parseZipArchive(handle: FileHandle): Promise<ZipEntry[]> {
 }
 
 async function validateLocalHeader(
-  handle: FileHandle,
+  reader: WindowedReader,
   fileSize: number,
   entry: ZipEntry & { extra: Uint8Array },
   directoryOffset: number,
 ): Promise<void> {
-  const header = new Uint8Array(30);
-  if (entry.localHeaderOffset + 30 > fileSize) throw new ZipFormatError();
-  await readExact(handle, entry.localHeaderOffset, header);
+  const header = await reader.slice(entry.localHeaderOffset, 30);
   const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
   if (u32(view, 0) !== LOCAL_HEADER) throw new ZipFormatError();
   const flags = u16(view, 6);
   const method = u16(view, 8);
   if (flags !== entry.flags || method !== entry.method) throw new ZipFormatError();
+  // Read all fixed-header fields before the next window slice can overwrite the buffer.
+  const localCrc = u32(view, 14);
+  let localCompressedSize = u32(view, 18);
+  let localUncompressedSize = u32(view, 22);
   const nameLength = u16(view, 26);
   const extraLength = u16(view, 28);
-  const nameBytes = new Uint8Array(nameLength);
-  await readExact(handle, entry.localHeaderOffset + 30, nameBytes);
+  const nameBytes = await reader.slice(entry.localHeaderOffset + 30, nameLength);
   if (decodeName(nameBytes, (flags & 0x800) !== 0) !== entry.name) throw new ZipFormatError();
   entry.dataOffset = entry.localHeaderOffset + 30 + nameLength + extraLength;
   if (entry.dataOffset > fileSize) throw new ZipFormatError();
   entry.dataDescriptor = (flags & 8) !== 0;
   if (!entry.dataDescriptor) {
-    const crc = u32(view, 14);
-    let compressedSize = u32(view, 18);
-    let uncompressedSize = u32(view, 22);
-    if (compressedSize === 0xffffffff || uncompressedSize === 0xffffffff) {
-      const extra = new Uint8Array(extraLength);
-      await readExact(handle, entry.localHeaderOffset + 30 + nameLength, extra);
+    if (localCompressedSize === 0xffffffff || localUncompressedSize === 0xffffffff) {
+      const extra = await reader.slice(entry.localHeaderOffset + 30 + nameLength, extraLength);
       const values = zip64Values(
         extra,
-        uncompressedSize === 0xffffffff,
-        compressedSize === 0xffffffff,
+        localUncompressedSize === 0xffffffff,
+        localCompressedSize === 0xffffffff,
         false,
       );
-      if (values.uncompressed !== undefined) uncompressedSize = values.uncompressed;
-      if (values.compressed !== undefined) compressedSize = values.compressed;
+      if (values.uncompressed !== undefined) localUncompressedSize = values.uncompressed;
+      if (values.compressed !== undefined) localCompressedSize = values.compressed;
     }
     if (
-      crc !== entry.crc ||
-      compressedSize !== entry.compressedSize ||
-      uncompressedSize !== entry.uncompressedSize
+      localCrc !== entry.crc ||
+      localCompressedSize !== entry.compressedSize ||
+      localUncompressedSize !== entry.uncompressedSize
     )
       throw new ZipFormatError();
   }
   if (entry.dataOffset + entry.compressedSize > fileSize) throw new ZipFormatError();
   if (entry.dataOffset + entry.compressedSize > directoryOffset) throw new ZipFormatError();
-  if (entry.dataDescriptor) await validateDataDescriptor(handle, fileSize, entry);
+  if (entry.dataDescriptor) await validateDataDescriptor(reader, entry);
 }
 
-async function validateDataDescriptor(
-  handle: FileHandle,
-  fileSize: number,
-  entry: ZipEntry,
-): Promise<void> {
+async function validateDataDescriptor(reader: WindowedReader, entry: ZipEntry): Promise<void> {
   // The descriptor is 12 bytes (CRC + sizes), or 16 with its signature;
   // ZIP64 entries carry 8-byte sizes instead of 4-byte ones.
   const wide = entry.zip64Sizes;
-  const probe = new Uint8Array(wide ? 24 : 16);
   const dataEnd = entry.dataOffset + entry.compressedSize;
-  if (dataEnd + probe.length > fileSize) throw new ZipFormatError();
-  await readExact(handle, dataEnd, probe);
+  const probe = await reader.slice(dataEnd, wide ? 24 : 16);
   const view = new DataView(probe.buffer, probe.byteOffset, probe.byteLength);
   const signed = u32(view, 0) === DATA_DESCRIPTOR;
   const at = signed ? 4 : 0;

@@ -432,4 +432,28 @@ describe("account zip reader", () => {
     expect(flushCalls).toBeGreaterThan(1);
     expect(maxPendingBytes).toBeLessThan(1024 * 1024);
   });
+
+  it("validates and rejects corrupt local headers across read-window refills", async () => {
+    // Push the second entry past the 64 KiB header read window so local-header
+    // validation must refill the window before reading its header and name.
+    const bytes = buildArchive([
+      ["spaces/s1/homes/b1/filler.bin", incompressibleBytes(70 * 1024), true],
+      ["spaces/s1/homes/b1/after-window.txt", "ok", false],
+    ]);
+    await withArchive(bytes, async (handle) => {
+      const entries = await parseZipArchive(handle);
+      expect(entries.map((entry) => entry.name)).toEqual([
+        "spaces/s1/homes/b1/filler.bin",
+        "spaces/s1/homes/b1/after-window.txt",
+      ]);
+      const second = entries[1]!;
+      expect(second.localHeaderOffset).toBeGreaterThan(64 * 1024);
+      const corrupted = new Uint8Array(bytes);
+      // Corrupt one byte of the second entry's local filename after the 64 KiB boundary.
+      corrupted[second.localHeaderOffset + 30]! ^= 0x01;
+      await expect(
+        withArchive(corrupted, (badHandle) => parseZipArchive(badHandle)),
+      ).rejects.toBeInstanceOf(ZipFormatError);
+    });
+  });
 });
