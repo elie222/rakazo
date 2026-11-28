@@ -73,7 +73,12 @@ import { refusal } from "../turn/tool-refusal.js";
 import { BUILTIN_AGENT_TOOL_NAMES, FLEET_WRITE_TOOL_NAMES_SET } from "./run-tool-selection.js";
 import { holdSharedPageSave } from "./run-tools-pages.js";
 import { scheduleCreateRefusal, scheduleUpdatePreview } from "./run-tools-tasks.js";
-import { USER_COMPUTER_TOOLS } from "./run-tools-user-computer.js";
+import {
+  NO_USER_COMPUTER_ACCESS,
+  routineRunWatches,
+  USER_COMPUTER_TOOLS,
+  userComputerBlockingOrigins,
+} from "./run-tools-user-computer.js";
 
 /** A tool call resolved to the tool it runs and the exact request an approval covers. */
 export interface ToolRequest {
@@ -444,22 +449,27 @@ export async function prepareToolRequest(
       );
     if (isSubagentToolExecution(executionId))
       return refusal("helper_user_computer", "Helpers cannot use the user's computer.");
-    // Turning the switch off or editing the routine mid-run ends its use of the computer.
+    // Turning the switch off or editing the routine mid-run ends its use of the computer, and a
+    // routine the server's switch let on it loses it once the routine watches or is gone.
     if (
-      ctx.source.ownerComputerRoutine &&
-      !(await routineRunUsesOwnerComputer(deps.prisma, ctx.run))
+      ctx.source.ownerComputerRoutine
+        ? !(await routineRunUsesOwnerComputer(deps.prisma, ctx.run))
+        : ctx.run.trigger === "routine" && (await routineRunWatches(deps.prisma, ctx.runId))
     )
       return refusal(
         "user_computer_unavailable",
         "The user's computer is not available in this run.",
       );
-    // Routines and webhooks reach no one's computer, including through a run they were handed to.
+    // Text a webhook, Git event or email handed into this run keeps it off the computer, and so
+    // does a routine's unless the server lets routines reach it (see userComputerBlockingOrigins).
     if (
       await deps.prisma.steeringMessage.findFirst({
         where: {
           runId: ctx.runId,
           claimedAt: { not: null },
-          originTrigger: { in: ["routine", "webhook"] },
+          originTrigger: {
+            in: userComputerBlockingOrigins(deps.userComputerAccess ?? NO_USER_COMPUTER_ACCESS),
+          },
         },
         select: { id: true },
       })

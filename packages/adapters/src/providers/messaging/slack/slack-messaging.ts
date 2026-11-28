@@ -47,7 +47,7 @@ export const slackMessaging = defineMessagingPlatform({
     return {
       provider: "slack",
       outbound: slackOutbound,
-      capabilities: { direct: true, groups: true, receipt: "reaction" },
+      capabilities: { direct: true, groups: true, receipt: "reaction", verifiedSender: true },
       adapter,
       enrichTeamRoom: enrichSlackTeamRoom,
       redeliveryKeys: slackRedeliveryKeys,

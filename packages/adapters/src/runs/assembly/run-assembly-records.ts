@@ -55,6 +55,7 @@ import {
   loadRunOrigin,
   RunOriginUnauthorizedError,
 } from "../lifecycle/run-origin.js";
+import { routineRunWatches } from "../tools/run-tools-user-computer.js";
 import { runReplaysToolHistory } from "../turn/tool-step-calls.js";
 import { restoreTurnCheckpoint } from "../turn/turn-checkpoint.js";
 import type { HistoryReach } from "./run-instructions.prompt.js";
@@ -182,9 +183,16 @@ export async function loadRunRecords(
   // so the run reads only the message that woke it and gets no history tools.
   const unknownChannelSourceId =
     messagingChannelRun && !channelId ? messagingSource?.id : undefined;
-  // A routine the owner let use their computer reads only its own prompt.
+  // A routine the owner let use their computer reads only its own prompt. One the server's routines
+  // switch lets on it reads no chat either, since earlier replies can carry what a watch saw.
   const ownerComputerRoutine = await routineRunUsesOwnerComputer(deps.prisma, run);
-  const historyReach = ownerComputerRoutine ? "none" : runHistoryReach(run);
+  const switchComputerRoutine =
+    !ownerComputerRoutine &&
+    run.trigger === "routine" &&
+    Boolean(deps.userComputerAccess?.routines) &&
+    !(await routineRunWatches(deps.prisma, run.id));
+  const historyReach =
+    ownerComputerRoutine || switchComputerRoutine ? "none" : runHistoryReach(run);
   const [
     { bot, ownerLabs },
     thread,
@@ -226,7 +234,7 @@ export async function loadRunRecords(
     loadRunHistoryMessages(
       deps.prisma,
       run,
-      ownerComputerRoutine
+      ownerComputerRoutine || switchComputerRoutine
         ? 0
         : historyReach === "recent"
           ? ROUTINE_RECENT_MESSAGES
@@ -342,6 +350,7 @@ export async function loadRunRecords(
   return {
     historyReach,
     ownerComputerRoutine,
+    switchComputerRoutine,
     origin,
     conversationRun,
     conversationThread,

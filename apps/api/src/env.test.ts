@@ -451,6 +451,50 @@ describe("OIDC environment", () => {
       );
     }
   });
+  it("reads the routine and own-bot computer switches strictly, off by default", () => {
+    expect(loadEnv(base).userDevicesAllowRoutines).toBe(false);
+    expect(loadEnv(base).userDevicesAllowOwnBots).toBe(false);
+    expect(loadEnv({ ...base, USER_DEVICES_ALLOW_ROUTINES: "true" }).userDevicesAllowRoutines).toBe(
+      true,
+    );
+    expect(loadEnv({ ...base, USER_DEVICES_ALLOW_OWN_BOTS: "1" }).userDevicesAllowOwnBots).toBe(
+      true,
+    );
+    expect(() => loadEnv({ ...base, USER_DEVICES_ALLOW_ROUTINES: "yes" })).toThrow(
+      "USER_DEVICES_ALLOW_ROUTINES must be true or false",
+    );
+    expect(() => loadEnv({ ...base, USER_DEVICES_ALLOW_OWN_BOTS: "on" })).toThrow(
+      "USER_DEVICES_ALLOW_OWN_BOTS must be true or false",
+    );
+  });
+  it("reads the chat-app computer switch strictly, off by default", () => {
+    expect(loadEnv(base).userDevicesAllowMessaging).toBe(false);
+    expect(
+      loadEnv({ ...base, USER_DEVICES_ALLOW_MESSAGING: "true" }).userDevicesAllowMessaging,
+    ).toBe(true);
+    expect(() => loadEnv({ ...base, USER_DEVICES_ALLOW_MESSAGING: "on" })).toThrow(
+      "USER_DEVICES_ALLOW_MESSAGING must be true or false",
+    );
+  });
+  it("reads the outside-event chain computer switch strictly, off by default", () => {
+    expect(loadEnv(base).userDevicesAllowWebhookChains).toBe(false);
+    expect(
+      loadEnv({ ...base, USER_DEVICES_ALLOW_WEBHOOK_CHAINS: "true" }).userDevicesAllowWebhookChains,
+    ).toBe(true);
+    expect(() => loadEnv({ ...base, USER_DEVICES_ALLOW_WEBHOOK_CHAINS: "on" })).toThrow(
+      "USER_DEVICES_ALLOW_WEBHOOK_CHAINS must be true or false",
+    );
+  });
+  it("reads the switch for routines after outside content strictly, off by default", () => {
+    expect(loadEnv(base).userDevicesAllowRoutinesAfterOutsideContent).toBe(false);
+    expect(
+      loadEnv({ ...base, USER_DEVICES_ALLOW_ROUTINES_AFTER_OUTSIDE_CONTENT: "true" })
+        .userDevicesAllowRoutinesAfterOutsideContent,
+    ).toBe(true);
+    expect(() =>
+      loadEnv({ ...base, USER_DEVICES_ALLOW_ROUTINES_AFTER_OUTSIDE_CONTENT: "on" }),
+    ).toThrow("USER_DEVICES_ALLOW_ROUTINES_AFTER_OUTSIDE_CONTENT must be true or false");
+  });
   it("refuses a RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC value it can't read", () => {
     for (const value of ["", "0", "false", "1", "TRUE"]) {
       expect(() => loadEnv({ ...base, RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC: value })).not.toThrow();

@@ -1362,6 +1362,11 @@ export interface MessagingCapabilities {
   receipt: MessagingReceipt | null;
   /** Sends image and file attachments. Absent means replies go out as text only. */
   files?: boolean;
+  /**
+   * The platform vouches for who sent each message (an account it signs in), so a linked address
+   * stands for its owner. Absent when a sender can be forged, as with SMS caller ID.
+   */
+  verifiedSender?: boolean;
 }
 
 /**

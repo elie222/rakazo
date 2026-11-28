@@ -259,6 +259,33 @@ async function main() {
         token: sandboxOptions.hostComputerToken,
       },
     ),
+    userComputerAccess: {
+      routines: parseEnvFlag(
+        "USER_DEVICES_ALLOW_ROUTINES",
+        process.env.USER_DEVICES_ALLOW_ROUTINES,
+        false,
+      ),
+      ownBots: parseEnvFlag(
+        "USER_DEVICES_ALLOW_OWN_BOTS",
+        process.env.USER_DEVICES_ALLOW_OWN_BOTS,
+        false,
+      ),
+      messaging: parseEnvFlag(
+        "USER_DEVICES_ALLOW_MESSAGING",
+        process.env.USER_DEVICES_ALLOW_MESSAGING,
+        false,
+      ),
+      webhookChains: parseEnvFlag(
+        "USER_DEVICES_ALLOW_WEBHOOK_CHAINS",
+        process.env.USER_DEVICES_ALLOW_WEBHOOK_CHAINS,
+        false,
+      ),
+      routinesAfterOutsideContent: parseEnvFlag(
+        "USER_DEVICES_ALLOW_ROUTINES_AFTER_OUTSIDE_CONTENT",
+        process.env.USER_DEVICES_ALLOW_ROUTINES_AFTER_OUTSIDE_CONTENT,
+        false,
+      ),
+    },
     paymentWallet,
     stoppingSignal: shutdown.signal,
     shutdownSignal: runDrain.signal,

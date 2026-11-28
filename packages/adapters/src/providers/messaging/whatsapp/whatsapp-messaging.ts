@@ -41,7 +41,13 @@ export const whatsappMessaging = defineMessagingPlatform({
     return {
       provider: "whatsapp",
       outbound: whatsappOutbound,
-      capabilities: { direct: true, groups: false, receipt: null, files: true },
+      capabilities: {
+        direct: true,
+        groups: false,
+        receipt: null,
+        files: true,
+        verifiedSender: true,
+      },
       adapter,
       attachmentSize: (attachment, signal) => adapter.mediaSize(attachment, signal),
       peekStatuses: parseWhatsAppStatuses,
