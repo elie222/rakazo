@@ -287,14 +287,12 @@ const props: Omit<ComponentProps<typeof ThreadComposer>, "ref"> = {
   composerPrompt: "Message…",
   replyQuote: null,
   attachmentIds: [],
-  botId: "bot-1",
   onCall: false,
   sending: false,
   styles: { composerFill: {} },
   attachActions: [],
   attachFrom: vi.fn(),
   send: vi.fn(async () => {}),
-  startVoiceCall: vi.fn(async () => {}),
   onSlashAction: vi.fn(),
 };
 
@@ -1453,14 +1451,13 @@ describe("thread composer isolation", () => {
     expect(field().value).toBe("，总结");
   });
 
-  it("clears a slash query before routing and uses the call control for an empty draft", () => {
+  it("clears a slash query before routing, and leaves calling to the chat header", () => {
     type("/settings");
     press("Chat Settings");
     expect(props.onSlashAction).toHaveBeenCalledWith("chat-settings");
     expect(container.querySelector("input")!.value).toBe("");
     expect(container.querySelector('[data-testid="slash-picker"]')).toBeNull();
-    press("Call");
-    expect(props.startVoiceCall).toHaveBeenCalledOnce();
+    expect(container.querySelector('[aria-label="Call"]')).toBeNull();
   });
 
   it("adds dictated words after the draft, and drops them once the draft is edited", () => {
@@ -1573,10 +1570,10 @@ describe("thread composer isolation", () => {
     },
   );
 
-  it("insets the call and send pills equally from the capsule's bottom and trailing edges", () => {
+  it("insets the send pill equally from the capsule's bottom and trailing edges", () => {
     const style = (element: Element) => JSON.parse((element as HTMLElement).dataset.style!);
-    for (const label of ["Call", "Send"]) {
-      if (label === "Send") type("Hello");
+    for (const label of ["Send"]) {
+      type("Hello");
       const button = container.querySelector(`button[aria-label="${label}"]`)!;
       const pill = style(button.querySelector("[data-glass]")!);
       const capsule = style(button.closest('[data-glass="roundedRectangle"]')!);
@@ -1586,11 +1583,11 @@ describe("thread composer isolation", () => {
     }
   });
 
-  it("keeps right-to-left text clear of the call and send buttons", () => {
+  it("keeps right-to-left text clear of the send button", () => {
     const style = (element: Element) => JSON.parse((element as HTMLElement).dataset.style!);
     // Right-to-left text runs up to the field's trailing edge, right next to the pill.
     for (const [label, draft] of [
-      ["Call", ""],
+      ["Send", ""],
       ["Send", "אבג"],
       ["Send", "مرحبا\nبالعالم"],
     ] as const) {

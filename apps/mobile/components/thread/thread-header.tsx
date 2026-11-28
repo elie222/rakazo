@@ -7,6 +7,7 @@ import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import { useReferral } from "../../lib/billing/referral";
 import { restoreArchivedBot } from "../../lib/bots/bot-lifecycle";
+import { requestCall } from "../../lib/calls/header-call";
 import { notifyArchivedChatsChanged } from "../../lib/inbox/archived/archived-chats";
 import { useResolvedAppearance } from "../../lib/native/native";
 import { chatTitleRoute } from "../../lib/navigation/chat-settings-route";
@@ -106,6 +107,7 @@ export function useThreadHeader({
         color: tokens.foreground,
         onGroupSettings: () =>
           router.push({ pathname: "/group-settings", params: { groupId: groupId ?? "" } }),
+        onCall: botId ? () => requestCall(botId) : undefined,
         onInvite: canInvite && botId ? () => openInvite(router) : undefined,
       }),
       ...(readOnly

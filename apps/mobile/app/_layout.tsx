@@ -662,7 +662,14 @@ function LayoutContent() {
                   </SplitFrame>
                   <ScrollView
                     keyboardShouldPersistTaps="handled"
-                    style={{ flexGrow: 0, flexShrink: 1, maxHeight: "50%" }}
+                    // The page colour, so the call bar and player sit on the screen above them
+                    // rather than on the window's black.
+                    style={{
+                      flexGrow: 0,
+                      flexShrink: 1,
+                      maxHeight: "50%",
+                      backgroundColor: String(native.page),
+                    }}
                   >
                     <CallCard />
                     {tabBarHoldsBars ? null : (

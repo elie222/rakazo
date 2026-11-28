@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from "vitest";
+import { onCallRequest } from "../../../lib/calls/header-call";
 import type { ChatSplit } from "./chat-route-header";
 import { chatRouteHeader } from "./chat-route-header";
 
@@ -38,23 +39,29 @@ const rightItems = (options: ReturnType<typeof chatRouteHeader>) =>
 const leftItems = (options: ReturnType<typeof chatRouteHeader>) =>
   options.unstable_headerLeftItems?.({ tintColor: undefined } as never) ?? [];
 
-it("declares a bot chat's title and its invite gift when the screen is created", () => {
+it("declares a bot chat's title, Call and its invite gift when the screen is created", () => {
   const options = header({ botId: "bot-1", name: "Helper" }, alone, true);
   expect(options.headerTitle).toBeTypeOf("function");
   expect(options.headerTitleAlign).toBe("center");
   expect(options.headerTransparent).toBe(true);
-  const [item] = rightItems(options);
-  expect(item).toMatchObject({ type: "button", icon: { type: "sfSymbol", name: "gift" } });
-  (item as { onPress: () => void }).onPress();
+  const [call, gift] = rightItems(options);
+  expect(call).toMatchObject({ type: "button", icon: { type: "sfSymbol", name: "phone" } });
+  expect(gift).toMatchObject({ type: "button", icon: { type: "sfSymbol", name: "gift" } });
+  const ring = vi.fn();
+  const stop = onCallRequest("bot-1", ring);
+  (call as { onPress: () => void }).onPress();
+  stop();
+  expect(ring).toHaveBeenCalledOnce();
+  (gift as { onPress: () => void }).onPress();
   expect(push).toHaveBeenCalledWith("/invite");
   expect(options.headerRight).toBeTypeOf("function");
   expect(options.headerBackVisible).toBe(true);
 });
 
-it("leaves a bot chat's right side empty when the account cannot invite", () => {
+it("keeps Call in a bot chat's header when the account cannot invite", () => {
   const options = header({ botId: "bot-1", name: "Helper" });
-  expect(rightItems(options)).toEqual([]);
-  expect(options.headerRight).toBeUndefined();
+  expect(rightItems(options).map((item) => (item as { label?: string }).label)).toEqual(["Call"]);
+  expect(options.headerRight).toBeTypeOf("function");
 });
 
 it("declares a group chat's settings button, which opens the group's settings", () => {

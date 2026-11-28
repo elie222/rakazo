@@ -93,14 +93,12 @@ type ThreadComposerProps = {
   replyTargetId?: string;
   replyQuote: string | null;
   attachmentIds: string[];
-  botId?: string;
   onCall: boolean;
   sending: boolean;
   styles: { composerFill: ViewStyle };
   attachActions: MenuAction[];
   attachFrom: (source: string) => void;
   send: () => Promise<void>;
-  startVoiceCall: () => Promise<void>;
   onSlashAction: (action: SlashActionId) => void;
   /** The composer holds no text: the last of it was deleted or sent. */
   onEmptied?: () => void;
@@ -118,14 +116,12 @@ export function ThreadComposer({
   replyTargetId,
   replyQuote,
   attachmentIds,
-  botId,
   onCall,
   sending,
   styles,
   attachActions,
   attachFrom,
   send,
-  startVoiceCall,
   onSlashAction,
   onEmptied,
   model,
@@ -927,30 +923,7 @@ export function ThreadComposer({
                   </View>
                 </Pressable>
               )}
-              {!canSend && botId && !onCall ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t`Call`}
-                  hitSlop={pillHitSlop}
-                  onPress={() => void startVoiceCall()}
-                  style={{ marginBottom: pillInset }}
-                >
-                  <GlassSurface
-                    tint={tokens.primary}
-                    style={composerPillStyle}
-                    fallbackStyle={{ backgroundColor: tokens.primary }}
-                  >
-                    <NativeSymbol
-                      ios="waveform"
-                      android="pulse-outline"
-                      size={15}
-                      color={tokens.primaryForeground}
-                    />
-                  </GlassSurface>
-                </Pressable>
-              ) : (
-                sendButton
-              )}
+              {sendButton}
             </TrailingControls>
           )}
         </View>
