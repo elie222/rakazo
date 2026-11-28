@@ -151,7 +151,7 @@ describe.skipIf(!enabled)("send model gate with a bot's own model (PostgreSQL)",
     const run = await system.run.create({
       data: { ...work, taskId: task.id, status: "running", trigger: "user" },
     });
-    await expectRefused(await send({ botId, text: "stop please" }));
+    await expectRefused(await send({ botId, text: "stop by later" }));
     expect((await send({ botId, text: "Stop now" })).status).toBe(200);
     expect((await system.run.findUniqueOrThrow({ where: { id: run.id } })).status).toBe(
       "cancelled",
