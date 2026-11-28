@@ -38,6 +38,7 @@ import {
   waitForRunComputerLease,
 } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
+import { ComputerWaitTimedOutError, RUN_COMPUTER_WAIT_MS } from "./run-computer-wait.js";
 import { SandboxUnsafeStopError, sandboxNotFoundError } from "./sandbox/sandbox-errors.js";
 
 // The plan's size is read from billing, which these Prisma doubles do not model.
@@ -4413,4 +4414,33 @@ it("fails a changed computer once instead of retrying it as a transient error", 
     ),
   ).rejects.toThrow("computer changed");
   expect(findUnique).toHaveBeenCalledOnce();
+});
+
+it("stops waiting for a computer that stays busy, with an error the tool call can report", async () => {
+  vi.useFakeTimers();
+  try {
+    // The computer is being switched for the whole wait, so every look finds it busy.
+    const findUnique = vi.fn(async () => ({
+      computerId: "computer",
+      archivedAt: null,
+      computerSwitching: true,
+    }));
+    let settled = false;
+    const waiting = waitForRunComputerLease(
+      { bot: { findUnique } } as unknown as PrismaClient,
+      { computerId: "computer", botId: "bot", runId: "run", workerId: "worker", runFence: 1 },
+      new AbortController().signal,
+    ).finally(() => {
+      settled = true;
+    });
+    const rejected = expect(waiting).rejects.toBeInstanceOf(ComputerWaitTimedOutError);
+    await vi.advanceTimersByTimeAsync(RUN_COMPUTER_WAIT_MS - 1_000);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await rejected;
+    await expect(waiting).rejects.toThrow("The computer is still busy");
+    expect(findUnique.mock.calls.length).toBeGreaterThan(2);
+  } finally {
+    vi.useRealTimers();
+  }
 });
