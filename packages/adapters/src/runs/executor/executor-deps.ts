@@ -30,6 +30,7 @@ import type { MemoryProviderResolver } from "../../memory/memory-provider-factor
 import type { MessagingDelivery } from "../../messaging/messaging-delivery.js";
 import type { CodexLiveCatalog } from "../../runtime/pi/models/pi-codex-catalog.js";
 import type { TicketChangeNotifier } from "../../tasks/ticket-changes.js";
+import type { UserComputerAccess } from "../tools/run-tools-user-computer.js";
 
 export interface ExecutorDeps {
   /** The present moment the agent is told; evals move it to a follow-up's due time. */
@@ -75,6 +76,8 @@ export interface ExecutorDeps {
     hasIdentity(botId: string): Promise<boolean>;
     /** Names of the chat apps people can connect on this deployment. */
     chatApps?(): string[];
+    /** Chat apps whose platform vouches for who sent each message. */
+    verifiedChatApps?(): string[];
   };
   /** Sends what runs say to the chat apps their turns came from; absent without one. */
   messagingDelivery?: MessagingDelivery;
@@ -105,6 +108,8 @@ export interface ExecutorDeps {
   codexCatalog?: CodexLiveCatalog;
   /** The run starter's connected desktop; absent never offers user_computer_shell. */
   userDevices?: UserDeviceGateway;
+  /** Which runs besides the owner's own chat may reach their paired computer. Omitted means none. */
+  userComputerAccess?: UserComputerAccess;
   /** Aborts when this process's runs must stop: each hands itself back to start elsewhere. */
   shutdownSignal?: AbortSignal;
   /**

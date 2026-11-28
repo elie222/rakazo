@@ -96,6 +96,18 @@ export interface AppEnv extends MessagingEnvironmentValues {
   deploymentLabs: LabFeature[];
   /** USER_DEVICES_ENABLED=false stops users connecting their own computers. Default on. */
   userDevicesEnabled: boolean;
+  /** USER_DEVICES_ALLOW_ROUTINES=true lets a user's routines use their own computer. Default off. */
+  userDevicesAllowRoutines: boolean;
+  /**
+   * USER_DEVICES_ALLOW_OWN_BOTS=true lets a user's bot use their own computer when another of
+   * their bots asked, in a chain they started. Default off.
+   */
+  userDevicesAllowOwnBots: boolean;
+  /**
+   * USER_DEVICES_ALLOW_MESSAGING=true lets a user's bot use their own computer when they message
+   * it themselves from a chat app they linked. Default off.
+   */
+  userDevicesAllowMessaging: boolean;
   /** COMPUTER_SETTINGS_ENABLED=true lets Settings choose where computers run. Default off. */
   computerSettingsEnabled: boolean;
   /** Operator menu links that frame a same-origin page (RAKAZO_NAV_LINKS). */
@@ -188,6 +200,15 @@ export interface AppEnv extends MessagingEnvironmentValues {
   crispWebsiteId?: string | null;
   /** DEMO_ACCOUNT_EMAIL and DEMO_ACCOUNT_PASSWORD, published to sign-in; only for throwaway demo servers. */
   demoAccount?: { email: string; password: string } | null;
+}
+
+/** The server switches that let runs besides the owner's own chats reach their paired computer. */
+export function userComputerAccess(env: AppEnv) {
+  return {
+    routines: env.userDevicesAllowRoutines,
+    ownBots: env.userDevicesAllowOwnBots,
+    messaging: env.userDevicesAllowMessaging,
+  };
 }
 
 /** Overrides win key by key inside `sandboxOptions`, so a partial one keeps the rest of the environment's. */
@@ -312,6 +333,21 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     piSessionRecording: source.PI_SESSION_RECORDING === "true",
     deploymentLabs: deploymentLabsFromEnv(source),
     userDevicesEnabled: parseEnvFlag("USER_DEVICES_ENABLED", source.USER_DEVICES_ENABLED, true),
+    userDevicesAllowRoutines: parseEnvFlag(
+      "USER_DEVICES_ALLOW_ROUTINES",
+      source.USER_DEVICES_ALLOW_ROUTINES,
+      false,
+    ),
+    userDevicesAllowOwnBots: parseEnvFlag(
+      "USER_DEVICES_ALLOW_OWN_BOTS",
+      source.USER_DEVICES_ALLOW_OWN_BOTS,
+      false,
+    ),
+    userDevicesAllowMessaging: parseEnvFlag(
+      "USER_DEVICES_ALLOW_MESSAGING",
+      source.USER_DEVICES_ALLOW_MESSAGING,
+      false,
+    ),
     computerSettingsEnabled: source.COMPUTER_SETTINGS_ENABLED === "true",
     navLinks: parseNavLinks(source.RAKAZO_NAV_LINKS),
     adminEmails: list(source.RAKAZO_ADMIN_EMAILS).map((email) => email.toLowerCase()),
