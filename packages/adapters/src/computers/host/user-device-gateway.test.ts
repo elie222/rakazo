@@ -9,6 +9,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
+import { WorkspaceDirectoryError } from "../screens/computer-support.js";
 import type { HostComputerRequest } from "./host-computer-protocol.js";
 import type { UserDeviceSocket } from "./user-device-gateway.js";
 import {
@@ -266,6 +267,21 @@ describe("user device gateway in the holding process", () => {
     socket.reply(id, { done: true });
     await expect(result).resolves.toEqual([{ platform: "darwin" }]);
     expect(socket.sent.some((message) => message.type === "cancel")).toBe(false);
+  });
+
+  it("preserves directory errors and accepts older error frames", async () => {
+    const { hub, devices } = setup();
+    const socket = new FakeSocket();
+    await hub.attach(device, socket);
+    const request = { method: "listFiles", botId: "bot", path: "notes" } as const;
+    for (const code of ["workspace_directory", undefined]) {
+      const result = collect(devices.request("user-1", request, AbortSignal.timeout(5000)));
+      const { id } = await socket.nextRequest();
+      socket.reply(id, { error: "missing", code });
+      await expect(result).rejects.toStrictEqual(
+        code ? new WorkspaceDirectoryError() : new Error("missing"),
+      );
+    }
   });
 
   it("routes explicit ids without changing the default computer", async () => {

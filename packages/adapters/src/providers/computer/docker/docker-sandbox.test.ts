@@ -12,6 +12,7 @@ import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { isSandboxGoneError } from "../../../computers/sandbox/sandbox-errors.js";
 import { assertSandboxReadLimit } from "../../../computers/sandbox/sandbox-test-support.js";
+import { WorkspaceDirectoryError } from "../../../computers/screens/computer-support.js";
 import {
   DockerSandboxProvider,
   HEALTH_CHECK_TIMEOUT_MS,
@@ -34,6 +35,33 @@ describe("Docker sandbox", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("distinguishes a directory path error from process failures and ambiguous legacy errors", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          Response.json({ error: "path is not an existing directory" }, { status: 422 }),
+        )
+        .mockResolvedValueOnce(
+          Response.json({ error: "computer file listing failed" }, { status: 502 }),
+        )
+        .mockResolvedValueOnce(Response.json({ error: "directory not found" }, { status: 404 })),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    const computer = { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" };
+
+    await expect(provider.listFiles(computer, "missing", context)).rejects.toThrow(
+      WorkspaceDirectoryError,
+    );
+    await expect(provider.listFiles(computer, ".", context)).rejects.toThrow(
+      "sandbox file listing failed: 502",
+    );
+    await expect(provider.listFiles(computer, ".", context)).rejects.toThrow(
+      "sandbox file listing failed: 404",
+    );
   });
 
   it("rejects a failed interactive screen instead of returning a viewer fallback", async () => {

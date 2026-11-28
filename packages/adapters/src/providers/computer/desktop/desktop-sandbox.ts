@@ -38,6 +38,7 @@ import {
   boundedComputerActions,
   normalizeWorkspacePath,
   placeholderObservation,
+  WorkspaceDirectoryError,
   WorkspacePathError,
 } from "../../../computers/screens/computer-support.js";
 import {
@@ -367,20 +368,20 @@ export class DesktopSandboxProvider implements SandboxProvider {
   ): Promise<ComputerFileEntry[]> {
     const box = this.requiredBox(computer);
     const relative = normalizeWorkspacePath(directory);
-    const target = await localWorkspaceTarget(box.home, relative, true);
-    const entries = await readdir(target, { withFileTypes: true });
+    const names = await readWorkspaceDirectory(box.home, relative);
     const listed = await Promise.all(
-      entries.map(async (entry) => {
+      names.map(async (name) => {
+        const childPath = relative ? `${relative}/${name}` : name;
         // A link that dangles or leaves the workspace is skipped, as in walkDesktopWorkspace.
-        const child = await localWorkspaceTarget(
-          box.home,
-          relative ? `${relative}/${entry.name}` : entry.name,
-          true,
-        ).catch(() => null);
+        const child = await localWorkspaceTarget(box.home, childPath, true).catch(() => null);
         if (!child) return null;
-        const info = await stat(child);
+        const info = await stat(child).catch((error: unknown) => {
+          if (hasErrorCode(error, "ENOENT") || hasErrorCode(error, "ENOTDIR")) return null;
+          throw error;
+        });
+        if (!info) return null;
         return {
-          path: normalizeWorkspacePath(relative ? `${relative}/${entry.name}` : entry.name),
+          path: normalizeWorkspacePath(childPath),
           kind: info.isDirectory() ? ("dir" as const) : ("file" as const),
           size: info.size,
           ...(info.isFile() && info.mode & 0o100 ? { executable: true } : {}),
@@ -498,6 +499,39 @@ export class DesktopSandboxProvider implements SandboxProvider {
 
   private allowedRoots(home: string) {
     return [home, ...(this.opts.hostRoots ?? [])];
+  }
+}
+
+async function readWorkspaceDirectory(home: string, relative: string) {
+  try {
+    const target = await localWorkspaceTarget(home, relative, true);
+    // Read names only. Resolving a Dirent can stat a child that has already disappeared.
+    return await readdir(target);
+  } catch (error) {
+    if (
+      (error instanceof WorkspacePathError ||
+        (error instanceof Error &&
+          "code" in error &&
+          "path" in error &&
+          error.path !== home &&
+          (error.code === "ENOENT" || error.code === "ENOTDIR"))) &&
+      (await isExistingDirectory(home))
+    ) {
+      throw new WorkspaceDirectoryError();
+    }
+    throw error;
+  }
+}
+
+async function isExistingDirectory(target: string) {
+  try {
+    return (await stat(target)).isDirectory();
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error) {
+      const code = (error as { code?: unknown }).code;
+      if (code === "ENOENT" || code === "ENOTDIR" || code === "ELOOP") return false;
+    }
+    throw error;
   }
 }
 

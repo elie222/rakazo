@@ -14,6 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { WorkspaceDirectoryError } from "../../../computers/screens/computer-support.js";
 
 const lstatRace = vi.hoisted(() => ({
   after: undefined as undefined | ((target: string) => Promise<void>),
@@ -78,6 +79,29 @@ async function pathExists(target: string) {
     return false;
   }
 }
+
+it("lists remaining entries when a file disappears between realpath and stat", async () => {
+  const { desktop, computer } = await fixture("list-race");
+  const removed = path.join(computer.providerRef, "removed.txt");
+  await writeFile(removed, "remove");
+  await writeFile(path.join(computer.providerRef, "kept.txt"), "keep");
+  lstatRace.afterRealpath = async (target) => {
+    if (target === removed) await rm(removed);
+  };
+  const entries = await desktop.listFiles(computer, "", ctx);
+  expect(entries.map((entry) => entry.path)).toContain("kept.txt");
+  expect(entries.map((entry) => entry.path)).not.toContain("removed.txt");
+});
+
+it("does not misreport a workspace home replaced by a file as a bad directory path", async () => {
+  const { desktop, computer } = await fixture("file-home");
+  await rm(computer.providerRef, { recursive: true, force: true });
+  await writeFile(computer.providerRef, "not a directory");
+  const err = await desktop.listFiles(computer, "notes", ctx).catch((error: unknown) => error);
+  expect(err).toBeInstanceOf(Error);
+  expect(err).not.toBeInstanceOf(WorkspaceDirectoryError);
+  expect(["ENOTDIR", "ENOENT"]).toContain((err as { code?: unknown }).code);
+});
 
 describe("desktop sandbox write containment without O_NOFOLLOW", () => {
   it("rejects an existing final symlink without changing its outside target", async () => {

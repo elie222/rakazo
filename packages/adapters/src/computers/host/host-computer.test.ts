@@ -23,6 +23,7 @@ import {
 } from "../computer-workspace.js";
 import { sandboxKindCapabilities } from "../sandbox/sandbox-kind-capabilities.js";
 import { assertSandboxReadLimit } from "../sandbox/sandbox-test-support.js";
+import { WorkspaceDirectoryError } from "../screens/computer-support.js";
 import {
   HOST_COMPUTER_MAX_BYTES,
   HOST_COMPUTER_MAX_FILE_BYTES,
@@ -309,6 +310,9 @@ describe("native host computer transport", () => {
     expect(await client.listFiles(computer, "nested", context)).toMatchObject([
       { path: "nested/file.bin", kind: "file", size: 5 },
     ]);
+    await expect(client.listFiles(computer, "missing", context)).rejects.toThrow(
+      WorkspaceDirectoryError,
+    );
     const files = await collect(client.exportWorkspace(computer, context));
     expect(files).toMatchObject([{ path: "nested/file.bin", content }]);
     await writeFile(

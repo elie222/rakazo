@@ -32,6 +32,7 @@ import { sandboxNotFoundError } from "../../../computers/sandbox/sandbox-errors.
 import {
   boundedComputerActions,
   computerObservation,
+  WorkspaceDirectoryError,
   WorkspacePathError,
 } from "../../../computers/screens/computer-support.js";
 import { normalizeDesktopWorkspacePath } from "../../../computers/screens/desktop-sandbox-paths.js";
@@ -872,10 +873,24 @@ export class WuyingSandboxProvider implements SandboxProvider {
     directory: string,
     context: AdapterContext,
   ): Promise<ComputerFileEntry[]> {
-    const relative = normalizeDesktopWorkspacePath(directory, "win32");
+    let relative: string;
+    try {
+      relative = normalizeDesktopWorkspacePath(directory, "win32");
+    } catch (error) {
+      if (error instanceof WorkspacePathError) throw new WorkspaceDirectoryError(error.message);
+      throw error;
+    }
     const target = await this.target(computer, relative, context.signal);
     const executables = await this.executables(computer, context.signal);
-    return (await this.list(target, context.signal)).flatMap((entry) => {
+    const entries = await this.list(target, context.signal).catch(async (error: unknown) => {
+      if (relative && error instanceof WuyingToolError && error.code === "not_found") {
+        const home = await this.home(computer.botId, context.signal);
+        if (await this.exists(home, context.signal, "directory"))
+          throw new WorkspaceDirectoryError();
+      }
+      throw error;
+    });
+    return entries.flatMap((entry) => {
       if (!relative && entry.name === EXECUTABLES_FILE) return [];
       const path = relative ? `${relative}/${entry.name}` : entry.name;
       return [
@@ -1104,10 +1119,13 @@ export class WuyingSandboxProvider implements SandboxProvider {
     return normalized ? `${home}\\${normalized.replace(/\//g, "\\")}` : home;
   }
 
-  private async exists(target: string, signal: AbortSignal) {
+  private async exists(target: string, signal: AbortSignal, kind?: "directory") {
     try {
-      await this.tools.call("fs_info", { path: target }, signal);
-      return true;
+      const { data } = await this.tools.call("fs_info", { path: target }, signal);
+      return (
+        kind === undefined ||
+        (typeof data === "object" && data !== null && "kind" in data && data.kind === kind)
+      );
     } catch (error) {
       if (error instanceof WuyingToolError && error.code === "not_found") return false;
       throw error;

@@ -9,6 +9,7 @@ import { recordSecurityEvent, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
+import { WorkspaceDirectoryError } from "../screens/computer-support.js";
 import type { HostComputerFrame, HostComputerRequest } from "./host-computer-protocol.js";
 import {
   HOST_COMPUTER_MAX_BYTES,
@@ -709,7 +710,10 @@ async function* framesToValues<T>(
     signal.throwIfAborted();
     const frame = hostFrame<T>(raw);
     if (!frame) throw new Error("Your computer sent an invalid response");
-    if ("error" in frame) throw new Error(frame.error);
+    if ("error" in frame) {
+      if (frame.code === "workspace_directory") throw new WorkspaceDirectoryError();
+      throw new Error(frame.error);
+    }
     if ("heartbeat" in frame) continue;
     if ("done" in frame) return;
     yield frame.value;
@@ -721,7 +725,11 @@ async function* framesToValues<T>(
 function hostFrame<T>(value: unknown): HostComputerFrame<T> | null {
   if (!value || typeof value !== "object") return null;
   const frame = value as Record<string, unknown>;
-  if (typeof frame.error === "string") return { error: frame.error };
+  if (typeof frame.error === "string") {
+    return frame.code === "workspace_directory"
+      ? { error: frame.error, code: frame.code }
+      : { error: frame.error };
+  }
   if (frame.heartbeat === true) return { heartbeat: true };
   if (frame.done === true) return { done: true };
   if ("value" in frame) return { value: frame.value as T };

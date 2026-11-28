@@ -854,11 +854,14 @@ app.get("/computers/:id/files", async (c) => {
       "import json, os, stat, sys",
       "root, rel = sys.argv[1], sys.argv[2]",
       "out = []",
-      "for item in os.scandir(root):",
-      "  if item.is_symlink(): continue",
-      "  info = item.stat(follow_symlinks=False)",
+      "try: entries = os.scandir(root)",
+      "except (FileNotFoundError, NotADirectoryError): sys.exit(44)",
+      "for item in entries:",
+      "  try: info = item.stat(follow_symlinks=False)",
+      "  except (FileNotFoundError, NotADirectoryError): continue",
+      "  if stat.S_ISLNK(info.st_mode): continue",
       "  child = '/'.join(x for x in (rel, item.name) if x)",
-      "  out.append({'path': child, 'kind': 'dir' if item.is_dir(follow_symlinks=False) else 'file', 'size': info.st_size, **({'executable': True} if item.is_file(follow_symlinks=False) and bool(info.st_mode & stat.S_IXUSR) else {})})",
+      "  out.append({'path': child, 'kind': 'dir' if stat.S_ISDIR(info.st_mode) else 'file', 'size': info.st_size, **({'executable': True} if stat.S_ISREG(info.st_mode) and bool(info.st_mode & stat.S_IXUSR) else {})})",
       "print(json.dumps(sorted(out, key=lambda x: x['path'])))",
     ].join("\n");
     const result = await runContainerCommand(container, [
@@ -868,7 +871,17 @@ app.get("/computers/:id/files", async (c) => {
       target,
       relative,
     ]);
-    if (result.code !== 0) return c.json({ error: result.stderr || "directory not found" }, 404);
+    if (result.code === 44) return c.json({ error: "path is not an existing directory" }, 422);
+    if (result.code !== 0) {
+      // Tracebacks can contain workspace paths. Only record the OS error number.
+      const errno = /^\w*Error: \[Errno (\d{1,4})\]/m.exec(result.stderr)?.[1];
+      getLogger().warn("computer file listing failed", {
+        "computer.id": c.req.param("id"),
+        "process.exit.code": result.code,
+        ...(errno ? { "error.errno": Number(errno) } : {}),
+      });
+      return c.json({ error: "computer file listing failed" }, 502);
+    }
     return c.json(JSON.parse(result.stdout));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

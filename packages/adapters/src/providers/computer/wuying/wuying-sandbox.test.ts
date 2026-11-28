@@ -8,6 +8,7 @@ import {
   assertSandboxWorkspaceContract,
   provisionPrepared,
 } from "../../../computers/sandbox/sandbox-test-support.js";
+import { WorkspaceDirectoryError } from "../../../computers/screens/computer-support.js";
 import { psLiteral, quoteWindowsArgument, windowsKeyChord } from "./wuying-sandbox.js";
 import { FAKE_PROFILE, FakeWuyingDesktop } from "./wuying-sandbox.test-support.js";
 
@@ -49,6 +50,64 @@ describe("WuyingSandboxProvider", () => {
     const note = { path: "notes/result.txt", content: new TextEncoder().encode("portable") };
     await provider.writeFile(computer, note, ctx);
     await assertSandboxReadLimit(provider, computer, ctx, note);
+  });
+
+  it("rejects invalid Windows directory segments before calling the gateway", async () => {
+    const desktop = new FakeWuyingDesktop();
+    const provider = desktop.provider();
+    const computer = await provisionPrepared(provider, { botId: "portable", homePath: "/h" }, ctx);
+    const calls = desktop.calls.length;
+    await expect(provider.listFiles(computer, "notes?", ctx)).rejects.toThrow(
+      WorkspaceDirectoryError,
+    );
+    await expect(provider.listFiles(computer, "notes.", ctx)).rejects.toThrow(
+      WorkspaceDirectoryError,
+    );
+    expect(desktop.calls).toHaveLength(calls);
+  });
+
+  it("reports missing or non-directory targets as WorkspaceDirectoryError", async () => {
+    const desktop = new FakeWuyingDesktop();
+    const provider = desktop.provider();
+    const computer = await provisionPrepared(provider, { botId: "portable", homePath: "/h" }, ctx);
+    await provider.writeFile(computer, { path: "note.txt", content: Uint8Array.of(1) }, ctx);
+    await expect(provider.listFiles(computer, "missing", ctx)).rejects.toThrow(
+      WorkspaceDirectoryError,
+    );
+    await expect(provider.listFiles(computer, "note.txt", ctx)).rejects.toThrow(
+      WorkspaceDirectoryError,
+    );
+  });
+
+  it("preserves provider errors when the workspace home is missing or not a directory", async () => {
+    const desktop = new FakeWuyingDesktop();
+    const provider = desktop.provider();
+    const computer = await provisionPrepared(provider, { botId: "portable", homePath: "/h" }, ctx);
+    const missingHome = { ...computer, botId: "unprovisioned" };
+    const listError = { name: "WuyingToolError", tool: "fs_list", code: "not_found" };
+    await expect(provider.listFiles(missingHome, "notes", ctx)).rejects.toMatchObject(listError);
+    const { home } = await provider.environment(missingHome, ctx);
+    await desktop.call("fs_write", { path: home, data: "regular file", encoding: "utf8" });
+    await expect(provider.listFiles(missingHome, "notes", ctx)).rejects.toMatchObject(listError);
+  });
+
+  it("normalizes dot segments and lists the workspace root via dot", async () => {
+    const desktop = new FakeWuyingDesktop();
+    const provider = desktop.provider();
+    const computer = await provisionPrepared(provider, { botId: "portable", homePath: "/h" }, ctx);
+    await provider.writeFile(computer, { path: "note.txt", content: Uint8Array.of(1) }, ctx);
+    await provider.writeFile(
+      computer,
+      { path: "notes/result.txt", content: Uint8Array.of(2) },
+      ctx,
+    );
+    const notes = await provider.listFiles(computer, "notes", ctx);
+    for (const directory of ["./notes", ".\\notes", "notes/."]) {
+      expect(await provider.listFiles(computer, directory, ctx)).toEqual(notes);
+    }
+    const root = await provider.listFiles(computer, "", ctx);
+    expect(root).toContainEqual({ path: "note.txt", kind: "file", size: 1 });
+    expect(await provider.listFiles(computer, ".", ctx)).toEqual(root);
   });
 
   it("keeps each computer's home in its own folder under the user profile", async () => {

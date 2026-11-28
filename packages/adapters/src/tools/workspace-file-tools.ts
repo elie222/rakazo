@@ -1,5 +1,10 @@
 import path from "node:path";
-import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
+import type {
+  AdapterContext,
+  ComputerFileEntry,
+  ComputerRef,
+  SandboxProvider,
+} from "@rakazo/adapter-kit";
 import { isSandboxProviderOutage, SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import type { ComputerMode } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
@@ -8,15 +13,22 @@ import { PLOT_TOOL_GUIDE, searchChartCatalog } from "@rakazo/core/plot-catalog";
 import { getLogger } from "@rakazo/logging";
 import {
   displayBotWorkspacePath,
+  normalizeWorkspacePath,
   resolveBotWorkspacePath,
   teamBotWorkspaceDirectory,
+  WorkspaceDirectoryError,
+  WorkspacePathError,
 } from "../computers/screens/computer-support.js";
 import { imageToolResult, isToolImage, TOOL_IMAGE_MAX_BYTES } from "../media/tool-result-image.js";
 import { publishMessage } from "../runs/assembly/run-messages.js";
 import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "../runtime/pi/pi-runtime-limits.js";
 import { attachWorkspaceFileToThread } from "../storage/thread-artifacts.js";
-import { READ_FILE_MAX_BYTES, READ_FILE_MAX_KB } from "./builtin-computer.tool-definition.js";
+import {
+  LIST_FILES_PATH_GUIDANCE,
+  READ_FILE_MAX_BYTES,
+  READ_FILE_MAX_KB,
+} from "./builtin-computer.tool-definition.js";
 import type { PlotSpec } from "./plot-tool.js";
 import {
   assertPlotDataWithinLimits,
@@ -171,6 +183,8 @@ function jsonEscapedPrefix(text: string, budget: number): string {
   return text.slice(0, index);
 }
 
+const LIST_FILES_DIRECTORY_ERROR = `Cannot list that directory. ${LIST_FILES_PATH_GUIDANCE}`;
+
 export async function listFilesFromTool(
   sandbox: SandboxProvider,
   workspace: RunWorkspace,
@@ -178,11 +192,23 @@ export async function listFilesFromTool(
 ) {
   const { botId, computerMode, computer, context, runSecrets } = workspace;
   const requestedPath = String(args.path ?? "");
-  const entries = await sandbox.listFiles(
-    await computer(),
-    resolveBotWorkspacePath(computerMode, botId, requestedPath),
-    context,
-  );
+  const ref = await computer();
+  let directory: string;
+  try {
+    directory = resolveBotWorkspacePath(computerMode, botId, requestedPath);
+    // Keep the provider's path spelling, including absolute paths and home aliases.
+    if (computerMode !== "team") normalizeWorkspacePath(directory);
+  } catch (error) {
+    if (error instanceof WorkspacePathError) return { error: LIST_FILES_DIRECTORY_ERROR };
+    throw error;
+  }
+  let entries: ComputerFileEntry[];
+  try {
+    entries = await sandbox.listFiles(ref, directory, context);
+  } catch (error) {
+    if (error instanceof WorkspaceDirectoryError) return { error: LIST_FILES_DIRECTORY_ERROR };
+    throw error;
+  }
   return {
     path: requestedPath,
     entries: entries.map((entry) => ({

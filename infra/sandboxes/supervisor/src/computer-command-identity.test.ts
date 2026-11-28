@@ -1,6 +1,7 @@
 import { Duplex, Readable, Writable } from "node:stream";
 import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 import { deferred } from "@rakazo/core/test-async";
+import { getLogger } from "@rakazo/logging";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { computerCommandEnv } from "./supervisor-logic.js";
 
@@ -9,7 +10,7 @@ type ExecOptions = { Cmd: string[]; Env?: string[]; User?: string };
 const mock = vi.hoisted(() => ({
   exec: vi.fn(),
   inspect: vi.fn(),
-  failWhen: (_options: { Cmd: string[] }): boolean => false,
+  exitCode: (_options: ExecOptions): number => 0,
 }));
 vi.mock("dockerode", () => ({
   default: class {
@@ -24,7 +25,7 @@ import { supervisorApp } from "./index.js";
 beforeEach(() => {
   mock.exec.mockReset();
   mock.inspect.mockReset();
-  mock.failWhen = () => false;
+  mock.exitCode = () => 0;
   mock.inspect.mockResolvedValue({
     Config: {
       Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
@@ -42,7 +43,7 @@ beforeEach(() => {
           },
         }),
       }),
-    inspect: async () => ({ ExitCode: mock.failWhen(options) ? 1 : 0 }),
+    inspect: async () => ({ ExitCode: mock.exitCode(options) }),
   }));
 });
 
@@ -147,7 +148,7 @@ describe("computer command identity", () => {
   });
 
   it("starts the user's terminal with the same environment and user as the bot's shell", async () => {
-    mock.failWhen = (options) => options.Cmd.join(" ").includes("terminal-fixture-token");
+    mock.exitCode = (options) => Number(options.Cmd.join(" ").includes("terminal-fixture-token"));
     const response = await post("/computers/computer-terminal/terminal", {
       controlToken: "terminal-fixture-token",
     });
@@ -158,6 +159,34 @@ describe("computer command identity", () => {
     expect(terminal?.Env).toEqual(computerCommandEnv({ display: ":1", debugPort: 9222 }));
     expect(terminal?.Env?.[terminal.Env.indexOf("DISPLAY=:1") + 1]).toBe("RAKAZO_CDP_PORT=9222");
     expectContainerUser();
+  });
+
+  it.each([
+    [44, 422],
+    [137, 502],
+  ])("maps directory listing exit %i to HTTP %i", async (code, status) => {
+    using warn = vi.spyOn(getLogger(), "warn").mockImplementation(() => undefined);
+    mock.exitCode = () => code;
+    const response = await supervisorApp.request("/computers/computer-files/files?mode=list", {
+      headers: {
+        authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+        "x-rakazo-bot-id": "bot",
+        "x-rakazo-space-id": "space",
+      },
+    });
+    expect(response.status).toBe(status);
+    if (code === 137) {
+      expect(warn).toHaveBeenCalledWith(
+        "computer file listing failed",
+        expect.objectContaining({
+          "computer.id": "computer-files",
+          "process.exit.code": 137,
+        }),
+      );
+      expect(await response.json()).toEqual({ error: "computer file listing failed" });
+    } else {
+      expect(warn).not.toHaveBeenCalledWith("computer file listing failed", expect.anything());
+    }
   });
 
   it("computer-exec-screen-cdp-port", async () => {

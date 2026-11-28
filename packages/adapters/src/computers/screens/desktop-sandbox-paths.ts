@@ -33,6 +33,7 @@ function assertPortableWindowsPath(value: string) {
     throw new WorkspacePathError("Path escapes the computer workspace");
   const withoutVirtualRoot = portable.replace(/^\/+/, "");
   for (const segment of withoutVirtualRoot.split("/").filter(Boolean)) {
+    if (segment === ".") continue;
     const deviceName = segment.split(".", 1)[0] ?? "";
     if (
       hasWindowsReservedCharacter(segment) ||
