@@ -156,6 +156,49 @@ describePostgres("user devices (PostgreSQL)", () => {
     await prisma.userDevice.deleteMany({ where: { id: { in: [laptop.id, desk.id] } } });
   });
 
+  it("keeps mobile rows out of the legacy computer gateway", async () => {
+    const hub = new UserDeviceHub({ prisma: raw, address: "http://127.0.0.1:1" });
+    hubs.push(hub);
+    const gateway = new UserDevices({ prisma: raw, forwardSecret: "k", hub });
+    const token = createUserDeviceToken();
+    const mobile = await prisma.userDevice.create({
+      data: {
+        userId,
+        name: "Phone",
+        platform: "android",
+        kind: "mobile",
+        tokenHash: hashUserDeviceToken(token),
+        createdAt: new Date(0),
+      },
+    });
+    const computerId = `legacy-${suffix}`;
+    const computerToken = createUserDeviceToken();
+    const computerTokenHash = hashUserDeviceToken(computerToken);
+    const pairedAt = new Date(1000);
+    try {
+      // The previous API inserts these columns without naming the new kind.
+      await prisma.$executeRaw`INSERT INTO "user_devices"
+        ("id", "userId", "name", "platform", "tokenHash", "createdAt")
+        VALUES (${computerId}, ${userId}, 'Legacy computer', 'win32', ${computerTokenHash}, ${pairedAt})`;
+      const authenticated = await hub.authenticate(`Bearer ${computerToken}`);
+      expect(authenticated).toMatchObject({ id: computerId, userId, platform: "win32" });
+      await hub.attach(authenticated!, new Socket());
+      await prisma.userDeviceConnection.create({
+        data: { deviceId: mobile.id, connectionId: `mobile-${suffix}`, address: hub.address },
+      });
+      await expect(hub.authenticate(`Bearer ${token}`)).resolves.toBeNull();
+      await expect(gateway.connected(userId, mobile.id)).resolves.toBeNull();
+      await expect(gateway.connected(userId)).resolves.toMatchObject({ deviceId: computerId });
+      await expect(gateway.pairedSince(userId)).resolves.toEqual(pairedAt);
+      await expect(gateway.list(userId)).resolves.toMatchObject([
+        { deviceId: computerId, bound: true },
+      ]);
+      await expect(gateway.connected("other-user", computerId)).resolves.toBeNull();
+    } finally {
+      await prisma.userDevice.deleteMany({ where: { id: { in: [mobile.id, computerId] } } });
+    }
+  });
+
   it("revokes a connected device once the sign-in that paired it is gone", async () => {
     const session = await prisma.session.create({
       data: {

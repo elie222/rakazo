@@ -3,7 +3,7 @@ import type { IncomingMessage } from "node:http";
 import { networkInterfaces } from "node:os";
 import type { Duplex } from "node:stream";
 import type { UserDeviceSummary } from "@rakazo/contracts";
-import { USER_DEVICE_CONNECT_PATH } from "@rakazo/contracts";
+import { PAIRED_DEVICE_KIND, USER_DEVICE_CONNECT_PATH } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { recordSecurityEvent, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -229,7 +229,7 @@ export class UserDeviceHub {
     const hash = hashUserDeviceToken(token);
     const device = await runAsSystem("authenticate a user device", () =>
       this.deps.prisma.userDevice.findUnique({
-        where: { tokenHash: hash },
+        where: { tokenHash: hash, kind: PAIRED_DEVICE_KIND.computer },
         select: {
           id: true,
           userId: true,
@@ -546,7 +546,7 @@ export class UserDevices implements UserDeviceGateway {
   async releaseSignedOut(userId: string): Promise<void> {
     const devices = await runAsSystem("find a user's signed-in devices", () =>
       this.deps.prisma.userDevice.findMany({
-        where: { userId, revokedAt: null },
+        where: { userId, revokedAt: null, kind: PAIRED_DEVICE_KIND.computer },
         select: { id: true, userId: true, sessionId: true },
       }),
     );
@@ -558,7 +558,7 @@ export class UserDevices implements UserDeviceGateway {
   async list(userId: string): Promise<UserDeviceSummary[]> {
     const devices = await runAsSystem("list a user's devices", () =>
       this.deps.prisma.userDevice.findMany({
-        where: { userId, revokedAt: null },
+        where: { userId, revokedAt: null, kind: PAIRED_DEVICE_KIND.computer },
         orderBy: { createdAt: "desc" },
         select: {
           id: true,
@@ -584,7 +584,7 @@ export class UserDevices implements UserDeviceGateway {
   async pairedSince(userId: string): Promise<Date | null> {
     const device = await runAsSystem("find a user's paired device", () =>
       this.deps.prisma.userDevice.findFirst({
-        where: { userId, revokedAt: null },
+        where: { userId, revokedAt: null, kind: PAIRED_DEVICE_KIND.computer },
         orderBy: { createdAt: "asc" },
         select: { createdAt: true },
       }),
@@ -640,7 +640,7 @@ export class UserDevices implements UserDeviceGateway {
       this.deps.prisma.userDeviceConnection.findFirst({
         where: {
           heartbeatAt: { gt: new Date(Date.now() - STALE_AFTER_MS) },
-          device: { userId, revokedAt: null },
+          device: { userId, revokedAt: null, kind: PAIRED_DEVICE_KIND.computer },
           ...(deviceId !== undefined ? { deviceId } : {}),
         },
         // Pairing order, not connection time, so a reconnect never moves bots to another computer.

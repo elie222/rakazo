@@ -43,6 +43,7 @@ export * from "./clients/server-updates.js";
 export * from "./computers/computer.js";
 export * from "./computers/computer-command.js";
 export * from "./computers/terminal.js";
+export * from "./devices/paired-device.js";
 export * from "./experiments.js";
 export * from "./ids.js";
 export * from "./integrations/agent-import.js";

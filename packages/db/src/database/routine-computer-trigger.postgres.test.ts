@@ -147,6 +147,34 @@ describePostgres("a routine's computer approval (PostgreSQL)", () => {
     ).toBe("approved");
   });
 
+  it("keeps computer approval when a mobile device is registered, revoked, or deleted", async () => {
+    const tokenHash = `mobile-${suffix}`;
+    expect(
+      await afterDeviceChange(() =>
+        prisma.userDevice.create({
+          data: {
+            userId: ids.userId,
+            name: "Phone",
+            kind: "mobile",
+            platform: "android",
+            tokenHash,
+          },
+        }),
+      ),
+    ).toBe("approved");
+    expect(
+      await afterDeviceChange(() =>
+        prisma.userDevice.update({
+          where: { tokenHash },
+          data: { revokedAt: new Date() },
+        }),
+      ),
+    ).toBe("approved");
+    expect(await afterDeviceChange(() => prisma.userDevice.delete({ where: { tokenHash } }))).toBe(
+      "approved",
+    );
+  });
+
   const revoke = (tokenHash: string) =>
     prisma.userDevice.updateMany({
       where: { tokenHash },
