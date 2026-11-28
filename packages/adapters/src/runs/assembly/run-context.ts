@@ -55,7 +55,11 @@ import type { ScreenTurn } from "../turn/screen-turn.js";
 import { providerToolCallId, runToolCallIds } from "../turn/tool-call-ids.js";
 import type { LoopGuardStreak } from "../turn/tool-loop.js";
 import type { ToolRefusal } from "../turn/tool-refusal.js";
-import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "../turn/turn-checkpoint.js";
+import {
+  restoreTurnCheckpoint,
+  resumingTurnCheckpointCalls,
+  unresolvedTurnCheckpointCalls,
+} from "../turn/turn-checkpoint.js";
 import type { ReplySnapshot } from "./reply-snapshot.js";
 import { restoreReply, snapshotReply } from "./reply-snapshot.js";
 import type { lazyRunComputer } from "./run-computer.js";
@@ -586,17 +590,33 @@ export async function persistTurnCheckpoint(ctx: RunContext, executionId?: strin
   }
 }
 
+/** The calls a saved turn runs when it resumes; none when it cannot be read. */
+export function resumingCheckpointCalls(
+  turnCheckpoint: string,
+  model: { provider: string; id: string },
+) {
+  try {
+    return resumingTurnCheckpointCalls(restoreTurnCheckpoint(turnCheckpoint, model));
+  } catch (error) {
+    // Restoring it falls back the same way, so the computer check has nothing to wait for.
+    getLogger().warn("run.turn_checkpoint_unreadable", { error });
+    return [];
+  }
+}
+
 /**
  * Reserve the effect occurrences a saved turn already assigned, so its pending call claims the
  * same effect when it resumes. Returns undefined when the turn cannot resume with this run's
  * tools or transcript format. A pinned computer-mode turn whose pending tool is not offered
  * right now throws PausedTurnToolsUnavailableError instead, so setup retries it quietly.
+ * offlineCalls are pending calls whose device is offline now, which count as not offered.
  */
 export function restoreTurnCheckpointEffects(
   ctx: RunContext,
   turnCheckpoint: string,
   model: { provider: string; id: string },
   computerMode?: "main" | "computer",
+  offlineCalls?: ReadonlySet<string>,
 ): string | undefined {
   const effects = ctx.state.effects;
   try {
@@ -620,23 +640,13 @@ export function restoreTurnCheckpointEffects(
         return undefined;
       available.add(computerMode === "main" ? "enter_computer_mode" : "leave_computer_mode");
     }
-    const missing = saved.messages.flatMap((message) =>
-      message.role === "assistant"
-        ? message.content.filter(
-            (call) =>
-              call.type === "toolCall" &&
-              unresolved.has(call) &&
-              (saved.executionMode === "sequential" || call.id === saved.pendingToolCallId) &&
-              !available.has(call.name),
-          )
-        : [],
+    const missing = resumingTurnCheckpointCalls(saved).filter(
+      (call) => !available.has(call.name) || offlineCalls?.has(call.id),
     );
     if (missing.length) {
       // A transition for the other mode is an invalid checkpoint, not a tool that went offline.
       const transition = missing.some(
-        (call) =>
-          call.type === "toolCall" &&
-          (call.name === "enter_computer_mode" || call.name === "leave_computer_mode"),
+        (call) => call.name === "enter_computer_mode" || call.name === "leave_computer_mode",
       );
       if (computerMode && !transition) throw new PausedTurnToolsUnavailableError();
       return undefined;

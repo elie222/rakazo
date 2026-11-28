@@ -21,6 +21,10 @@ export function withHostComputerScreen(
   if (!sandboxKindCapabilities(options.sandboxKind).offersHostComputer || !url || !token)
     return devices;
   const host = new HostComputerSandbox(url, token);
+  // Kept from the last answer, so a missed one leaves it listed as offline rather than unpaired:
+  // runs offer its tools by what is listed, and that must not change while access stays on.
+  // Forgotten whenever access is found off, so a new access period lists it only once it answers.
+  let lastPlatform: string | undefined;
 
   // Approvals count from the latest settings change, so turning access off and on asks again.
   async function enabledSince() {
@@ -32,7 +36,10 @@ export function withHostComputerScreen(
   }
 
   async function hostDevice(): Promise<UserDevice | null> {
-    if (!(await enabledSince())) return null;
+    if (!(await enabledSince())) {
+      lastPlatform = undefined;
+      return null;
+    }
     try {
       let environment: HostComputerEnvironment | undefined;
       for await (const value of host.stream<HostComputerEnvironment>(
@@ -40,6 +47,7 @@ export function withHostComputerScreen(
         AbortSignal.timeout(5_000),
       ))
         environment = value;
+      if (environment) lastPlatform = environment.platform;
       return environment
         ? {
             deviceId: HOST_COMPUTER_DEVICE_ID,
@@ -63,15 +71,17 @@ export function withHostComputerScreen(
     async list(userId) {
       const paired = (await devices?.list(userId)) ?? [];
       const local = await hostDevice();
-      return local
+      const platform = local?.platform ?? lastPlatform;
+      return platform
         ? [
             ...paired,
             {
-              deviceId: local.deviceId,
-              name: local.name,
-              platform: local.platform,
-              connected: true,
-              bound: !paired.some((device) => device.bound),
+              deviceId: HOST_COMPUTER_DEVICE_ID,
+              name: "This computer",
+              platform,
+              connected: Boolean(local),
+              screenOnly: true,
+              bound: Boolean(local) && !paired.some((device) => device.bound),
             },
           ]
         : paired;

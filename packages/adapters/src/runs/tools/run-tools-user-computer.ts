@@ -3,10 +3,12 @@ import type { AgentToolExecutionResult, ProcessEvent } from "@rakazo/adapter-kit
 import type { ApprovalMode } from "@rakazo/core";
 import { redactSecrets } from "@rakazo/core";
 import { sandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { z } from "zod";
 import type { HostComputerEnvironment } from "../../computers/host/host-computer-protocol.js";
 import { nativeShellCommandArgv } from "../../computers/host/native-shell.js";
 import {
+  hasScreenControl,
   USER_COMPUTER_ACT_TOOL,
   USER_COMPUTER_OBSERVE_TOOL,
   USER_COMPUTER_SCREEN_TOOLS,
@@ -14,6 +16,7 @@ import {
   USER_COMPUTER_TOOLS,
   userComputerAppName,
 } from "../../computers/host/user-computer-tools.js";
+import type { UserDevice, UserDeviceGateway } from "../../computers/host/user-device-protocol.js";
 import {
   isRunningShellCommand,
   observeShellCommand,
@@ -25,11 +28,13 @@ import type {
   HostScreenObservation,
 } from "../../computers/screens/host-screen.js";
 import { HOST_SCREEN_MAX_ACTIONS, hostScreenAction } from "../../computers/screens/host-screen.js";
+import { USE_TOOL } from "../../tools/builtin.tool-definition.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { isRunTaintedBeyondOwnComputer } from "../assembly/run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 
 export {
+  hasScreenControl,
   USER_COMPUTER_ACT_TOOL,
   USER_COMPUTER_OBSERVE_TOOL,
   USER_COMPUTER_SCREEN_TOOLS,
@@ -38,8 +43,8 @@ export {
   userComputerAppName,
 };
 
-/** Whether the run's owner has their desktop connected, or could connect one. */
-export type UserComputerState = "connected" | "offline" | undefined;
+/** Whether the run's owner has a desktop paired, or could pair one. */
+export type UserComputerState = "paired" | "unpaired" | undefined;
 
 const USER_COMPUTER_UNAVAILABLE =
   'The user\'s computer is not connected. If the task needs it, ask them to open the Rakazo desktop app and turn on "Let bots use this computer" in its settings.';
@@ -154,19 +159,102 @@ async function lastValue<T>(values: AsyncIterable<T>): Promise<T> {
 async function connectedUserComputer(ctx: RunContext, computerId?: string) {
   const owner = ctx.source.userComputerOwner;
   const devices = ctx.deps.userDevices;
-  const device =
-    owner && devices ? await devices.connected(owner, computerId).catch(() => null) : null;
-  return owner && devices && device ? { owner, devices, deviceId: device.deviceId } : undefined;
+  if (!owner || !devices) return undefined;
+  let device: UserDevice | null;
+  try {
+    device = await devices.connected(owner, computerId);
+  } catch (error) {
+    // A failed lookup is not a disconnected computer: asking the user to reconnect would mislead.
+    getLogger().warn("user_computer.lookup_failed", { error });
+    return { error: LOOKUP_FAILED };
+  }
+  return device ? { owner, devices, device } : undefined;
 }
+
+/** Why the computer a call reaches cannot run that tool: offered while any paired one can. */
+function userComputerMismatch(
+  name: string,
+  device: { platform?: string; screenOnly?: boolean },
+): string | undefined {
+  if (USER_COMPUTER_SCREEN_TOOLS.has(name))
+    return hasScreenControl(device.platform) ? undefined : NO_SCREEN_CONTROL;
+  return device.screenOnly ? SCREEN_ONLY : undefined;
+}
+
+/**
+ * Checked before the approval card, so the user is not asked about a call that computer cannot
+ * run. Offline or unchecked is left to the call, which reports it.
+ */
+export async function userComputerCallRefusal(
+  ctx: RunContext,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<string | undefined> {
+  const target = requestedComputer(args);
+  if (target.error) return undefined;
+  const connected = await connectedUserComputer(ctx, target.computerId);
+  return connected && !("error" in connected)
+    ? userComputerMismatch(name, connected.device)
+    : undefined;
+}
+
+const LOOKUP_FAILED = "The user's computer could not be checked just now. Try again shortly.";
 
 const TARGET_UNAVAILABLE =
   "The selected computer is disconnected or not allowed for this user. Use user_computer_list to see available computers.";
+const SCREEN_ONLY =
+  "That computer offers only screen control, so it cannot run commands. Use the screen tools there, or ask the user to connect a computer that can.";
+const NO_SCREEN_CONTROL =
+  "That computer has no screen control. Use user_computer_list and pass the computerId of a Mac or Windows computer.";
 
 function requestedComputer(args: Record<string, unknown>): { computerId?: string; error?: string } {
   if (args.computerId === undefined) return {};
   if (typeof args.computerId !== "string" || !args.computerId.trim() || args.computerId.length > 64)
     return { error: "computerId must be a non-empty computer id from user_computer_list." };
   return { computerId: args.computerId };
+}
+
+/**
+ * A paused turn's calls whose paired computer is offline now, so restoring it waits as it would
+ * for a tool not offered. An id that is not paired, or a failed lookup, is left to the call.
+ */
+export async function offlineUserComputerCalls(
+  devices: UserDeviceGateway,
+  owner: string,
+  calls: readonly { id: string; name: string; arguments: Record<string, unknown> }[],
+): Promise<Set<string>> {
+  const offline = new Set<string>();
+  // Screen tools are deferred, so the model reaches them through use_tool.
+  const unwrapped = calls.map((call) =>
+    call.name === USE_TOOL &&
+    call.arguments.arguments &&
+    typeof call.arguments.arguments === "object"
+      ? {
+          id: call.id,
+          name: String(call.arguments.name),
+          arguments: call.arguments.arguments as Record<string, unknown>,
+        }
+      : call,
+  );
+  if (!unwrapped.some((call) => USER_COMPUTER_TOOLS.has(call.name))) return offline;
+  const computers = await bestEffort("list the paused call's computers", devices.list(owner));
+  if (!computers?.length) return offline;
+  for (const call of unwrapped) {
+    if (!USER_COMPUTER_TOOLS.has(call.name)) continue;
+    const target = requestedComputer(call.arguments);
+    if (target.error) continue;
+    if (target.computerId) {
+      const named = computers.filter((computer) => computer.deviceId === target.computerId);
+      if (named.length && !named.some((computer) => computer.connected)) offline.add(call.id);
+      continue;
+    }
+    // Without an id the call runs on the bound computer, so it waits until that one can run it,
+    // while any paired computer could. With none that could, the call reports it.
+    if (!computers.some((computer) => !userComputerMismatch(call.name, computer))) continue;
+    const bound = computers.find((computer) => computer.bound);
+    if (!bound || userComputerMismatch(call.name, bound)) offline.add(call.id);
+  }
+  return offline;
 }
 
 export async function userComputerList(ctx: RunContext, call: ToolCall) {
@@ -178,6 +266,7 @@ export async function userComputerList(ctx: RunContext, call: ToolCall) {
     .map((device) => ({
       computerId: device.deviceId,
       name: device.name,
+      platform: device.platform,
       bound: device.bound === true,
     }));
   return call.finish({ computers });
@@ -192,7 +281,11 @@ export async function userComputerShell(ctx: RunContext, call: ToolCall) {
     return call.finish({
       error: target.computerId ? TARGET_UNAVAILABLE : USER_COMPUTER_UNAVAILABLE,
     });
-  const { owner, devices, deviceId } = connected;
+  if ("error" in connected) return call.finish(connected);
+  const mismatch = userComputerMismatch(call.name, connected.device);
+  if (mismatch) return call.finish({ error: mismatch });
+  const { owner, devices } = connected;
+  const { deviceId } = connected.device;
   const { signal } = ctx.context;
   const command = String(call.args.command ?? "");
   try {
@@ -280,7 +373,11 @@ async function userComputerScreen(ctx: RunContext, call: ToolCall, request: Scre
     return call.finish({
       error: target.computerId ? TARGET_UNAVAILABLE : USER_COMPUTER_UNAVAILABLE,
     });
-  const { owner, devices, deviceId } = connected;
+  if ("error" in connected) return call.finish(connected);
+  const mismatch = userComputerMismatch(call.name, connected.device);
+  if (mismatch) return call.finish({ error: mismatch });
+  const { owner, devices } = connected;
+  const { deviceId } = connected.device;
   const { signal } = ctx.context;
   try {
     const value = await lastValue(

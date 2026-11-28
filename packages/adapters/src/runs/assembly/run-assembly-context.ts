@@ -22,6 +22,7 @@ import { builtinAgentSkillRecords } from "../../tools/skill-tools.js";
 import type { RunExecutorServices, RunHold } from "../lifecycle/run-attempt.js";
 import { buildApprovalContinuation } from "../lifecycle/run-effects.js";
 import { createReplyState } from "../lifecycle/run-progress.js";
+import { offlineUserComputerCalls } from "../tools/run-tools-user-computer.js";
 import { withLatestStepScreenshot, withRecentTurnImages } from "../turn/run-turn-images.js";
 import { missingTurnImagesInstruction } from "../turn/run-turn-images.prompt.js";
 import { checkpointAnswerHistory } from "./checkpoint-answer-history.js";
@@ -37,10 +38,15 @@ import type {
 import type { ThreadHistory, TurnContext } from "./run-assembly-history.js";
 import type { ConnectedRun, RunRecords, SavedTurn } from "./run-assembly-records.js";
 import type { RunContext, RunState } from "./run-context.js";
-import { restoreTurnCheckpointEffects, seedIntroEffectOccurrences } from "./run-context.js";
+import {
+  restoreTurnCheckpointEffects,
+  resumingCheckpointCalls,
+  seedIntroEffectOccurrences,
+} from "./run-context.js";
 import {
   connectedPluginsInstruction,
   taughtSkillsInstruction,
+  userComputerTurnInstruction,
   voiceCallInstruction,
 } from "./run-instructions.prompt.js";
 import { loadSharedSpaceNote } from "./shared-space-note.js";
@@ -292,7 +298,14 @@ export async function buildTurnPrompt(
   } = parts.turnContext;
   const { resolved, runModelId, runModelProvider } = parts.model;
   const { attachedFilesPrompt, modelSeesImages } = parts.computer;
-  const { callEndRun, disabledBuiltinTools, ownerStartedRun, voiceCall } = parts.capabilities;
+  const {
+    callEndRun,
+    disabledBuiltinTools,
+    ownerStartedRun,
+    userComputer,
+    userComputerOwnerId,
+    voiceCall,
+  } = parts.capabilities;
   const { approvedEffects, tools } = parts.tools;
   const { ctx } = parts;
   // A routine with its owner's computer runs the exact text they approved, skills already expanded,
@@ -333,14 +346,22 @@ export async function buildTurnPrompt(
       )}\n\n${taskPrompt}`
     : taskPrompt;
   if (turnCheckpoint) {
+    const model = { provider: runModelProvider, id: runModelId };
+    // Computer tools are offered by what is paired, so a paused call checks its computer is up.
+    const offlineCalls =
+      userComputerOwnerId && deps.userDevices
+        ? await offlineUserComputerCalls(
+            deps.userDevices,
+            userComputerOwnerId,
+            resumingCheckpointCalls(turnCheckpoint, model),
+          )
+        : undefined;
     turnCheckpoint = restoreTurnCheckpointEffects(
       ctx,
       turnCheckpoint,
-      {
-        provider: runModelProvider,
-        id: runModelId,
-      },
+      model,
       savedComputerMode?.mode,
+      offlineCalls,
     );
     if (checkpointModelResolver && !turnCheckpoint)
       throw new Error("Pinned computer mode checkpoint cannot be restored");
@@ -393,6 +414,14 @@ export async function buildTurnPrompt(
     if (routine && lateSince)
       lateRoutineNote = lateRoutineRunInstruction(lateSince, executionStartedAt, routine.timezone);
   }
+  // Unknown when the lookup fails: each computer call checks again and says what it finds.
+  const userComputerConnected =
+    userComputer === "paired" && userComputerOwnerId && deps.userDevices
+      ? await bestEffort(
+          "check whether the user's computer is connected",
+          deps.userDevices.connected(userComputerOwnerId),
+        )
+      : undefined;
   // Other members' account names are text the owner of a routine with their computer never approved.
   const sharedSpaceNote =
     people && !ownerComputerRoutine
@@ -414,6 +443,10 @@ export async function buildTurnPrompt(
       userTimeZone,
       previousMessageAt(historyMessages, currentTurnMessage?.id),
     )}\n</current_time>`,
+    // Per-turn for the same reason: a desktop connecting must not change the cacheable prefix.
+    userComputerConnected === undefined
+      ? undefined
+      : `<user_computer>\n${userComputerTurnInstruction(Boolean(userComputerConnected))}\n</user_computer>`,
     lateRoutineNote,
     sharedSpaceNote,
   ]

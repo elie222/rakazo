@@ -93,7 +93,7 @@ export function promptVersionParts() {
       replyTo: { id: "m1", threadId: "t", role: "bot", blocks: [{ kind: "text", text: "Hi." }] },
     }),
     instructions: toolSets.flatMap((disabledBuiltinTools) =>
-      (["connected", "offline"] as const).flatMap((userComputer) =>
+      (["paired", "unpaired"] as const).flatMap((userComputer) =>
         [true, false].map((historyMyChats) =>
           userTurnInstructions({
             botInstructions: "",

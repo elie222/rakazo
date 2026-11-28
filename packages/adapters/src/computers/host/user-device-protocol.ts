@@ -33,12 +33,14 @@ export interface UserDevice {
   screenOnly?: boolean;
 }
 
+export type UserComputerSummary = UserDeviceSummary & Pick<UserDevice, "screenOnly">;
+
 /** How runs reach the requesting user's connected device, from any API or worker process. */
 export interface UserDeviceGateway {
   /** The earliest-paired connected computer when omitted; an explicit unavailable id never falls back. */
   connected(userId: string, deviceId?: string): Promise<UserDevice | null>;
   /** Paired, allowed computers, including connection status and the omitted-id binding. */
-  list(userId: string): Promise<UserDeviceSummary[]>;
+  list(userId: string): Promise<UserComputerSummary[]>;
   /** When the oldest device still paired was paired, connected or not; null when none is. */
   pairedSince(userId: string): Promise<Date | null>;
   /**

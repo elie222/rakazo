@@ -13,6 +13,11 @@ export const USER_COMPUTER_TOOLS: ReadonlySet<string> = new Set([
   ...USER_COMPUTER_SCREEN_TOOLS,
 ]);
 
+/** The macOS and Windows desktops fetch a screen driver; Linux has none yet. */
+export function hasScreenControl(platform: string | undefined): boolean {
+  return platform === "darwin" || platform === "win32";
+}
+
 /** The app a screen call names, as its approval card shows it and later calls match it. */
 export function userComputerAppName(value: unknown): string {
   return String(value ?? "")

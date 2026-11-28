@@ -81,6 +81,27 @@ describe("this computer's screen on the desktop app's own server", () => {
     expect(await gateway().connected("user")).toBeNull();
   });
 
+  it("stays listed, offline, when it misses an answer while access is on", async () => {
+    const devices = gateway();
+    await devices.list("user");
+    server.setEnabled(false);
+    expect(await devices.list("user")).toEqual([
+      expect.objectContaining({ deviceId: HOST_COMPUTER_DEVICE_ID, connected: false }),
+    ]);
+    computerHost = "docker";
+    expect(await devices.list("user")).toEqual([]);
+  });
+
+  it("forgets the last answer once access is turned off and on again", async () => {
+    const devices = gateway();
+    await devices.list("user");
+    computerHost = "docker";
+    await devices.list("user");
+    computerHost = "this-mac";
+    server.setEnabled(false);
+    expect(await devices.list("user")).toEqual([]);
+  });
+
   it("drives the app the request names and refuses commands", async () => {
     const observed = await collect(
       gateway().request(

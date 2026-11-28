@@ -81,7 +81,11 @@ import { reviewToolCall } from "./run-tool-review.js";
 import { BUILTIN_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
 import { callMediaTool } from "./run-tools-files.js";
 import { callPaidService } from "./run-tools-integrations.js";
-import { USER_COMPUTER_TOOLS, userComputerGate } from "./run-tools-user-computer.js";
+import {
+  USER_COMPUTER_TOOLS,
+  userComputerCallRefusal,
+  userComputerGate,
+} from "./run-tools-user-computer.js";
 
 export type AppliedEffect = Awaited<ReturnType<typeof recordEffect>>;
 
@@ -408,6 +412,20 @@ export async function gateToolCall(
           : `${name} needs the owner's approval because it could have been asked for by someone else, and this space never asks. Don't retry; tell the user.`,
       ),
     };
+  }
+  // Refused before its card and before any effect, which a later call would count as approval.
+  // A resumed approval skips this; the call checks again when it runs.
+  if (
+    plan === "ask" &&
+    USER_COMPUTER_TOOLS.has(name) &&
+    nextApprovedTool !== name &&
+    !approvedEffectKey
+  ) {
+    const mismatch = await userComputerCallRefusal(ctx, name, args);
+    if (mismatch) {
+      await auditToolCall(ctx, name, "denied", { reason: "user_computer_unsupported" });
+      return { result: refusal("user_computer_unsupported", mismatch) };
+    }
   }
   // A pay click counts against the user's spending limit, unless it pays with a wallet purchase,
   // which was counted when it was requested. One the limit refuses is refused before the card; the
