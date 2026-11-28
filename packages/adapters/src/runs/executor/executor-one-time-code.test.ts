@@ -1,5 +1,11 @@
 import type { ComputerRef } from "@rakazo/adapter-kit";
-import { runCodeKind } from "@rakazo/db";
+import {
+  answeredRunSecretResult,
+  Prisma,
+  RUN_SECRET_ACTION_APPROVED,
+  runCodeKind,
+  runSecretKind,
+} from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "../../computers/computer-lifecycle.js";
 import { encodeRunCode } from "../../secrets/bot-secrets.js";
@@ -42,6 +48,15 @@ const ORIGIN = "https://login.example.test";
 const CODE = "482913";
 const secretStore = new EncryptedSecretStore("test-only-encryption-key");
 const scope = { userId: "user-1", spaceId: "space-1", botId: "bot-1" };
+const CONNECTION = {
+  id: "connection-1",
+  spaceId: scope.spaceId,
+  userId: scope.userId,
+  status: "pending",
+  connectorId: "connector-1",
+  provider: "provider-1",
+};
+const ASK_FIRST = [{ effect: "require_approval", matchKind: "tool", matchValue: "request_secret" }];
 const requestCode = (extra: Record<string, unknown> = {}) => ({
   name: "request_secret",
   args: { label: "Code", purpose: "otp", oneTimeCode: { origin: ORIGIN }, ...extra },
@@ -88,7 +103,7 @@ function recordingPrisma(models: Record<string, Record<string, unknown>>, calls:
  * Each `attempt` is a fresh executor working through some tool calls; what the user does between
  * attempts (answering a card, the page taking a code) is the test's doing.
  */
-function world(printed = "") {
+function world(printed = "", rules: Row[] = [], connection: Row = CONNECTION) {
   const run = {
     id: "run-1",
     botId: scope.botId,
@@ -107,13 +122,17 @@ function world(printed = "") {
   const secrets: Row[] = [];
   const appended: unknown[] = [];
   const asked: Array<{ blocks: Array<Record<string, unknown>> }> = [];
+  // What another worker or the user does while an attempt is between looking up a value and acting.
+  let afterNextLookup: (() => void) | undefined;
   const matches = (row: Row, where: Row = {}) =>
     Object.entries(where).every(([key, value]) =>
       value && typeof value === "object" && "in" in value
         ? (value.in as unknown[]).includes(row[key])
-        : value && typeof value === "object" && "startsWith" in value
-          ? String(row[key]).startsWith(String(value.startsWith))
-          : row[key] === value,
+        : value && typeof value === "object" && "notIn" in value
+          ? !(value.notIn as unknown[]).includes(row[key])
+          : value && typeof value === "object" && "startsWith" in value
+            ? String(row[key]).startsWith(String(value.startsWith))
+            : row[key] === value,
     );
 
   async function attempt(
@@ -177,15 +196,29 @@ function world(printed = "") {
           update: async () => ({ nextMessageSeq: 1, nextEventSeq: 1 }),
         },
         message: { create: async ({ data }: { data: object }) => ({ id: "message-1", ...data }) },
+        userActionApprovalRule: { findMany: async () => rules },
+        connection: {
+          findFirst: async ({ where }: { where: Row }) =>
+            matches(connection, where) ? connection : null,
+        },
         event: { create: async ({ data }: { data: object }) => ({ seq: 1, ...data }) },
         task: { findUniqueOrThrow: async () => ({ id: run.taskId, prompt: "Sign in" }) },
         secret: {
-          findFirst: async ({ where }: { where: Row }) =>
-            secrets.find((row) => matches(row, where)) ?? null,
+          findFirst: async ({ where }: { where: Row }) => {
+            const found = secrets.find((row) => matches(row, where)) ?? null;
+            const meanwhile = afterNextLookup;
+            afterNextLookup = undefined;
+            meanwhile?.();
+            return found;
+          },
           findMany: async ({ where }: { where: Row }) =>
             secrets.filter((row) => matches(row, where)),
           count: async ({ where }: { where: Row }) =>
             secrets.filter((row) => matches(row, where)).length,
+          delete: async ({ where }: { where: Row }) => {
+            const at = secrets.findIndex((row) => matches(row, where));
+            return at === -1 ? null : secrets.splice(at, 1)[0];
+          },
           deleteMany: async ({ where }: { where: Row }) => {
             const kept = secrets.filter((row) => !matches(row, where));
             const count = secrets.length - kept.length;
@@ -199,25 +232,36 @@ function world(printed = "") {
             defaultModelId: "local-model",
           }),
         },
+        // Never ask, unless the test saves rules: those only apply in Ask.
         actionAutoReviewPreference: {
-          findUnique: async () => ({ enabled: false, skipApprovals: true }),
+          findUnique: async () => ({ enabled: false, skipApprovals: rules.length === 0 }),
         },
         userActionAutoReviewPreference: {
-          findUnique: async () => ({ enabled: false, skipApprovals: true }),
+          findUnique: async () => ({ enabled: false, skipApprovals: rules.length === 0 }),
         },
+        // Reads are copies, as a database's are: a later write never changes what was read.
         externalEffect: {
-          findUnique: async ({ where }: { where: Row }) =>
-            effects.find((row) => matches(row, where)) ?? null,
+          findUnique: async ({ where }: { where: Row }) => {
+            const row = effects.find((candidate) => matches(candidate, where));
+            return row ? { ...row } : null;
+          },
           findMany: async ({ where }: { where: Row }) =>
-            effects.filter((row) => matches(row, where)),
+            effects.filter((row) => matches(row, where)).map((row) => ({ ...row })),
           create: async ({ data }: { data: Row }) => {
-            const row = { id: `effect-${effects.length + 1}`, updatedAt: new Date(), ...data };
+            const row = {
+              id: `effect-${effects.length + 1}`,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              ...data,
+            };
             effects.push(row);
             return row;
           },
           updateMany: async ({ where, data }: { where: Row; data: Row }) => {
             const rows = effects.filter((row) => matches(row, where));
-            for (const row of rows) Object.assign(row, data);
+            // A JSON column cleared to the database's null reads back as null.
+            const stored = data.result === Prisma.DbNull ? { ...data, result: null } : data;
+            for (const row of rows) Object.assign(row, stored);
             return { count: rows.length };
           },
         },
@@ -265,24 +309,62 @@ function world(printed = "") {
     return results;
   }
 
-  /** The user answers the open card: the effect is approved and the code waits for the page. */
-  async function userAnswers(code = CODE) {
-    for (const effect of effects) if (effect.status === "intended") effect.status = "approved";
+  /**
+   * The user answers the open card: the request it names is approved, recording the value it
+   * holds, and the code waits for the page. `previousRelease` answers as the release before did:
+   * every waiting request is approved and nothing is recorded.
+   */
+  async function userAnswers(code = CODE, { connection = false, previousRelease = false } = {}) {
     const stored = await secretStore.put(
-      encodeRunCode(ORIGIN, code),
+      connection ? code : encodeRunCode(ORIGIN, code),
       { ...scope, operationId: "run-1", traceId: "run-1", signal: new AbortController().signal },
       { ephemeral: true },
     );
+    const card = asked.at(-1)?.blocks[0];
+    for (const effect of effects) {
+      if (effect.status !== "intended") continue;
+      if (!previousRelease && card?.requestEffectId && effect.id !== card.requestEffectId) continue;
+      effect.status = "approved";
+      if (!previousRelease) effect.result = answeredRunSecretResult(stored.id);
+    }
     secrets.push({
       ...stored,
+      createdAt: new Date(),
       userId: scope.userId,
       spaceId: scope.spaceId,
-      kind: runCodeKind("run-1"),
+      kind: connection ? runSecretKind("run-1") : runCodeKind("run-1"),
     });
   }
 
+  /** The user allows the action card: the effect is approved, marked as nothing entered yet. */
+  function userAllows() {
+    for (const effect of effects) {
+      if (effect.status !== "intended") continue;
+      effect.status = "approved";
+      effect.result = RUN_SECRET_ACTION_APPROVED;
+    }
+  }
+
+  /** Another worker takes the run over: the lease this attempt holds is no longer the run's. */
+  function supersede() {
+    Object.assign(run, { leaseOwner: "worker-2", leaseFence: run.leaseFence + 1 });
+  }
+
   const everythingWritten = () => JSON.stringify([calls, appended, asked, effects]);
-  return { attempt, userAnswers, effects, secrets, asked, calls, everythingWritten };
+  return {
+    attempt,
+    userAnswers,
+    userAllows,
+    supersede,
+    meanwhile: (step: () => void) => {
+      afterNextLookup = step;
+    },
+    effects,
+    secrets,
+    asked,
+    calls,
+    everythingWritten,
+  };
 }
 
 afterEach(() => {
@@ -311,6 +393,7 @@ describe("request_secret for a one-time code", () => {
       text: "Code for login.example.test",
       detail: "Verification code",
       input: "secret",
+      requestEffectId: run.effects[0]!.id,
       oneTimeCode: { origin: ORIGIN },
       purpose: "otp",
       status: "pending",
@@ -445,5 +528,299 @@ describe("request_secret for a one-time code", () => {
     await run.attempt([requestCode()]);
     await run.attempt([requestCode()]);
     expect(run.effects).toHaveLength(1);
+  });
+});
+
+describe("request_secret behind an action card", () => {
+  it.each([
+    ["a code", requestCode()],
+    [
+      "a connection code",
+      { name: "request_secret", args: { label: "Code", connectionId: CONNECTION.id } },
+    ],
+  ])("shows the card for %s once the action is allowed", async (_name, call) => {
+    const run = world("", ASK_FIRST);
+    await run.attempt([call]);
+    expect(run.asked[0]!.blocks[0]).toMatchObject({ approvalEffectId: run.effects[0]!.id });
+    run.userAllows();
+    const [result] = await run.attempt([call]);
+    expect(result).toMatchObject({ details: { secret: "paused" } });
+    expect(run.asked[1]!.blocks[0]).toMatchObject({ input: "secret", status: "pending" });
+    // Answering the card approves only a request still waiting for it.
+    expect(run.effects).toMatchObject([{ status: "intended" }]);
+  });
+
+  it("finishes a connection that completed meanwhile, with no card", async () => {
+    const call = { name: "request_secret", args: { label: "Code", connectionId: CONNECTION.id } };
+    const run = world("", ASK_FIRST, { ...CONNECTION, status: "connected" });
+    await run.attempt([call]);
+    run.userAllows();
+    const [result] = await run.attempt([call]);
+    expect(result).toEqual({ ok: true, submitted: true, connected: true });
+    expect(run.asked).toHaveLength(1);
+    expect(run.effects).toMatchObject([{ status: "completed" }]);
+  });
+
+  it("shows a new code card, not a code an earlier card left, once the action is allowed", async () => {
+    const run = world("", ASK_FIRST);
+    await run.userAnswers();
+    run.secrets[0]!.createdAt = new Date(Date.now() - 60_000);
+    await run.attempt([requestCode()]);
+    run.userAllows();
+    const [result] = await run.attempt([requestCode()]);
+    expect(result).toMatchObject({ details: { secret: "paused" } });
+    expect(run.asked[1]!.blocks[0]).toMatchObject({ oneTimeCode: { origin: ORIGIN } });
+    expect(run.secrets).toEqual([]);
+  });
+
+  it.each([
+    ["a code", requestCode(), { connection: false }],
+    [
+      "a connection code",
+      { name: "request_secret", args: { label: "Code", connectionId: CONNECTION.id } },
+      { connection: true },
+    ],
+  ])(
+    "takes %s the previous release answered in the millisecond the request was made",
+    async (_name, call, kind) => {
+      const run = world("", ASK_FIRST);
+      await run.attempt([call]);
+      run.userAllows();
+      await run.attempt([call]);
+      await run.userAnswers(CODE, { ...kind, previousRelease: true });
+      run.secrets[0]!.createdAt = run.effects[0]!.createdAt;
+      const [result] = await run.attempt([call]);
+      expect(result).toMatchObject({ ok: true, submitted: true });
+      expect(run.asked).toHaveLength(2);
+      expect(run.effects).toMatchObject([{ status: "completed" }]);
+    },
+  );
+
+  it("never takes a connection code an earlier card left once the request waits again", async () => {
+    const call = { name: "request_secret", args: { label: "Code", connectionId: CONNECTION.id } };
+    const run = world("", ASK_FIRST);
+    await run.attempt([call]);
+    run.userAllows();
+    // A value no card answered for this request is held, and the request waits again with
+    // nothing recorded, as it does once the action card's claim is handed back.
+    await run.userAnswers(CODE, { connection: true });
+    Object.assign(run.effects[0]!, { status: "intended", result: null });
+    const [result] = await run.attempt([call]);
+    expect(result).toMatchObject({ details: { secret: "paused" } });
+    expect(run.asked[1]!.blocks[0]).toMatchObject({ input: "secret", status: "pending" });
+    expect(run.secrets).toHaveLength(1);
+    expect(run.effects).toMatchObject([{ status: "intended" }]);
+  });
+
+  it("hands the code answered on its card to the bot", async () => {
+    const run = world("", ASK_FIRST);
+    await run.attempt([requestCode()]);
+    run.userAllows();
+    await run.attempt([requestCode()]);
+    await run.userAnswers();
+    const [result] = await run.attempt([requestCode()]);
+    expect(result).toEqual({
+      ok: true,
+      submitted: true,
+      note: expect.stringContaining("fill_code"),
+    });
+    expect(run.effects).toMatchObject([{ status: "completed" }]);
+  });
+
+  it("never takes a code an earlier card left in the request's millisecond once the action is allowed", async () => {
+    const run = world("", ASK_FIRST);
+    await run.userAnswers();
+    await run.attempt([requestCode()]);
+    run.secrets[0]!.createdAt = run.effects[0]!.createdAt;
+    run.userAllows();
+    const [result] = await run.attempt([requestCode()]);
+    expect(result).toMatchObject({ details: { secret: "paused" } });
+    expect(run.asked[1]!.blocks[0]).toMatchObject({ oneTimeCode: { origin: ORIGIN } });
+    expect(run.secrets).toEqual([]);
+    expect(run.effects).toMatchObject([{ status: "intended", result: null }]);
+  });
+});
+
+describe("request_secret answers", () => {
+  const connectionCode = (label: string) => ({
+    name: "request_secret",
+    args: { label, connectionId: CONNECTION.id },
+  });
+
+  it("gives a card's answer only to the request the card was shown for", async () => {
+    const run = world();
+    // An attempt stopped after recording the first request and before its card was saved.
+    await run.attempt([connectionCode("First")]);
+    run.asked.splice(0);
+    await run.attempt([connectionCode("Second")]);
+    await run.userAnswers(CODE, { connection: true });
+    expect(run.effects).toMatchObject([
+      { status: "intended" },
+      { status: "approved", result: answeredRunSecretResult(String(run.secrets[0]!.id)) },
+    ]);
+    // The approved request is replayed first and takes the answer; the first one asks again.
+    const results = await run.attempt([connectionCode("Second"), connectionCode("First")]);
+    expect(results[0]).toMatchObject({ ok: true, submitted: true });
+    expect(results[1]).toMatchObject({ details: { secret: "paused" } });
+    expect(run.effects).toMatchObject([{ status: "intended" }, { status: "completed" }]);
+    expect(run.asked.at(-1)!.blocks[0]).toMatchObject({ requestEffectId: run.effects[0]!.id });
+  });
+
+  it("asks again when what was recorded for the request cannot be read", async () => {
+    const run = world();
+    await run.attempt([requestCode()]);
+    await run.userAnswers();
+    run.effects[0]!.result = { answeredSecretId: 42 };
+    run.secrets[0]!.createdAt = new Date(Date.now() + 60_000);
+    const [result] = await run.attempt([requestCode()]);
+    expect(result).toMatchObject({ details: { secret: "paused" } });
+    expect(run.secrets).toEqual([]);
+    expect(run.asked).toHaveLength(2);
+  });
+
+  it("never gives a dismissed request the answer to a later card", async () => {
+    const dismissed = { ok: false, dismissed: true };
+    const run = world();
+    await run.attempt([connectionCode("First")]);
+    Object.assign(run.effects[0]!, {
+      status: "completed",
+      result: dismissed,
+      updatedAt: new Date(0),
+    });
+    await run.attempt([connectionCode("Second")]);
+    await run.userAnswers(CODE, { connection: true });
+    // The second request was claimed and stopped before it took its answer.
+    run.effects[1]!.status = "executing";
+    const [result] = await run.attempt([connectionCode("First")]);
+    expect(result).toEqual(dismissed);
+    expect(run.secrets).toHaveLength(1);
+    expect(run.effects).toMatchObject([
+      { status: "completed", result: dismissed },
+      { status: "executing", result: answeredRunSecretResult(String(run.secrets[0]!.id)) },
+    ]);
+  });
+
+  it("drops the answer of a request settled as uncertain, so a dismissed request never takes it", async () => {
+    const dismissed = { ok: false, dismissed: true };
+    const run = world();
+    await run.attempt([connectionCode("First")]);
+    Object.assign(run.effects[0]!, {
+      status: "completed",
+      result: dismissed,
+      updatedAt: new Date(0),
+    });
+    await run.attempt([connectionCode("Second")]);
+    await run.userAnswers(CODE, { connection: true });
+    // The second request was claimed and stopped before it took its answer.
+    run.effects[1]!.status = "executing";
+    const results = await run.attempt([connectionCode("Second"), connectionCode("First")]);
+    expect(results).toEqual([expect.objectContaining({ uncertain: true }), dismissed]);
+    expect(run.secrets).toEqual([]);
+    expect(run.effects).toMatchObject([
+      { status: "completed", result: dismissed },
+      { status: "uncertain" },
+    ]);
+  });
+
+  it("never hands back a claim once a newer attempt takes the run over", async () => {
+    const call = connectionCode("Code");
+    const run = world("", ASK_FIRST);
+    await run.attempt([call]);
+    run.userAllows();
+    // This attempt's claim stopped before it was handed back.
+    run.effects[0]!.status = "executing";
+    run.meanwhile(() => run.supersede());
+    const [result] = await run.attempt([call]);
+    expect(result).toMatchObject({ thrown: expect.any(String) });
+    expect(run.asked).toHaveLength(1);
+    expect(run.effects).toMatchObject([
+      { status: "executing", result: RUN_SECRET_ACTION_APPROVED },
+    ]);
+  });
+
+  it("never hands back a claim that holds an answer the user gave since", async () => {
+    const call = connectionCode("Code");
+    const run = world("", ASK_FIRST);
+    await run.attempt([call]);
+    run.userAllows();
+    run.effects[0]!.status = "executing";
+    const answered = answeredRunSecretResult("secret-newer");
+    // A newer attempt reopened the card, and the user's answer was claimed for the request.
+    run.meanwhile(() => {
+      run.effects[0]!.result = answered;
+      run.secrets.push({
+        id: "secret-newer",
+        createdAt: new Date(),
+        userId: scope.userId,
+        spaceId: scope.spaceId,
+        kind: runSecretKind("run-1"),
+      });
+    });
+    const [result] = await run.attempt([call]);
+    expect(result).toMatchObject({ uncertain: true });
+    expect(run.asked).toHaveLength(1);
+    expect(run.effects).toMatchObject([{ status: "executing", result: answered }]);
+    expect(run.secrets).toMatchObject([{ id: "secret-newer" }]);
+  });
+
+  it("shows a credential card, never taking a connection's value, once the action is allowed", async () => {
+    const credential = {
+      name: "api_token",
+      origin: "https://api.example.test",
+      auth: { type: "bearer" },
+    };
+    const call = { name: "request_secret", args: { label: "Token", credential } };
+    const run = world("", ASK_FIRST);
+    await run.attempt([call]);
+    run.userAllows();
+    // A connection's value the run still holds from an earlier card.
+    await run.userAnswers(CODE, { connection: true });
+    const [result] = await run.attempt([call]);
+    expect(result).toMatchObject({ details: { secret: "paused" } });
+    expect(run.asked[1]!.blocks[0]).toMatchObject({ input: "secret", credential });
+    expect(run.secrets).toHaveLength(1);
+    expect(run.effects).toMatchObject([{ status: "intended", result: null }]);
+  });
+
+  it("shows the card for a request whose allowed action stopped before it was handed back", async () => {
+    const call = connectionCode("Code");
+    const run = world("", ASK_FIRST);
+    await run.attempt([call]);
+    run.userAllows();
+    run.effects[0]!.status = "executing";
+    const [result] = await run.attempt([call]);
+    expect(result).toMatchObject({ details: { secret: "paused" } });
+    expect(run.asked[1]!.blocks[0]).toMatchObject({
+      input: "secret",
+      requestEffectId: run.effects[0]!.id,
+    });
+    expect(run.effects).toMatchObject([{ status: "intended", result: null }]);
+  });
+
+  it("settles a request that stopped while taking its answer as uncertain", async () => {
+    const call = connectionCode("Code");
+    const run = world();
+    await run.attempt([call]);
+    await run.userAnswers(CODE, { connection: true });
+    run.effects[0]!.status = "executing";
+    const [result] = await run.attempt([call]);
+    expect(result).toMatchObject({ uncertain: true });
+    expect(run.asked).toHaveLength(1);
+    expect(run.effects).toMatchObject([{ status: "uncertain" }]);
+  });
+
+  it.each([
+    ["denied", { error: expect.stringContaining("denied") }],
+    ["uncertain", { uncertain: true }],
+  ])("returns a %s request as it settled, never taking a newer value", async (status, settled) => {
+    const call = connectionCode("Code");
+    const run = world();
+    await run.attempt([call]);
+    await run.userAnswers(CODE, { connection: true });
+    Object.assign(run.effects[0]!, { status, result: null, updatedAt: new Date(0) });
+    const [result] = await run.attempt([call]);
+    expect(result).toMatchObject(settled);
+    expect(run.secrets).toHaveLength(1);
+    expect(run.effects[0]).toMatchObject({ status, result: null });
   });
 });

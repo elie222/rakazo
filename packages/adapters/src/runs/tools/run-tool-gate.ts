@@ -23,7 +23,7 @@ import {
 } from "@rakazo/core";
 import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
-import { runSecretKind } from "@rakazo/db";
+import { readRunSecretAnswer, runSecretKind, runSecretsAnsweredForOtherRequests } from "@rakazo/db";
 import type { ApprovalCardOptions } from "../../approvals/approval-ask.js";
 import {
   approvalActionName,
@@ -67,6 +67,7 @@ import {
   CATALOG_APPROVAL_TOOL,
   claimEffect,
   completeEffect,
+  inRunLeaseTransaction,
   recordEffect,
   uncertainEffectError,
 } from "../lifecycle/run-effects.js";
@@ -600,12 +601,21 @@ export async function gateToolCall(
   if (applied?.duplicate) {
     const gate = resolveDuplicateEffectGate(applied.effect, name);
     if (gate.action === "return") {
-      if (name === "request_secret") {
+      // Only a completed request can have a newer value replace what it took; a denied or
+      // uncertain one returns as it settled.
+      if (name === "request_secret" && applied.effect.status === "completed") {
+        // A value another card recorded for its own request never replaces what this one took.
+        const answeredElsewhere = await runSecretsAnsweredForOtherRequests(
+          deps.prisma,
+          { id: runId, spaceId: run.spaceId },
+          applied.effect.id,
+        );
         const replacementSecret = await deps.prisma.secret.findFirst({
           where: {
             spaceId: run.spaceId,
             userId: run.userId,
             kind: runSecretKind(runId),
+            ...(answeredElsewhere.length > 0 ? { id: { notIn: answeredElsewhere } } : {}),
           },
           select: { id: true, createdAt: true },
         });
@@ -654,10 +664,19 @@ export async function gateToolCall(
         return { result: await requestApproval(ctx, call, card) };
       }
     } else if (gate.action === "uncertain") {
-      return {
-        result: await settleToolUncertainty(ctx, call, applied.effect.id, gate.toolName),
-        replayed: true,
-      };
+      // A claim that still holds only the allowed action card stopped before it was handed back:
+      // nothing was entered or submitted, so the handler hands it back and shows the input card.
+      if (
+        name === "request_secret" &&
+        readRunSecretAnswer(applied.effect).kind === "action_approved"
+      ) {
+        call.claimedEffect = true;
+      } else {
+        return {
+          result: await settleToolUncertainty(ctx, call, applied.effect.id, gate.toolName),
+          replayed: true,
+        };
+      }
     } else if (gate.action === "execute") {
       const early = await call.claimOrReturn("approved");
       if (early !== undefined) return { result: early, replayed: true };
@@ -756,6 +775,21 @@ async function settleToolUncertainty(
       (await completeEffect(ctx.deps, effectId, "executing", recovered))
     )
       return recovered;
+  }
+  if (call.name === "request_secret") {
+    // The value a card recorded for the request goes in the same write, so no other request,
+    // including a dismissed one replayed later, can take it.
+    const { run } = ctx;
+    return inRunLeaseTransaction(ctx.deps, ctx.runId, async (tx) => {
+      const current = await tx.externalEffect.findUnique({ where: { id: effectId } });
+      const answer = current ? readRunSecretAnswer(current) : undefined;
+      return settleUncertainEffect(tx, effectId, toolName, call.args, async () => {
+        if (answer?.kind !== "answered") return;
+        await tx.secret.deleteMany({
+          where: { id: answer.secretId, spaceId: run.spaceId, userId: run.userId },
+        });
+      });
+    });
   }
   return settleUncertainEffect(ctx.deps.prisma, effectId, toolName, call.args);
 }

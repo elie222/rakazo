@@ -13,7 +13,9 @@ import { describe, expect, it, vi } from "vitest";
 import { installSecurityEventStore } from "../account/security-events.js";
 import { commitBotUpdate } from "../bots/bot-update.js";
 import type { PrismaClient } from "../database/client.js";
+import { Prisma } from "../database/client.js";
 import { endTakeoverWaits } from "../runs/expire-stuck-run.js";
+import { RUN_SECRET_ACTION_APPROVED } from "../runs/run-secrets.js";
 import { CrossSpaceCommunicationBlockedError } from "../spaces/cross-space-communication.js";
 import { followThreadEvents } from "./event-stream.js";
 import {
@@ -2428,7 +2430,7 @@ describe("answerWaitingRunWithTextInTransaction", () => {
 });
 
 describe("answerRunInput approvals", () => {
-  function expiringCard() {
+  function expiringCard(effectKind = "connector_write") {
     const tx = {
       $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
       message: {
@@ -2460,7 +2462,7 @@ describe("answerRunInput approvals", () => {
       externalEffect: {
         findFirst: vi
           .fn()
-          .mockResolvedValue({ id: "effect-1", kind: "connector_write", status: "intended" }),
+          .mockResolvedValue({ id: "effect-1", kind: effectKind, status: "intended" }),
         update: vi.fn().mockResolvedValue({ id: "effect-1" }),
       },
       thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 10 }) },
@@ -2474,7 +2476,7 @@ describe("answerRunInput approvals", () => {
     const prisma = {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
-    const answer = (value: string) =>
+    const answer = (value: string, expired = true) =>
       answerRunInput(prisma, {
         spaceId: "workspace-1",
         threadId: "thread-1",
@@ -2482,7 +2484,7 @@ describe("answerRunInput approvals", () => {
         messageId: "message-1",
         answeredByUserId: "user-1",
         answer: value,
-        expired: true,
+        expired,
       });
     return { tx, answer };
   }
@@ -2506,6 +2508,15 @@ describe("answerRunInput approvals", () => {
     const { tx, answer } = expiringCard();
     await expect(answer("allow")).resolves.toBe(false);
     expect(tx.externalEffect.update).not.toHaveBeenCalled();
+  });
+
+  it("marks an allowed request for a code as approved with nothing entered", async () => {
+    const { tx, answer } = expiringCard("request_secret");
+    await expect(answer("allow", false)).resolves.toBe(true);
+    expect(tx.externalEffect.update).toHaveBeenCalledWith({
+      where: { id: "effect-1" },
+      data: { status: "approved", result: RUN_SECRET_ACTION_APPROVED },
+    });
   });
 
   it("approves consequential actions without overwriting the task prompt", async () => {
@@ -3301,11 +3312,18 @@ describe("answerRunInput approvals", () => {
   });
 
   it.each([
-    undefined,
-    { name: "example_api", origin: "https://api.example.test", auth: { type: "bearer" } },
-  ])("stores secret asks without writing plaintext to the task prompt (%j)", async (credential) => {
+    ["a code card", undefined, "effect-2"],
+    [
+      "a credential card",
+      { name: "example_api", origin: "https://api.example.test", auth: { type: "bearer" } },
+      "effect-2",
+    ],
+    // The previous release's card names no request, so it answers any still waiting.
+    ["a card the previous release showed", undefined, undefined],
+  ])("keeps the answer to %s out of the task prompt", async (_, credential, requestEffectId) => {
     const fanout = new TestFanout();
-    const store = vi.fn().mockResolvedValue(undefined);
+    // A value the run holds has an id; one saved to the Vault has none.
+    const store = vi.fn().mockResolvedValue(credential ? undefined : "run-secret-1");
     const tx = {
       $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
       message: {
@@ -3317,6 +3335,7 @@ describe("answerRunInput approvals", () => {
               text: "Enter your code",
               input: "secret",
               purpose: "api_key",
+              ...(requestEffectId ? { requestEffectId } : {}),
               ...(credential ? { credential } : {}),
               status: "pending",
             },
@@ -3373,8 +3392,10 @@ describe("answerRunInput approvals", () => {
     );
     expect(tx.task.update).not.toHaveBeenCalled();
     expect(JSON.stringify(tx.event.create.mock.calls)).not.toContain("123456");
+    // Only the request the card names is approved, recording the value it answered with.
     expect(tx.externalEffect.updateMany).toHaveBeenCalledWith({
       where: {
+        ...(requestEffectId ? { id: requestEffectId } : {}),
         runId: "run-1",
         spaceId: "workspace-1",
         kind: "request_secret",
@@ -3382,7 +3403,11 @@ describe("answerRunInput approvals", () => {
       },
       data: {
         status: "approved",
-        ...(credential ? { result: { credentialSaved: credential } } : {}),
+        result: credential
+          ? { credentialSaved: credential }
+          : requestEffectId
+            ? { answeredSecretId: "run-secret-1" }
+            : Prisma.DbNull,
       },
     });
     expect(tx.message.update).toHaveBeenCalledWith({
@@ -3394,6 +3419,7 @@ describe("answerRunInput approvals", () => {
             text: "Enter your code",
             input: "secret",
             purpose: "api_key",
+            ...(requestEffectId ? { requestEffectId } : {}),
             ...(credential ? { credential } : {}),
             status: "answered",
             answer: "",

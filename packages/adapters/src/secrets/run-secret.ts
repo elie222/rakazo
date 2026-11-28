@@ -52,6 +52,8 @@ export async function commitConsumedRunSecret<TResult, TFailed>(input: {
 /**
  * When a completed request_secret effect still has a run-secret row, decide whether
  * that row is a crash leftover (same OTP, do not resubmit) or a newer replacement.
+ * Equal millisecond timestamps cannot prove the secret arrived after completion,
+ * so only strictly newer rows are treated as replacements.
  */
 export function resolveCompletedSecretLeftover(input: {
   secretCreatedAt: Date;
@@ -238,21 +240,24 @@ export function createRunSecretWriter(secretStore: SecretStore): RunSecretWriter
                   },
                 });
               }
-              if ("store" in prepared) await prepared.store(value.tx);
-              else
-                await value.tx.secret.create({
-                  data: {
-                    id: prepared.id,
-                    userId: run.userId,
-                    spaceId: input.spaceId,
-                    kind: ask.oneTimeCode
-                      ? runCodeKind(input.runId)
-                      : runLogin
-                        ? runLoginKind(input.runId, runLogin.name)
-                        : runSecretKind(input.runId),
-                    ciphertext: prepared.ciphertext,
-                  },
-                });
+              if ("store" in prepared) {
+                await prepared.store(value.tx);
+                return undefined;
+              }
+              await value.tx.secret.create({
+                data: {
+                  id: prepared.id,
+                  userId: run.userId,
+                  spaceId: input.spaceId,
+                  kind: ask.oneTimeCode
+                    ? runCodeKind(input.runId)
+                    : runLogin
+                      ? runLoginKind(input.runId, runLogin.name)
+                      : runSecretKind(input.runId),
+                  ciphertext: prepared.ciphertext,
+                },
+              });
+              return prepared.id;
             },
           }),
         );

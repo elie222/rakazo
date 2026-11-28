@@ -307,10 +307,19 @@ function underRunLease<T>(
   runId: string,
   write: (tx: Prisma.TransactionClient) => Promise<T>,
 ): Promise<T> {
+  if (!runLeaseFor(deps, runId)) return write(deps.prisma);
+  return inRunLeaseTransaction(deps, runId, write);
+}
+
+/** Writes that commit together, checking the attempt's lease in the same transaction when it has one. */
+export function inRunLeaseTransaction<T>(
+  deps: ExecutorDeps,
+  runId: string,
+  write: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
   const lease = runLeaseFor(deps, runId);
-  if (!lease) return write(deps.prisma);
   return deps.prisma.$transaction(async (tx) => {
-    await assertRunCanWriteHistory(tx, runId, { lease });
+    if (lease) await assertRunCanWriteHistory(tx, runId, { lease });
     return write(tx);
   });
 }

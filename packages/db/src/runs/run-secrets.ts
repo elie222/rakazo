@@ -1,10 +1,89 @@
+import { z } from "zod";
 import type { Prisma, PrismaClient } from "../database/client.js";
+import {
+  JsonColumnMismatchError,
+  JsonObject,
+  readJsonColumn,
+  reportJsonColumnOnce,
+} from "../database/json-column.js";
 import { readMessageBlocks } from "../threads/message-blocks.js";
 import { clearRunTurnCheckpoints } from "./run-turn-checkpoint.js";
 
 /** A secret card's answer waits under this kind until the resumed run reads it once. */
 export function runSecretKind(runId: string): string {
   return `run-secret:${runId}`;
+}
+
+/**
+ * What a code or connection card's answer records on the request it approves: the run secret it
+ * stored, so that value answers only that request.
+ */
+export function answeredRunSecretResult(secretId: string): { answeredSecretId: string } {
+  return { answeredSecretId: secretId };
+}
+
+/** What allowing a code or connection request's action card records: approval, with no value. */
+export const RUN_SECRET_ACTION_APPROVED = { actionApproved: true } as const;
+
+const RunSecretAnswerSchema = z.union([
+  z.object({ answeredSecretId: z.string().min(1) }).strict(),
+  z.object({ actionApproved: z.literal(true) }).strict(),
+  z.object({ credentialSaved: JsonObject }).strict(),
+]);
+
+export type RunSecretAnswer =
+  /** Nothing recorded: no card answered the request yet, or the previous release answered it. */
+  | { kind: "none" }
+  | { kind: "answered"; secretId: string }
+  /** The action card was allowed and no value was entered for it. */
+  | { kind: "action_approved" }
+  /** A credential card saved the value where the request reads it, so the run holds none. */
+  | { kind: "credential_saved" }
+  /** Something no release records on a waiting request: no value answers it. */
+  | { kind: "unreadable" };
+
+/** What a card recorded on a secret request that has not completed. */
+export function readRunSecretAnswer(effect: { id: string; result?: unknown }): RunSecretAnswer {
+  if (effect.result === null || effect.result === undefined) return { kind: "none" };
+  const row = { table: "external_effects", column: "result", id: effect.id };
+  try {
+    const answer = readJsonColumn(RunSecretAnswerSchema, effect.result, row, "reject");
+    if ("answeredSecretId" in answer)
+      return { kind: "answered", secretId: answer.answeredSecretId };
+    return "actionApproved" in answer ? { kind: "action_approved" } : { kind: "credential_saved" };
+  } catch (error) {
+    if (!(error instanceof JsonColumnMismatchError)) throw error;
+    reportJsonColumnOnce(
+      "A secret request's recorded answer is unreadable; no value answers it",
+      row,
+    );
+    return { kind: "unreadable" };
+  }
+}
+
+/**
+ * The run values cards answered for the run's other requests that have not taken them yet. A
+ * request with no value recorded for it looks one up by kind, and never takes one of these.
+ */
+export async function runSecretsAnsweredForOtherRequests(
+  prisma: Pick<PrismaClient, "externalEffect">,
+  run: { id: string; spaceId: string },
+  requestId: string | undefined,
+): Promise<string[]> {
+  const waiting = await prisma.externalEffect.findMany({
+    where: {
+      runId: run.id,
+      spaceId: run.spaceId,
+      kind: "request_secret",
+      status: { in: ["intended", "approved", "executing"] },
+    },
+    select: { id: true, result: true },
+  });
+  return waiting.flatMap((request) => {
+    if (request.id === requestId) return [];
+    const answer = readRunSecretAnswer(request);
+    return answer.kind === "answered" ? [answer.secretId] : [];
+  });
 }
 
 /** A login card answered with "Save to Vault" off, kept for this run only under its name. */

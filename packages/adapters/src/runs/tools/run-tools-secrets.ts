@@ -1,6 +1,16 @@
 import { BotSecretName, botSecretSubmissionSchema } from "@rakazo/contracts";
 import { createStreamingRedactor, displayName, redactSecrets } from "@rakazo/core";
-import { runCodeKind, runLoginKind, runSecretKind, spaceIsShared } from "@rakazo/db";
+import { stableJsonValue } from "@rakazo/core/node/approval-effect-key";
+import type { RunSecretAnswer } from "@rakazo/db";
+import {
+  Prisma,
+  readRunSecretAnswer,
+  runCodeKind,
+  runLoginKind,
+  runSecretKind,
+  runSecretsAnsweredForOtherRequests,
+  spaceIsShared,
+} from "@rakazo/db";
 import {
   completeExternalEffect,
   replaceCompletedExternalEffectResult,
@@ -44,10 +54,39 @@ import {
   persistTurnCheckpoint,
   recordVaultUse,
 } from "../assembly/run-context.js";
-import { recordEffect } from "../lifecycle/run-effects.js";
+import { inRunLeaseTransaction, recordEffect } from "../lifecycle/run-effects.js";
 import { enqueueSteeringContinuation, renewRunLease } from "../lifecycle/run-lifecycle.js";
 import { notifyRun, secretAskNotification } from "../lifecycle/run-notifications.js";
 import type { ToolHandlers } from "./run-tool-gate.js";
+
+/**
+ * Whether a value the run holds answers this request. A card's answer records the value it stored
+ * on the request it answers, and the value is looked up by it, so a value left from an earlier
+ * card never answers a later one.
+ */
+function answersRequest(
+  held: { createdAt?: unknown },
+  applied: { duplicate?: boolean; effect: { status: string; createdAt?: unknown } } | undefined,
+  answer: RunSecretAnswer | undefined,
+): boolean {
+  if (!applied) return true;
+  if (answer?.kind === "answered") return true;
+  // Allowing the action card is not an answer, nothing can be read from an unknown record, and no
+  // card was shown yet for a request recorded by this call.
+  if ((answer && answer.kind !== "none") || !applied.duplicate) return false;
+  // Nothing recorded: the previous release's answer, or a request already completed. An answer
+  // approves its request in the same transaction, so a value held for a request still waiting,
+  // or entered before the request was made, answered an earlier card.
+  const request = applied.effect;
+  return (
+    request.status !== "intended" &&
+    !(
+      held.createdAt instanceof Date &&
+      request.createdAt instanceof Date &&
+      held.createdAt < request.createdAt
+    )
+  );
+}
 
 /** Saved credentials and protected input. */
 export const secretTools: ToolHandlers = {
@@ -211,37 +250,79 @@ export const secretTools: ToolHandlers = {
               "change its site in the Vault, or use another name for a different account.",
           });
       }
-      // Action approval authorizes showing the card; it is not a credential submission.
-      // Return the claim to intended so the answer transaction can approve the saved value.
-      if (call.claimedEffect) {
-        const released = await deps.prisma.externalEffect.updateMany({
-          where: { id: applied!.effect.id, status: "executing" },
-          data: { status: "intended" },
-        });
-        if (released.count !== 1) return uncertainEffectResult(name);
-        call.claimedEffect = false;
-      }
     }
     const secretKind = codeOrigin ? runCodeKind(runId) : runSecretKind(runId);
-    let storedSecret = await deps.prisma.secret.findFirst({
-      where: {
-        spaceId: run.spaceId,
-        userId: run.userId,
-        kind: secretKind,
-      },
-    });
-    // A card not yet answered means a code left from an earlier one is stale, and one that cannot
-    // be read is no code: ask again.
+    // A completed request's result is what the call returned, not a card's record.
+    const answer =
+      applied && !destination && applied.effect.status !== "completed"
+        ? readRunSecretAnswer(applied.effect)
+        : undefined;
+    // With no value recorded for this request, a value another card recorded for its own request
+    // is never this one's, whatever its age.
+    const answeredElsewhere =
+      destination || answer?.kind === "answered"
+        ? []
+        : await runSecretsAnsweredForOtherRequests(
+            deps.prisma,
+            { id: runId, spaceId: run.spaceId },
+            applied?.effect.id,
+          );
+    // A credential card saves its answer where the request reads it above, never as a run value,
+    // so a value the run holds never answers a credential request.
+    const held = destination
+      ? null
+      : await deps.prisma.secret.findFirst({
+          where: {
+            spaceId: run.spaceId,
+            userId: run.userId,
+            kind: secretKind,
+            ...(answer?.kind === "answered"
+              ? { id: answer.secretId }
+              : answeredElsewhere.length > 0
+                ? { id: { notIn: answeredElsewhere } }
+                : {}),
+          },
+        });
+    const stale = held && !answersRequest(held, applied, answer) ? held : undefined;
+    const storedSecret = stale ? null : held;
+    // A code no card answered for this request is never typed: the next code card replaces it
+    // anyway. Any other value may answer another request still waiting, so it stays.
+    const staleCodeId = stale && codeOrigin ? stale.id : undefined;
+    // Action approval authorizes showing the card; it is not a credential submission or an
+    // answer. A credential card's answer returned above. Return the claim to intended, with no
+    // record, so the card's answer can approve it, and drop a stale code in the same write. Only
+    // this attempt's claim is handed back: a newer attempt that reopened the card holds the run's
+    // lease, and its claim records the answer the user gave since.
+    if (call.claimedEffect && !storedSecret) {
+      const claimed = applied!.effect;
+      const released = await inRunLeaseTransaction(deps, runId, async (tx) => {
+        const current = await tx.externalEffect.findUnique({ where: { id: claimed.id } });
+        if (
+          current?.status !== "executing" ||
+          stableJsonValue(current.result ?? null) !== stableJsonValue(claimed.result ?? null)
+        )
+          return false;
+        const claim = await tx.externalEffect.updateMany({
+          where: { id: claimed.id, status: "executing" },
+          data: { status: "intended", result: Prisma.DbNull },
+        });
+        if (claim.count === 1 && staleCodeId)
+          await tx.secret.deleteMany({ where: { id: staleCodeId } });
+        return claim.count === 1;
+      });
+      if (!released) return uncertainEffectResult(name);
+      call.claimedEffect = false;
+    } else if (staleCodeId) {
+      await deps.prisma.secret.deleteMany({ where: { id: staleCodeId } });
+    }
+    // A code that cannot be read is no code: ask again.
     const heldCode =
       storedSecret && codeOrigin ? await readRunCode(deps.secretStore, storedSecret) : undefined;
-    if (storedSecret && codeOrigin && (!heldCode || applied?.effect.status === "intended")) {
+    if (storedSecret && codeOrigin && !heldCode) {
       await deps.prisma.secret.deleteMany({ where: { id: storedSecret.id } });
-      if (!heldCode && applied?.effect.status !== "intended") {
-        return call.finish({
-          error: "The code could not be read. Ask for it again with request_secret oneTimeCode.",
-        });
-      }
-      storedSecret = null;
+      return call.finish({
+        error: "The code could not be read. Ask for it again with request_secret oneTimeCode.",
+      });
     }
     if (storedSecret) {
       const plaintext = heldCode
@@ -401,6 +482,7 @@ export const secretTools: ToolHandlers = {
           // The site is the server's words in the title; the bot's own label is plain detail.
           ...(codeOrigin && args.label ? { detail: String(args.label).slice(0, 200) } : {}),
           input: "secret",
+          requestEffectId: recordedForAsk.effect.id,
           ...(destination ? { credential: destination } : {}),
           ...(codeOrigin ? { oneTimeCode: { origin: codeOrigin } } : {}),
           ...(replaces ? { replaces } : {}),

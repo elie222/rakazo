@@ -79,43 +79,49 @@ describe("commitConsumedRunSecret", () => {
 });
 
 describe("createRunSecretWriter", () => {
-  it("refuses to store an answer for a run whose bot changed", async () => {
-    const prisma = {
-      run: { findFirst: async () => ({ botId: "bot", userId: "user" }) },
-      message: {
-        findFirst: async () => ({
-          blocks: [{ kind: "ask", text: "Code", input: "secret", status: "pending" }],
-        }),
+  const prisma = {
+    run: { findFirst: async () => ({ botId: "bot", userId: "user" }) },
+    message: {
+      findFirst: async () => ({
+        blocks: [{ kind: "ask", text: "Code", input: "secret", status: "pending" }],
+      }),
+    },
+  } as unknown as PrismaClient;
+  const answer = (botId: string, create: ReturnType<typeof vi.fn>) =>
+    createRunSecretWriter(new EncryptedSecretStore("fake-key")).withPrepared!(
+      prisma,
+      {
+        spaceId: "space",
+        runId: "run",
+        threadId: "thread",
+        messageId: "message",
+        answeredByUserId: "user",
+        answer: "fake-code",
       },
-    } as unknown as PrismaClient;
-    const create = vi.fn();
-    const answer = (botId: string) =>
-      createRunSecretWriter(new EncryptedSecretStore("fake-key")).withPrepared!(
-        prisma,
-        {
-          spaceId: "space",
+      (prepared) =>
+        prepared.store({
+          botId,
           runId: "run",
-          threadId: "thread",
-          messageId: "message",
-          answeredByUserId: "user",
-          answer: "fake-code",
-        },
-        (prepared) =>
-          prepared.store({
-            botId,
-            runId: "run",
-            userId: "user",
-            spaceId: "space",
-            plaintext: "fake-code",
-            remember: true,
-            tx: { secret: { create } } as never,
-          }),
-      );
+          userId: "user",
+          spaceId: "space",
+          plaintext: "fake-code",
+          remember: true,
+          tx: { secret: { create } } as never,
+        }),
+    );
 
-    await expect(answer("other-bot")).rejects.toThrow("Secret request changed");
+  it("refuses to store an answer for a run whose bot changed", async () => {
+    const create = vi.fn();
+    await expect(answer("other-bot", create)).rejects.toThrow("Secret request changed");
     expect(create).not.toHaveBeenCalled();
-    await answer("bot");
+    await answer("bot", create);
     expect(create).toHaveBeenCalledOnce();
+  });
+
+  it("returns the id of the value the run holds, for the answer to record", async () => {
+    const create = vi.fn();
+    const held = await answer("bot", create);
+    expect(held).toBe(create.mock.calls[0]![0].data.id);
   });
 });
 
@@ -271,6 +277,13 @@ describe("resolveCompletedSecretLeftover", () => {
         effectUpdatedAt: new Date("2026-08-27T12:00:05.000Z"),
       }),
     ).toBe("drop_leftover");
+  });
+
+  it("drops a leftover OTP created at the same timestamp as effect completion", () => {
+    const at = new Date("2026-08-27T12:00:05.000Z");
+    expect(resolveCompletedSecretLeftover({ secretCreatedAt: at, effectUpdatedAt: at })).toBe(
+      "drop_leftover",
+    );
   });
 
   it("consumes a replacement OTP submitted after the effect completed", () => {
