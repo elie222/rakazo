@@ -1,3 +1,4 @@
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
   isTransientModelError,
   ModelAccountError,
@@ -6,13 +7,54 @@ import {
 } from "@rakazo/adapter-kit";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
 import {
+  ClientError,
   MODEL_OUTPUT_LIMIT_ERROR,
   normalizeRunError,
   parseModelFallbackFailure,
 } from "@rakazo/core";
+import { getLogger } from "@rakazo/logging";
 import { LOCAL_PROVIDER_ID } from "./models/pi-local-provider-id.js";
 import { terminalOAuthRefreshErrorMarker } from "./models/pi-oauth.js";
 import { isOpenCodeProvider } from "./stream/pi-runtime-stream.js";
+
+export function renewableCredentialFailure(provider: string, error: unknown): Error {
+  const category =
+    error instanceof ClientError && error.kind === "BAD_REQUEST"
+      ? "binding"
+      : error instanceof ClientError && error.kind === "SERVICE_UNAVAILABLE"
+        ? "unavailable"
+        : error instanceof DOMException && error.name === "TimeoutError"
+          ? "timeout"
+          : "unexpected";
+  getLogger().warn("model.credential.renewal_failed", { provider, category });
+  return new Error("Could not renew the model credential.");
+}
+
+export function failedAssistantMessage(
+  model: Pick<AssistantMessage, "api" | "provider"> & { id: string },
+  errorMessage: string,
+  aborted: boolean,
+  partial?: AssistantMessage,
+): AssistantMessage & { stopReason: "aborted" | "error" } {
+  return {
+    role: "assistant",
+    content: partial?.content ?? [],
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: aborted || /abort|cancel/i.test(errorMessage) ? "aborted" : "error",
+    errorMessage,
+    timestamp: Date.now(),
+  };
+}
 
 export function assistantText(message: unknown): string {
   if (!message || typeof message !== "object" || !("content" in message)) return "";

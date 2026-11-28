@@ -822,17 +822,31 @@ export function sanitizeJsonValue<T>(value: T): T {
   return value;
 }
 
-export function createStreamingRedactor(secrets: string[]) {
-  const values = protectedValues(secrets);
-  const matcher = createSecretMatcher(values);
-  // A loop, not a spread: a Vault of many-line values can pass more lengths than a call takes.
-  const maxLength = values.reduce((longest, value) => Math.max(longest, value.length), 0);
+/** Stream text against a protected list whose entries are appended before use. */
+export function createStreamingRedactor(secrets: readonly string[]) {
+  const buildMatcher = () => {
+    const values = protectedValues(secrets);
+    return {
+      matcher: createSecretMatcher(values),
+      // A Vault of many-line values can pass more lengths than a call takes.
+      maxLength: values.reduce((longest, value) => Math.max(longest, value.length), 0),
+    };
+  };
+  let secretCount = secrets.length;
+  let compiled = buildMatcher();
   let buffer = "";
   let covered = 0;
 
   const drain = (final: boolean) => {
+    // Run credentials are appended before use, including credentials renewed mid-turn.
+    // Keep the pending buffer and coverage when the protected set grows.
+    if (secretCount !== secrets.length) {
+      secretCount = secrets.length;
+      compiled = buildMatcher();
+    }
+    const { matcher, maxLength } = compiled;
     let output: string;
-    if (values.length === 0) {
+    if (maxLength === 0) {
       output = buffer;
       buffer = "";
     } else {

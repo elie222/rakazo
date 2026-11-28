@@ -28,6 +28,29 @@ Google Vertex works the same way with `PI_DEFAULT_PROVIDER=google-vertex`, using
 application default credentials (`GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`,
 `GOOGLE_CLOUD_LOCATION`). Runs on host credentials are billed to that cloud account.
 
+### OpenAI API workload identity
+
+To use a project service account instead of a long-lived API key, configure an
+[OpenAI workload identity mapping](https://developers.openai.com/api/docs/guides/workload-identity-federation)
+with the permissions needed to run your model. Set these on **both** the API and worker:
+
+```env
+PI_DEFAULT_PROVIDER=openai
+PI_DEFAULT_MODEL=gpt-6-luna
+PI_DEFAULT_CREDENTIALS=host
+OPENAI_IDENTITY_PROVIDER_ID=<identity-provider-id>
+OPENAI_SERVICE_ACCOUNT_ID=<service-account-id>
+OPENAI_IDENTITY_TOKEN_FILE=/run/identity/token
+```
+
+Mount the rotating subject-token file read-only at that absolute path in both services.
+If your issuer replaces files atomically, mount the containing directory so the refreshed file
+is visible. Do not mount it into bot computers. Leave `OPENAI_API_KEY` unset to select
+workload identity; an explicit key takes precedence. No OpenAI access token is written to the
+settings database. Members with their own model and the API-key override in **Default for
+everyone** keep their existing behavior. This uses an API Platform service account, not a
+personal ChatGPT subscription or a Codex workspace identity.
+
 On a server only you use, the deployment model can also run through the
 [Claude Code CLI](#claude-code-cli) signed in on the host.
 

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listPiCatalog } from "../runtime/pi/models/pi-models.js";
 import {
   adminDeploymentModel,
+  deploymentHostCredentialKey,
   deploymentModelProviders,
   matchingAdminDeploymentModel,
   resolveDeploymentModel,
@@ -25,6 +26,40 @@ describe("resolveDeploymentModel", () => {
   });
   afterEach(() => {
     vi.unstubAllEnvs();
+  });
+
+  it("only enables workload identity for an opted-in deployment with a complete binding", () => {
+    const env = {
+      PI_DEFAULT_PROVIDER: "openai",
+      PI_DEFAULT_MODEL: "gpt-6-luna",
+      PI_DEFAULT_CREDENTIALS: "host",
+      OPENAI_IDENTITY_TOKEN_FILE: "/run/identity/token",
+      OPENAI_IDENTITY_PROVIDER_ID: "fixture-provider",
+      OPENAI_SERVICE_ACCOUNT_ID: "fixture-account",
+    };
+    expect(resolveDeploymentModel(env)).toMatchObject({
+      provider: "openai",
+      configured: true,
+      hostCredentials: true,
+      key: undefined,
+    });
+    expect(resolveDeploymentModel({ ...env, PI_DEFAULT_CREDENTIALS: "" }).configured).toBe(false);
+    expect(
+      resolveDeploymentModel({ ...env, OPENAI_IDENTITY_TOKEN_FILE: "relative" }).configured,
+    ).toBe(false);
+    expect(resolveDeploymentModel({ ...env, OPENAI_SERVICE_ACCOUNT_ID: "" }).configured).toBe(
+      false,
+    );
+    const withKey = { ...env, OPENAI_API_KEY: "fixture-api-key" };
+    expect(resolveDeploymentModel(withKey)).toMatchObject({
+      key: "fixture-api-key",
+      configured: true,
+      hostCredentials: false,
+    });
+    expect(deploymentHostCredentialKey("openai", "gpt-6-luna", undefined, withKey)).toBeUndefined();
+    expect(
+      deploymentHostCredentialKey("openai-codex", "gpt-6-luna", undefined, env),
+    ).toBeUndefined();
   });
 
   it("pairs the deployment model key with the provider it belongs to", () => {

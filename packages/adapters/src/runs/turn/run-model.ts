@@ -11,7 +11,7 @@ import {
   creditOfferingFromConnectionId,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
-import { MISSING_MODEL_RUN_ERROR, savedThinkingLevel } from "@rakazo/core";
+import { ClientError, MISSING_MODEL_RUN_ERROR, savedThinkingLevel } from "@rakazo/core";
 import {
   approvedModelCreditOffering,
   modelCreditOfferings,
@@ -24,6 +24,7 @@ import {
   HostedModelCreditsRequiredError,
   hostedModelCreditObserver,
 } from "../../models/credits/model-credit-observer.js";
+import { resolveDeploymentHostAuth } from "../../models/deployment-host-auth.js";
 import type { SavedDeploymentModel } from "../../models/deployment-model.js";
 import {
   loadAdminDeploymentModelKey,
@@ -50,6 +51,7 @@ import {
   modelProviderAllowed,
   modelProviderAllowlist,
 } from "../../models/model-provider-allowlist.js";
+import { modelProviderDefinition } from "../../models/model-provider-registry.js";
 import {
   ORGANIZATION_MODEL_CONNECTION_PREFIX,
   resolveMemberMainModel,
@@ -229,7 +231,10 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
     provider === LOCAL_PROVIDER_ID ||
     (provider === OPENAI_COMPATIBLE_PROVIDER_ID && Boolean(material.baseUrl)) ||
     (provider === "scripted" && deps.runtime?.describe().capabilities.scripted) ||
-    (!credential && deployment.provider === provider && deployment.hostCredentials);
+    (!credential &&
+      deployment.provider === provider &&
+      deployment.hostCredentials &&
+      !modelProviderDefinition(provider)?.hostCredentials?.key);
   // Match Pi's OpenRouter fallback only when no explicit key overrides it.
   const runtimeKey =
     material.apiKey === undefined && (provider === "openrouter" || provider === "scripted")
@@ -383,6 +388,7 @@ async function resolveModelKeyMaterial(
   } = {},
 ): Promise<{
   apiKey?: string;
+  resolveApiKey?: AgentRunRequest["model"]["resolveApiKey"];
   accountId?: string;
   gatewayId?: string;
   projectId?: string;
@@ -538,13 +544,21 @@ async function resolveModelKeyMaterial(
   }
   cloudflareProviderEnv({ provider });
   const admin = !operatorFunded && matchingAdminDeploymentModel(adminSettings, provider, modelId);
-  return {
-    apiKey:
-      admin && !(await modelCreditBillingEnabled(deps))
-        ? await loadAdminDeploymentModelKey(deps.secretStore, admin.cipher)
-        : operatorModelKey(deps, provider),
-    redact: [],
-  };
+  if (admin && !(await modelCreditBillingEnabled(deps)))
+    return {
+      apiKey: await loadAdminDeploymentModelKey(deps.secretStore, admin.cipher),
+      redact: [],
+    };
+  try {
+    const host = await resolveDeploymentHostAuth(provider, modelId, registerSecrets);
+    return { ...(host ?? { apiKey: operatorModelKey(deps, provider) }), redact: [] };
+  } catch (error) {
+    // An exchange outage or deadline should reach the run setup retry, not mark auth terminal.
+    if (!(error instanceof ClientError) || error.kind !== "BAD_REQUEST") throw error;
+    throw new UnavailableModelForAuthError(
+      "The deployment model workload identity is unavailable.",
+    );
+  }
 }
 
 /**
@@ -559,6 +573,7 @@ export function resolvedModelRunFields(
     connectionId: resolved.connectionId,
     billing: resolved.billing,
     apiKey: resolved.oauth ? undefined : resolved.apiKey,
+    resolveApiKey: resolved.resolveApiKey,
     callObserver: resolved.callObserver,
     ...(resolved.accountId ? { accountId: resolved.accountId } : {}),
     ...(resolved.gatewayId ? { gatewayId: resolved.gatewayId } : {}),

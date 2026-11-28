@@ -1,6 +1,7 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
+import * as deploymentModel from "../../models/deployment-model.js";
 import * as modelRoles from "../../models/model-roles.js";
 import { mainRole, withModelRoles } from "../../models/model-roles.test-support.js";
 import { resolveRuntimeModel } from "../../runtime/pi/pi-runtime-models.js";
@@ -67,6 +68,64 @@ describe("team chat engagement judge", () => {
       billing: "organization",
       callObserver: undefined,
     });
+  });
+
+  it("renews the deployment key at the model attempt and redacts both keys from the verdict", async () => {
+    const initialKey = "synthetic-host-initial";
+    const renewedKey = "synthetic-host-renewed";
+    const key = vi
+      .spyOn(deploymentModel, "deploymentHostCredentialKey")
+      .mockResolvedValueOnce(initialKey)
+      .mockResolvedValueOnce(renewedKey);
+    const run = vi.fn(async function* (
+      request: AgentRunRequest,
+      { signal }: { signal: AbortSignal },
+    ) {
+      expect(request.model.apiKey).toBe(initialKey);
+      await expect(request.model.resolveApiKey?.(signal)).resolves.toBe(renewedKey);
+      expect(request.secrets).toEqual(expect.arrayContaining([initialKey, renewedKey]));
+      yield {
+        type: "done",
+        text: JSON.stringify({ act: true, reason: `${initialKey} ${renewedKey}` }),
+      };
+    });
+    try {
+      const judge = new ModelTeamChatEngagementJudge({
+        prisma: {
+          deploymentSettings: { findUnique: async () => null },
+          spaceMember: { findUnique: async () => null },
+          user: { findUnique: async () => null },
+        } as never,
+        runtime: { run } as never,
+        secrets: {} as never,
+        deploymentProvider: "openai",
+        deploymentModel: "fixture-model",
+      });
+      await expect(
+        judge.decide({
+          bot: {
+            id: "bot",
+            spaceId: "space",
+            userId: "member",
+            name: "Fixture",
+            modelProvider: null,
+            modelId: null,
+          },
+          channelId: "channel",
+          rules: "",
+          messages: [],
+        }),
+      ).resolves.toEqual({ act: true, reason: "[redacted] [redacted]" });
+      expect(key).toHaveBeenNthCalledWith(1, "openai", "fixture-model");
+      expect(key).toHaveBeenNthCalledWith(
+        2,
+        "openai",
+        "fixture-model",
+        run.mock.calls[0]?.[1].signal,
+      );
+    } finally {
+      key.mockRestore();
+    }
   });
 
   it("keeps saved project routing when deciding whether to engage", async () => {

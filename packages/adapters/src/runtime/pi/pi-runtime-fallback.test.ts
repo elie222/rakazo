@@ -245,6 +245,72 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+it.each([false, true])(
+  "passes the current renewable key across a tool turn (backups: %s)",
+  async (withBackup) => {
+    const input = request(withBackup ? [{ provider: backupA.provider, id: backupA.id }] : []);
+    input.model.resolveApiKey = vi
+      .fn()
+      .mockResolvedValueOnce("fake-primary-key")
+      .mockResolvedValueOnce("fake-rotated-key");
+    providerState.stream
+      .mockImplementationOnce(() =>
+        stream(
+          primary,
+          message(
+            primary,
+            [{ type: "toolCall", id: "call-1", name: "write_effect", arguments: { value: "a" } }],
+            "toolUse",
+          ),
+        ),
+      )
+      .mockImplementationOnce(() =>
+        stream(primary, message(primary, [{ type: "text", text: "Done." }], "stop")),
+      );
+    expect(await run(input)).toContainEqual({ type: "text", text: "Done." });
+    expect(providerState.stream.mock.calls.map(([, , options]) => options.apiKey)).toEqual([
+      "fake-primary-key",
+      "fake-rotated-key",
+    ]);
+  },
+);
+
+it("switches to a configured backup when renewal fails after a tool turn", async () => {
+  const input = request([{ provider: backupA.provider, id: backupA.id }]);
+  input.resolveFallbackModel = vi.fn(async () => ({
+    provider: backupA.provider,
+    id: backupA.id,
+    apiKey: "fake-backup-key",
+  }));
+  input.model.resolveApiKey = vi
+    .fn()
+    .mockResolvedValueOnce("fake-primary-key")
+    .mockRejectedValueOnce(new Error("fixture credential diagnostic"));
+  providerState.stream
+    .mockImplementationOnce(() =>
+      stream(
+        primary,
+        message(
+          primary,
+          [{ type: "toolCall", id: "call-1", name: "write_effect", arguments: { value: "a" } }],
+          "toolUse",
+        ),
+      ),
+    )
+    .mockImplementationOnce(() =>
+      stream(backupA, message(backupA, [{ type: "text", text: "Done on backup." }], "stop")),
+    );
+
+  const events = await run(input);
+  expect(events).toContainEqual({ type: "text", text: "Done on backup." });
+  expect(JSON.stringify(events)).not.toContain("fixture credential diagnostic");
+  expect(input.executeTool).toHaveBeenCalledOnce();
+  expect(providerState.stream.mock.calls.map(([, , options]) => options.apiKey)).toEqual([
+    "fake-primary-key",
+    "fake-backup-key",
+  ]);
+});
+
 describe("Pi runtime transient model retries", () => {
   it("regenerates a malformed function call without replaying a completed tool", async () => {
     const input = request();

@@ -10,6 +10,7 @@ import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger, wrapJobPayload } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
+import * as deploymentModel from "../../models/deployment-model.js";
 import {
   COMPACTION_BATCH_SIZE,
   compactHistory,
@@ -587,6 +588,56 @@ describe("compactHistory", () => {
       },
     });
   });
+
+  it.each(["runtime resolver", "direct deployment"] as const)(
+    "redacts renewed keys before writing a summary with the %s",
+    async (kind) => {
+      const initialKey = "synthetic-host-initial";
+      const renewedKey = "synthetic-host-renewed";
+      const resolveApiKey = vi.fn(async (_signal?: AbortSignal) => renewedKey);
+      const hostKey = vi
+        .spyOn(deploymentModel, "deploymentHostCredentialKey")
+        .mockResolvedValueOnce(initialKey)
+        .mockImplementationOnce((_provider, _modelId, signal) => resolveApiKey(signal));
+      const harness = compactionHarness({
+        deploymentModelConfigured: true,
+        ...(kind === "runtime resolver"
+          ? {
+              resolveModel: async () => ({
+                provider: "openrouter",
+                id: "fixture",
+                apiKey: initialKey,
+                resolveApiKey,
+              }),
+            }
+          : {}),
+      });
+      harness.runtime.run.mockImplementationOnce(async function* (request, context) {
+        expect(request.model.apiKey).toBe(initialKey);
+        await expect(request.model.resolveApiKey?.(context?.signal)).resolves.toBe(renewedKey);
+        expect(request.secrets).toEqual([initialKey, renewedKey]);
+        yield { type: "done", text: `Summary ${initialKey} ${renewedKey}` };
+      });
+      try {
+        await compactHistory(harness.deps, "thread-1");
+        expect(resolveApiKey).toHaveBeenCalledWith(harness.runtime.run.mock.calls[0]?.[1]?.signal);
+        expect(hostKey).toHaveBeenCalledTimes(kind === "runtime resolver" ? 0 : 2);
+        expect(harness.saveMemory).toHaveBeenCalledWith(
+          expect.objectContaining({ content: "Summary [redacted] [redacted]" }),
+          expect.anything(),
+        );
+        expect(harness.prisma.thread.updateMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              historyCompactionSummary: "Summary [redacted] [redacted]",
+            }),
+          }),
+        );
+      } finally {
+        hostKey.mockRestore();
+      }
+    },
+  );
 
   it("keeps compaction summaries private so clearing a shared bot cannot expose stale history", async () => {
     const harness = compactionHarness({

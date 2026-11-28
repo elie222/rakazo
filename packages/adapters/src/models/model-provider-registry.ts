@@ -25,6 +25,10 @@ import {
 } from "../providers/media/openai/openai-media.js";
 import { OpenRouterMediaGenerationProvider } from "../providers/media/openrouter/openrouter-media.js";
 import { openRouterMediaModels } from "../providers/media/openrouter/openrouter-media-models.js";
+import {
+  configuredWorkloadIdentity,
+  workloadIdentityKey,
+} from "../providers/model/openai/workload-identity.js";
 import { OpenRouterUsageLookup } from "./endpoints/openrouter-usage.js";
 
 /**
@@ -61,6 +65,9 @@ export interface ModelProviderDefinition {
     source: string;
     /** Resolved when a request is made, so the environment cannot report them up front. */
     resolvedAtRequest?: boolean;
+    /** Host identity that must be explicitly configured and exchanged for a bearer. */
+    configured?: (env: NodeJS.ProcessEnv) => boolean;
+    key?: (env: NodeJS.ProcessEnv, signal?: AbortSignal) => Promise<string>;
   };
   /** Subscription sign-in Rakazo offers. */
   signIn?: {
@@ -135,6 +142,12 @@ export const modelProviders = {
   },
   openai: {
     recommendedModel: "gpt-6-luna",
+    deployment: { keyEnv: "OPENAI_API_KEY", defaultModel: "gpt-6-luna" },
+    hostCredentials: {
+      source: "workload identity",
+      configured: (env: NodeJS.ProcessEnv) => Boolean(configuredWorkloadIdentity(env)),
+      key: workloadIdentityKey,
+    },
     media: {
       images: openAIImages,
       create: ({ apiKey, imageModel }) =>

@@ -10,6 +10,7 @@ import {
 } from "../../model-credits/offerings.js";
 import { approvedModelCreditMaterial } from "../../model-credits/routing.js";
 import { hostedModelCreditObserver } from "../../models/credits/model-credit-observer.js";
+import { resolveDeploymentHostAuth } from "../../models/deployment-host-auth.js";
 import {
   loadAdminDeploymentModelKey,
   matchingAdminDeploymentModel,
@@ -179,6 +180,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           history: [],
           tools: [],
           model: resolved.model,
+          secrets: secretsToRedact,
         },
         {
           operationId: judgeId,
@@ -189,7 +191,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           signal: AbortSignal.timeout(this.deps.timeoutMs ?? DEFAULT_TIMEOUT_MS),
         },
       )) {
-        if (event.type === "done" && event.text) text = event.text;
+        if (event.type === "done" && event.text) text = redactSecrets(event.text, secretsToRedact);
         if (event.type === "usage" && !event.accounted) {
           await recordUsage(this.deps.prisma, event, {
             spaceId: input.bot.spaceId,
@@ -326,12 +328,16 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         !pinned &&
         !mainModel &&
         matchingAdminDeploymentModel(settings, provider, modelId);
+      const host =
+        material?.apiKey == null && !admin && provider === this.deps.deploymentProvider
+          ? await resolveDeploymentHostAuth(provider, modelId, registerSecrets)
+          : undefined;
       const apiKey =
         material?.apiKey ??
         (admin
           ? await loadAdminDeploymentModelKey(this.deps.secrets, admin.cipher)
           : provider === this.deps.deploymentProvider
-            ? this.deps.deploymentModelKey
+            ? (host?.apiKey ?? this.deps.deploymentModelKey)
             : undefined);
       const callObserver = settings?.modelCreditsEnabled
         ? await hostedModelCreditObserver(this.deps.prisma, scope)
@@ -342,6 +348,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           id: modelId,
           ...material,
           ...(apiKey ? { apiKey } : {}),
+          ...(host?.resolveApiKey ? { resolveApiKey: host.resolveApiKey } : {}),
           callObserver,
           billing: modelBilling({ credits: Boolean(callObserver || material) }),
         },

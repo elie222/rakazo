@@ -40,7 +40,13 @@ import {
 } from "../thinking-signatures.js";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./models/pi-openai-compatible-provider.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
-import { assistantText, messageHasToolCall, sanitizeProviderError } from "./pi-runtime-errors.js";
+import {
+  assistantText,
+  failedAssistantMessage,
+  messageHasToolCall,
+  renewableCredentialFailure,
+  sanitizeProviderError,
+} from "./pi-runtime-errors.js";
 import {
   effectiveOutputReserve,
   modelStreamTimeoutMs,
@@ -354,27 +360,8 @@ export function fallbackAwareModelStream(
   const finishWithThrownError = (target: RuntimeModelTarget, error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     recordFailure(target, message);
-    const aborted = signalAborted() || /abort|cancel/i.test(message);
-    const stopReason: "aborted" | "error" = aborted ? "aborted" : "error";
-    const failure: AssistantMessage = {
-      role: "assistant",
-      content: lastPartial?.content ?? [],
-      api: target.model.api,
-      provider: target.model.provider,
-      model: target.model.id,
-      usage: {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 0,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-      },
-      stopReason,
-      errorMessage: message,
-      timestamp: Date.now(),
-    };
-    output.push({ type: "error", reason: stopReason, error: failure });
+    const failure = failedAssistantMessage(target.model, message, signalAborted(), lastPartial);
+    output.push({ type: "error", reason: failure.stopReason, error: failure });
     output.end(failure);
   };
   const failIfAborted = (target: RuntimeModelTarget) => {
@@ -571,8 +558,28 @@ export function fallbackAwareModelStream(
           });
         }
       }
+      let renewableKey: string | undefined;
       try {
-        const apiKey = target.credentials?.accessToken ?? target.apiKey;
+        if (target.config.resolveApiKey) renewableKey = await target.config.resolveApiKey(signal);
+      } catch (error) {
+        paceSlot?.release();
+        if (failIfAborted(target)) return;
+        // Nothing has streamed yet. Keep raw credential errors out of progress.
+        const failure = renewableCredentialFailure(target.config.provider, error);
+        recordFailure(target, failure.message);
+        state.primaryFailure ??= failure.message;
+        const switched = await switchToNext(target);
+        if (failIfAborted(target)) return;
+        if (switched) {
+          resetForBackup();
+          buffered = [];
+          continue;
+        }
+        finishWithThrownError(target, failure);
+        return;
+      }
+      try {
+        const apiKey = renewableKey ?? target.credentials?.accessToken ?? target.apiKey;
         const reasoning = thinkingLevel === "off" ? undefined : thinkingLevel;
         stream = state.stream(
           sentTarget,
@@ -580,8 +587,12 @@ export function fallbackAwareModelStream(
           // With backups the switch replaces the SDK's retry, so a hung model is not waited on twice.
           state.request.fallbackModels?.length
             ? { ...attemptOptions, apiKey, reasoning, maxRetries: 0 }
-            : thinkingOverride
-              ? { ...attemptOptions, reasoning }
+            : thinkingOverride || renewableKey !== undefined
+              ? {
+                  ...attemptOptions,
+                  ...(thinkingOverride ? { reasoning } : {}),
+                  ...(renewableKey !== undefined ? { apiKey: renewableKey } : {}),
+                }
               : attemptOptions,
         );
       } catch (error) {

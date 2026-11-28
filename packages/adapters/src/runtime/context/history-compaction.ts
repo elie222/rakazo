@@ -1,6 +1,6 @@
 import type { AgentRunRequest, AgentRuntime, JobPublisher } from "@rakazo/adapter-kit";
 import { historyCompactJob } from "@rakazo/adapter-kit";
-import { blocksToAgentHistoryText, botMessageContext } from "@rakazo/core";
+import { blocksToAgentHistoryText, botMessageContext, redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { recordUsage, runAsTenant, storedMessageBlocks } from "@rakazo/db";
 import { getLogger, unwrapJobPayload } from "@rakazo/logging";
@@ -9,6 +9,7 @@ import type {
   MemoryProviderResolver,
 } from "../../memory/memory-provider-factory.js";
 import { modelCreditOfferings } from "../../model-credits/offerings.js";
+import { resolveDeploymentHostAuth } from "../../models/deployment-host-auth.js";
 import { resolveDeploymentModel } from "../../models/deployment-model.js";
 import { modelBilling } from "../../models/model-secret.js";
 import {
@@ -388,7 +389,7 @@ export async function compactHistory(
   const resolveModel = deps.resolveModel;
   if (modelCreditOfferings() && !resolveModel)
     throw new Error("Approved model summaries require the metered model resolver");
-  const model = resolveModel
+  const model: AgentRunRequest["model"] = resolveModel
     ? // Their credentials are only readable as them.
       await runAsTenant({ spaceId, userId }, () => resolveModel({ userId, spaceId, botId }))
     : deps.deploymentModelConfigured
@@ -396,7 +397,10 @@ export async function compactHistory(
           // Provider must come from the same resolver as the key, not a hardcoded one.
           provider: deploymentFallback.provider,
           id: deploymentFallback.model,
-          apiKey: deps.deploymentModelKey,
+          ...((await resolveDeploymentHostAuth(
+            deploymentFallback.provider,
+            deploymentFallback.model,
+          )) ?? { apiKey: deps.deploymentModelKey }),
           billing: modelBilling({}),
         }
       : await (async () => {
@@ -415,6 +419,18 @@ export async function compactHistory(
     return;
   }
 
+  const secrets = model.apiKey ? [model.apiKey] : [];
+  const resolveApiKey = model.resolveApiKey;
+  const requestModel = resolveApiKey
+    ? {
+        ...model,
+        resolveApiKey: async (signal?: AbortSignal) => {
+          const key = await resolveApiKey(signal);
+          if (!secrets.includes(key)) secrets.push(key);
+          return key;
+        },
+      }
+    : model;
   let summary = "";
   let runtimeReportedFailure = false;
   for await (const event of deps.runtime.run(
@@ -436,7 +452,8 @@ export async function compactHistory(
       instructions: historyCompactionInstructions(),
       history: [],
       tools: [],
-      model,
+      model: requestModel,
+      secrets,
       // An empty summarizer response must reach the retry guard below, not become Pi's
       // user-facing fallback text and advance the cursor without preserving any history.
       allowSilentEmpty: true,
@@ -462,7 +479,7 @@ export async function compactHistory(
       runtimeReportedFailure = true;
     }
     if (event.type === "done" && event.text) {
-      const text = event.text.trim();
+      const text = redactSecrets(event.text, secrets).trim();
       if (/^(?:I hit a problem:|Unknown model )/i.test(text)) runtimeReportedFailure = true;
       else summary = text;
     }
