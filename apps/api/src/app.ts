@@ -579,6 +579,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       cloudAgent,
       userDevices: botUserDevices,
       paymentWallet,
+      realtime,
       web,
       browser,
       stoppingSignal: shutdown.signal,

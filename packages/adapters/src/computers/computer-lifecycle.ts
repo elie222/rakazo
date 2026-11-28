@@ -4,6 +4,7 @@ import type {
   AgentHomeStore,
   ComputerRef,
   JobPublisher,
+  RealtimeFanout,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import {
@@ -25,10 +26,12 @@ import {
   isRetryableError,
   PERSON_RUN_TRIGGERS,
   pollUntil,
+  WakeLatch,
 } from "@rakazo/core";
 import { parseScreenLeaseId, screenLeaseId } from "@rakazo/core/node/screen-lease";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
+  computerLeaseTopic,
   expireComputerExecutionLeases,
   isUniqueViolation,
   parseComputerMode,
@@ -958,6 +961,12 @@ export async function acquireDedicatedScreenLeaseFence(
         };
       }
 
+      // The row is another run's unexpired lease; only a computer's first lease needs the fence.
+      const held = await tx.computerExecutionLease.findUnique({
+        where: { computerId_botId: { computerId: input.computerId, botId: input.botId } },
+        select: { id: true },
+      });
+      if (held) throw new ComputerBusyError();
       const history = await tx.run.aggregate({
         where: { botId: input.botId },
         _max: { leaseFence: true },
@@ -1135,11 +1144,37 @@ async function validateAcquiredComputerLease(
   throw new ComputerBusyError();
 }
 
+/** Without a database-backed signal, the longest a waiting run goes between looks. */
+const UNSIGNALLED_COMPUTER_WAIT_MAX_MS = 5_000;
+/** The signal wakes a waiting run; this slow look is the backup, such as for an expired lease. */
+const SIGNALLED_COMPUTER_WAIT_MAX_MS = 30_000;
+
 /** Wait only for this bot's computer; model and connector work never acquires this lease. */
 export async function waitForRunComputerLease(
   prisma: PrismaClient,
   input: { computerId: string; botId: string; runId: string; workerId: string; runFence: number },
   signal: AbortSignal,
+  realtime?: RealtimeFanout,
+): Promise<ComputerExecutionLease | null> {
+  const wake = new WakeLatch();
+  const unsubscribe = await realtime?.subscribe(computerLeaseTopic(input.computerId), () =>
+    wake.wake(),
+  );
+  const maxWaitMs = realtime?.describe().capabilities.distributed
+    ? SIGNALLED_COMPUTER_WAIT_MAX_MS
+    : UNSIGNALLED_COMPUTER_WAIT_MAX_MS;
+  try {
+    return await waitForComputerLease(prisma, input, signal, { wake, maxWaitMs });
+  } finally {
+    if (unsubscribe) await bestEffort("stop watching computer lease", unsubscribe());
+  }
+}
+
+async function waitForComputerLease(
+  prisma: PrismaClient,
+  input: { computerId: string; botId: string; runId: string; workerId: string; runFence: number },
+  signal: AbortSignal,
+  options: { wake: WakeLatch; maxWaitMs: number },
 ): Promise<ComputerExecutionLease | null> {
   let marked = false;
   const outcome = await pollUntil(
@@ -1175,9 +1210,10 @@ export async function waitForRunComputerLease(
       }
     },
     {
-      intervalMs: (attempt) => Math.min(250 * 2 ** Math.min(attempt - 1, 5), 5_000),
+      intervalMs: (attempt) => Math.min(250 * 2 ** Math.min(attempt - 1, 7), options.maxWaitMs),
       timeoutMs: Number.POSITIVE_INFINITY,
       signal,
+      wake: options.wake,
       waitingFor: "the bot's computer",
     },
   );

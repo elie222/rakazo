@@ -1,6 +1,6 @@
 import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { isBackgroundRunTrigger, redactSecrets, redactSecretsAfter } from "@rakazo/core";
-import { RunHistoryWriteError, recordUsage } from "@rakazo/db";
+import { RunHistoryWriteError, recordUsage, runLeaseTopic } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { isStrategicInitiativeRun } from "../../routines/strategic-initiative.js";
 import { withRuntimeCleanup } from "../../runtime/runtime-stream.js";
@@ -73,22 +73,13 @@ export async function consumeRunEvents(
     }
   };
   // A quiet model call or a long tool streams no events, so Stop would otherwise go unseen
-  // until the next event or heartbeat. The shared throttle keeps this at one read a second.
+  // until the next event or heartbeat.
   let watching = true;
-  const watch = setInterval(() => {
-    void runLeaseLost(ctx, () => watching)
-      .then((lost) => {
-        // A read still in flight when the turn ended must not cancel the work that follows it.
-        if (lost && watching) ctx.abortController.abort();
-      })
-      .catch(() => {});
-  }, 1_000);
-  watch.unref?.();
+  const watch = watchRunLease(ctx, () => watching);
   try {
     for await (const event of withRuntimeCleanup(events, ctx.abortController)) {
       if (ctx.state.approval.pausePending) return true;
       if (!ctx.state.lease.valid) return true;
-      if (await runLeaseLost(ctx)) return true;
 
       if (
         isStrategicInitiativeRun(run) &&
@@ -165,22 +156,70 @@ export async function consumeRunEvents(
     return false;
   } finally {
     watching = false;
-    clearInterval(watch);
+    await watch.stop();
     // Run completion clears thinking too; never let this replace the turn's own outcome.
     await publishThinking(false).catch(() => {});
   }
 }
 
+/** Without a database-backed signal, how often a turn looks at its run instead. */
+const UNSIGNALLED_LEASE_CHECK_MS = 30_000;
+
 /**
- * At most once a second, check the run is still this attempt's and not cancelled or released.
- * A read that answers after `active` turns false acts on nothing.
+ * Look at the run whenever the database signals a change to its status, lease or takeover,
+ * and once right after listening so a change made before then is not missed. A lost lease
+ * aborts the turn. The heartbeat stays the backup when a signal could not arrive.
  */
+function watchRunLease(ctx: RunContext, active: () => boolean) {
+  const { realtime } = ctx.deps;
+  let checking = false;
+  let again = false;
+  const check = () => {
+    if (!active()) return;
+    if (checking) {
+      again = true;
+      return;
+    }
+    checking = true;
+    void bestEffort(
+      "check run lease",
+      runLeaseLost(ctx, active).then((lost) => {
+        // A read still in flight when the turn ended must not cancel the work that follows it.
+        if (lost && active()) ctx.abortController.abort();
+      }),
+    ).finally(() => {
+      checking = false;
+      if (again) {
+        again = false;
+        check();
+      }
+    });
+  };
+  const subscribed = realtime
+    ? bestEffort(
+        "watch run lease",
+        realtime.subscribe(runLeaseTopic(ctx.runId), check).then((unsubscribe) => {
+          check();
+          return unsubscribe;
+        }),
+      )
+    : Promise.resolve(undefined);
+  const backup = realtime?.describe().capabilities.distributed
+    ? undefined
+    : setInterval(check, UNSIGNALLED_LEASE_CHECK_MS);
+  backup?.unref?.();
+  return {
+    async stop() {
+      clearInterval(backup);
+      await (await subscribed)?.();
+    },
+  };
+}
+
+/** Whether the run is no longer this attempt's: cancelled, released, or its takeover ended. */
 async function runLeaseLost(ctx: RunContext, active = () => true) {
   const { deps, runId, workerId, fence } = ctx;
   const { lease } = ctx.state;
-  const now = Date.now();
-  if (now - lease.lastCheckAt < 1_000) return false;
-  lease.lastCheckAt = now;
   const still = await deps.prisma.run.findUnique({
     where: { id: runId },
     select: { status: true, leaseOwner: true, leaseFence: true, checkpoint: true },
