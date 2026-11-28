@@ -69,6 +69,7 @@ import type { MessageRowActions } from "./message-row";
 import { PeerReceiptLine } from "./peer-receipt-line";
 import { RoutineEventRows } from "./routine-event-row";
 import { isSpecialMessageBlock, SpecialMessageCard } from "./special-message-card";
+import { StepsLine } from "./steps-line";
 
 type AskAction = NonNullable<Extract<MessageBlock, { kind: "ask" }>["actions"]>[number];
 
@@ -781,8 +782,13 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     (block): block is Extract<MessageBlock, { kind: "import_setup" }> =>
       block.kind === "import_setup",
   );
+  const steps =
+    message.role === "bot"
+      ? message.blocks.flatMap((block) => (block.kind === "steps" ? block.steps : []))
+      : [];
   return (
     <View style={{ gap: 8, width: "100%" }}>
+      {steps.length > 0 ? <StepsLine steps={steps} /> : null}
       {segments.map((segment, index) => (
         <MessageTextCard
           key={`${message.id}-content-${index}`}

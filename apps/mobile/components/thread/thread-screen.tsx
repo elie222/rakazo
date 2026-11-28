@@ -94,6 +94,7 @@ import { LoadEarlierButton, ThreadWorkingFooter } from "./thread-list-controls";
 import { ThreadMessageList } from "./thread-message-list";
 import { useLatestRowActions, useThreadRows } from "./thread-rows";
 import { useThreadRunError } from "./thread-run-error";
+import { WorkingPill } from "./working-pill";
 
 function isActiveStatus(status: string | undefined): boolean {
   return isRunWorking(status) || isRunWaitingOnUser(status);
@@ -569,7 +570,13 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
             status: bot.status,
           }))
         : [];
-  const workingFooter = (
+  const workingLabel =
+    activityLine ?? (workingRoutine ? t`Running ${ph({ name: workingRoutine })}…` : t`Working…`);
+  const stopTarget = groupId ? { groupId } : botId ? { botId } : null;
+  const threadWorking = inGroup ? workingGroupBots.length > 0 : isRunWorking(currentBotStatus);
+  // The glass pill above the composer carries the live line and Stop, so the list doesn't repeat it.
+  const showWorkingPill = threadWorking && !readOnly && stopTarget !== null;
+  const workingFooter = showWorkingPill ? null : (
     <ThreadWorkingFooter
       bots={workingBots.map((bot) => ({
         ...bot,
@@ -663,7 +670,19 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
             hidden={readOnly}
             keyboardProgress={keyboard.progress}
             columnPadding={columnPadding}
-            notice={<ThreadFetchErrorNotice error={error} showingSaved={showingSaved} />}
+            notice={
+              <>
+                <ThreadFetchErrorNotice error={error} showingSaved={showingSaved} />
+                {showWorkingPill && stopTarget ? (
+                  <WorkingPill
+                    label={workingLabel}
+                    target={stopTarget}
+                    // Stop ends every run in a group, including a bot's open question to you.
+                    canStop={workingGroupBots.length === activeGroupBots.length}
+                  />
+                ) : null}
+              </>
+            }
             onHeight={setDockHeight}
             replyTarget={replyTarget}
             replyAuthor={

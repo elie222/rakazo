@@ -193,6 +193,9 @@ export function createInboxStyles() {
       ...typeScale.secondary,
       writingDirection: "auto",
     },
+    workingPreview: {
+      color: tokens.statusWorking,
+    },
     unreadPreview: {
       color: native.label,
       fontWeight: "600",

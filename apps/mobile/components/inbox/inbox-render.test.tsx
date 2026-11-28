@@ -512,9 +512,9 @@ it("says working only while the bot works, and shows nothing beside the time", (
   );
   // A "Needs you" computer card or an ask card is the state; the row must not claim work.
   expect(rowLabels()).toEqual(["Helper, Working…, Hi", "Helper, Hi", "Helper, Hi", "Helper, Hi"]);
-  // The avatar's motion and corner dot are the only working sign; the time stands alone.
+  // A working bot's preview line says so; the others keep their last message.
   expect(Array.from(container.querySelectorAll("button"), (row) => row.textContent)).toEqual([
-    "HelperHi",
+    "HelperWorking…",
     "HelperHi",
     "HelperHi",
     "HelperHi",
