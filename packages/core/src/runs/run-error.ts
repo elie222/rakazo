@@ -70,6 +70,17 @@ export const MODEL_IMAGE_INPUT_UNKNOWN = "Image input is not configured for this
 export const MODEL_IMAGE_INPUT_ERROR =
   "This model cannot read images. Choose a model that supports images.";
 
+const MODEL_IMAGE_LIMIT_ERROR =
+  "This model's image limit is {limit}. Send fewer images or choose another model.";
+
+/** The user's own images in one request outnumber the selected model's image limit. */
+export function modelImageLimitError(limit: number): string {
+  return MODEL_IMAGE_LIMIT_ERROR.replace("{limit}", String(limit));
+}
+
+const MODEL_IMAGE_LIMIT =
+  /^This model's image limit is (\d+)\. Send fewer images or choose another model\.$/;
+
 /** Recognize the send rejection across RPC errors and persisted outbox messages. */
 export function isModelRequiredSendError(error: unknown): boolean {
   const message =
@@ -228,7 +239,7 @@ export function parseModelFallbackFailure(
  * that reject a model's malformed tool call or empty reply. Never matched against model prose.
  */
 const MODEL_OUTPUT_FAILURE =
-  /^(?:Provider (?:finish_reason|stopped with): |Unhandled stop reason: |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|[Tt]ool call validation failed\b|Parsing failed\. The model generated output that could not be parsed\b|Upstream request failed: \[api_error\] Upstream response was not valid JSON\b|The model refused to complete the request\b|(?:Codex error: )?This content was flagged for possible cybersecurity risk\b|Cyber safeguards flagged this message\b|This request triggered cyber-related safeguards\b|(?:SAFETY|BLOCKLIST|PROHIBITED_CONTENT|SPII|RECITATION|IMAGE_(?:SAFETY|PROHIBITED_CONTENT|RECITATION))$|This request (?:triggered restrictions on [^\n.]{1,80} and )?was blocked (?:under|as it seems to violate) Anthropic's |(?:[\w.]+Error: )?unexpected tokens remaining in message header:)/;
+  /^(?:Provider (?:finish_reason|stopped with): |Unhandled stop reason: |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|[Tt]ool call validation failed\b|Parsing failed\. The model generated output that could not be parsed\b|Upstream request failed: \[api_error\] Upstream response was not valid JSON\b|The model refused to complete the request\b|(?:Codex error: )?This content was flagged for possible cybersecurity risk\b|Cyber safeguards flagged this message\b|This request triggered cyber-related safeguards\b|(?:SAFETY|BLOCKLIST|PROHIBITED_CONTENT|SPII|RECITATION|IMAGE_(?:SAFETY|PROHIBITED_CONTENT|RECITATION))$|This request (?:triggered restrictions on [^\n.]{1,80} and )?was blocked (?:under|as it seems to violate) Anthropic's |(?:[\w.]+Error: )?unexpected tokens remaining in message header:|(?:Input|Output)(?: text| image)? data may contain inappropriate content\b)/;
 
 /** The provider cut off the model's reply, such as a half-written tool call, at its output limit. */
 const MODEL_OUTPUT_LIMIT_REACHED = /\bcut ?off by max_(?:completion_|output_)?tokens\b/i;
@@ -279,6 +290,15 @@ export function normalizeRunError(
       details,
       recovery: "model",
       kind: "model",
+    };
+  }
+  const imageLimit = MODEL_IMAGE_LIMIT.exec(trimmed)?.[1];
+  if (imageLimit !== undefined) {
+    return {
+      summary: translate(MODEL_IMAGE_LIMIT_ERROR, { limit: Number(imageLimit) }),
+      details,
+      recovery: "model",
+      kind: "context",
     };
   }
   // "429: {...}", "429 {...}", or the model runtime's "<provider> API error (429): {...}".
@@ -530,9 +550,15 @@ export function normalizeRunError(
     summary = translate("{provider} rejected the API key. Check your connection settings.", {
       provider,
     });
-  } else if (status === 403 || payload.code === "model_terms_required") {
-    // The key works, but the provider refuses this model to the account or plan, or serves it
-    // only inside its own apps.
+  } else if (
+    status === 403 ||
+    payload.code === "model_terms_required" ||
+    (!(status !== undefined && status >= 500) &&
+      /\b(?:trains?|training) on (?:request|prompt|user|your) data\b/i.test(message))
+  ) {
+    // The key works, but the provider refuses this model to the account or plan, serves it
+    // only inside its own apps, or the account's privacy settings exclude models that train on
+    // what they are sent.
     recovery = "model";
     kind = "access";
     summary = translate("{provider} denied access to this model.", { provider });

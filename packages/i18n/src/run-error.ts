@@ -22,6 +22,12 @@ export const translateRunError: RunErrorTranslator = (message, values) => {
         message: "This model cannot read images. Choose a model that supports images.",
         values,
       });
+    case "This model's image limit is {limit}. Send fewer images or choose another model.":
+      return i18n._({
+        id: "This model's image limit is {limit}. Send fewer images or choose another model.",
+        message: "This model's image limit is {limit}. Send fewer images or choose another model.",
+        values,
+      });
     case "Your OpenRouter":
       return i18n._({ id: "Your OpenRouter", message: "Your OpenRouter", values });
     case "Your OpenAI":
