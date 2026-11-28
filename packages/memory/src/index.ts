@@ -15,6 +15,9 @@ import { MemoryRevisionConflictError } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma, withTransactionRetry } from "@rakazo/db";
 
+/** One search answers a prompt, so it stays small however much memory a Space holds. */
+const SEARCH_LIMIT = 20;
+
 /** Memory is the Space's: every member's runs read and write the same documents. */
 export class MarkdownMemoryStore implements MemoryStore {
   constructor(private readonly prisma: PrismaClient) {}
@@ -53,20 +56,33 @@ export class MarkdownMemoryStore implements MemoryStore {
     request: MemorySearchRequest,
     context: AdapterContext,
   ): Promise<MemorySearchResult[]> {
+    const query = request.query.trim();
+    if (!query) return [];
+    // The match runs here rather than in the query: stored content is encrypted, and the
+    // extension decrypts it after the row is read, so a SQL match would only ever see ciphertext.
     const documents = await this.prisma.memoryDocument.findMany({
       where: {
         spaceId: context.spaceId,
         ...(request.scope === "all" ? {} : { scope: request.scope }),
         ...(request.botId ? { botId: request.botId } : {}),
       },
+      orderBy: [{ updatedAt: "desc" }, { path: "asc" }],
     });
-    const q = request.query.toLowerCase();
+    const lowered = query.toLowerCase();
+    // A hit that names the file ranks above one that only mentions the word, and the answer stays
+    // small enough to fill a prompt however much memory the Space holds.
     return documents
-      .filter((doc) => doc.content.toLowerCase().includes(q) || doc.path.toLowerCase().includes(q))
-      .map((doc) => ({
+      .filter(
+        (doc) =>
+          doc.path.toLowerCase().includes(lowered) || doc.content.toLowerCase().includes(lowered),
+      )
+      .map((doc) => ({ doc, inPath: doc.path.toLowerCase().includes(lowered) }))
+      .sort((a, b) => Number(b.inPath) - Number(a.inPath))
+      .slice(0, SEARCH_LIMIT)
+      .map(({ doc, inPath }) => ({
         path: doc.path,
-        snippet: snippet(doc.content, q),
-        score: 1,
+        snippet: snippet(doc.content, lowered),
+        score: inPath ? 2 : 1,
       }));
   }
 
