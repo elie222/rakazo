@@ -1,6 +1,6 @@
 import type { EffectiveApprovalTarget, SettingsScope } from "@rakazo/contracts";
 import { APPROVAL_RULES_CHANGED } from "@rakazo/contracts";
-import { ClientError } from "@rakazo/core";
+import { ClientError, toolRequiresExplicitApproval } from "@rakazo/core";
 import type { PrismaClient } from "../database/client.js";
 import { Prisma } from "../database/client.js";
 import { lockSpaceSettings, settingsTarget } from "../spaces/space-settings.js";
@@ -100,6 +100,16 @@ export async function saveApprovalRule(
   requested?: SettingsScope,
   expected?: EffectiveApprovalTarget,
 ) {
+  if (
+    rule.effect === "always_allow" &&
+    rule.matchKind === "tool" &&
+    toolRequiresExplicitApproval(rule.matchValue)
+  ) {
+    throw new ClientError(
+      "BAD_REQUEST",
+      "This tool requires approval each time and cannot be always allowed.",
+    );
+  }
   const account = (await approvalRuleWriteTarget(tx, scope, requested, expected)) === "account";
   const owner = account ? `account:${scope.userId}` : `${scope.spaceId}:${scope.userId}`;
   const value = rule.matchValue.toLowerCase();

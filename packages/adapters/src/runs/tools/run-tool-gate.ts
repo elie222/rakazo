@@ -148,6 +148,10 @@ export async function gateToolCall(
     connectorCall.route,
   );
   const approvalToolNames = batch?.actions.length ? batch.actions : [approvalName];
+  const explicitApproval =
+    Boolean(connectorTool?.explicitApproval) ||
+    approvalToolNames.some(toolRequiresExplicitApproval) ||
+    approvalAliases.some(toolRequiresExplicitApproval);
   // Search and load return a list or a schema. They never call the connector.
   const catalogControlRead =
     !connectorCall.route?.connectionId &&
@@ -212,6 +216,7 @@ export async function gateToolCall(
       )
     : viaConnector &&
         !unidentifiedAction &&
+        !explicitApproval &&
         (catalogControlRead ||
           approvalToolNames.every(
             (toolName) => !connectorToolRequiresApproval(toolName, declaredReadOnlyFor(toolName)),
@@ -304,6 +309,7 @@ export async function gateToolCall(
     request.heldForApproval ||
     paying ||
     unattendedWatch ||
+    explicitApproval ||
     routineWrittenAfterOutside ||
     siteGate === "new" ||
     unidentifiedAction ||
@@ -316,7 +322,7 @@ export async function gateToolCall(
   // A reviewed call still fails closed when its review errors, and keeps its approval key.
   const gated = requiresApprovalByDefault || reviewOnly;
   // In Ask and Auto these ask a person every time, whatever started the run.
-  const mandatoryInAnyRun = paying || unattendedWatch || toolRequiresExplicitApproval(name);
+  const mandatoryInAnyRun = paying || unattendedWatch || explicitApproval;
   // Outside text may have asked for these, so an Always allow rule saved for calls the owner asked
   // for does not skip them; they still go through the approval mode.
   const ignoresAllowRules = routineWrittenAfterOutside || request.ignoresAllowRules;
@@ -588,7 +594,7 @@ export async function gateToolCall(
     reviewReason,
     summary: request.fleetSummary,
     batch: connectorTool?.batch,
-    onceOnly: asksEveryTime,
+    onceOnly: asksEveryTime || explicitApproval,
     outgoingDraft: connectorTool?.outgoingDraft,
     allowOutgoingDraft:
       Boolean(connectorTool?.outgoingDraft || connectorTool?.batch?.outgoingDrafts) &&

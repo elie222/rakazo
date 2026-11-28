@@ -194,3 +194,83 @@ describe("gateToolCall: typing into a page after outside content, in Auto", () =
     expect(reviewOnly).toEqual([false, true]);
   });
 });
+
+describe("MCP resume explicit approval", () => {
+  beforeEach(() => {
+    plans.length = 0;
+  });
+
+  it("requires explicit approval in Ask and Auto even with an existing always_allow rule or read-prefixed disambiguated name", async () => {
+    const executionId = JSON.stringify(["pi-tool", "main", "call-resume"]);
+    const cases = [
+      {
+        name: "mcp__demo__resume",
+        resolvedTool: undefined,
+      },
+      {
+        name: "read_docs_resume",
+        resolvedTool: {
+          name: "read_docs_resume",
+          description: "Resume paused execution",
+          inputSchema: { type: "object" },
+          explicitApproval: true,
+        },
+      },
+    ];
+
+    for (const item of cases) {
+      for (const autoEnabled of [false, true]) {
+        plans.length = 0;
+        const request: ToolRequest = {
+          name: item.name,
+          args: { executionId: "exec-1" },
+          executionId,
+          connectorCall: {
+            tool: item.name,
+            args: { executionId: "exec-1" },
+            executionId,
+            route: { connectorId: "mcp", resourceId: "srv-1", toolName: "resume" },
+          },
+          effectRequest: { executionId: "exec-1" },
+          resolvedTool: item.resolvedTool,
+          catalogRemapped: false,
+          nextApprovedTool: undefined,
+          approvedEffectKey: undefined,
+          replayEffectToolName: item.name,
+          fleetSummary: undefined,
+          heldForApproval: false,
+          settingsChange: false,
+          ignoresAllowRules: false,
+          purchase: undefined,
+          cardUse: undefined,
+          loginUse: undefined,
+        };
+        const ctx = {
+          deps: { prisma: {}, autoReview: autoEnabled ? {} : undefined },
+          run: { id: "run-1", userId: "user-1", spaceId: "space-1", trigger: "user" },
+          runId: "run-1",
+          bot: { id: "bot-1", name: "Helper" },
+          thread: { id: "thread-1" },
+          context: { signal: new AbortController().signal },
+          source: { ownerStartedRun: true },
+          tools: { connector: new Map(), connectedPlugins: [] },
+          state: {
+            tainted: false,
+            effects: { consumedIds: new Set(), counts: new Map(), occurrences: [] },
+          },
+          trust: {
+            loadApprovalRules: async () => [
+              { effect: "always_allow", matchKind: "tool", matchValue: item.name },
+            ],
+            loadAutoReviewPreference: async () => ({
+              enabled: autoEnabled,
+              skipApprovals: false,
+            }),
+          },
+        };
+        await gateToolCall(ctx as never, request, undefined).catch(() => undefined);
+        expect(plans, `${item.name} auto=${String(autoEnabled)}`).toEqual(["ask"]);
+      }
+    }
+  });
+});

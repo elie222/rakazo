@@ -2438,7 +2438,10 @@ describe("installed MCP sessions last for a whole run", () => {
 
   function providerFor(server: ReturnType<typeof statefulMcpServer>) {
     const prisma = {
-      capabilityInstall: { findFirst: vi.fn().mockResolvedValue(server.install) },
+      capabilityInstall: {
+        findFirst: vi.fn().mockResolvedValue(server.install),
+        findMany: vi.fn().mockResolvedValue([server.install]),
+      },
     };
     return new InstalledConnectorProvider(prisma as never, {} as never, {
       fetch: server.fetch as unknown as typeof globalThis.fetch,
@@ -2487,6 +2490,10 @@ describe("installed MCP sessions last for a whole run", () => {
     const server = statefulMcpServer();
     const provider = providerFor(server);
     const { context } = runContext("run-1");
+
+    const tools = await provider.discoverTools(context);
+    expect(tools.find((tool) => tool.name === "pause")?.explicitApproval).toBeUndefined();
+    expect(tools.find((tool) => tool.name === "resume")?.explicitApproval).toBe(true);
 
     const pause = await callTool(provider, context, "pause", {});
     expect(pause).toMatchObject([{ type: "result" }]);

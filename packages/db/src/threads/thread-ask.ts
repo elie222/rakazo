@@ -24,6 +24,7 @@ import {
   messageReaction,
   resolveAskChoice,
   SITE_SENDING_TOOLS,
+  toolRequiresExplicitApproval,
 } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
@@ -462,6 +463,7 @@ async function commitAnswerRunInput(
     if (input.answer === "always" && (site || approvalEffect!.kind !== "web_fetch")) {
       // Saved where the member's confirmations apply in this Space: the account or its override.
       for (const tool of site ? [site] : tools) {
+        if (!site && toolRequiresExplicitApproval(tool)) continue;
         await saveApprovalRule(
           tx,
           { userId: approvalUserId!, spaceId: input.spaceId },

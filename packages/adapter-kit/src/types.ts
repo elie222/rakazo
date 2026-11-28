@@ -338,6 +338,8 @@ export interface ConnectorTool {
   outgoingDraft?: OutgoingDraftDescriptor;
   /** Declared effect. `false` forces approval; `true` never relaxes the name-based gate. */
   readOnly?: boolean;
+  /** Set when each call confirms a distinct underlying action and cannot be auto-reviewed or always allowed. */
+  explicitApproval?: boolean;
   /** Set when the tool runs other actions named in its arguments; see ToolBatch. */
   batch?: ToolBatch;
   /** What the person sees for a call, when the name the model uses would read badly. */

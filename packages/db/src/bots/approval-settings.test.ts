@@ -121,6 +121,28 @@ describe("approval rules", () => {
     ).rejects.toMatchObject({ kind: "CONFLICT", code: APPROVAL_RULES_CHANGED });
   });
 
+  it("rejects saving always_allow for tools that require explicit approval while allowing ask or deny", async () => {
+    const client = confirmationsClient();
+
+    for (const matchValue of ["mcp__demo__resume", "resume", "SET_CHILD_INSTRUCTIONS"]) {
+      await expect(
+        saveApprovalRule(client.prisma, scope, {
+          effect: "always_allow",
+          matchKind: "tool",
+          matchValue,
+        }),
+      ).rejects.toMatchObject({ kind: "BAD_REQUEST" });
+    }
+    expect(client.userActionApprovalRule.upsert).not.toHaveBeenCalled();
+
+    await saveApprovalRule(client.prisma, scope, {
+      effect: "deny",
+      matchKind: "tool",
+      matchValue: "mcp__demo__resume",
+    });
+    expect(client.userActionApprovalRule.upsert).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects resetting a displayed rule that no longer exists", async () => {
     const client = confirmationsClient({ overridden: true });
     client.actionApprovalRule.deleteMany.mockResolvedValueOnce({ count: 0 });
