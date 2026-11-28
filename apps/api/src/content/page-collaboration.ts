@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { ArtifactStore } from "@rakazo/adapter-kit";
 import type { Actor, PageComment, PageImageSource, PageReview, PageState } from "@rakazo/contracts";
-import { PageRevisionStatus } from "@rakazo/contracts";
+import { PAGE_REVISION_NOT_FOUND, PageRevisionStatus } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
@@ -114,6 +114,18 @@ export function listPageReviews(prisma: PrismaClient, actor: Actor, cursor?: str
   });
 }
 
+/**
+ * Thrown only once the reader's access to the page is verified: the page can still be read, just
+ * not this revision. It names the lowest revision the reader may read, so a client can drop the
+ * cached revisions below it and keep the rest.
+ */
+export class PageRevisionNotFoundError extends ClientError {
+  constructor(readableFrom: number) {
+    super("NOT_FOUND", "Resource not found", PAGE_REVISION_NOT_FOUND);
+    this.data = { readableFrom };
+  }
+}
+
 export function getPageReview(
   prisma: PrismaClient,
   actor: Actor,
@@ -122,12 +134,13 @@ export function getPageReview(
   return readPageReview(prisma, actor, pageId, async (tx, access) => {
     const { page, owner, grant } = access;
     const reviewed = version ?? page.currentVersion;
-    if (reviewed < (grant?.firstVersion ?? 1)) throw new IsolationError();
+    const readableFrom = grant?.firstVersion ?? 1;
+    if (reviewed < readableFrom) throw new PageRevisionNotFoundError(readableFrom);
     const stored = await tx.pageVersion.findUnique({
       where: { pageId_version: { pageId, version: reviewed } },
       select: { id: true, title: true, code: true, images: true },
     });
-    if (!stored) throw new IsolationError();
+    if (!stored) throw new PageRevisionNotFoundError(readableFrom);
     const latest = reviewed === page.currentVersion;
     return {
       id: pageId,

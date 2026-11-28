@@ -47,3 +47,19 @@ export const PageCommentSchema = z.strictObject({
 export type PageComment = z.infer<typeof PageCommentSchema>;
 export type PageReview = z.infer<typeof PageReviewSchema>;
 export const pageReviewPath = (id: string) => `/review/${encodeURIComponent(id)}`;
+/** The reviewer may still read the page; only the revision they asked for is not theirs to read. */
+export const PAGE_REVISION_NOT_FOUND = "PAGE_REVISION_NOT_FOUND";
+
+/**
+ * The lowest revision the server confirmed the reader may read, which that refusal sends as its
+ * `data.readableFrom`. Undefined for any other answer, or when the detail is missing or invalid.
+ */
+export function pageRevisionFloor(error: unknown): number | undefined {
+  const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+  if (code !== PAGE_REVISION_NOT_FOUND) return undefined;
+  const data = error && typeof error === "object" && "data" in error ? error.data : undefined;
+  const floor =
+    data && typeof data === "object" && "readableFrom" in data ? data.readableFrom : undefined;
+  const parsed = PageVersionNumber.safeParse(floor);
+  return parsed.success ? parsed.data : undefined;
+}
