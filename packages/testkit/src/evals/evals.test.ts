@@ -476,6 +476,8 @@ const PRODUCT_EVIDENCE: Record<string, (e: Evidence, reviewed: Record<string, st
   "store-prices-past-failures": (e, { reply }) => {
     for (const url of [
       "https://trailhead.example.test/stockists",
+      "https://northpeak.example.test/trailhead-40l",
+      "https://cedarpine.example.test/p/trailhead-40l",
       "https://summit.example.test/trailhead-40l",
       "https://ridgeline.example.test/trailhead-40l",
       "https://basecamp.example.test/trailhead-40l",

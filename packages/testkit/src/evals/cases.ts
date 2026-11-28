@@ -941,8 +941,8 @@ export const EVAL_CASES: EvalCase[] = [
       return [
         check("read-stockists", fetched(STOCKISTS_URL)),
         check(
-          "read-every-reachable-store",
-          STORES.every((store) => !store.price || fetched(store.url)),
+          "tried-every-store",
+          STORES.every((store) => fetched(store.url)),
         ),
         noWrites(e),
       ];
