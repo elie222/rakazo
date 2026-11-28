@@ -43,6 +43,7 @@ import {
   resolveAutoReviewChecker,
 } from "../../approvals/auto-review.js";
 import { pagePaymentPrecheck, paysWithWallet } from "../../billing/spending-gate.js";
+import { argumentGiven } from "../../bots/update-bot-patch.js";
 import { reportBotMessageWait } from "../../messaging/bot-messages.js";
 import { findConnectedModelCredential } from "../../models/model-selection.js";
 import { paidRequestEffect } from "../../payments/paid-request.js";
@@ -67,6 +68,7 @@ import {
   CATALOG_APPROVAL_TOOL,
   claimEffect,
   completeEffect,
+  completeIntendedEffect,
   recordEffect,
   uncertainEffectError,
 } from "../lifecycle/run-effects.js";
@@ -74,9 +76,10 @@ import { enqueueSteeringContinuation, renewRunLease } from "../lifecycle/run-lif
 import { notifyRun } from "../lifecycle/run-notifications.js";
 import { publishNarrationBeforeAsk } from "../lifecycle/run-progress.js";
 import { refusal } from "../turn/tool-refusal.js";
+import { intendedScheduleGateAction, storedRequestObject } from "./run-schedule-approval.js";
+import { prepareScheduleGateCall } from "./run-schedule-gate.js";
 import { auditToolCall } from "./run-tool-audit.js";
 import type { ToolRequest } from "./run-tool-request.js";
-import { prepareScheduleUpdateApproval } from "./run-tool-request.js";
 import { reviewToolCall } from "./run-tool-review.js";
 import { BUILTIN_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
 import { callMediaTool } from "./run-tools-files.js";
@@ -431,16 +434,31 @@ export async function gateToolCall(
   // Auto Review passing one URL clears that call only; it does not give the run the whole site.
   let passedByReview = false;
   const needsApprovalEarly = plan === "ask" || plan === "judge";
-  // The save validates an allowed edit directly. A call that can produce a card
-  // needs the same validation and its before-values before the effect is stored.
-  if (name === "schedule_update" && needsApprovalEarly && nextApprovedTool !== name) {
-    const refused = await prepareScheduleUpdateApproval(ctx, request);
-    if (refused) return { result: refused };
-    effectRequest = request.effectRequest;
-  }
   // A resumed approval keeps its key even if "Always allow" changed the policy.
   const usesApprovalKey =
     nextApprovedTool || name === "request_secret" || needsApprovalEarly || gated;
+  const keyArgs = request.effectKeyArgs ?? args;
+  let pinnedEffectKey = approvedEffectKey ?? request.reconciledEffectKey;
+  // The save validates an allowed edit directly. A call that can produce a card
+  // needs the same validation and its before-values or pinned id before the effect is stored.
+  if (
+    (name === "schedule_update" || name === "schedule_cancel") &&
+    needsApprovalEarly &&
+    nextApprovedTool !== name
+  ) {
+    const prepared = await prepareScheduleGateCall(ctx, request, {
+      name,
+      args,
+      effectRequest,
+      keyArgs,
+      usesApprovalKey: Boolean(usesApprovalKey),
+      pinnedEffectKey,
+    });
+    if ("refused" in prepared) return { result: prepared.refused };
+    args = prepared.args;
+    effectRequest = prepared.effectRequest;
+    pinnedEffectKey = prepared.pinnedEffectKey;
+  }
   // Count before choosing a key so an approved replay (occurrence 0 / base
   // key) cannot collide with a later identical-args call in this attempt.
   // request_secret stays single-use: retries must reuse the same card. A code is the exception:
@@ -452,17 +470,17 @@ export async function gateToolCall(
       : nextMutatingEffectOccurrence(
           ctx,
           replayEffectToolName,
-          args,
+          keyArgs,
           executionId,
-          approvedEffectKey,
+          pinnedEffectKey,
         );
   // An approved replay claims the row the user approved. A derived key can differ
   // (another call's occurrence count), which would ask again and strand the approval.
   const effectKey =
-    approvedEffectKey ??
+    pinnedEffectKey ??
     (usesApprovalKey && occurrence === 0
-      ? approvalEffectKey(runId, replayEffectToolName, args)
-      : toolEffectIdempotencyKey(runId, replayEffectToolName, args, occurrence));
+      ? approvalEffectKey(runId, replayEffectToolName, keyArgs)
+      : toolEffectIdempotencyKey(runId, replayEffectToolName, keyArgs, occurrence));
   // Connector read-only hints must not bypass approval, review, or replay decisions.
   // A fetch to a new site is gated like any action, so it needs an effect to approve.
   const applied =
@@ -470,7 +488,7 @@ export async function gateToolCall(
     plan === "allow" &&
     siteGate !== "new" &&
     nextApprovedTool !== name &&
-    !approvedEffectKey
+    !pinnedEffectKey
       ? undefined
       : await recordEffect(
           deps,
@@ -481,7 +499,21 @@ export async function gateToolCall(
           executionId,
           ctx.state.effects.consumedIds,
           batch && (batch.complete ? batch.actions : []),
+          ctx.state.effects.counts,
         );
+  if (applied?.duplicate && applied.effect.status === "intended" && name === "schedule_cancel") {
+    const stored = storedRequestObject(applied.effect.request);
+    if (stored && argumentGiven(stored.routineId)) {
+      args = {
+        ...args,
+        routineId: stored.routineId,
+        ...(stored.name ? { name: stored.name } : {}),
+      };
+    }
+  }
+  const intendedOverride = applied?.duplicate
+    ? intendedScheduleGateAction(name, applied.effect)
+    : undefined;
 
   // Refuse a repeat of a tool the user denied earlier in this run. Refusals carry a result,
   // so only real denies match. A stored row is checked only while it still waits for an
@@ -492,6 +524,7 @@ export async function gateToolCall(
   const pageAction = PURCHASE_CHECKED_TOOLS.has(name);
   const repeatChecked =
     applied &&
+    !intendedOverride &&
     (!applied.duplicate || applied.effect.status === "intended") &&
     !["web_fetch", "secret_request", "request_secret", "connect_app"].includes(name);
   const deniedEarlier = repeatChecked
@@ -548,7 +581,7 @@ export async function gateToolCall(
     passedByReview = judged.decision === "allow";
   };
 
-  if (applied && plan === "judge" && (injectedReview || checker)) {
+  if (applied && !intendedOverride && plan === "judge" && (injectedReview || checker)) {
     if (!applied.duplicate) {
       await runAutoReview();
     } else {
@@ -572,6 +605,19 @@ export async function gateToolCall(
   if (context.signal.aborted) return { result: pauseForApproval(ctx) };
 
   const needsApproval = gateDecision === "ask";
+  if (
+    name === "schedule_update" &&
+    args.expected === undefined &&
+    applied &&
+    (!needsApproval || applied.effect.status === "approved")
+  ) {
+    const persistedExpected =
+      storedRequestObject(applied.effect.request)?.expected ??
+      storedRequestObject(effectRequest)?.expected;
+    if (persistedExpected !== undefined) {
+      args = { ...args, expected: persistedExpected };
+    }
+  }
   const call = createToolCall(ctx, {
     name,
     args,
@@ -630,7 +676,45 @@ export async function gateToolCall(
       }
     }
     if (gate.action === "paused") {
-      if (name === "request_secret") {
+      if (intendedOverride === "uncertain") {
+        const early = await call.claimOrReturn("intended");
+        if (early !== undefined) return { result: early, replayed: true };
+        return {
+          result: await settleToolUncertainty(ctx, call, applied.effect.id, name),
+          replayed: true,
+        };
+      }
+      if (intendedOverride) {
+        if (await completeIntendedEffect(deps, runId, applied.effect.id, intendedOverride)) {
+          return { result: intendedOverride };
+        }
+        const current = await deps.prisma.externalEffect.findUnique({
+          where: { id: applied.effect.id },
+        });
+        let claimedApproved = false;
+        if (current) {
+          const retryGate = resolveDuplicateEffectGate(current, name);
+          if (retryGate.action === "return") return { result: retryGate.result, replayed: true };
+          if (retryGate.action === "uncertain") {
+            return {
+              result: await settleToolUncertainty(ctx, call, applied.effect.id, name),
+              replayed: true,
+            };
+          }
+          if (retryGate.action === "execute") {
+            const early = await call.claimOrReturn("approved");
+            if (early !== undefined) return { result: early, replayed: true };
+            claimedApproved = true;
+          } else if (retryGate.action === "paused") {
+            const runRow = await deps.prisma.run.findUnique({
+              where: { id: runId },
+              select: { status: true },
+            });
+            if (runRow?.status === "waiting_input") return { result: pauseForApproval(ctx) };
+          }
+        }
+        if (!claimedApproved) return { result: uncertainEffectResult(name, args) };
+      } else if (name === "request_secret") {
         const current = await deps.prisma.run.findUnique({
           where: { id: runId },
           select: { status: true },
@@ -664,7 +748,7 @@ export async function gateToolCall(
     }
   } else if (needsApproval && applied) {
     return { result: await requestApproval(ctx, call, card) };
-  } else if (call.bypassApproval && applied) {
+  } else if ((call.bypassApproval || name === "schedule_cancel") && applied) {
     const early = await call.claimOrReturn("intended");
     if (early !== undefined) return { result: early, replayed: true };
   }

@@ -502,13 +502,47 @@ export function seedIntroEffectOccurrences(
 ): void {
   for (const { id, kind, idempotencyKey } of receipts) {
     effects.consumedIds.add(id);
-    if (!isToolEffectIdempotencyKey(idempotencyKey, runId, kind)) continue;
+    if (!isToolEffectIdempotencyKey(idempotencyKey, runId, kind)) {
+      effects.counts.set(idempotencyKey, Math.max(effects.counts.get(idempotencyKey) ?? 0, 1));
+      continue;
+    }
     const prefix = `${runId}:${kind}:`;
     const [digest, suffix] = idempotencyKey.slice(prefix.length).split(":");
     const fingerprint = prefix + digest;
     const occurrence = Number(suffix ?? 0);
     effects.counts.set(fingerprint, Math.max(effects.counts.get(fingerprint) ?? 0, occurrence + 1));
   }
+}
+
+/**
+ * Effect key the restored checkpoint assigned to its single pending call, consumed once when
+ * reconciled so a reused provider tool-call ID in a later live call never replays an earlier one.
+ */
+export function restoredPendingEffectKey(ctx: RunContext, executionId: string): string | undefined {
+  const pending = ctx.state?.effects?.restoredPending;
+  if (!pending || pending.executionId !== executionId) return undefined;
+  return pending.occurrence > 0
+    ? `${pending.fingerprint}:${pending.occurrence}`
+    : pending.fingerprint;
+}
+
+/** Peek the occurrence index that `nextMutatingEffectOccurrence` would assign, without recording it. */
+export function peekMutatingEffectOccurrence(
+  ctx: RunContext,
+  toolName: string,
+  args: Record<string, unknown>,
+  executionId: string,
+  approvedKey?: string,
+) {
+  const effects = ctx.state?.effects;
+  if (!effects) return 0;
+  const fingerprint = toolEffectIdempotencyKey(ctx.runId, toolName, args);
+  const approved = approvedKey ? approvedEffectOccurrence(approvedKey, fingerprint) : undefined;
+  const previous = effects.restoredPending;
+  if (previous?.executionId === executionId) {
+    if (previous.fingerprint === fingerprint && approved === undefined) return previous.occurrence;
+  }
+  return approved ?? effects.counts.get(fingerprint) ?? 0;
 }
 
 export function nextMutatingEffectOccurrence(
@@ -521,24 +555,35 @@ export function nextMutatingEffectOccurrence(
   const effects = ctx.state.effects;
   const fingerprint = toolEffectIdempotencyKey(ctx.runId, toolName, args);
   const approved = approvedKey ? approvedEffectOccurrence(approvedKey, fingerprint) : undefined;
-  // An edited approval keeps its original identity so a saved pre-edit call can recover after
-  // execution. Reserve that occurrence when there was no saved turn to reserve it for us.
-  if (
-    approved === undefined &&
-    approvedKey &&
-    isToolEffectIdempotencyKey(approvedKey, ctx.runId, toolName)
-  ) {
-    const prefix = `${ctx.runId}:${toolName}:`;
-    const [digest] = approvedKey.slice(prefix.length).split(":");
-    const originalFingerprint = prefix + digest;
-    const originalOccurrence = approvedEffectOccurrence(approvedKey, originalFingerprint) ?? 0;
-    if ((effects.counts.get(originalFingerprint) ?? 0) <= originalOccurrence) {
+  // An edited approval or reconciled receipt keeps its original identity so a saved turn
+  // checkpoint resumes that same effect row instead of re-deriving a key from pinned arguments.
+  const pinnedDifferentKey = Boolean(approvedKey) && approved === undefined;
+  if (pinnedDifferentKey && approvedKey) {
+    let originalFingerprint = approvedKey;
+    let originalOccurrence = 0;
+    if (isToolEffectIdempotencyKey(approvedKey, ctx.runId, toolName)) {
+      const prefix = `${ctx.runId}:${toolName}:`;
+      const [digest] = approvedKey.slice(prefix.length).split(":");
+      originalFingerprint = prefix + digest;
+      originalOccurrence = approvedEffectOccurrence(approvedKey, originalFingerprint) ?? 0;
+    }
+    const lastForExecution = effects.occurrences.findLast(
+      (entry) => entry.executionId === executionId,
+    );
+    if (
+      (effects.counts.get(originalFingerprint) ?? 0) <= originalOccurrence ||
+      lastForExecution?.fingerprint !== originalFingerprint ||
+      lastForExecution.occurrence !== originalOccurrence
+    ) {
       effects.occurrences.push({
         executionId,
         fingerprint: originalFingerprint,
         occurrence: originalOccurrence,
       });
-      effects.counts.set(originalFingerprint, originalOccurrence + 1);
+      effects.counts.set(
+        originalFingerprint,
+        Math.max(effects.counts.get(originalFingerprint) ?? 0, originalOccurrence + 1),
+      );
     }
   }
   const previous = effects.restoredPending;
@@ -549,8 +594,10 @@ export function nextMutatingEffectOccurrence(
   // An approved replay reuses the approved row's occurrence, so it claims that row
   // even when this call would have counted differently.
   const occurrence = approved ?? effects.counts.get(fingerprint) ?? 0;
-  effects.occurrences.push({ executionId, fingerprint, occurrence });
-  effects.counts.set(fingerprint, Math.max(effects.counts.get(fingerprint) ?? 0, occurrence + 1));
+  if (!pinnedDifferentKey) {
+    effects.occurrences.push({ executionId, fingerprint, occurrence });
+    effects.counts.set(fingerprint, Math.max(effects.counts.get(fingerprint) ?? 0, occurrence + 1));
+  }
   return occurrence;
 }
 
@@ -567,6 +614,7 @@ export async function saveTurnCheckpoint(
   const effects = ctx.state.effects;
   const saved = JSON.parse(checkpoint);
   saved.effectOccurrences = effects.occurrences;
+  if (effects.consumedIds.size > 0) saved.consumedEffectIds = [...effects.consumedIds];
   saved.ownInstructionsBaseline = ctx.state.ownInstructionsBaseline;
   if (reply) saved.reply = reply;
   await saveRunTurnCheckpoint(deps.prisma, run, workerId, fence, JSON.stringify(saved));
@@ -640,6 +688,11 @@ export function restoreTurnCheckpointEffects(
       );
       if (computerMode && !transition) throw new PausedTurnToolsUnavailableError();
       return undefined;
+    }
+    if (Array.isArray(saved.consumedEffectIds)) {
+      for (const id of saved.consumedEffectIds) {
+        if (typeof id === "string" && id) effects.consumedIds.add(id);
+      }
     }
     if (saved.effectOccurrences) {
       effects.occurrences.push(...saved.effectOccurrences);

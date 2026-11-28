@@ -232,3 +232,40 @@ describe("routine tools on a bot this bot manages", () => {
     expect(deleteMany).not.toHaveBeenCalled();
   });
 });
+
+describe("managed routine approved replays", () => {
+  it.each([
+    ["schedule_list", { bot_name: "Other" }, "named the bot without its id"],
+    [
+      "schedule_update",
+      { bot_name: "Other", routineId: "routine-peer", active: false },
+      "named the bot without its id",
+    ],
+    [
+      "schedule_cancel",
+      { bot_name: "Other", routineId: "routine-peer" },
+      "named the bot without its id",
+    ],
+    ["schedule_cancel", { bot_id: "other", name: "Peer" }, "named the routine without its id"],
+  ] as const)(
+    "refuses an unpinned approved replay for %s without touching routines",
+    async (name, args, expectedMessage) => {
+      const { ctx, deleteMany, updateMany } = groupRun();
+      const finish = vi.fn(async (result: unknown) => result);
+      const replayCall = {
+        name,
+        args,
+        nextApprovedTool: name,
+        finish,
+      } as unknown as ToolCall;
+      const result = await taskTools[name]!(ctx, replayCall);
+      expect(result).toEqual({
+        error: expect.stringContaining(expectedMessage),
+      });
+      expect(finish).toHaveBeenCalledWith(result);
+      expect(ctx.deps.prisma.routine.findMany).not.toHaveBeenCalled();
+      expect(deleteMany).not.toHaveBeenCalled();
+      expect(updateMany).not.toHaveBeenCalled();
+    },
+  );
+});

@@ -1,12 +1,13 @@
 import { redactSecrets } from "@rakazo/core";
 import type { FleetCardSummary } from "../../approvals/approval-ask.js";
 import { approvalDetailLength, MAX_APPROVAL_SUMMARY_LENGTH } from "../../approvals/approval-ask.js";
+import { argumentGiven } from "../../bots/update-bot-patch.js";
 import {
   desktopGuardApplies,
   desktopGuardRefusalMessage,
   protectedComputerLifecycleRefusal,
 } from "../../providers/computer/desktop/desktop-command-guard.js";
-import { findRoutinesTarget } from "../../routines/routine-target.js";
+import { findRoutinesTarget, reachesManagedRoutines } from "../../routines/routine-target.js";
 import {
   addScratchpadItemFromTool,
   completeScratchpadItemFromTool,
@@ -23,6 +24,7 @@ import {
   updateTicket,
 } from "../../tasks/ticket-tools.js";
 import { cardName } from "../../tools/fleet-tools.js";
+import { resolveScheduleToCancel } from "../../tools/schedule-cancel-target.js";
 import type { ScheduleToolDeps } from "../../tools/schedule-tools.js";
 import {
   cancelScheduleFromTool,
@@ -44,7 +46,7 @@ import {
   skillUpdateFromTool,
 } from "../../tools/skill-tools.js";
 import type { RunContext } from "../assembly/run-context.js";
-import type { ToolHandlers } from "./run-tool-gate.js";
+import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 
 /** A command watch may not run what the desktop guard keeps the bot from running itself. */
 function commandWatchGuardError(ctx: RunContext, watch: unknown): string | undefined {
@@ -226,6 +228,8 @@ export const taskTools: ToolHandlers = {
     return call.finish(created);
   },
   async schedule_update(ctx, call) {
+    const unpinned = unpinnedManagedRoutineApproval(call);
+    if (unpinned) return call.finish(unpinned);
     return call.finish(
       await onScheduleUpdateCall(ctx, call.args, (deps, input) =>
         updateScheduleFromTool(deps, input),
@@ -233,16 +237,22 @@ export const taskTools: ToolHandlers = {
     );
   },
   async schedule_list(ctx, call) {
+    const unpinned = unpinnedManagedRoutineApproval(call);
+    if (unpinned) return call.finish(unpinned);
     const { deps, run } = ctx;
     const target = await routinesTarget(ctx, call.name, call.args);
-    if ("error" in target) return target;
-    return listSchedulesFromTool(deps, {
-      spaceId: run.spaceId,
-      botId: target.botId,
-      ...(target.groupThreadId ? { groupThreadId: target.groupThreadId } : {}),
-    });
+    if ("error" in target) return call.finish(target);
+    return call.finish(
+      await listSchedulesFromTool(deps, {
+        spaceId: run.spaceId,
+        botId: target.botId,
+        ...(target.groupThreadId ? { groupThreadId: target.groupThreadId } : {}),
+      }),
+    );
   },
   async schedule_cancel(ctx, call) {
+    const unpinned = unpinnedManagedRoutineApproval(call);
+    if (unpinned) return call.finish(unpinned);
     const { deps, run } = ctx;
     const { args } = call;
     const target = await routinesTarget(ctx, call.name, args);
@@ -331,6 +341,47 @@ export const taskTools: ToolHandlers = {
     );
   },
 };
+
+/**
+ * An approved replay of a managed-routine call must carry the resolved bot id, and a
+ * schedule_cancel approval must carry the resolved routineId, never only a mutable name another
+ * bot or routine could take before resume. Settling it through `call.finish` consumes the stale
+ * approval so the model can ask again with the pinned target.
+ */
+function unpinnedManagedRoutineApproval(call: ToolCall): { error: string } | undefined {
+  if (call.nextApprovedTool !== call.name) return undefined;
+  if (reachesManagedRoutines(call.name, call.args) && !argumentGiven(call.args.bot_id)) {
+    return {
+      error:
+        "This approval named the bot without its id; call the tool again so the owner approves the exact bot.",
+    };
+  }
+  if (call.name === "schedule_cancel" && !argumentGiven(call.args.routineId)) {
+    return {
+      error:
+        "This approval named the routine without its id; call the tool again so the owner approves the exact routine.",
+    };
+  }
+  return undefined;
+}
+
+/** Resolve a schedule_cancel call before approval so the card and replay pin its routineId. */
+export async function scheduleCancelPreview(
+  ctx: RunContext,
+  args: Record<string, unknown>,
+): Promise<{ error: string } | { routineId: string; name: string }> {
+  const target = await routinesTarget(ctx, "schedule_cancel", args);
+  if ("error" in target) return target;
+  const resolved = await resolveScheduleToCancel(ctx.deps.prisma, {
+    spaceId: ctx.run.spaceId,
+    botId: target.botId,
+    ...(target.groupThreadId ? { threadId: target.groupThreadId } : {}),
+    routineId: args.routineId ? String(args.routineId) : undefined,
+    name: args.name ? String(args.name) : undefined,
+  });
+  if ("error" in resolved) return resolved;
+  return { routineId: resolved.existing.id, name: resolved.existing.name };
+}
 
 function routinesTarget(ctx: RunContext, name: string, args: Record<string, unknown>) {
   const { deps, fleetRun, bot, thread } = ctx;
