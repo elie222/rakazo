@@ -19,6 +19,7 @@ import { BotTemplateIcon } from "../../components/bots/bot-template-icon";
 import { PluginIcon } from "../../components/integrations/plugin-icon";
 import { SkillSymbol } from "../../components/integrations/skill-symbol";
 import { NativeActionButton } from "../../components/native/native-action-button";
+import { LoadFailure } from "../../components/ui/load-failure";
 import { Chevron } from "../../components/ui/row-accessories";
 import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
 import {
@@ -125,6 +126,14 @@ export default function SkillsScreen() {
         ) : null}
         <View testID="your-skills" style={styles.list}>
           <Text style={styles.section}>{t`Your skills`}</Text>
+          {skills.isLoadingError ? (
+            <LoadFailure
+              message={t`Could not load your skills.`}
+              onRetry={() => void refetchSkills()}
+            />
+          ) : skills.isPending && skills.isFetching ? (
+            <ActivityIndicator color={native.secondaryLabel} accessibilityLabel={t`Loading…`} />
+          ) : null}
           {ownSkills.map((skill) => (
             <Pressable
               key={skill.id}
