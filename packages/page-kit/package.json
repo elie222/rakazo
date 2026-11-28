@@ -4,7 +4,10 @@
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
+    "./app-icon": "./src/app-icon.ts",
     "./compile": "./src/compile.ts",
+    "./icon": "./src/kit/icon.tsx",
+    "./icon-names": "./src/icon-names.ts",
     "./runtime": "./src/runtime.tsx",
     "./runtime-build": "./src/runtime-build.ts",
     "./validate": "./src/validate.ts"

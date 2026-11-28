@@ -59,7 +59,7 @@ async function context(
     state: {
       reply,
       approval: { pausePending: false },
-      lease: { valid: true, lastCheckAt: Date.now() },
+      lease: { valid: true },
       computerUse: {},
     },
     abortController: new AbortController(),

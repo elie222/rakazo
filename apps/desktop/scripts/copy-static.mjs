@@ -7,6 +7,10 @@ import { fileURLToPath } from "node:url";
 const STATIC_FILES = [
   "preload/preload.cjs",
   "preload/setup-preload.cjs",
+  "preload/page-app-preload.cjs",
+  "page-app-renderer/page-app-shell.html",
+  "page-app-renderer/page-app-shell.css",
+  "page-app-renderer/page-app-shell.js",
   "setup-renderer/setup.html",
   "setup-renderer/setup.css",
   "setup-renderer/setup.js",

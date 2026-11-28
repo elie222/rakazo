@@ -6,7 +6,7 @@ import type {
   BrowserSnapshotResult,
 } from "@rakazo/adapter-kit";
 import type { PurchaseCardField } from "@rakazo/contracts";
-import { JSDOM } from "jsdom";
+import type { JSDOM } from "jsdom";
 
 const INTERACTIVE_SELECTOR = [
   "a[href]",
@@ -66,10 +66,11 @@ export class PageBrowserSession {
   private nextRef = 1;
 
   constructor(
+    private readonly Dom: typeof JSDOM,
     url = "about:blank",
     html = "<!doctype html><html><head><title></title></head><body></body></html>",
   ) {
-    this.dom = new JSDOM(html, { url, contentType: "text/html", pretendToBeVisual: true });
+    this.dom = new Dom(html, { url, contentType: "text/html", pretendToBeVisual: true });
   }
 
   close(): void {
@@ -87,7 +88,7 @@ export class PageBrowserSession {
 
   load(url: string, html: string): BrowserNavigateResult {
     this.dom.window.close();
-    this.dom = new JSDOM(html, { url, contentType: "text/html", pretendToBeVisual: true });
+    this.dom = new this.Dom(html, { url, contentType: "text/html", pretendToBeVisual: true });
     this.refs.clear();
     return { url: this.url, title: this.title };
   }
@@ -519,10 +520,12 @@ function valueFor(win: DomWindow, el: DomElement): string | undefined {
 export class PageBrowserSessionStore {
   private readonly sessions = new Map<string, PageBrowserSession>();
 
-  get(sessionKey: string): PageBrowserSession {
+  async get(sessionKey: string): Promise<PageBrowserSession> {
+    // Loaded on first use: most servers never open an in-process page.
+    const { JSDOM } = await import("jsdom");
     let session = this.sessions.get(sessionKey);
     if (!session) {
-      session = new PageBrowserSession();
+      session = new PageBrowserSession(JSDOM);
       this.sessions.set(sessionKey, session);
     }
     return session;

@@ -260,6 +260,7 @@ async function main() {
       },
     ),
     paymentWallet,
+    realtime,
     stoppingSignal: shutdown.signal,
     shutdownSignal: runDrain.signal,
   });

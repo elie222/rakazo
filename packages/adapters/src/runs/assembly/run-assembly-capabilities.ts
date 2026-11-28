@@ -5,6 +5,7 @@ import {
   BACKGROUND_HELPER_TRIGGER,
   chatAppConnectNote,
   HELPER_RESULT_TRIGGER,
+  isAppConnectionFollowUp,
   isCallClientNonce,
   isOwnerStartedRun,
   messagingChannelPrivacyBlock,
@@ -263,6 +264,7 @@ export async function prepareRunComputer(
             runFence: hold.fence,
           },
           context.signal,
+          deps.realtime,
         );
         context.screenLeaseId = screenLeaseIdForRun(hold.computerLease, runId, hold.fence);
       }
@@ -521,7 +523,9 @@ export async function resolveRunCapabilities(
         })
       : null;
   // Calls carry no schema flag: the sending client encodes them in the clientNonce.
-  const sourceClientNonce = sourceMessage?.clientNonce ?? null;
+  const sourceClientNonce = isAppConnectionFollowUp(run)
+    ? null
+    : (sourceMessage?.clientNonce ?? null);
   // A follow-up can be queued by a bot (group handoffs); only the user's own counts.
   const ownerStartedRun = isOwnerStartedRun(
     conversationRun.trigger,

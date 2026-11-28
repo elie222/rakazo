@@ -20,9 +20,10 @@ import {
 import { deferred } from "@rakazo/core/test-async";
 import type * as Db from "@rakazo/db";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { clearThread, planComputerSize } from "@rakazo/db";
+import { clearThread, computerLeaseTopic, planComputerSize } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
+import { InMemoryRealtimeFanout } from "../notifications/realtime.js";
 import { FakeSandboxProvider } from "../providers/computer/fake/fake-sandbox.js";
 import { LocalAgentHomeStore } from "../storage/home.js";
 import {
@@ -3016,9 +3017,8 @@ describe("computer execution leases", () => {
           .mockResolvedValueOnce([{ id: "run-resumed-card" }]),
         computerExecutionLease: {
           updateManyAndReturn: vi.fn().mockResolvedValue(live ? [] : [{ fence: 8 }]),
-          create: vi
-            .fn()
-            .mockRejectedValue(Object.assign(new Error("lease exists"), { code: "P2002" })),
+          findUnique: vi.fn().mockResolvedValue({ id: "lease-1" }),
+          create: vi.fn(),
         },
         run: {
           update: vi.fn().mockResolvedValue({}),
@@ -3037,6 +3037,8 @@ describe("computer execution leases", () => {
       });
       if (live) await expect(acquiring).rejects.toBeInstanceOf(ComputerBusyError);
       else await expect(acquiring).resolves.toMatchObject({ runId: "run-resumed-card", fence: 8 });
+      // A held lease is answered without reading the bot's run history.
+      expect(tx.run.aggregate).not.toHaveBeenCalled();
       expect(tx.computerExecutionLease.updateManyAndReturn).toHaveBeenCalledWith({
         where: {
           computerId: "computer-1",
@@ -4413,4 +4415,73 @@ it("fails a changed computer once instead of retrying it as a transient error", 
     ),
   ).rejects.toThrow("computer changed");
   expect(findUnique).toHaveBeenCalledOnce();
+});
+
+it("looks again at once when the computer it waits for is signalled, not on its slow backup", async () => {
+  vi.useFakeTimers();
+  try {
+    const bot = { computerId: "computer", archivedAt: null, computerSwitching: true };
+    const findUnique = vi.fn(async () => ({ ...bot }));
+    const realtime = new (class extends InMemoryRealtimeFanout {
+      override describe() {
+        return { ...super.describe(), capabilities: { distributed: true, push: true } };
+      }
+    })();
+    const waiting = waitForRunComputerLease(
+      {
+        bot: { findUnique },
+        run: { updateMany: vi.fn(async () => ({ count: 1 })) },
+      } as unknown as PrismaClient,
+      { computerId: "computer", botId: "bot", runId: "run", workerId: "worker", runFence: 1 },
+      new AbortController().signal,
+      realtime,
+    );
+    const changed = expect(waiting).rejects.toThrow("computer changed");
+    // The backoff reaches its 30 second backup by the eighth look, about a minute in.
+    await vi.advanceTimersByTimeAsync(62_000);
+    const looks = findUnique.mock.calls.length;
+    bot.computerId = "replacement";
+    bot.computerSwitching = false;
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(findUnique).toHaveBeenCalledTimes(looks);
+    await realtime.publish(computerLeaseTopic("computer"), "");
+    await vi.advanceTimersByTimeAsync(0);
+    await changed;
+    expect(findUnique).toHaveBeenCalledTimes(looks + 1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("starts its backoff over after a signalled look that still finds the computer busy", async () => {
+  vi.useFakeTimers();
+  try {
+    const bot = { computerId: "computer", archivedAt: null, computerSwitching: true };
+    const findUnique = vi.fn(async () => ({ ...bot }));
+    const realtime = new (class extends InMemoryRealtimeFanout {
+      override describe() {
+        return { ...super.describe(), capabilities: { distributed: true, push: true } };
+      }
+    })();
+    const waiting = waitForRunComputerLease(
+      {
+        bot: { findUnique },
+        run: { updateMany: vi.fn(async () => ({ count: 1 })) },
+      } as unknown as PrismaClient,
+      { computerId: "computer", botId: "bot", runId: "run", workerId: "worker", runFence: 1 },
+      new AbortController().signal,
+      realtime,
+    );
+    const changed = expect(waiting).rejects.toThrow("computer changed");
+    await vi.advanceTimersByTimeAsync(62_000);
+    // Another waiter won the signalled look, so this one still finds the computer busy.
+    await realtime.publish(computerLeaseTopic("computer"), "");
+    await vi.advanceTimersByTimeAsync(0);
+    bot.computerId = "replacement";
+    bot.computerSwitching = false;
+    await vi.advanceTimersByTimeAsync(250);
+    await changed;
+  } finally {
+    vi.useRealTimers();
+  }
 });

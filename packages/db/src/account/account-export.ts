@@ -1,4 +1,5 @@
 import type { AccountExportManifest, AccountExportRecord } from "@rakazo/contracts";
+import { PageIconColorSchema } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "../database/client.js";
 import { runAsTenant } from "../database/row-security.js";
 
@@ -203,6 +204,8 @@ async function* spaceRecords(
         botId: ownBot(page.botId),
         groupId: ownGroup(page.groupId),
         title: page.title,
+        icon: page.icon,
+        iconColor: PageIconColorSchema.safeParse(page.iconColor).data ?? null,
         pinnedAt: isoOrNull(page.pinnedAt),
         currentVersion: page.currentVersion,
         createdAt: iso(page.createdAt),

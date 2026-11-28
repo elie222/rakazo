@@ -315,7 +315,6 @@ export function holdRun(baseDeps: ExecutorDeps, claim: RunClaim): RunHold {
   const lease: RunLeaseState = {
     valid: true,
     completed: false,
-    lastCheckAt: 0,
     retainComputer: false,
     renewedAt: Date.now(),
     handedBack: false,

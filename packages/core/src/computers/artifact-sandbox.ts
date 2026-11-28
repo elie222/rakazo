@@ -1,5 +1,6 @@
 import type { PageSectionAnchor, PageState } from "@rakazo/contracts";
 import {
+  PAGE_ASK_MAX_LENGTH,
   PAGE_STATE_MAX_BYTES,
   PAGE_STATE_MAX_KEYS,
   PageSectionOccurrence,
@@ -50,6 +51,8 @@ export function pageViewerDocument(input: {
   touch?: boolean;
   /** The host can put a page's reply in a chat composer beside it; public pages have none. */
   reply?: boolean;
+  /** The host can send the page's questions into its chat and answer them. */
+  ask?: boolean;
   review?: boolean;
   reviewAnchor?: string;
   reviewAnchorOccurrence?: number;
@@ -76,7 +79,7 @@ export function pageViewerDocument(input: {
       ? `<style>:root{--rk-bottom-inset:${Math.round(input.bottomInset)}px}</style>`
       : "";
   return [
-    `<!DOCTYPE html><html${input.touch ? " data-touch" : ""}${input.reply ? " data-reply" : ""}><head><meta charset="utf-8">`,
+    `<!DOCTYPE html><html${input.touch ? " data-touch" : ""}${input.reply ? " data-reply" : ""}${input.ask ? " data-ask" : ""}><head><meta charset="utf-8">`,
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<script>${input.runtime}</script>`,
     input.surface !== undefined && HEX_COLOR.test(input.surface)
@@ -93,6 +96,24 @@ export function pageReplyText(text: unknown): string | null {
   if (typeof text !== "string") return null;
   const clean = text.replace(/\s+/g, " ").trim();
   return clean && clean.length <= 300 ? clean : null;
+}
+
+/** A question a page asked its bot through `askBot`; null when it is not one the host sends. */
+export function pageAskRequest(data: unknown): { id: string; text: string } | null {
+  if (!data || typeof data !== "object") return null;
+  const { type, id, text } = data as { type?: unknown; id?: unknown; text?: unknown };
+  if (type !== "rakazo-page:ask" || typeof id !== "string" || typeof text !== "string") return null;
+  const question = text.trim();
+  if (id.length === 0 || id.length > 64 || !question || question.length > PAGE_ASK_MAX_LENGTH)
+    return null;
+  return { id, text: question };
+}
+
+/** The answer `askBot` waits for: the bot's reply, or null when there is none to give. */
+export function pageAskAnswer(id: string, text: string | null) {
+  return text === null
+    ? { type: "rakazo-page:answer", id, ok: false }
+    : { type: "rakazo-page:answer", id, ok: true, text };
 }
 
 /** A page's copy buttons send at most this much; the kit refuses longer text before asking. */

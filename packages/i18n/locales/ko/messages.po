@@ -520,6 +520,14 @@ msgstr "{name} 옵션"
 msgid "{name} stopped"
 msgstr "{name} 중지됨"
 
+#: apps/mobile/app/(settings)/billing.tsx
+msgid "{name}, {price} / month"
+msgstr "{name}, 월 {price}"
+
+#: apps/mobile/app/(settings)/billing.tsx
+msgid "{name}, {price} / year"
+msgstr "{name}, 연 {price}"
+
 #: apps/mobile/lib/routines/routine.ts
 msgid "{name}, Off"
 msgstr "{name}, 꺼짐"
@@ -1848,6 +1856,10 @@ msgstr "봇에게 수정 요청"
 msgid "Ask first"
 msgstr "먼저 묻기"
 
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Ask the bot questions"
+msgstr "봇에게 질문하기"
+
 #: apps/mobile/app/routines.tsx
 msgid "Ask this Bot in chat to set up a routine."
 msgstr "채팅에서 이 봇에게 자동 실행 설정을 요청하세요."
@@ -2276,6 +2288,11 @@ msgstr "둘러보기"
 msgid "Browse MCP servers"
 msgstr "MCP 서버 둘러보기"
 
+#: apps/mobile/components/cards/feedback-receipt-card.tsx
+#: apps/web/src/pages/shell/chat/message-view.tsx
+msgid "Bug report sent"
+msgstr "버그 리포트를 보냈습니다"
+
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Built-in"
@@ -2434,6 +2451,7 @@ msgstr "이미지를 읽을 수 없음"
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/components/messages/AskCard.tsx
 #: apps/web/src/components/messages/markdown-link-prompt.tsx
+#: apps/web/src/components/pages/PageAppButton.tsx
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
@@ -2654,9 +2672,10 @@ msgstr "확인해 주세요."
 msgid "Check this yourself"
 msgstr "직접 확인하세요"
 
+#: apps/web/src/components/pages/PageDrawing.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
-#: apps/web/src/components/pages/PageView.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
+#: apps/web/src/pages/PageAppPage.tsx
 msgid "Check your connection and try again."
 msgstr "연결을 확인하고 다시 시도하세요."
 
@@ -3136,6 +3155,7 @@ msgstr "삭제 확인"
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
 #: apps/web/src/pages/plugins/connector-detail.tsx
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 #: apps/web/src/pages/settings/PaymentWalletSettingsPanel.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
@@ -3219,10 +3239,6 @@ msgstr "MCP 서버 ‘{name}’ 연결"
 #: apps/mobile/components/cards/McpApprovalCard.tsx
 msgid "Connect MCP server {name}"
 msgstr "MCP 서버 {name} 연결"
-
-#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
-msgid "Connect memory provider"
-msgstr "기억 서비스 연결"
 
 #: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Connect my own"
@@ -4759,6 +4775,10 @@ msgstr "앱 아이콘을 변경할 수 없습니다"
 msgid "Couldn't copy. Select the link and copy it."
 msgstr "복사하지 못했습니다. 링크를 선택해 복사하세요."
 
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Couldn't install this app. Try again."
+msgstr "이 앱을 설치할 수 없습니다. 다시 시도하세요."
+
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Couldn't load grants"
 msgstr "권한 목록을 불러오지 못했습니다"
@@ -6032,6 +6052,11 @@ msgstr "실패했습니다."
 msgid "Failure handling"
 msgstr "실패했을 때 처리"
 
+#: apps/mobile/components/cards/feedback-receipt-card.tsx
+#: apps/web/src/pages/shell/chat/message-view.tsx
+msgid "Feedback sent"
+msgstr "피드백을 보냈습니다"
+
 #: packages/i18n/src/app-icon.ts
 msgid "Feet"
 msgstr "발"
@@ -6721,6 +6746,20 @@ msgstr "입력"
 msgid "Inputs"
 msgstr "입력값"
 
+#: apps/web/src/components/pages/PageAppButton.tsx
+#: apps/web/src/pages/PageAppPage.tsx
+msgid "Install"
+msgstr "설치"
+
+#. placeholder {0}: page.title
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Install {0}?"
+msgstr "{0}을(를) 설치할까요?"
+
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Install app"
+msgstr "앱 설치"
+
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Install for organization"
@@ -6860,13 +6899,22 @@ msgstr "이 Bot만 사용"
 msgid "Isolated preview: no access to your account"
 msgstr "격리된 미리보기: 계정에 액세스할 수 없음"
 
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "It can:"
+msgstr "가능한 작업:"
+
 #: apps/mobile/app/new-space.tsx
 msgid "It could not be opened. Try again from the sidebar."
 msgstr "열 수 없습니다. 사이드바에서 다시 시도하세요."
 
 #: apps/web/src/components/pages/PageViewHost.tsx
+#: apps/web/src/pages/PageAppPage.tsx
 msgid "It may have been deleted, or it belongs to someone else."
 msgstr "삭제되었거나 다른 사람의 페이지일 수 있습니다."
+
+#: apps/web/src/components/vault/VaultSettings.tsx
+msgid "Items"
+msgstr "항목"
 
 #: apps/mobile/lib/inbox/sections/confirm-delete-section.ts
 #: apps/web/src/pages/shell/shell-dialogs.tsx
@@ -7537,6 +7585,10 @@ msgstr "기억 {position}"
 msgid "Memory for {title}"
 msgstr "{title}의 기억"
 
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "Memory provider"
+msgstr "기억 서비스"
+
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "Mentions"
 msgstr "멘션"
@@ -7764,6 +7816,7 @@ msgid "month"
 msgstr "월"
 
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/billing/PlanControls.tsx
@@ -8701,6 +8754,10 @@ msgstr "{name} 열기"
 msgid "Open {title}"
 msgstr "{title} 열기"
 
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Open app"
+msgstr "앱 열기"
+
 #: apps/web/src/pages/shell/chat/chat-header.tsx
 msgid "Open call"
 msgstr "통화 열기"
@@ -9203,7 +9260,7 @@ msgid "Plain HTTP does not pair this computer. Use HTTPS, or a loopback server."
 msgstr "일반 HTTP로는 이 컴퓨터를 페어링할 수 없습니다. HTTPS 또는 루프백 서버를 사용하세요."
 
 #: apps/mobile/app/(settings)/billing.tsx
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/PlanControls.tsx
 msgid "Plan"
 msgstr "요금제"
 
@@ -9558,6 +9615,12 @@ msgstr "이 피어에서 불러오고 Rakazo 자체 피어에 저장합니다."
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Recall only"
 msgstr "불러오기만"
+
+#. placeholder {0}: block.reportId
+#: apps/mobile/components/cards/feedback-receipt-card.tsx
+#: apps/web/src/pages/shell/chat/message-view.tsx
+msgid "Receipt {0}"
+msgstr "접수 번호 {0}"
 
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Received"
@@ -9973,6 +10036,10 @@ msgstr "이름 변경"
 msgid "Rename section"
 msgstr "섹션 이름 바꾸기"
 
+#: apps/web/src/components/billing/ModelCredits.tsx
+msgid "Renew for {price}"
+msgstr "{price}에 갱신"
+
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/lib/cards/run-error-presentation.ts
 #: apps/web/src/components/billing/ModelCredits.tsx
@@ -10380,6 +10447,7 @@ msgstr "{line}행"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/components/settings/approval-settings-rows.tsx
+#: apps/web/src/components/settings/ApprovalRulesSettings.tsx
 msgid "Rules"
 msgstr "규칙"
 
@@ -11149,6 +11217,10 @@ msgstr "목록 표시"
 #: apps/web/src/pages/space/ScratchpadSection.tsx
 msgid "Show more"
 msgstr "더 보기"
+
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Show notifications"
+msgstr "알림 표시"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/components/I18nBootstrap.tsx
@@ -12345,9 +12417,10 @@ msgstr "이 페이지를 표시할 수 없습니다."
 
 #: apps/mobile/lib/pages/page-card.tsx
 #: apps/web/src/components/pages/PageCard.tsx
+#: apps/web/src/components/pages/PageDrawing.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
-#: apps/web/src/components/pages/PageView.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
+#: apps/web/src/pages/PageAppPage.tsx
 msgid "This page couldn't load"
 msgstr "이 페이지를 불러오지 못했습니다"
 
@@ -12356,6 +12429,7 @@ msgstr "이 페이지를 불러오지 못했습니다"
 #: apps/mobile/app/page.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
+#: apps/web/src/pages/PageAppPage.tsx
 #: apps/web/src/pages/SharedPage.tsx
 msgid "This page isn't available"
 msgstr "이 페이지를 사용할 수 없습니다"
@@ -13559,6 +13633,7 @@ msgstr "이 자동 실행이 할 일을 적어 주세요."
 msgid "year"
 msgstr "년"
 
+#: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/billing/PlanControls.tsx
 msgid "Yearly"
 msgstr "연간"
@@ -13655,6 +13730,7 @@ msgstr "카드로 결제되지 않았습니다"
 #: apps/mobile/app/page.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
+#: apps/web/src/pages/PageAppPage.tsx
 msgid "Your changes aren't saved. Check your connection."
 msgstr "변경 사항이 저장되지 않았습니다. 연결을 확인하세요."
 
@@ -13708,6 +13784,10 @@ msgstr "사용 중인 OpenRouter"
 msgid "Your other spaces stay private"
 msgstr "다른 스페이스는 비공개로 유지됩니다"
 
+#: apps/web/src/components/billing/CreditChoice.tsx
+msgid "Your own AI"
+msgstr "내 AI"
+
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."
 msgstr "체험 기간이 끝나면 요금제가 연 {annualPrice}로 바뀝니다."
@@ -13749,7 +13829,6 @@ msgstr "내 스킬"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/paywall.tsx
-#: apps/web/src/components/billing/CreditChoice.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Your subscription or API key"
 msgstr "내 구독 또는 API 키"

@@ -1812,6 +1812,19 @@ describe("Pi runtime ordered model fallback", () => {
     expect(providerState.stream).toHaveBeenCalledTimes(1);
   });
 
+  it("refuses more user images than the model's limit as a model choice the user fixes", async () => {
+    const input = request([]);
+    input.model = { ...input.model, maxImagesPerPrompt: 1 };
+    input.currentTurnImages = [
+      { name: "first.png", mimeType: "image/png", data: new Uint8Array([1]) },
+      { name: "second.png", mimeType: "image/png", data: new Uint8Array([2]) },
+    ];
+    await expect(run(input)).rejects.toMatchObject({
+      name: "ModelAccountError",
+      message: "This model's image limit is 1. Send fewer images or choose another model.",
+    });
+  });
+
   it("uses a smaller backup on the context its own policy shortens to fit", async () => {
     const input = request([{ provider: backupA.provider, id: backupA.id }]);
     input.resolveFallbackModel = async (provider, id) => ({

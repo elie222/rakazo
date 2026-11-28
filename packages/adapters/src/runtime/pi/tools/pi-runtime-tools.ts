@@ -229,7 +229,8 @@ export function describeToolActivity(
   if (toolName === "open_path") return `Opening ${detail(record.path)}`;
   if (toolName === "render_plot") return "Rendering a chart";
   if (toolName === "save_page") {
-    return record.help === true ? "Reading the page kit reference" : "Writing the page code";
+    if (record.help === true) return "Reading the page kit reference";
+    return record.list === true ? "Checking your pages" : "Writing the page code";
   }
   if (toolName === "add_mcp_server") return `Connecting MCP server: ${detail(record.name)}`;
   if (toolName === "remove_mcp_server") return `Removing MCP server: ${detail(record.name)}`;

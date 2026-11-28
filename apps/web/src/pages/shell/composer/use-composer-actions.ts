@@ -115,6 +115,13 @@ export function useComposerActions({
   const [sending, setSending] = useState(false);
   const [pendingSends, setPendingSends] = useState<PendingSend[]>([]);
   const activeThreadKey = inGroup ? groupId : activeId;
+  // Reselecting the same chat starts a new selection.
+  const chatSelection = useRef({ threadKey: activeThreadKey, inGroup });
+  if (
+    chatSelection.current.threadKey !== activeThreadKey ||
+    chatSelection.current.inGroup !== inGroup
+  )
+    chatSelection.current = { threadKey: activeThreadKey, inGroup };
   const activeMessages = activeSnapshot?.messages;
   // A send stays shown until the chat holds its stored message, whichever update brings it;
   // a seq that lands after its message arrived is checked against the messages already here.
@@ -404,6 +411,8 @@ export function useComposerActions({
       const initialBotTarget = activeBotId.current;
       const initialGroupTarget = activeGroupId.current;
       if ((!initialBotTarget && !initialGroupTarget) || sending) return false;
+      const selectionAtSend = chatSelection.current;
+      const originStillOpen = () => chatSelection.current === selectionAtSend;
       const editsAtSend = draftEdits.current;
       // The reply this send carries, read from the ref so a callback that outlived
       // a re-pick of the same message still carries the armed one; a reply picked
@@ -497,7 +506,7 @@ export function useComposerActions({
           );
           setAttachmentNotice(null);
           if (reroutedToGroup && groupTarget) {
-            navigate(`/app/g/${groupTarget}`);
+            if (originStillOpen()) navigate(`/app/g/${groupTarget}`);
             return true;
           }
           // The routine is saved; live events reconcile a failed refresh.
@@ -595,7 +604,7 @@ export function useComposerActions({
         // Refresh sidebar status even when a bot→group reroute navigates away below.
         void refreshBots().catch(() => undefined);
         if (reroutedToGroup && groupTarget) {
-          navigate(`/app/g/${groupTarget}`);
+          if (originStillOpen()) navigate(`/app/g/${groupTarget}`);
           return true;
         }
         if (groupTarget && activeGroupId.current === groupTarget) setAttachmentNotice(null);
@@ -612,12 +621,7 @@ export function useComposerActions({
           message: errorText(error, t`Failed to send message`),
           imageConfirmation: confirmation,
         };
-        if (
-          reroutedToGroup &&
-          groupTarget &&
-          activeBotId.current === initialBotTarget &&
-          activeGroupId.current === initialGroupTarget
-        ) {
+        if (reroutedToGroup && originStillOpen()) {
           setSendFailure(failure);
         } else if (groupTarget && activeGroupId.current === groupTarget) {
           setSendFailure(failure);

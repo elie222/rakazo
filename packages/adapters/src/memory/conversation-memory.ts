@@ -21,6 +21,7 @@ import {
   isUserProgressClientNonce,
   USER_PROGRESS_CLIENT_NONCE_PREFIX,
 } from "../runs/lifecycle/user-progress.js";
+import { warnMemoryAccountRefused } from "./memory-failures.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 
 /** A person or another bot talking to the bot; routines, webhooks and channels are not. */
@@ -357,6 +358,11 @@ export async function retainRunConversation(
     },
     context,
   );
+  if (!result.ok && result.accountRefused) {
+    // No retry can store it. The recovery job stays: an earlier attempt may still have stored it.
+    warnMemoryAccountRefused("retain", result.error);
+    return done;
+  }
   // Retrying is safe: the provider makes a repeated turn a no-op.
   if (!result.ok) throw new Error(result.error);
   if (result.value.pending) return { pending: { ...pending, token: result.value.pending } };

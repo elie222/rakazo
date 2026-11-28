@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import type { PageHelperName, PageKitComponentName } from "../components.js";
 import { PAGE_HELPERS, PAGE_KIT_COMPONENTS } from "../components.js";
+import * as ask from "./ask.js";
 import * as calendar from "./calendar.js";
 import * as charts from "./charts.js";
 import * as controls from "./controls.js";
@@ -15,6 +16,7 @@ import * as text from "./text.js";
 import * as theme from "./theme.js";
 
 const modules = {
+  ...ask,
   ...calendar,
   ...charts,
   ...controls,

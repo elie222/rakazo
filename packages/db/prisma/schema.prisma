@@ -29,6 +29,7 @@ model User {
   pageGrants PageGrant[]
   pageComments PageComment[]
   pageReaderStates PageReaderState[]
+  pageApps         PageApp[]
   id                          String                       @id
   name                        String
   email                       String
@@ -2173,6 +2174,9 @@ model Page {
   groupId        String?
   group          ChatGroup?    @relation(fields: [groupId], references: [id], onDelete: Cascade)
   title          String
+  /// A page-kit icon name the bot chose for the page's app icon.
+  icon           String?
+  iconColor      String?
   visibility     String        @default("private")
   shareTokenHash String?       @unique
   /// The link token itself, sealed in the secret store so the owner can copy the link again.
@@ -2188,6 +2192,7 @@ model Page {
   comments       PageComment[]
   readerStates   PageReaderState[]
   images         PageImage[]
+  apps           PageApp[]
 
   @@index([spaceId, userId, updatedAt])
   @@index([botId])
@@ -2205,6 +2210,8 @@ model PageVersion {
   /// The source compiled for the viewer when it was saved, so reads never run the compiler.
   code      String
   images    Json?
+  /// What this version may ask its host for, read from its source when it was saved.
+  abilities String[] @default([])
   createdAt DateTime @default(now())
 
   @@unique([pageId, version])
@@ -2257,6 +2264,29 @@ model PageReaderState {
   @@unique([pageId, userId])
   @@index([userId])
   @@map("page_reader_states")
+}
+
+/// A page installed as its own app on one of the owner's devices, reading it with its own token.
+model PageApp {
+  id         String    @id @default(cuid())
+  pageId     String
+  page       Page      @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spaceId    String
+  /// The sign-in it was installed through: ending that sign-in ends the app, as it does a paired
+  /// computer.
+  sessionId  String?
+  tokenHash  String    @unique
+  /// Abilities the owner approved; a page version's own list says which it uses.
+  abilities  String[]  @default([])
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  @@index([userId])
+  @@index([pageId])
+  @@index([sessionId])
+  @@map("page_apps")
 }
 
 model PageComment {
@@ -2338,7 +2368,7 @@ model UsageRecord {
   agentId            String?
   createdAt          DateTime @default(now())
 
-  @@index([spaceId, userId, createdAt])
+  // usage_records_spaceId_userId_createdAt_covering_idx is raw SQL: Prisma cannot express INCLUDE columns.
   @@map("usage_records")
 }
 

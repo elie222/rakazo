@@ -38,6 +38,7 @@ const TESTKIT_MAY_IMPORT = ["apps/api", "infra/sandboxes/supervisor"];
 // Server code may import server packages; browser code may import neither.
 const SERVER_DIRS = ["apps/desktop/src/main", "apps/web/server"];
 const BROWSER_CODE = [
+  "apps/desktop/src/page-app-renderer",
   "apps/desktop/src/preload",
   "apps/desktop/src/setup-renderer",
   "apps/mobile",

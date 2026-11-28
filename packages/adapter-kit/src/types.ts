@@ -536,7 +536,12 @@ export interface SemanticMemoryForgetRequest {
 
 export type SemanticMemoryResponse<T = void> =
   | { ok: true; value: T }
-  | { ok: false; error: string };
+  | {
+      ok: false;
+      error: string;
+      /** The provider refused the operator's account (key, billing or quota): no retry helps until someone fixes it. */
+      accountRefused?: true;
+    };
 
 export interface SemanticMemoryRecallRequest {
   query: string;
@@ -1063,6 +1068,8 @@ export interface VoiceTranscribeRequest {
 export interface BackgroundJobPayloads {
   "run.continue": { runId: string };
   "page.revise": { requestId: string };
+  /** Removes an installed page app whose token was never used: its install never finished. */
+  "page.app-unused": { appId: string };
   "routine.wakeup": { routineId: string; scheduledFor: string };
   /** Run a failed routine run once more; the payload names the failed run. */
   "routine.retry": { runId: string };

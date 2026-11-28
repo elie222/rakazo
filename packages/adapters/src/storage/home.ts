@@ -18,10 +18,12 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { buffer } from "node:stream/consumers";
 import { pipeline } from "node:stream/promises";
 import type {
   AdapterContext,
   AgentHomeStore,
+  HomeExportOptions,
   PortableFile,
   WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
@@ -168,7 +170,7 @@ export class LocalAgentHomeStore implements AgentHomeStore {
   async *exportHome(
     botId: string,
     _context: AdapterContext,
-    { directory = "", skipHidden = false }: { directory?: string; skipHidden?: boolean } = {},
+    { directory = "", ...options }: HomeExportOptions = {},
   ): AsyncIterable<PortableFile> {
     await this.waitForBotWrite(botId);
     await this.recoverInterruptedCommit(botId);
@@ -181,7 +183,7 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     const expected = safeJoin(home, directory);
     const root = await resolveExportPath(expected);
     if (root !== expected) return;
-    yield* walkFiles(root, root, skipHidden);
+    yield* walkFiles(root, root, options);
   }
 
   async readFile(
@@ -585,7 +587,11 @@ async function traversalTarget(root: string, candidate: string) {
   return resolved;
 }
 
-async function readTraversalFile(root: string, full: string, skipHidden = false) {
+async function readTraversalFile(
+  root: string,
+  full: string,
+  { skipHidden, maxFileBytes }: HomeExportOptions,
+) {
   const handle = await open(
     full,
     constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
@@ -599,7 +605,13 @@ async function readTraversalFile(root: string, full: string, skipHidden = false)
     const opened = await fileHandlePath(handle.fd);
     assertContained(root, opened);
     if (skipHidden && isHiddenTopEntry(root, opened)) throw new Error("Home entry is hidden");
-    return { content: await handle.readFile(), mode: info.mode };
+    if (maxFileBytes === undefined) return { content: await handle.readFile(), mode: info.mode };
+    if (info.size > maxFileBytes) return { exceededBytes: info.size };
+    // The end offset is inclusive. Read at most one byte beyond the limit to detect growth.
+    const content = await buffer(handle.createReadStream({ end: maxFileBytes, autoClose: false }));
+    return content.length > maxFileBytes
+      ? { exceededBytes: content.length }
+      : { content, mode: info.mode };
   } finally {
     await handle.close();
   }
@@ -701,10 +713,11 @@ async function copyDir(
 async function* walkFiles(
   root: string,
   current: string,
-  skipHidden: boolean,
+  options: HomeExportOptions,
   outputPath = "",
   visited = new Set<string>(),
 ): AsyncGenerator<PortableFile> {
+  const { skipHidden = false } = options;
   const resolvedCurrent = await exportTarget(root, current, skipHidden);
   if (!resolvedCurrent || visited.has(resolvedCurrent)) return;
   visited.add(resolvedCurrent);
@@ -718,10 +731,14 @@ async function* walkFiles(
     if (shouldSkipPortableWorkspaceFile(portablePath, info.isDirectory())) continue;
     if (info.isDirectory()) {
       if (await isTaggedCacheDirectory(full)) continue;
-      yield* walkFiles(root, full, skipHidden, portablePath, visited);
+      yield* walkFiles(root, full, options, portablePath, visited);
     } else if (info.isFile()) {
-      const { content, mode } = await readTraversalFile(root, full, skipHidden);
-      yield { path: portablePath, content, executable: Boolean(mode & 0o100) };
+      const file = await readTraversalFile(root, full, options);
+      if (file.exceededBytes !== undefined) {
+        options.onOversizedFile?.(file.exceededBytes);
+        continue;
+      }
+      yield { path: portablePath, content: file.content, executable: Boolean(file.mode & 0o100) };
     }
   }
 }

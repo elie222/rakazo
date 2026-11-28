@@ -242,4 +242,14 @@ export const JA_MESSAGES: Record<string, string> = {
   "Restart Rakazo": "Rakazoを再起動",
   "Not Now": "今はしない",
   "Restart Rakazo to finish setup": "Rakazoを再起動して設定を完了",
+  // Page apps
+  "Keep on Top": "常に手前に表示",
+  "Open in Rakazo": "Rakazoで開く",
+  "Uninstall…": "アンインストール…",
+  "Uninstall {name}?": "{name}をアンインストールしますか？",
+  Uninstall: "アンインストール",
+  "Allow {name} to ask its bot?": "{name}にボットへの質問を許可しますか？",
+  "Allow {name} to show notifications?": "{name}に通知の表示を許可しますか？",
+  "{name} was removed.": "{name}は削除されました。",
+  "Move to Trash": "ゴミ箱に入れる",
 };

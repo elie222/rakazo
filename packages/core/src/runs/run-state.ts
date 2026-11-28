@@ -19,6 +19,14 @@ export const ACTIVE_RUN_STATUSES = [
 export const QUEUE_HOLDING_RUN_STATUSES = ACTIVE_RUN_STATUSES.filter(
   (status) => status !== "waiting_input",
 );
+export const APP_CONNECTION_FOLLOW_UP_NONCE_PREFIX = "app-connected:";
+
+export function isAppConnectionFollowUp(run: { trigger: string; clientNonce: string | null }) {
+  return (
+    run.trigger === "follow_up" &&
+    run.clientNonce?.startsWith(APP_CONNECTION_FOLLOW_UP_NONCE_PREFIX) === true
+  );
+}
 const TERMINAL: RunStatus[] = ["completed", "failed", "cancelled"];
 /**
  * These turns carry their own prompt and must not take a user message as steering.

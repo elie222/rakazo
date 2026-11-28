@@ -1,4 +1,4 @@
-import { abortableDelay } from "./async.js";
+import { abortableDelay, anySignal } from "./async.js";
 import { isRetryableError, retryDelayMs } from "./retry-policy.js";
 
 const BACKOFF_BASE_MS = 250;
@@ -62,6 +62,32 @@ export interface PollOptions {
   timeoutMs: number;
   /** Ends a wait early; `pollUntil` then rejects with the signal's reason. */
   signal?: AbortSignal;
+  /** Ends a wait early to look again at once, such as when a change is signalled. */
+  wake?: WakeLatch;
+}
+
+/**
+ * Lets a signal end a poll's wait between looks. A wake that lands while a look is running
+ * ends the next wait at once, so a change made during the look is never slept through.
+ */
+export class WakeLatch {
+  private woken = false;
+  private current: AbortController | undefined;
+
+  wake(): void {
+    this.woken = true;
+    this.current?.abort();
+  }
+
+  async wait(delayMs: number, signal?: AbortSignal): Promise<void> {
+    if (!this.woken) {
+      const local = new AbortController();
+      this.current = local;
+      await abortableDelay(delayMs, signal ? anySignal([signal, local.signal]) : local.signal);
+      this.current = undefined;
+    }
+    this.woken = false;
+  }
 }
 
 type Found<T> = Exclude<T, false | null | undefined>;
@@ -83,7 +109,7 @@ export async function pollUntil<T, R>(
   check: () => T | Promise<T>,
   options: PollOptions & { waitingFor?: string; onTimeout?: () => R },
 ): Promise<Found<T> | R> {
-  const { intervalMs, timeoutMs, signal, onTimeout } = options;
+  const { intervalMs, timeoutMs, signal, onTimeout, wake } = options;
   const deadline = Date.now() + timeoutMs;
   for (let looks = 1; ; looks += 1) {
     const value = await check();
@@ -92,7 +118,8 @@ export async function pollUntil<T, R>(
       if (onTimeout) return onTimeout();
       throw new Error(`Timed out after ${timeoutMs} ms waiting for ${options.waitingFor}`);
     }
-    await abortableDelay(typeof intervalMs === "number" ? intervalMs : intervalMs(looks), signal);
+    const delayMs = typeof intervalMs === "number" ? intervalMs : intervalMs(looks);
+    await (wake ? wake.wait(delayMs, signal) : abortableDelay(delayMs, signal));
     signal?.throwIfAborted();
   }
 }
