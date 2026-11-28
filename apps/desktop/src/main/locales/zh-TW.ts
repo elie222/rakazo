@@ -165,6 +165,7 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "The stack started but the web app did not answer. Retry, and check the output below.":
     "服務堆疊已啟動，但網頁 App 沒有回應。請重試並查看下方輸出。",
   "Could not prepare the local stack. Retry.": "無法準備本機服務堆疊。請再試一次。",
+  "Could not stop the local stack. Try again.": "無法停止本機服務堆疊。請再試一次。",
   "Could not stop the local stack. Check that Docker is running, then try again.":
     "無法停止本機服務堆疊。請確認 Docker 正在執行後再試一次。",
   "Settings…": "設定…",

@@ -1381,12 +1381,27 @@ describe("LocalStackController", () => {
     const state = await stack.stop();
     expect(state).toMatchObject({
       phase: "failed",
+      failedOperation: "stop",
       message: "Could not stop the local stack. Check that Docker is running, then try again.",
       imageTag: "v1.2.3",
     });
     expect(state.message).not.toContain("/Users/me");
     expect(state).not.toEqual(initialStackState("v1.2.3"));
     expect(calls.at(-1)?.args.slice(7)).toEqual(["stop"]);
+  });
+
+  it("marks state failed with failedOperation stop when shutdown throws", async () => {
+    const stack = controller({}, (args) => {
+      if (args[7] === "stop") throw new Error("unexpected stop failure");
+      return ok(args);
+    });
+    await stack.start();
+    await expect(stack.stop()).rejects.toThrow("unexpected stop failure");
+    expect(stack.state()).toMatchObject({
+      phase: "failed",
+      failedOperation: "stop",
+      message: "Could not stop the local stack. Try again.",
+    });
   });
 
   it("queues a start behind a stop so up and stop never overlap", async () => {

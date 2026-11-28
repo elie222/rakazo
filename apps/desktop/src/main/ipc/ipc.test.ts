@@ -246,6 +246,7 @@ describe("handleIpc", () => {
       "desktop.oauth.open",
       "desktop.setup.stack.start",
       "desktop.setup.stack.state",
+      "desktop.setup.stack.stop",
       "desktop.setup.state",
     ]);
     expect(names.filter((name) => ipcChannels[name].refused === LIVE)).toEqual([

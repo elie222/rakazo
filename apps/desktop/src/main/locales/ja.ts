@@ -182,6 +182,8 @@ export const JA_MESSAGES: Record<string, string> = {
     "スタックは起動しましたが、Webアプリが応答しませんでした。再試行して、下の出力を確認してください。",
   "Could not prepare the local stack. Retry.":
     "ローカルスタックを準備できませんでした。再試行してください。",
+  "Could not stop the local stack. Try again.":
+    "ローカルスタックを停止できませんでした。もう一度お試しください。",
   "Could not stop the local stack. Check that Docker is running, then try again.":
     "ローカルスタックを停止できませんでした。Dockerが実行中か確認してから、もう一度お試しください。",
   "Settings…": "設定…",

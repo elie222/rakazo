@@ -181,6 +181,8 @@ export const RU_MESSAGES: Record<string, string> = {
     "Стек запущен, но веб-приложение не ответило. Повторите попытку и посмотрите вывод ниже.",
   "Could not prepare the local stack. Retry.":
     "Не удалось подготовить локальный стек. Повторите попытку.",
+  "Could not stop the local stack. Try again.":
+    "Не удалось остановить локальный стек. Повторите попытку.",
   "Could not stop the local stack. Check that Docker is running, then try again.":
     "Не удалось остановить локальный стек. Убедитесь, что Docker запущен, и повторите попытку.",
   "Settings…": "Настройки…",

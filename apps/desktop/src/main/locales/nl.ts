@@ -182,6 +182,8 @@ export const NL_MESSAGES: Record<string, string> = {
     "De stack is gestart, maar de web-app reageerde niet. Probeer het opnieuw en bekijk de uitvoer hieronder.",
   "Could not prepare the local stack. Retry.":
     "De lokale stack kon niet worden voorbereid. Probeer het opnieuw.",
+  "Could not stop the local stack. Try again.":
+    "De lokale stack kon niet worden gestopt. Probeer het opnieuw.",
   "Could not stop the local stack. Check that Docker is running, then try again.":
     "De lokale stack kon niet worden gestopt. Controleer of Docker draait en probeer het opnieuw.",
   "Settings…": "Instellingen…",

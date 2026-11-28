@@ -202,6 +202,7 @@ const persistHostChoice = localComputerChoice.persist;
 const revokeLocalComputerAccess = localComputerChoice.revoke;
 const installApplicationMenu = applicationMenuInstaller({
   revokeLocalComputerAccess,
+  syncHostComputerAccess,
   updaterEnvironment,
 });
 async function probeServer(
@@ -918,6 +919,7 @@ app.whenReady().then(async () => {
         stack: desktop.localStack,
         rebuildMenu: () => installApplicationMenu(),
       }),
+    rebuildMenu: () => installApplicationMenu(),
     settleLocalStack,
     onAppReady: () => deepLinks?.applyPending(),
   });

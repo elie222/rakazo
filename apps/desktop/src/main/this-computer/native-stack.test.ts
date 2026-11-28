@@ -882,6 +882,81 @@ describe("NativeStackController", () => {
     expect(imported).toHaveLength(2);
     await third.stop();
   });
+
+  it("keeps unfinished native services tracked and stops postgres if another service stop rejects", async () => {
+    const runtime = fakeRuntime();
+    const { deps, children } = harness({}, runtime);
+    const stack = new NativeStackController(deps);
+    expect((await stack.start()).phase).toBe("ready");
+
+    // Replace api.pid with a directory so unlinking api.pid fails during stop.
+    const apiPidPath = path.join(deps.stackDir, "run", "api.pid");
+    await rm(apiPidPath, { force: true });
+    await mkdir(apiPidPath);
+
+    await expect(stack.stop()).rejects.toThrow();
+    expect(stack.state()).toMatchObject({
+      phase: "failed",
+      failedOperation: "stop",
+      message: "Could not stop the local stack. Try again.",
+    });
+    // Postgres was still stopped, while the unfinished api service stayed tracked for Retry.
+    const postgres = children.find((child) => child.args.includes(DATABASE_CONTAINER));
+    expect(postgres?.signals).toContain("SIGINT");
+    expect(runtime.database?.running).toBe(false);
+    await expect(stack.stop()).rejects.toThrow();
+
+    // Clear the blocking directory and retry stop: succeeds and clears remaining services.
+    await rm(apiPidPath, { recursive: true, force: true });
+    expect((await stack.stop()).phase).toBe("idle");
+    expect(stack.hasProcesses()).toBe(false);
+  });
+
+  it("reaches terminal failed state while api.pid is obstructed and starts cleanly once cleared", async () => {
+    const runtime = fakeRuntime();
+    const { deps } = harness({}, runtime);
+    const stack = new NativeStackController(deps);
+    expect((await stack.start()).phase).toBe("ready");
+
+    const apiPidPath = path.join(deps.stackDir, "run", "api.pid");
+    await rm(apiPidPath, { force: true });
+    await mkdir(apiPidPath);
+
+    await expect(stack.stop()).rejects.toThrow();
+    expect(stack.hasProcesses()).toBe(false);
+
+    // While api.pid remains a directory, stopOrphans fails cleanly into terminal failed state.
+    expect((await stack.start()).phase).toBe("failed");
+
+    // Once the directory is removed, the exited service does not block a fresh Start.
+    await rm(apiPidPath, { recursive: true, force: true });
+    expect((await stack.start()).phase).toBe("ready");
+    expect((await stack.stop()).phase).toBe("idle");
+  });
+
+  it("publishes terminal failed state when post-failure service cleanup rejects during start", async () => {
+    const runtime = fakeRuntime();
+    const { deps, byName } = harness(
+      {
+        fetch: async () => {
+          const apiPidPath = path.join(deps.stackDir, "run", "api.pid");
+          await rm(apiPidPath, { force: true });
+          await mkdir(apiPidPath, { recursive: true });
+          byName("apps/api/dist/index.js")[0]?.exit();
+          return new Response("", { status: 503 });
+        },
+      },
+      runtime,
+    );
+    const stack = new NativeStackController(deps);
+    const state = await stack.start();
+    expect(state.phase).toBe("failed");
+    expect(stack.state().phase).toBe("failed");
+    expect(stack.hasProcesses()).toBe(false);
+
+    await rm(path.join(deps.stackDir, "run", "api.pid"), { recursive: true, force: true });
+    expect((await stack.stop()).phase).toBe("idle");
+  });
 });
 
 describe("postgresAnswers", () => {

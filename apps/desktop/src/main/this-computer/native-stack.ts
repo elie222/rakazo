@@ -156,6 +156,11 @@ class Service {
     return this.child !== null;
   }
 
+  /** True once `stop()` has ended this process (and cleared its restart timer), even if file cleanup threw. */
+  get stopped(): boolean {
+    return !this.alive && this.stopping;
+  }
+
   start() {
     this.stopping = false;
     const startedAt = Date.now();
@@ -241,9 +246,12 @@ class Service {
       await exited;
       clearTimeout(timer);
     }
-    await rm(this.pidFile(), { force: true });
-    await new Promise<void>((resolve) => (this.log ? this.log.end(resolve) : resolve()));
-    this.log = null;
+    try {
+      await rm(this.pidFile(), { force: true });
+    } finally {
+      await new Promise<void>((resolve) => (this.log ? this.log.end(resolve) : resolve()));
+      this.log = null;
+    }
   }
 
   private line(line: string) {
@@ -475,7 +483,8 @@ export class NativeStackController extends StackLifecycle {
   }
 
   protected async attemptFailed(error: unknown, signal: AbortSignal) {
-    await this.stopServices();
+    // Keep unfinished services tracked for Stop Retry while always publishing a terminal failure.
+    await bestEffort("stop native services after failed start", this.stopServices());
     if (signal.aborted) {
       this.push({ type: "failed", message: startInterrupted() });
     } else if (error instanceof StartFailure) {
@@ -495,6 +504,9 @@ export class NativeStackController extends StackLifecycle {
 
   protected async attempt(signal: AbortSignal) {
     this.push({ type: "check-start" });
+    // Dead services whose file cleanup rejected stay tracked for Stop Retry,
+    // but must not block a fresh Start once their process has already exited.
+    this.services = this.services.filter((service) => !service.stopped);
     await this.stopServices();
     for (const sub of ["runtime", "logs", "run", "data"]) {
       await mkdir(this.dir(sub), { recursive: true, mode: 0o700 });
@@ -975,13 +987,22 @@ export class NativeStackController extends StackLifecycle {
   private async stopServices() {
     this.background?.abort();
     this.background = null;
-    const services = this.services;
-    this.services = [];
+    const services = [...this.services];
     const database = services.filter((service) => service.spec.name === "postgres");
-    await Promise.all(
-      services.filter((service) => !database.includes(service)).map((service) => service.stop()),
+    const others = services.filter((service) => !database.includes(service));
+    const stopService = async (service: Service, graceMs?: number) => {
+      await service.stop(graceMs);
+      const index = this.services.indexOf(service);
+      if (index !== -1) this.services.splice(index, 1);
+    };
+    const otherResults = await Promise.allSettled(others.map((service) => stopService(service)));
+    const dbResults = await Promise.allSettled(
+      database.map((service) => stopService(service, 30_000)),
     );
-    await Promise.all(database.map((service) => service.stop(30_000)));
+    const failure = [...otherResults, ...dbResults].find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (failure) throw failure.reason;
   }
 
   /** A launch that crashed can leave its processes running; stop any whose command is ours. */

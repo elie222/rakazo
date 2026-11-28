@@ -66,6 +66,9 @@ interface Harness {
   /** What every `stack.start` call this mount receives resolves with. */
   startResult: Deferred<DesktopLocalStackState>;
   starts: () => number;
+  stops: () => number;
+  resolveStop: (state: DesktopLocalStackState) => void;
+  rejectStop: (reason: unknown) => void;
   links: string[];
   /** Resolves the oldest pending `state` call, in call order. */
   resolveAppState: (saved: DesktopSetup | null) => void;
@@ -80,10 +83,16 @@ interface Harness {
   resolveSave: (result: DesktopSetupResult) => void;
 }
 
-function mount(saved: DesktopSetup | null, locale = ENGLISH, platform = "linux"): Harness {
+function mount(
+  saved: DesktopSetup | null,
+  locale = ENGLISH,
+  platform = "linux",
+  extraState: Partial<DesktopSetupState> = {},
+): Harness {
   document.body.innerHTML = setupBody ?? "";
   const checkCalls: Array<Deferred<DesktopReachability>> = [];
   const startResult = deferred<DesktopLocalStackState>();
+  const stopCalls: Array<Deferred<DesktopLocalStackState>> = [];
   const stateCalls: Array<Deferred<DesktopSetupState>> = [];
   const stackStateCalls: Array<Deferred<DesktopLocalStackState>> = [];
   const pushListeners: Array<(state: DesktopLocalStackState) => void> = [];
@@ -91,6 +100,7 @@ function mount(saved: DesktopSetup | null, locale = ENGLISH, platform = "linux")
   const saveCalls: Array<Deferred<DesktopSetupResult>> = [];
   const links: string[] = [];
   let starts = 0;
+  let stops = 0;
 
   const bridge: RakazoSetup = {
     platform,
@@ -126,6 +136,12 @@ function mount(saved: DesktopSetup | null, locale = ENGLISH, platform = "linux")
         starts += 1;
         return startResult.promise;
       },
+      stop: () => {
+        stops += 1;
+        const call = deferred<DesktopLocalStackState>();
+        stopCalls.push(call);
+        return call.promise;
+      },
       onChange: (listener) => {
         pushListeners.push(listener);
       },
@@ -136,7 +152,12 @@ function mount(saved: DesktopSetup | null, locale = ENGLISH, platform = "linux")
   new Function(setupScript)();
 
   const initState = stateCalls.shift();
-  initState?.resolve({ defaultLocalUrl: DEFAULT_LOCAL_URL, cloudUrl: CLOUD_URL, saved });
+  initState?.resolve({
+    defaultLocalUrl: DEFAULT_LOCAL_URL,
+    cloudUrl: CLOUD_URL,
+    saved,
+    ...extraState,
+  });
   return {
     nextCheck: () => {
       const call = checkCalls.shift();
@@ -146,6 +167,9 @@ function mount(saved: DesktopSetup | null, locale = ENGLISH, platform = "linux")
     resolveCheck: (result) => checkCalls.shift()?.resolve(result),
     startResult,
     starts: () => starts,
+    stops: () => stops,
+    resolveStop: (state) => stopCalls.shift()?.resolve(state),
+    rejectStop: (reason) => stopCalls.shift()?.reject(reason),
     links,
     resolveAppState: (next) =>
       stateCalls
@@ -724,4 +748,193 @@ describe("setup", () => {
     expect(element("stack-phase").textContent).toBe(PL_MESSAGES["Downloading Rakazo…"]);
     expect(element("stack-detail").textContent).toBe("Pobrano 3 MB");
   });
+
+  it("retries stopping instead of starting when opened on a failed stop", async () => {
+    const failedStop: DesktopLocalStackState = {
+      ...stackState("failed"),
+      failedOperation: "stop",
+      message: "Could not stop the local stack. Check that Docker is running, then try again.",
+    };
+    const ui = mount({ mode: "new", serverUrl: DEFAULT_LOCAL_URL }, ENGLISH, "linux", {
+      stopToQuit: true,
+    });
+    await flush();
+    ui.resolveStackState(failedStop);
+    await flush();
+
+    expect(element("stack").hidden).toBe(false);
+    expect(element("stack-phase").textContent).toBe(failedStop.message);
+    expect(element("continue").textContent).toBe("Retry");
+    expect(element<HTMLButtonElement>("continue").disabled).toBe(false);
+
+    // First retry fails again: locks mode choice while pending, never starts, and unlocks Retry on failure.
+    submitForm();
+    await flush();
+    expect(ui.stops()).toBe(1);
+    expect(ui.starts()).toBe(0);
+    expect(element<HTMLButtonElement>("continue").disabled).toBe(true);
+    for (const input of document.querySelectorAll<HTMLInputElement>('input[name="mode"]')) {
+      expect(input.disabled).toBe(true);
+    }
+    const cloudRadio = document.querySelector<HTMLInputElement>(
+      'input[name="mode"][value="cloud"]',
+    )!;
+    cloudRadio.click();
+    expect(cloudRadio.checked).toBe(false);
+    submitForm();
+    await flush();
+    expect(ui.stops()).toBe(1);
+    expect(ui.saves).toHaveLength(0);
+
+    ui.resolveStop(failedStop);
+    await flush();
+    expect(element("continue").textContent).toBe("Retry");
+    expect(element<HTMLButtonElement>("continue").disabled).toBe(false);
+    for (const input of document.querySelectorAll<HTMLInputElement>('input[name="mode"]')) {
+      expect(input.disabled).toBe(false);
+    }
+
+    // Second retry succeeds: keeps controls locked while quitting and never starts the stack.
+    submitForm();
+    await flush();
+    expect(ui.stops()).toBe(2);
+    expect(ui.starts()).toBe(0);
+
+    ui.resolveStop(stackState("idle"));
+    await flush();
+    expect(element("stack").hidden).toBe(true);
+    expect(element<HTMLButtonElement>("continue").disabled).toBe(true);
+    for (const input of document.querySelectorAll<HTMLInputElement>('input[name="mode"]')) {
+      expect(input.disabled).toBe(true);
+    }
+    expect(ui.starts()).toBe(0);
+  });
+
+  it("retries starting when opened on a failed start", async () => {
+    const failedStart: DesktopLocalStackState = {
+      ...stackState("failed"),
+      failedOperation: "start",
+      message: "Could not start the local stack. Try again.",
+    };
+    const ui = mount({ mode: "new", serverUrl: DEFAULT_LOCAL_URL });
+    await flush();
+    ui.resolveStackState(failedStart);
+    await flush();
+
+    expect(element("continue").textContent).toBe("Retry");
+    submitForm();
+    await flush();
+    expect(ui.starts()).toBe(1);
+    expect(ui.stops()).toBe(0);
+  });
+
+  it("ignores a stale background stop failure when Change Server opens without stopToQuit", async () => {
+    const failedBackgroundStop: DesktopLocalStackState = {
+      ...stackState("failed"),
+      failedOperation: "stop",
+      message: "Could not stop the local stack. Check that Docker is running, then try again.",
+    };
+    const ui = mount({ mode: "existing", serverUrl: CLOUD_URL });
+    await flush();
+    ui.resolveStackState(failedBackgroundStop);
+    await flush();
+
+    // Saved Cloud choice stays selected; setup does not hijack This computer or offer Retry to quit.
+    expect(
+      document.querySelector<HTMLInputElement>('input[name="mode"][value="cloud"]')?.checked,
+    ).toBe(true);
+    expect(element("stack").hidden).toBe(true);
+    expect(element("continue").textContent).toBe("Continue");
+
+    // Switching to This computer and clicking Continue starts the stack instead of invoking stop-and-quit.
+    selectMode("new");
+    await flush();
+    submitForm();
+    await flush();
+    expect(ui.starts()).toBe(1);
+    expect(ui.stops()).toBe(0);
+  });
+
+  it("clears stopToQuit after a failed switch to Cloud so returning to This computer starts instead of stopping", async () => {
+    const failedStop: DesktopLocalStackState = {
+      ...stackState("failed"),
+      failedOperation: "stop",
+      message: "Could not stop the local stack. Check that Docker is running, then try again.",
+    };
+    const ui = mount({ mode: "new", serverUrl: DEFAULT_LOCAL_URL }, ENGLISH, "linux", {
+      stopToQuit: true,
+    });
+    await flush();
+    ui.resolveStackState(failedStop);
+    await flush();
+
+    // Switch to Cloud and fail the save.
+    selectMode("cloud");
+    await flush();
+    submitForm();
+    await flush();
+    ui.resolveSave({ ok: false, error: "Could not reach server." });
+    await flush();
+
+    // Return to This computer: stale stop failure is hidden and Continue starts the stack.
+    selectMode("new");
+    await flush();
+    expect(element("stack").hidden).toBe(true);
+    expect(element("continue").textContent).toBe("Continue");
+    submitForm();
+    await flush();
+    expect(ui.starts()).toBe(1);
+    expect(ui.stops()).toBe(0);
+  });
+
+  it("keeps saved Cloud selected while an old local stack is stopping and ignores a late background stop failure", async () => {
+    const ui = mount({ mode: "existing", serverUrl: CLOUD_URL });
+    await flush();
+    // Old local stack is still reporting ready while background stop runs after leaving This computer.
+    ui.resolveStackState(stackState("ready"));
+    await flush();
+
+    expect(
+      document.querySelector<HTMLInputElement>('input[name="mode"][value="cloud"]')?.checked,
+    ).toBe(true);
+    expect(element("stack").hidden).toBe(true);
+    expect(element("continue").textContent).toBe("Continue");
+
+    // User switches to This computer before the background stop finishes, then the stop fails live.
+    selectMode("new");
+    await flush();
+    const lateFailure: DesktopLocalStackState = {
+      ...stackState("failed"),
+      failedOperation: "stop",
+      message: "Could not stop the local stack. Check that Docker is running, then try again.",
+    };
+    ui.pushStackState(lateFailure);
+    ui.resolveStackState(lateFailure);
+    await flush();
+
+    expect(element("stack").hidden).toBe(true);
+    expect(element("continue").textContent).toBe("Continue");
+    expect(element<HTMLButtonElement>("continue").disabled).toBe(false);
+    submitForm();
+    await flush();
+    expect(ui.starts()).toBe(1);
+    expect(ui.stops()).toBe(0);
+  });
+
+  it.each(["pulling", "starting"] as const)(
+    "keeps saved Cloud selected when reopening setup while a left-behind local stack is still %s",
+    async (phase) => {
+      const ui = mount({ mode: "existing", serverUrl: CLOUD_URL });
+      await flush();
+      ui.resolveStackState(stackState(phase));
+      await flush();
+
+      expect(
+        document.querySelector<HTMLInputElement>('input[name="mode"][value="cloud"]')?.checked,
+      ).toBe(true);
+      expect(element("stack").hidden).toBe(true);
+      expect(element("continue").textContent).toBe("Continue");
+      expect(element<HTMLButtonElement>("continue").disabled).toBe(false);
+    },
+  );
 });

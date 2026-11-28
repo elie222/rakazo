@@ -195,6 +195,8 @@ export const ES_MESSAGES: Record<string, string> = {
     "El stack se inició, pero la app web no respondió. Vuelve a intentarlo y revisa la salida de abajo.",
   "Could not prepare the local stack. Retry.":
     "No se pudo preparar el stack local. Vuelve a intentarlo.",
+  "Could not stop the local stack. Try again.":
+    "No se pudo detener el stack local. Inténtalo de nuevo.",
   "Could not stop the local stack. Check that Docker is running, then try again.":
     "No se pudo detener el stack local. Comprueba que Docker esté en funcionamiento e inténtalo de nuevo.",
   "Settings…": "Configuración…",

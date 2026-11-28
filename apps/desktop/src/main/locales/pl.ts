@@ -193,6 +193,8 @@ export const PL_MESSAGES: Record<string, string> = {
     "Usługi uruchomiły się, ale aplikacja webowa nie odpowiedziała. Spróbuj ponownie i sprawdź poniższe komunikaty.",
   "Could not prepare the local stack. Retry.":
     "Nie udało się przygotować lokalnych usług. Spróbuj ponownie.",
+  "Could not stop the local stack. Try again.":
+    "Nie udało się zatrzymać lokalnych usług. Spróbuj ponownie.",
   "Could not stop the local stack. Check that Docker is running, then try again.":
     "Nie udało się zatrzymać lokalnych usług. Sprawdź, czy Docker działa, i spróbuj ponownie.",
   "Settings…": "Ustawienia…",

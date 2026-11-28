@@ -14,7 +14,20 @@ import { managedLocalOpenUrl, parseSetupInput, RAKAZO_CLOUD_URL } from "./setup-
 import { writeSetup } from "./setup-store.js";
 
 let setupSaveInProgress = false;
+let stackStopInProgress = false;
+let quitAfterStackStop = false;
+let reloadSetupAfterStop = false;
+let reloadSetupAfterSave = false;
+let pendingLeftBehindStop: { previousMode: DesktopSetup["mode"] | undefined } | null = null;
+let stopLeftBehindCallback: ((previousMode: DesktopSetup["mode"] | undefined) => void) | undefined;
 let onAppReadyCallback: (() => void) | undefined;
+
+function flushPendingLeftBehindStop() {
+  const pending = pendingLeftBehindStop;
+  if (pending === null) return;
+  pendingLeftBehindStop = null;
+  stopLeftBehindCallback?.(pending.previousMode);
+}
 
 export function isSetupSaveInProgress(): boolean {
   return setupSaveInProgress;
@@ -37,7 +50,13 @@ function createSetupWindow() {
   desktop.setupWindow = win;
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.once("closed", () => {
-    if (desktop.setupWindow === win) desktop.setupWindow = null;
+    if (desktop.setupWindow === win) {
+      desktop.setupWindow = null;
+      quitAfterStackStop = false;
+      reloadSetupAfterStop = false;
+      reloadSetupAfterSave = false;
+      if (!desktop.quitting) flushPendingLeftBehindStop();
+    }
     // Closing setup without saving restores a connected session (Change Server cancel).
     restoreAppWindowAfterSetup();
   });
@@ -46,13 +65,34 @@ function createSetupWindow() {
   return win;
 }
 /** Hide the app while setup is open; do not clear the saved target until a new one opens. */
-export function showSetupWindow(error: string | null = null) {
+export function showSetupWindow(
+  error: string | null = null,
+  options?: { quitAfterStop?: boolean },
+) {
   desktop.setupError = error;
+  const nextQuitAfterStop =
+    options?.quitAfterStop !== undefined
+      ? options.quitAfterStop === true
+      : error !== null
+        ? quitAfterStackStop
+        : false;
+  const quitChanged = quitAfterStackStop !== nextQuitAfterStop;
+  quitAfterStackStop = nextQuitAfterStop;
+  if (quitChanged && !nextQuitAfterStop && !stackStopInProgress) {
+    flushPendingLeftBehindStop();
+  }
 
   let win: BrowserWindow;
   if (desktop.setupWindow !== null && !desktop.setupWindow.isDestroyed()) {
-    // A save the page is awaiting answers with the error itself; reloading would drop what was typed.
-    if (error !== null && !setupSaveInProgress) desktop.setupWindow.reload();
+    // A save the page is awaiting answers with its own error; reloading mid-save would drop what
+    // was typed. If quit intent changed during a save (for example Quit and Stop Bots failed while
+    // saving), defer the reload until the save finishes so the renderer picks up stopToQuit.
+    if (setupSaveInProgress) {
+      if (quitChanged) reloadSetupAfterSave = true;
+    } else if (error !== null || quitChanged) {
+      if (stackStopInProgress) reloadSetupAfterStop = true;
+      else desktop.setupWindow.reload();
+    }
     win = desktop.setupWindow;
   } else {
     win = createSetupWindow();
@@ -93,6 +133,10 @@ function watchRendererUntilCommitted(win: BrowserWindow) {
 export function destroySetupWindow() {
   const setup = desktop.setupWindow;
   desktop.setupWindow = null;
+  quitAfterStackStop = false;
+  reloadSetupAfterStop = false;
+  reloadSetupAfterSave = false;
+  pendingLeftBehindStop = null;
   if (setup !== null && !setup.isDestroyed()) setup.destroy();
 }
 type SetupIpcDeps = {
@@ -116,6 +160,7 @@ type SetupIpcDeps = {
     previousUrl: string | null,
   ) => Promise<string>;
   stopStackLeftBehind: (previousMode: DesktopSetup["mode"] | undefined) => void;
+  rebuildMenu: () => void;
   /** Picks the stack This computer runs on, if launch left that open. */
   settleLocalStack: () => Promise<void>;
   /** Runs once the app window is committed and setup is closed (e.g. pending deep link). */
@@ -133,9 +178,12 @@ export function registerSetupIpc({
   abandonPendingAppSwitch,
   recoverFromCrashedSave,
   stopStackLeftBehind,
+  rebuildMenu,
   settleLocalStack,
   onAppReady,
 }: SetupIpcDeps) {
+  pendingLeftBehindStop = null;
+  stopLeftBehindCallback = stopStackLeftBehind;
   onAppReadyCallback = onAppReady;
   // Synchronous so the setup page has its language before it first paints.
   handleIpc("desktop.setup.locale", () => ({
@@ -148,6 +196,7 @@ export function registerSetupIpc({
     cloudUrl: RAKAZO_CLOUD_URL,
     saved: desktop.currentSetup,
     error: desktop.setupError ?? undefined,
+    ...(quitAfterStackStop ? { stopToQuit: true } : {}),
   }));
 
   handleIpc("desktop.setup.test", async (_event, url, headers) => {
@@ -159,9 +208,11 @@ export function registerSetupIpc({
 
   handleIpc("desktop.setup.save", async (_event, payload) => {
     // A launch still loading counts too: the switch must open and check its own server.
-    if (setupSaveInProgress || appOpener.busy())
+    if (setupSaveInProgress || stackStopInProgress || appOpener.busy())
       return { ok: false, error: t("A connection attempt is already running.") };
     setupSaveInProgress = true;
+    quitAfterStackStop = false;
+    reloadSetupAfterSave = false;
     desktop.setupError = null;
     const previousSetup = desktop.currentSetup;
     const previousUrl = desktop.currentTargetUrl;
@@ -202,7 +253,7 @@ export function registerSetupIpc({
         syncHostComputerAccess();
         // The opener reports why through showSetupWindow; hand it to the page as this answer.
         const detail = desktop.setupError;
-        desktop.setupError = null;
+        if (!reloadSetupAfterSave) desktop.setupError = null;
         return {
           ok: false,
           error:
@@ -227,14 +278,29 @@ export function registerSetupIpc({
           const message = await recoverFromCrashedSave(userDataDir, previousSetup, previousUrl);
           return { ok: false, error: message };
         }
-        destroySetupWindow();
+        const keepSetupForQuitStop = quitAfterStackStop;
+        if (keepSetupForQuitStop) {
+          if (desktop.mainWindow !== null && !desktop.mainWindow.isDestroyed()) {
+            desktop.mainWindow.hide();
+          }
+          reloadSetupAfterSave = true;
+        } else {
+          destroySetupWindow();
+        }
         // Final check after setup closes — a crash in this gap still rolls back.
         if (rendererWatch?.crashed()) {
           const message = await recoverFromCrashedSave(userDataDir, previousSetup, previousUrl);
           return { ok: false, error: message };
         }
         // Only now is the switch final; a crash rollback above may restore the local server.
-        stopStackLeftBehind(previousSetup?.mode);
+        // If Quit and Stop Bots failed mid-save, defer the left-behind stop until Retry settles or is abandoned.
+        const leftBehindMode = pendingLeftBehindStop?.previousMode ?? previousSetup?.mode;
+        if (keepSetupForQuitStop) {
+          pendingLeftBehindStop = { previousMode: leftBehindMode };
+        } else {
+          pendingLeftBehindStop = null;
+          stopStackLeftBehind(leftBehindMode);
+        }
         return { ok: true };
       } catch {
         const outcome = abandonPendingAppSwitch(previousSetup, previousUrl);
@@ -249,8 +315,11 @@ export function registerSetupIpc({
         rendererWatch?.dispose();
       }
     } finally {
+      const shouldReload = reloadSetupAfterSave;
+      reloadSetupAfterSave = false;
       setupSaveInProgress = false;
       if (desktop.setupWindow === null) onAppReadyCallback?.();
+      else if (shouldReload && !desktop.setupWindow.isDestroyed()) desktop.setupWindow.reload();
     }
   });
 
@@ -265,9 +334,51 @@ export function registerSetupIpc({
   });
   handleIpc("desktop.setup.stack.state", () => desktop.localStack.state());
   handleIpc("desktop.setup.stack.start", async () => {
+    if (stackStopInProgress) return desktop.localStack.state();
+    quitAfterStackStop = false;
+    pendingLeftBehindStop = null;
     await settleLocalStack();
     // Respond right away; the setup window polls `stack.state` until a terminal phase.
     void desktop.localStack.start();
     return desktop.localStack.state();
+  });
+  handleIpc("desktop.setup.stack.stop", async () => {
+    if (stackStopInProgress || setupSaveInProgress) return desktop.localStack.state();
+    stackStopInProgress = true;
+    reloadSetupAfterStop = false;
+    desktop.setupError = null;
+    desktop.hostComputer?.activate(false);
+    rebuildMenu();
+    try {
+      const state = await desktop.localStack.stop();
+      if (state.phase === "failed") {
+        desktop.setupError = quitAfterStackStop ? state.message : null;
+        syncHostComputerAccess();
+        return state;
+      }
+      pendingLeftBehindStop = null;
+      if (quitAfterStackStop) {
+        quitAfterStackStop = false;
+        app.quit();
+      }
+      return state;
+    } catch (error) {
+      const state = desktop.localStack.state?.();
+      desktop.setupError = quitAfterStackStop
+        ? state?.phase === "failed" && state.message
+          ? state.message
+          : t("Could not stop the local stack. Try again.")
+        : null;
+      syncHostComputerAccess();
+      throw error;
+    } finally {
+      const shouldReload = reloadSetupAfterStop;
+      reloadSetupAfterStop = false;
+      stackStopInProgress = false;
+      rebuildMenu();
+      if (shouldReload && desktop.setupWindow !== null && !desktop.setupWindow.isDestroyed()) {
+        desktop.setupWindow.reload();
+      }
+    }
   });
 }

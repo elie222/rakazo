@@ -91,6 +91,8 @@
   let activeCheck = 0;
   let showingCheckStatus = false;
   let stackPolling = false;
+  let stackStopping = false;
+  let stopToQuit = false;
   let lastStack = null;
   let lastProgress = 0;
   let detailsOpen = false;
@@ -224,6 +226,12 @@
     }
   }
 
+  function isBackgroundStopFailure(stack) {
+    return (
+      stack !== null && stack.phase === "failed" && stack.failedOperation === "stop" && !stopToQuit
+    );
+  }
+
   function renderStack(stack) {
     const { phase } = stack;
     // A background re-check for Docker would flash "Getting ready…"; keep the waiting view until it
@@ -231,6 +239,13 @@
     if (phase === "checking-docker" && dockerRechecking) return;
     dockerRechecking = false;
     lastStack = stack;
+    if (isBackgroundStopFailure(stack)) {
+      stackSection.hidden = true;
+      continueButton.hidden = false;
+      continueButton.textContent = t("Continue");
+      setBusy(false);
+      return;
+    }
     stackSection.hidden = phase === "idle";
     continueButton.hidden = phase === "docker-not-running";
     if (phase === "idle") {
@@ -303,6 +318,7 @@
 
   async function save(mode, url, headers) {
     const generation = ++requestGeneration;
+    stopToQuit = false;
     // Locking the address blurs it; a failed save hands focus back so Enter can retry.
     const focused = document.activeElement;
     setBusy(true);
@@ -394,6 +410,33 @@
     await followStack();
   }
 
+  async function stopStack() {
+    if (stackStopping) return;
+    const generation = ++requestGeneration;
+    stackStopping = true;
+    let quitting = false;
+    setStatus("");
+    setBusy(true);
+    lockChoice(true);
+    try {
+      const stopped = await bridge.stack.stop();
+      if (generation !== requestGeneration) return;
+      if (stopped !== null) {
+        if (stopped.phase !== "failed" && stopToQuit) quitting = true;
+        renderStack(stopped);
+        if (stopped.phase === "idle" && !quitting) setBusy(false);
+      }
+    } catch {
+      if (generation === requestGeneration) {
+        setStatus(t("Could not stop the local stack. Try again."), "error");
+        setBusy(false);
+      }
+    } finally {
+      stackStopping = false;
+      if (!quitting) lockChoice(false);
+    }
+  }
+
   function setCheckStatus(message, tone) {
     setStatus(message, tone, true);
   }
@@ -438,6 +481,7 @@
   }
 
   form.addEventListener("change", (event) => {
+    if (stackStopping) return;
     if (event.target instanceof HTMLInputElement && event.target.name === "mode") {
       requestGeneration++;
       // The interrupted check completes stale and stays silent, so retire its lock here.
@@ -451,6 +495,15 @@
       // waits for Continue, which follows it again and saves it once it is ready.
       if (selectedMode() === "new" && lastStack !== null && isDockerPhase(lastStack.phase)) {
         renderStack(lastStack);
+      } else if (
+        selectedMode() === "new" &&
+        lastStack?.phase === "failed" &&
+        (lastStack.failedOperation !== "stop" || stopToQuit)
+      ) {
+        continueButton.textContent = t("Retry");
+      } else if (selectedMode() === "new" && lastStack?.phase === "failed") {
+        stackSection.hidden = true;
+        continueButton.textContent = t("Continue");
       }
     }
   });
@@ -487,10 +540,18 @@
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
+    if (stackStopping) return;
     const mode = selectedMode();
     // Without Docker the main button is the download; setup keeps looking for Docker meanwhile.
     if (mode === "new" && lastStack?.phase === "docker-missing")
       void bridge.openLink("docker-download");
+    else if (
+      mode === "new" &&
+      stopToQuit &&
+      lastStack?.phase === "failed" &&
+      lastStack?.failedOperation === "stop"
+    )
+      void stopStack();
     else if (mode === "new") void runStack();
     // Cloud is an existing server at a fixed address.
     else if (mode === "cloud") void save("existing", cloudUrl);
@@ -507,7 +568,7 @@
       wakePoll?.();
       // A follow that ended on an error restarts here instead of leaving the panel frozen;
       // hold the controls until it has rendered the state it is restarting on.
-      if (!stackPolling && selectedMode() === "new") {
+      if (!stackPolling && !stackStopping && selectedMode() === "new") {
         // A background look for Docker keeps the download button usable.
         if (!dockerRechecking) setBusy(true);
         void followStack();
@@ -530,6 +591,7 @@
       if (state === null) throw new Error("Setup is not active");
       defaultLocalUrl = state.defaultLocalUrl;
       cloudUrl = state.cloudUrl;
+      stopToQuit = state.stopToQuit === true;
       if (state.saved !== null) {
         const savedCloud = state.saved.mode === "existing" && state.saved.serverUrl === cloudUrl;
         const mode = savedCloud ? "cloud" : state.saved.mode;
@@ -545,8 +607,15 @@
       }
       // A relaunch with the stack down starts it before this window opens; show that
       // attempt instead of the saved mode, and follow it while it is still running.
+      // A local stack still starting, running, or failing to stop in the background after leaving
+      // This computer must not hijack Change Server away from the saved server choice.
       const stack = await bridge.stack.state();
-      const attached = stack !== null && stack.phase !== "idle";
+      const leftBehindStack = state.saved !== null && state.saved.mode !== "new" && !stopToQuit;
+      const attached =
+        stack !== null &&
+        stack.phase !== "idle" &&
+        !isBackgroundStopFailure(stack) &&
+        !leftBehindStack;
       if (attached) document.getElementById("mode-new").checked = true;
       syncPanels();
       setBusy(false);
