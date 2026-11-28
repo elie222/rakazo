@@ -4,8 +4,9 @@ import type {
   NotificationProvider,
   ProductAnalytics,
   SandboxProvider,
+  SecretStore,
 } from "@rakazo/adapter-kit";
-import { notifyMemberMessage, wakeRun } from "@rakazo/adapters";
+import { notifyMemberMessage, preparePastedSecrets, wakeRun } from "@rakazo/adapters";
 import type { Actor, GroupMember, MessageBlock, ReplyPreview } from "@rakazo/contracts";
 import {
   GROUP_MEMBER_MIN,
@@ -492,11 +493,12 @@ export async function sendThreadMessage(
     maxAttachmentsPerMessage?: number;
     analytics?: ProductAnalytics;
     sandbox: SandboxProvider;
+    secrets: SecretStore;
     notifications?: NotificationProvider;
   },
   actor: Actor,
   target: ThreadTarget,
-  input: {
+  sent: {
     text?: string;
     artifactIds?: string[];
     imageHandling?: "confirm" | "file";
@@ -517,17 +519,36 @@ export async function sendThreadMessage(
   const existing = await replayExistingSend(
     deps,
     target.threadId,
-    input.clientNonce,
+    sent.clientNonce,
     releaseTakeover,
   );
   if (existing) return existing;
+  const requestedReplyQuote = sent.replyQuote?.trim() || undefined;
+  if (requestedReplyQuote && !sent.replyToMessageId) {
+    throw new ORPCError("BAD_REQUEST", { message: "replyQuote requires replyToMessageId." });
+  }
+  // A concurrent send with the same nonce that won is this send's receipt.
+  const replayWinner = async (error: unknown) => {
+    const winner = await replayExistingSend(
+      deps,
+      target.threadId,
+      sent.clientNonce,
+      releaseTakeover,
+    );
+    if (winner) return { replay: winner } as const;
+    throw error;
+  };
+  // From here on, a key the member pasted is only in the vault.
+  const pasted = await preparePastedSecrets(
+    { prisma: deps.prisma, secretStore: deps.secrets },
+    actor,
+    sent.text,
+  ).catch(replayWinner);
+  if ("replay" in pasted) return pasted.replay;
+  const input = { ...sent, text: pasted.text };
   // Live events carry the call id so a spoken turn joins the call card on first
   // paint; without it the bubble shows loose until a refetch reads the nonce.
   const callId = callIdFromClientNonce(input.clientNonce);
-  const requestedReplyQuote = input.replyQuote?.trim() || undefined;
-  if (requestedReplyQuote && !input.replyToMessageId) {
-    throw new ORPCError("BAD_REQUEST", { message: "replyQuote requires replyToMessageId." });
-  }
 
   const commit = () =>
     deps.prisma.$transaction(async (tx) => {
@@ -639,6 +660,8 @@ export async function sendThreadMessage(
         );
         // Match message counter locking before inspecting runs, without changing counters on rejection.
         await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
+        // The vault after the thread, as a secret card's answer locks them.
+        await pasted.store(tx);
         routineRuns = (await startRoutines?.(tx)) ?? [];
         const activeRuns = await tx.run.findMany({
           where: {
@@ -865,6 +888,7 @@ export async function sendThreadMessage(
       );
       // Group ownership is locked first, then the thread, as in the normal write path.
       await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
+      await pasted.store(tx);
       routineRuns = (await startRoutines?.(tx)) ?? [];
       let activeRuns = await tx.run.findMany({
         where: {
@@ -1115,16 +1139,7 @@ export async function sendThreadMessage(
       return { message, runs, routineRuns, eventSeq: event.seq };
     }, THREAD_LOCK_TRANSACTION_OPTIONS);
 
-  const committed = await withTransactionRetry(commit).catch(async (error) => {
-    const winner = await replayExistingSend(
-      deps,
-      target.threadId,
-      input.clientNonce,
-      releaseTakeover,
-    );
-    if (winner) return { replay: winner } as const;
-    throw error;
-  });
+  const committed = await pasted.persist(() => withTransactionRetry(commit)).catch(replayWinner);
   if ("replay" in committed) return committed.replay;
   deps.analytics?.capture(
     actor.userId,

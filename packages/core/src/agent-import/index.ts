@@ -58,7 +58,13 @@ export {
   readAgentImportConfig,
   stripAgentImportSecrets,
 } from "./config.js";
-export { looksLikeCredential } from "./credentials.js";
+export type { TextRange } from "./credentials.js";
+export {
+  credentialMatches,
+  credentialRanges,
+  joinRanges,
+  looksLikeCredential,
+} from "./credentials.js";
 export { AGENT_IMPORT_PROMPT } from "./document.js";
 export type {
   GrokBot,

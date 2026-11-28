@@ -90,6 +90,7 @@ function fixture(group = false) {
       {
         prisma,
         sandbox: {} as never,
+        secrets: {} as never,
         events: { notify } as never,
         jobs: { enqueue } as never,
         imageAdmission,

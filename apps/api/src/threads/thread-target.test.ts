@@ -1759,6 +1759,7 @@ describe("sendThreadMessage", () => {
           {
             prisma,
             sandbox: {} as never,
+            secrets: {} as never,
             events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
             jobs: { enqueue } as never,
             analytics,
@@ -1926,6 +1927,7 @@ describe("sendThreadMessage", () => {
         {
           prisma,
           sandbox: {} as never,
+          secrets: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue } as never,
         },
@@ -2073,6 +2075,7 @@ describe("sendThreadMessage", () => {
         {
           prisma,
           sandbox: {} as never,
+          secrets: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue } as never,
           analytics,
@@ -2218,6 +2221,7 @@ describe("sendThreadMessage", () => {
         {
           prisma,
           sandbox: {} as never,
+          secrets: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue } as never,
         },
@@ -2397,6 +2401,7 @@ describe("sendThreadMessage", () => {
             {
               prisma,
               sandbox: {} as never,
+              secrets: {} as never,
               events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
               jobs: { enqueue } as never,
             },
@@ -2504,6 +2509,7 @@ describe("sendThreadMessage", () => {
         {
           prisma,
           sandbox: {} as never,
+          secrets: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue } as never,
         },
@@ -2644,6 +2650,7 @@ describe("sendThreadMessage", () => {
               {
                 prisma,
                 sandbox: {} as never,
+                secrets: {} as never,
                 events: {
                   notify: vi.fn().mockResolvedValue(undefined),
                 } as never,
@@ -2693,6 +2700,7 @@ describe("sendThreadMessage", () => {
             {
               prisma,
               sandbox: {} as never,
+              secrets: {} as never,
               events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
               jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
             },
@@ -2782,6 +2790,7 @@ describe("sendThreadMessage", () => {
         {
           prisma,
           sandbox: {} as never,
+          secrets: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue } as never,
         },
@@ -2888,6 +2897,7 @@ describe("sendThreadMessage", () => {
           {
             prisma,
             sandbox: {} as never,
+            secrets: {} as never,
             events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
             jobs: { enqueue } as never,
           },
@@ -3004,6 +3014,7 @@ describe("sendThreadMessage", () => {
       {
         prisma,
         sandbox: {} as never,
+        secrets: {} as never,
         events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
         jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
       },
@@ -3104,6 +3115,7 @@ describe("sendThreadMessage", () => {
       {
         prisma,
         sandbox: {} as never,
+        secrets: {} as never,
         events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
         jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
       },
@@ -3212,6 +3224,7 @@ describe("sendThreadMessage", () => {
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
           sandbox: {} as never,
+          secrets: {} as never,
         },
         { spaceId: "workspace-1", userId: "user-1" } as Actor,
         {
@@ -3397,6 +3410,7 @@ describe("sendThreadMessage", () => {
         {
           prisma,
           sandbox: {} as never,
+          secrets: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue } as never,
         },
@@ -3515,6 +3529,7 @@ describe("sendThreadMessage", () => {
         {
           prisma,
           sandbox: {} as never,
+          secrets: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue } as never,
         },
@@ -3628,6 +3643,7 @@ describe("sendThreadMessage", () => {
         {
           prisma,
           sandbox: {} as never,
+          secrets: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue } as never,
         },
@@ -3750,6 +3766,7 @@ describe("sendThreadMessage", () => {
         {
           prisma,
           sandbox: {} as never,
+          secrets: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue } as never,
         },
@@ -3788,6 +3805,7 @@ describe("sendThreadMessage", () => {
         {
           prisma,
           sandbox: {} as never,
+          secrets: {} as never,
           events: { notify: vi.fn() } as never,
           jobs: { enqueue: vi.fn() } as never,
         },
@@ -3855,6 +3873,7 @@ describe("sendThreadMessage", () => {
       {
         prisma,
         sandbox: {} as never,
+        secrets: {} as never,
         events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
         jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
       },
@@ -3952,6 +3971,7 @@ describe("sendThreadMessage", () => {
         {
           prisma,
           sandbox: {} as never,
+          secrets: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
           notifications: { send: vi.fn() } as never,
@@ -4024,6 +4044,7 @@ describe("sendThreadMessage", () => {
       {
         prisma,
         sandbox: {} as never,
+        secrets: {} as never,
         events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
         jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
       },
@@ -4099,6 +4120,7 @@ describe("sendThreadMessage", () => {
         {
           prisma,
           sandbox: {} as never,
+          secrets: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
         },
@@ -4181,6 +4203,7 @@ describe("sendThreadMessage", () => {
       {
         prisma,
         sandbox: {} as never,
+        secrets: {} as never,
         events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
         jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
       },
@@ -4282,6 +4305,7 @@ describe("sendThreadMessage", () => {
         {
           prisma,
           sandbox: {} as never,
+          secrets: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
         },
@@ -4393,6 +4417,7 @@ describe("sendThreadMessage", () => {
         {
           prisma,
           sandbox: {} as never,
+          secrets: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
         },
@@ -4508,6 +4533,7 @@ describe("sendThreadMessage", () => {
         {
           prisma,
           sandbox: {} as never,
+          secrets: {} as never,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
           jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
         },
@@ -4578,6 +4604,7 @@ describe("sendThreadMessage", () => {
       {
         prisma,
         sandbox: {} as never,
+        secrets: {} as never,
         events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
         jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
       },
@@ -4673,6 +4700,7 @@ describe("sendThreadMessage", () => {
       {
         prisma,
         sandbox: {} as never,
+        secrets: {} as never,
         events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
         jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
       },

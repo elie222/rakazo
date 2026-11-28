@@ -305,6 +305,13 @@ export * from "./secrets/secret-persistence.js";
 export * from "./secrets/secret-store-factory.js";
 export * from "./secrets/secrets.js";
 export * from "./secrets/vault/page-share-secrets.js";
+export type { PastedSecrets } from "./secrets/vault/pasted-secrets.js";
+export {
+  MAX_PASTED_KEYS,
+  PastedMessageTooLongError,
+  preparePastedSecrets,
+  TooManyPastedKeysError,
+} from "./secrets/vault/pasted-secrets.js";
 export { listVaultItemUses } from "./secrets/vault/vault-activity.js";
 export {
   migrateVaultValues,

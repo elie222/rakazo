@@ -285,6 +285,7 @@ describe.skipIf(!enabled)("thread writes behind a long read (PostgreSQL)", () =>
             {
               prisma,
               sandbox: {} as never,
+              secrets: {} as never,
               events: { notify } as never,
               jobs: { enqueue } as never,
             },
