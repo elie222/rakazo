@@ -200,10 +200,114 @@ export function modelOptionKey(provider: string, modelId: string): string {
 export function parseModelOptionKey(key: string): { provider: string; modelId: string } | null {
   const separator = key.indexOf("::");
   if (separator <= 0) return null;
+  const modelId = key.slice(separator + 2);
+  if (!modelId) return null;
   return {
     provider: canonicalPiProviderId(key.slice(0, separator)),
-    modelId: key.slice(separator + 2),
+    modelId,
   };
+}
+
+export const FAVORITES_SECTION_KEY = "favorites";
+
+/** Canonicalizes and deduplicates starred `provider::modelId` keys while keeping their order. */
+export function normalizeStarredModelKeys(keys: readonly string[] | undefined): string[] {
+  if (!keys?.length) return [];
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const raw of keys) {
+    const parsed = parseModelOptionKey(raw.trim());
+    if (!parsed) continue;
+    const key = modelOptionKey(parsed.provider, parsed.modelId);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(key);
+  }
+  return normalized;
+}
+
+/**
+ * Adds or removes one `provider::modelId` key idempotently, preserving existing order.
+ * When `max` is set and adding exceeds it, the oldest entries are evicted so hidden or
+ * disconnected favorites cannot permanently exhaust the cap.
+ */
+export function applyStarredModelToggle(
+  keys: readonly string[] | undefined,
+  key: string,
+  starred: boolean,
+  max?: number,
+): string[] {
+  const normalized = normalizeStarredModelKeys(keys);
+  const parsed = parseModelOptionKey(key.trim());
+  if (!parsed) return normalized;
+  const target = modelOptionKey(parsed.provider, parsed.modelId);
+  if (starred) {
+    if (normalized.includes(target)) return normalized;
+    const next = [...normalized, target];
+    return max !== undefined && next.length > max ? next.slice(-max) : next;
+  }
+  return normalized.filter((entry) => entry !== target);
+}
+
+/** Toggles one `provider::modelId` key in the starred list, appending newly starred models. */
+export function toggleStarredModelKey(keys: readonly string[] | undefined, key: string): string[] {
+  const normalized = normalizeStarredModelKeys(keys);
+  const parsed = parseModelOptionKey(key.trim());
+  if (!parsed) return normalized;
+  const target = modelOptionKey(parsed.provider, parsed.modelId);
+  return applyStarredModelToggle(normalized, target, !normalized.includes(target));
+}
+
+export type ModelChoiceSection = {
+  key: string;
+  heading?: string;
+  favorites?: boolean;
+  data: ChatModelChoice[];
+};
+
+/**
+ * Prepends a Favorites section for starred models present in `choices`, preserving the user's
+ * starred order and omitting starred keys whose provider is disconnected or unavailable.
+ */
+export function withFavoriteModelChoices<
+  S extends { key: string; heading?: string; favorites?: boolean; data: ChatModelChoice[] },
+>(
+  sections: readonly S[],
+  choices: readonly ChatModelChoice[],
+  starredKeys: readonly string[] | undefined,
+  favoritesHeading: string,
+): ((S & { favorites?: boolean }) | (ModelChoiceSection & { collapsed: false }))[] {
+  const normalized = normalizeStarredModelKeys(starredKeys);
+  if (!normalized.length) return [...sections];
+  const byKey = new Map<string, ChatModelChoice>();
+  for (const choice of choices) {
+    if (!choice.providerLabel) continue;
+    const parsed = parseModelOptionKey(choice.key);
+    if (!parsed) continue;
+    const canonicalKey = modelOptionKey(parsed.provider, parsed.modelId);
+    if (!byKey.has(canonicalKey)) byKey.set(canonicalKey, choice);
+  }
+  const favorites: ChatModelChoice[] = [];
+  for (const key of normalized) {
+    const choice = byKey.get(key);
+    if (!choice) continue;
+    const vendor = choice.modelLabel?.match(/^([^:]+): (.+)$/);
+    favorites.push({
+      ...choice,
+      title: choice.title ?? vendor?.[2] ?? choice.modelLabel ?? choice.label,
+    });
+  }
+  if (!favorites.length) return [...sections];
+  return [
+    {
+      key: FAVORITES_SECTION_KEY,
+      heading: favoritesHeading,
+      favorites: true,
+      collapsed: false,
+      data: favorites,
+    },
+    ...sections,
+  ];
 }
 
 /**

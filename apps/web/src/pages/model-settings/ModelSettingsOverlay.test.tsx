@@ -1766,7 +1766,7 @@ it("opens a connection's page with its models, then a model's page, and goes bac
     await openProvider("DeepSeek");
     expect(titles(view.container)).toEqual(["DeepSeek"]);
     const rows = [
-      ...view.container.querySelectorAll('[data-testid="model-provider-models"] button'),
+      ...view.container.querySelectorAll('[data-testid="model-provider-models"] li'),
     ].map((entry) => entry.textContent);
     // A catalog model is listed only once it has settings of its own, so they can be reset.
     expect(rows).toEqual(["DeepSeek Reasoner"]);

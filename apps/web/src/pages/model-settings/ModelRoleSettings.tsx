@@ -82,6 +82,8 @@ type Props = {
   headerAction?: ReactNode;
   /** Extra items in the first row's menu. */
   primaryMenuItems?: ReactNode;
+  starredKeys?: readonly string[];
+  onToggleStar?: (key: string) => void;
 };
 
 let blankImage: HTMLImageElement | undefined;
@@ -136,6 +138,8 @@ export function ModelRoleSettings({
   panel,
   headerAction,
   primaryMenuItems,
+  starredKeys,
+  onToggleStar,
 }: Props) {
   const rpc = useSpaceRpc();
   const queryClient = useQueryClient();
@@ -357,6 +361,8 @@ export function ModelRoleSettings({
               onConnect={connectFor("primary")}
               reopen={reopenFor("primary")}
               onReopened={() => setReopen(null)}
+              starredKeys={starredKeys}
+              onToggleStar={onToggleStar}
             />
             {deployment && primaryMenuItems ? (
               <DropdownMenu>
@@ -442,6 +448,8 @@ export function ModelRoleSettings({
                 onConnect={connectFor(isPrimary ? "primary" : index)}
                 reopen={reopenFor(isPrimary ? "primary" : index)}
                 onReopened={() => setReopen(null)}
+                starredKeys={starredKeys}
+                onToggleStar={onToggleStar}
               />
               {isPrimary && thinkingLevels.length && choice.thinkingLevel ? (
                 <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-body-sm text-muted-foreground">
@@ -563,6 +571,8 @@ export function ModelRoleSettings({
               onConnect={connectFor("add")}
               reopen={reopenFor("add")}
               onReopened={() => setReopen(null)}
+              starredKeys={starredKeys}
+              onToggleStar={onToggleStar}
             />
           </li>
         ) : null}

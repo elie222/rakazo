@@ -2,6 +2,7 @@
 
 import { i18n } from "@lingui/core";
 import type { Bot } from "@rakazo/contracts";
+import { flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -22,7 +23,24 @@ vi.mock("../../../lib/query/rpc", () => {
         { provider: "acme", id: "deep", label: "Deep", thinkingLevels: ["low", "medium", "high"] },
       ]),
     },
-    me: vi.fn(async () => ({ defaultProvider: "acme", defaultModel: "fast" })),
+    me: vi.fn(async () => ({
+      defaultProvider: "acme",
+      defaultModel: "fast",
+      chatPreferences: { composerModelPicker: true, streamReplies: null, starredModels: [] },
+    })),
+    preferences: {
+      update: vi.fn(
+        async ({ chatPreferences }: { chatPreferences?: { starredModels?: string[] } }) => ({
+          defaultProvider: "acme",
+          defaultModel: "fast",
+          chatPreferences: {
+            composerModelPicker: true,
+            streamReplies: null,
+            starredModels: chatPreferences?.starredModels ?? [],
+          },
+        }),
+      ),
+    },
   };
   return {
     rpc,
@@ -350,5 +368,96 @@ describe("ComposerModelPicker", () => {
     });
     act(() => connect.click());
     expect(onConnect).toHaveBeenCalledOnce();
+  });
+
+  it("stars and unstars models via preferences.update and queues rapid successive clicks", async () => {
+    let savedStarred: string[] = [];
+    vi.mocked(rpc.me).mockImplementation(
+      async () =>
+        ({
+          defaultProvider: "acme",
+          defaultModel: "fast",
+          chatPreferences: {
+            composerModelPicker: true,
+            streamReplies: null,
+            starredModels: savedStarred,
+          },
+        }) as never,
+    );
+    vi.mocked(rpc.preferences.update).mockImplementation(async ({ chatPreferences }) => {
+      const toggle = chatPreferences?.starredModelToggle;
+      if (toggle) {
+        savedStarred = toggle.starred
+          ? savedStarred.includes(toggle.key)
+            ? savedStarred
+            : [...savedStarred, toggle.key]
+          : savedStarred.filter((entry) => entry !== toggle.key);
+      } else if (chatPreferences?.starredModels) {
+        savedStarred = chatPreferences.starredModels;
+      }
+      return {
+        defaultProvider: "acme",
+        defaultModel: "fast",
+        chatPreferences: {
+          composerModelPicker: true,
+          streamReplies: null,
+          starredModels: savedStarred,
+        },
+      } as never;
+    });
+    vi.mocked(rpc.preferences.update).mockClear();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    act(() =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ComposerModelPicker bot={bot} onSaved={vi.fn()} onConnect={vi.fn()} open />
+        </QueryClientProvider>,
+      ),
+    );
+    const starSmart = await vi.waitFor(() => {
+      const button = document.querySelector<HTMLButtonElement>(
+        'button[aria-label="Add Smart (acme) to favorites"]',
+      );
+      if (!button) throw new Error("star button not rendered");
+      return button;
+    });
+    const starFast = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Add Fast (acme) to favorites"]',
+    )!;
+    // Two rapid clicks in a row both persist without the second being dropped.
+    act(() => {
+      starSmart.click();
+      starFast.click();
+    });
+
+    await vi.waitFor(() =>
+      expect(rpc.preferences.update).toHaveBeenCalledWith({
+        chatPreferences: { starredModelToggle: { key: "acme::smart", starred: true } },
+      }),
+    );
+    await vi.waitFor(() =>
+      expect(rpc.preferences.update).toHaveBeenCalledWith({
+        chatPreferences: { starredModelToggle: { key: "acme::fast", starred: true } },
+      }),
+    );
+    await vi.waitFor(() => {
+      const headings = [...document.querySelectorAll("[cmdk-group-heading]")].map(
+        (heading) => heading.textContent,
+      );
+      expect(headings).toEqual(["Favorites", "acme", "Thinking"]);
+    });
+    await act(async () => {
+      await flush();
+    });
+
+    const unstarSmart = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Remove Smart (acme) from favorites"]',
+    )!;
+    act(() => unstarSmart.click());
+    await vi.waitFor(() =>
+      expect(rpc.preferences.update).toHaveBeenLastCalledWith({
+        chatPreferences: { starredModelToggle: { key: "acme::smart", starred: false } },
+      }),
+    );
   });
 });

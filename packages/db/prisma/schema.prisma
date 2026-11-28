@@ -51,6 +51,7 @@ model User {
   composerModelPicker          Boolean?
   streamReplies                Boolean?
   notificationSounds           Boolean                       @default(false)
+  starredModels                String[]                      @default([])
   /// IANA timezone such as "Pacific/Auckland". Null until set; bots then get UTC only.
   timezone                    String?
   /// The app language last chosen, such as "es" or "pt-BR". Null until an app reports it;

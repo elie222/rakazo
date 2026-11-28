@@ -11,11 +11,14 @@ import {
   filterModelChoices,
   groupModelChoices,
   latestModelChoices,
+  normalizeStarredModelKeys,
   pickCatalogModelId,
   popularModelProvidersFirst,
   resolveSelectableModelId,
   savedCompatibleModelIds,
   toggleEnabledModelId,
+  toggleStarredModelKey,
+  withFavoriteModelChoices,
 } from "./model-providers.js";
 
 it("counts only bots that pick both a provider and a model", () => {
@@ -835,5 +838,88 @@ describe("connectionForModelChoice", () => {
     expect(pick("glm-flash")).toBe("matching");
     expect(pick("glm-other")).toBe("preferred");
     expect(pick("glm-flash", "newest")).toBe("newest");
+  });
+});
+
+describe("starred models", () => {
+  it("normalizes, deduplicates, and toggles provider::modelId keys without cross-provider collision", () => {
+    expect(
+      normalizeStarredModelKeys([
+        "anthropic::claude-sonnet-4-5",
+        "bad-key",
+        "anthropic::",
+        "::orphan",
+        "openrouter::claude-sonnet-4-5",
+        "anthropic::claude-sonnet-4-5",
+      ]),
+    ).toEqual(["anthropic::claude-sonnet-4-5", "openrouter::claude-sonnet-4-5"]);
+
+    const added = toggleStarredModelKey(
+      ["anthropic::claude-sonnet-4-5"],
+      "openrouter::claude-sonnet-4-5",
+    );
+    expect(added).toEqual(["anthropic::claude-sonnet-4-5", "openrouter::claude-sonnet-4-5"]);
+    expect(toggleStarredModelKey(added, "anthropic::claude-sonnet-4-5")).toEqual([
+      "openrouter::claude-sonnet-4-5",
+    ]);
+  });
+
+  it("prepends Favorites in starred order, omits disconnected models, and leaves unstarred lists unchanged", () => {
+    const connected = connectedModelChoices(
+      [
+        { provider: "anthropic", label: "Anthropic" },
+        { provider: "openrouter", label: "OpenRouter" },
+      ],
+      [
+        {
+          provider: "anthropic",
+          providerName: "Anthropic",
+          id: "claude-sonnet-4-5",
+          label: "Claude Sonnet 4.5",
+        },
+        {
+          provider: "openrouter",
+          providerName: "OpenRouter",
+          id: "anthropic/claude-sonnet-4-5",
+          label: "Anthropic: Claude Sonnet 4.5",
+        },
+        {
+          provider: "openrouter",
+          providerName: "OpenRouter",
+          id: "google/gemini-2.5",
+          label: "Google: Gemini 2.5",
+        },
+      ],
+    );
+    const grouped = groupModelChoices(connected, "");
+
+    expect(withFavoriteModelChoices(grouped, connected, [], "Favorites")).toEqual(grouped);
+    expect(withFavoriteModelChoices(grouped, connected, ["retired::missing"], "Favorites")).toEqual(
+      grouped,
+    );
+
+    const withFavs = withFavoriteModelChoices(
+      grouped,
+      connected,
+      [
+        "openrouter::google/gemini-2.5",
+        "retired::missing",
+        "anthropic::claude-sonnet-4-5",
+        "openrouter::anthropic/claude-sonnet-4-5",
+      ],
+      "Favorites",
+    );
+    expect(withFavs[0]?.heading).toBe("Favorites");
+    expect(withFavs[0]?.favorites).toBe(true);
+    expect(withFavs[0]?.data.map((choice) => choice.key)).toEqual([
+      "openrouter::google/gemini-2.5",
+      "anthropic::claude-sonnet-4-5",
+      "openrouter::anthropic/claude-sonnet-4-5",
+    ]);
+    expect(withFavs[0]?.data.map((choice) => [choice.title, choice.providerLabel])).toEqual([
+      ["Gemini 2.5", "OpenRouter"],
+      ["Claude Sonnet 4.5", "Anthropic"],
+      ["Claude Sonnet 4.5", "OpenRouter"],
+    ]);
   });
 });

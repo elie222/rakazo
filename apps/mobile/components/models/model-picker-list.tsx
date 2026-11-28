@@ -7,6 +7,10 @@ import {
   groupModelChoices,
   modelChoiceSearchText,
   modelMark,
+  modelOptionKey,
+  normalizeStarredModelKeys,
+  parseModelOptionKey,
+  withFavoriteModelChoices,
 } from "@rakazo/core";
 import { useNavigation } from "expo-router";
 import type { ReactElement } from "react";
@@ -24,6 +28,7 @@ import {
   AccessibilityInfo,
   ActivityIndicator,
   Platform,
+  Pressable,
   SectionList,
   StyleSheet,
   Text,
@@ -34,6 +39,7 @@ import { useContentBottomInset } from "../../lib/layout/content-bottom-inset";
 import { useFloatingHeaderInset } from "../../lib/layout/floating-header";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
+import { NativeSymbol } from "../native/native-symbol";
 import { SettingsLabel, SettingsRow } from "../settings/settings-group";
 import { ListSearchInput } from "../ui/list-search-input";
 import { Checkmark } from "../ui/row-accessories";
@@ -51,6 +57,8 @@ export function ModelPickerList({
   connectChoices,
   header,
   latestOnly = false,
+  starredKeys,
+  onToggleStar,
 }: {
   choices: readonly ChatModelChoice[] | null;
   /** List each model's newest version, with the older ones behind Show more. */
@@ -65,6 +73,10 @@ export function ModelPickerList({
   emptyMessage?: string;
   /** A single-provider picker only needs vendor headings. */
   providerLabel?: string;
+  /** Starred `provider::modelId` keys pinned at the top when available. */
+  starredKeys?: readonly string[];
+  /** Toggles a model's favorite state without closing the picker. */
+  onToggleStar?: (key: string) => void;
 }) {
   const { t } = useLingui();
   const navigation = useNavigation();
@@ -137,25 +149,36 @@ export function ModelPickerList({
 
   // Older versions of each model wait behind Show more, one provider at a time.
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const starredSet = useMemo(() => new Set(normalizeStarredModelKeys(starredKeys)), [starredKeys]);
+  const favoritesHeading = t`Favorites`;
   const sections = useMemo(() => {
     if (!choices) return [];
-    const grouped = groupModelChoices(
-      visible.flatMap((row) => (row.connect ? [] : [row.choice])),
-      "",
-    );
-    const models = (
+    const modelChoices = visible.flatMap((row) => (row.connect ? [] : [row.choice]));
+    const grouped = groupModelChoices(modelChoices, "");
+    const collapsedModels = (
       latestOnly
         ? collapseOlderModels(grouped, selectedKey, expanded)
         : grouped.map((section) => ({ ...section, collapsed: false }))
     ).map((section) => ({
       ...section,
       connect: false,
+      favorites: false,
       heading:
         providerLabel && section.heading === providerLabel
           ? undefined
           : providerLabel && section.heading?.endsWith(withConnectionName("", providerLabel))
             ? section.heading.slice(0, -withConnectionName("", providerLabel).length)
             : section.heading,
+    }));
+    const models = withFavoriteModelChoices(
+      collapsedModels,
+      modelChoices,
+      starredKeys,
+      favoritesHeading,
+    ).map((section) => ({
+      ...section,
+      connect: false,
+      favorites: Boolean(section.favorites),
     }));
     const connect = groupModelChoices(
       visible.flatMap((row) => (row.connect ? [row.choice] : [])),
@@ -164,10 +187,26 @@ export function ModelPickerList({
     return connect.length
       ? [
           ...models,
-          { key: "connect", heading: undefined, collapsed: false, connect: true, data: connect },
+          {
+            key: "connect",
+            heading: undefined,
+            collapsed: false,
+            connect: true,
+            favorites: false,
+            data: connect,
+          },
         ]
       : models;
-  }, [choices, visible, providerLabel, selectedKey, expanded, latestOnly]);
+  }, [
+    choices,
+    visible,
+    providerLabel,
+    selectedKey,
+    expanded,
+    latestOnly,
+    starredKeys,
+    favoritesHeading,
+  ]);
   const opensAtTop = Boolean(header);
   useLayoutEffect(() => {
     const state = initialScroll.current;
@@ -258,7 +297,14 @@ export function ModelPickerList({
           <View style={styles.sectionHeading}>
             <SettingsLabel
               leading={
-                sectionMark(section.data) ? (
+                section.favorites ? (
+                  <NativeSymbol
+                    android="star"
+                    color={native.secondaryLabel}
+                    ios="star.fill"
+                    size={12}
+                  />
+                ) : sectionMark(section.data) ? (
                   <ModelMarkIcon
                     mark={sectionMark(section.data)}
                     size={12}
@@ -288,7 +334,7 @@ export function ModelPickerList({
           <View style={styles.sectionGap} />
         </>
       )}
-      keyExtractor={(choice) => choice.key || "space-default"}
+      keyExtractor={(choice, index) => `${choice.key || "space-default"}:${index}`}
       ItemSeparatorComponent={() => (
         <View style={styles.cell}>
           <View style={styles.separator} />
@@ -313,6 +359,11 @@ export function ModelPickerList({
       }
       renderItem={({ item, index, section }) => {
         const selected = item.key === selectedKey;
+        const parsed =
+          !section.connect && item.providerLabel ? parseModelOptionKey(item.key) : null;
+        const canonicalKey = parsed ? modelOptionKey(parsed.provider, parsed.modelId) : null;
+        const isStarred = canonicalKey ? starredSet.has(canonicalKey) : false;
+        const canStar = Boolean(onToggleStar && canonicalKey);
         return (
           <View
             style={[
@@ -328,13 +379,33 @@ export function ModelPickerList({
               accessibilityState={{ selected }}
               onPress={() => onSelect(item)}
               title={item.title ?? item.label}
-              detail={item.detail}
+              detail={section.favorites ? (item.providerLabel ?? item.detail) : item.detail}
               value={section.connect ? t`Connect` : undefined}
               chevron={section.connect ? "right" : undefined}
               trailing={
-                item.images === false || selected ? (
+                item.images === false || selected || canStar ? (
                   <View style={styles.trailing}>
                     {item.images === false ? <TextOnlyMark /> : null}
+                    {canStar && canonicalKey ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          isStarred
+                            ? t`Remove ${item.label} from favorites`
+                            : t`Add ${item.label} to favorites`
+                        }
+                        accessibilityState={{ selected: isStarred }}
+                        hitSlop={8}
+                        onPress={() => onToggleStar?.(canonicalKey)}
+                      >
+                        <NativeSymbol
+                          android={isStarred ? "star" : "star-outline"}
+                          color={isStarred ? native.label : native.tertiaryLabel}
+                          ios={isStarred ? "star.fill" : "star"}
+                          size={16}
+                        />
+                      </Pressable>
+                    ) : null}
                     {selected ? <Checkmark /> : null}
                   </View>
                 ) : null

@@ -13,13 +13,38 @@ export const ChatPreferencesPatchSchema = z.strictObject({
 });
 export type ChatPreferencesPatch = z.infer<typeof ChatPreferencesPatchSchema>;
 
+export const MAX_STARRED_MODELS = 100;
+
+export const StarredModelKeySchema = z
+  .string()
+  .min(3)
+  .max(256)
+  .refine(
+    (value) => {
+      const separator = value.indexOf("::");
+      return separator > 0 && separator + 2 < value.length;
+    },
+    { message: "Invalid model key" },
+  );
+
+export const StarredModelToggleSchema = z.strictObject({
+  key: StarredModelKeySchema,
+  starred: z.boolean(),
+});
+export type StarredModelToggle = z.infer<typeof StarredModelToggleSchema>;
+
 export const AccountChatPreferencesSchema = ChatPreferencesSchema.extend({
-  // Older servers omit this field, so clients can hide the unsupported switch.
+  // Older servers omit these fields, so clients handle their absence.
   notificationSounds: z.boolean().optional(),
+  starredModels: z.array(z.string()).optional(),
 });
 
 export const AccountChatPreferencesPatchSchema = ChatPreferencesPatchSchema.extend({
   notificationSounds: z.boolean().optional(),
+  starredModels: z.array(StarredModelKeySchema).max(MAX_STARRED_MODELS).optional(),
+  starredModelToggle: StarredModelToggleSchema.optional(),
+}).refine((patch) => patch.starredModels === undefined || patch.starredModelToggle === undefined, {
+  message: "Specify either starredModels or starredModelToggle, not both",
 });
 export type AccountChatPreferencesPatch = z.infer<typeof AccountChatPreferencesPatchSchema>;
 

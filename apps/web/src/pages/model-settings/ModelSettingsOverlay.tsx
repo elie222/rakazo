@@ -31,6 +31,7 @@ import { useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { SettingsPageHeader } from "../../components/settings/SettingsPageHeader";
 import type { ModelCredential } from "../../lib/models/model-auth";
+import { useStarredModels } from "../../lib/models/use-starred-models";
 import { useSpaceQueries } from "../../lib/query/query";
 import { CompatibleModelFields } from "./compatible-model-fields";
 import { CompatibleKeyInput, ConnectionControls } from "./connection-controls";
@@ -151,6 +152,7 @@ export function ModelSettingsOverlay({
   // The approval model only judges actions in Auto, so it shows only then. A Space may
   // inherit Approvals from the account, so its page asks for whichever copy applies there.
   const queries = useSpaceQueries();
+  const { starredKeys, toggleStar } = useStarredModels();
   const approvalMode = useQuery(
     queries.autoReview.get.queryOptions({ input: scope === "account" ? { scope } : {} }),
   ).data?.mode;
@@ -389,6 +391,8 @@ export function ModelSettingsOverlay({
             onConnect={(next, intent) => openConnection(next, intent, null, "main")}
             onManage={(_id, credentialId) => openProvider(credentialId)}
             onManageModel={(choice) => openModel(choice.credentialId, choice.modelId, null)}
+            starredKeys={starredKeys}
+            onToggleStar={toggleStar}
             panel={connectionAt === "main" ? panelFor(true) : null}
             thinking
             onChanged={() => void refresh()}
@@ -426,6 +430,8 @@ export function ModelSettingsOverlay({
               onConnect={(next, intent) => openConnection(next, intent, null, "approval")}
               onManage={(_id, credentialId) => openProvider(credentialId)}
               onManageModel={(choice) => openModel(choice.credentialId, choice.modelId, null)}
+              starredKeys={starredKeys}
+              onToggleStar={toggleStar}
               panel={connectionAt === "approval" ? panelFor(true) : null}
             />
           ) : null}
@@ -445,6 +451,8 @@ export function ModelSettingsOverlay({
               onConnect={(next, intent) => openConnection(next, intent, null, "computer")}
               onManage={(_id, credentialId) => openProvider(credentialId)}
               onManageModel={(choice) => openModel(choice.credentialId, choice.modelId, null)}
+              starredKeys={starredKeys}
+              onToggleStar={toggleStar}
               panel={connectionAt === "computer" ? panelFor(true) : null}
             />
           ) : null}
@@ -524,9 +532,12 @@ export function ModelSettingsOverlay({
         {page.kind === "provider" || modelRemoved ? (
           <ProviderPage
             title={connected ? selectedConnectionName : connectionName(pageCredential)}
+            provider={pageCredential.provider}
             connection={connectionPanel}
             footer={connectionFooter}
             models={providerModels(pageCredential)}
+            starredKeys={starredKeys}
+            onToggleStar={toggleStar}
             onBack={() => setPage(null)}
             onOpenModel={(modelId) => openModel(pageCredential.id, modelId, page)}
           />

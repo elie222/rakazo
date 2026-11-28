@@ -6,8 +6,13 @@ import {
   groupModelChoices,
   modelChoiceSearchText,
   modelMark,
+  modelOptionKey,
+  normalizeStarredModelKeys,
+  parseModelOptionKey,
+  withFavoriteModelChoices,
 } from "@rakazo/core";
 import {
+  Button,
   Command,
   CommandEmpty,
   CommandGroup,
@@ -21,7 +26,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@rakazo/ui-web";
-import { ChevronDownIcon, ChevronRightIcon, PlusIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, PlusIcon, Star } from "lucide-react";
 import type { ReactNode } from "react";
 import { useId, useMemo, useState } from "react";
 import { ModelMarkIcon } from "../../../components/models/ModelMarkIcon";
@@ -48,6 +53,8 @@ export function ChatModelPicker({
   onOpenChange,
   hint,
   keyShortcuts,
+  starredKeys,
+  onToggleStar,
 }: {
   id?: string;
   choices: readonly ChatModelChoice[];
@@ -74,6 +81,10 @@ export function ChatModelPicker({
   hint?: ReactNode;
   /** The compact button's shortcuts, in `aria-keyshortcuts` form. */
   keyShortcuts?: string;
+  /** Starred `provider::modelId` keys pinned at the top when available. */
+  starredKeys?: readonly string[];
+  /** Toggles a model's favorite state without closing the picker. */
+  onToggleStar?: (key: string) => void;
 }) {
   const { t } = useLingui();
   const imagesHintId = useId();
@@ -84,9 +95,17 @@ export function ChatModelPicker({
   });
   // Older versions of each model wait behind Show more, one provider at a time.
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const starredSet = useMemo(() => new Set(normalizeStarredModelKeys(starredKeys)), [starredKeys]);
+  const favoritesHeading = t`Favorites`;
   const sections = useMemo(
-    () => collapseOlderModels(groupModelChoices(visible, ""), value, expanded),
-    [visible, value, expanded],
+    () =>
+      withFavoriteModelChoices(
+        collapseOlderModels(groupModelChoices(visible, ""), value, expanded),
+        visible,
+        starredKeys,
+        favoritesHeading,
+      ),
+    [visible, value, expanded, starredKeys, favoritesHeading],
   );
   const selected = choices.find((choice) => choice.key === value);
   const textOnly = selected?.images === false;
@@ -161,6 +180,22 @@ export function ChatModelPicker({
         >
           <Command
             shouldFilter={false}
+            onKeyDown={(event) => {
+              if (
+                !onToggleStar ||
+                !(event.metaKey || event.ctrlKey) ||
+                event.altKey ||
+                event.key.toLowerCase() !== "s"
+              )
+                return;
+              const selectedItem = event.currentTarget.querySelector<HTMLElement>(
+                '[cmdk-item][data-selected="true"]',
+              );
+              const starKey = selectedItem?.dataset.starKey;
+              if (!starKey) return;
+              event.preventDefault();
+              onToggleStar(starKey);
+            }}
             className={`h-auto min-h-0 max-h-(--available-height) rounded-none bg-popover *:data-[slot=command-input-wrapper]:shrink-0 ${sidePanel ? "sm:flex-1" : ""}`}
           >
             {showSearch ? (
@@ -182,7 +217,12 @@ export function ChatModelPicker({
                 <CommandGroup
                   key={section.key}
                   heading={
-                    section.heading ? (
+                    section.favorites ? (
+                      <span className="flex items-center gap-1.5">
+                        <Star aria-hidden="true" className="size-3 fill-current" />
+                        {section.heading}
+                      </span>
+                    ) : section.heading ? (
                       <span className="flex items-center gap-1.5">
                         {sectionMark(section.data) ? (
                           <ModelMarkIcon mark={sectionMark(section.data)} className="size-3" />
@@ -192,28 +232,74 @@ export function ChatModelPicker({
                     ) : undefined
                   }
                 >
-                  {section.data.map((choice) => (
-                    <CommandItem
-                      key={choice.key}
-                      aria-label={choice.label}
-                      value={choice.key}
-                      data-checked={choice.key === value}
-                      aria-describedby={choice.images === false ? imagesHintId : undefined}
-                      onSelect={() => {
-                        onChange(choice.key);
-                        if (!staysOpen?.(choice.key)) openChange(false);
-                      }}
-                    >
-                      <span className="min-w-0 flex-1 truncate">
-                        {choice.title ?? choice.label}
-                      </span>
-                      {choice.images === false ? (
-                        <span className="shrink-0 text-muted-foreground">
-                          <TextOnlyMark />
+                  {section.data.map((choice) => {
+                    const parsed = choice.providerLabel ? parseModelOptionKey(choice.key) : null;
+                    const canonicalKey = parsed
+                      ? modelOptionKey(parsed.provider, parsed.modelId)
+                      : null;
+                    const isStarred = canonicalKey ? starredSet.has(canonicalKey) : false;
+                    const itemValue = section.favorites ? `fav:${choice.key}` : choice.key;
+                    return (
+                      <CommandItem
+                        key={itemValue}
+                        aria-label={choice.label}
+                        value={itemValue}
+                        data-checked={choice.key === value}
+                        data-star-key={canonicalKey ?? undefined}
+                        aria-describedby={choice.images === false ? imagesHintId : undefined}
+                        onSelect={() => {
+                          onChange(choice.key);
+                          if (!staysOpen?.(choice.key)) openChange(false);
+                        }}
+                      >
+                        <span className="min-w-0 flex-1 truncate">
+                          {choice.title ?? choice.label}
                         </span>
-                      ) : null}
-                    </CommandItem>
-                  ))}
+                        {section.favorites && choice.providerLabel ? (
+                          <span className="max-w-28 shrink-0 truncate text-body-sm text-muted-foreground">
+                            {choice.providerLabel}
+                          </span>
+                        ) : null}
+                        {choice.images === false ? (
+                          <span className="shrink-0 text-muted-foreground">
+                            <TextOnlyMark />
+                          </span>
+                        ) : null}
+                        {onToggleStar && canonicalKey ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-xs"
+                            tabIndex={-1}
+                            aria-label={
+                              isStarred
+                                ? t`Remove ${choice.label} from favorites`
+                                : t`Add ${choice.label} to favorites`
+                            }
+                            aria-pressed={isStarred}
+                            data-starred={isStarred}
+                            className={`shrink-0 ${
+                              isStarred
+                                ? "text-foreground opacity-100"
+                                : "text-muted-foreground/60 opacity-0 group-hover/command-item:opacity-100 group-data-selected/command-item:opacity-100"
+                            }`}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onMouseDown={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              onToggleStar(canonicalKey);
+                            }}
+                          >
+                            <Star
+                              aria-hidden="true"
+                              className={`size-3.5 ${isStarred ? "fill-current" : ""}`}
+                            />
+                          </Button>
+                        ) : null}
+                      </CommandItem>
+                    );
+                  })}
                   {section.collapsed ? (
                     <CommandItem
                       value={`more:${section.key}`}

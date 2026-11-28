@@ -1,9 +1,18 @@
 import { useLingui } from "@lingui/react/macro";
-import type { ThinkingLevel } from "@rakazo/contracts";
-import { botModelPick, botModelState, modelOptionKey } from "@rakazo/core";
+import type { StarredModelToggle, ThinkingLevel } from "@rakazo/contracts";
+import { MAX_STARRED_MODELS } from "@rakazo/contracts";
+import {
+  applyStarredModelToggle,
+  botModelPick,
+  botModelState,
+  modelOptionKey,
+  normalizeStarredModelKeys,
+  parseModelOptionKey,
+} from "@rakazo/core";
 import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useRef, useState } from "react";
 import { Alert, View } from "react-native";
 import { ModelPickerList } from "../components/models/model-picker-list";
 import { SettingsGroup, SettingsRow } from "../components/settings/settings-group";
@@ -19,7 +28,8 @@ export default function ChatModelScreen() {
   const { botId } = useLocalSearchParams<{ botId: string }>();
   const botRead = rpcQuery("bots/get", { botId });
   const bot = useScreenQuery(botRead);
-  const me = useScreenQuery(rpcQuery("me"));
+  const meRead = rpcQuery("me");
+  const me = useScreenQuery(meRead);
   const catalog = useScreenQuery(rpcQuery("models/list"));
   const credentials = useScreenQuery(rpcQuery("models/credentials"));
   const save = useSave({
@@ -35,6 +45,52 @@ export default function ChatModelScreen() {
     stale: [botRead.queryKey],
     onFailed: (error) => Alert.alert(errorText(error, t`Could not change the model`)),
   });
+  const [starQueue, setStarQueue] = useState<StarredModelToggle[]>([]);
+  const starQueueRef = useRef<StarredModelToggle[]>(starQueue);
+  starQueueRef.current = starQueue;
+  const saveStarred = useSave({
+    save: (starredModelToggle: StarredModelToggle, send) =>
+      send("preferences/update", { chatPreferences: { starredModelToggle } }),
+    stale: [meRead.queryKey],
+    onFailed: (error) => Alert.alert(errorText(error, t`Could not update favorite models`)),
+  });
+  const savedStarred = normalizeStarredModelKeys(me.data?.chatPreferences?.starredModels);
+  const inFlightStar = saveStarred.pending ? saveStarred.input : undefined;
+  const applyStars = (queued: readonly StarredModelToggle[]) => {
+    let keys = [...savedStarred];
+    if (inFlightStar)
+      keys = applyStarredModelToggle(
+        keys,
+        inFlightStar.key,
+        inFlightStar.starred,
+        MAX_STARRED_MODELS,
+      );
+    for (const item of queued)
+      keys = applyStarredModelToggle(keys, item.key, item.starred, MAX_STARRED_MODELS);
+    return keys;
+  };
+  const starredKeys = applyStars(starQueue);
+  useEffect(() => {
+    if (saveStarred.pending || !starQueue.length) return;
+    const [next, ...rest] = starQueue;
+    if (!next) return;
+    starQueueRef.current = rest;
+    setStarQueue(rest);
+    saveStarred.run(next);
+  }, [saveStarred.pending, starQueue, saveStarred.run]);
+  const toggleStar = (rawKey: string) => {
+    const parsed = parseModelOptionKey(rawKey.trim());
+    if (!parsed) return;
+    const key = modelOptionKey(parsed.provider, parsed.modelId);
+    const current = applyStars(starQueueRef.current);
+    const nextStarred = !current.includes(key);
+    const nextQueue = [
+      ...starQueueRef.current.filter((entry) => entry.key !== key),
+      { key, starred: nextStarred },
+    ];
+    starQueueRef.current = nextQueue;
+    setStarQueue(nextQueue);
+  };
 
   const ready = bot.data && me.data && catalog.data && credentials.data;
   const savedKey =
@@ -64,6 +120,8 @@ export default function ChatModelScreen() {
       latestOnly
       choices={choices}
       selectedKey={state?.shownKey ?? ""}
+      starredKeys={starredKeys}
+      onToggleStar={toggleStar}
       error={failure && !choices ? errorText(failure, t`Could not load model settings`) : null}
       onSelect={(choice) => {
         const modelKey = state?.savedModelKey(choice.key);
