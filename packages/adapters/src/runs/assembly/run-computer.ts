@@ -8,7 +8,16 @@ import {
   COMPUTER_UNRESPONSIVE_ERROR,
   isComputerAllowanceUsed,
 } from "@rakazo/contracts";
-import { ComputerRecoveryRequiredError } from "../../computers/computer-lifecycle.js";
+import {
+  ComputerBusyError,
+  ComputerRecoveryRequiredError,
+  ComputerSpaceDeletingError,
+  provisionComputer,
+} from "../../computers/computer-lifecycle.js";
+import {
+  ComputerWaitTimedOutError,
+  startComputerWaitingOutBusy,
+} from "../../computers/run-computer-wait.js";
 import { isSandboxDamagedError } from "../../computers/sandbox/sandbox-errors.js";
 
 const COMPUTER_RUN_ERRORS = new Set([
@@ -47,6 +56,8 @@ export class RunComputerFailedError extends Error {
  *
  * Remote computers bill while they run, so a run that never touches its computer must not
  * create or resume one. A failed start is kept: every later use rethrows it as a setup failure.
+ * A wait for a busy computer that ran out is not a failed start: only that use fails, and the
+ * next one waits again.
  */
 export function lazyRunComputer(start: () => Promise<ComputerRef>, onFailure?: () => void) {
   let started: Promise<ComputerRef> | undefined;
@@ -61,6 +72,10 @@ export function lazyRunComputer(start: () => Promise<ComputerRef>, onFailure?: (
           return computer;
         },
         (error: unknown) => {
+          if (error instanceof ComputerWaitTimedOutError) {
+            started = undefined;
+            throw error;
+          }
           failed = true;
           failure = error;
           onFailure?.();
@@ -77,4 +92,20 @@ export function lazyRunComputer(start: () => Promise<ComputerRef>, onFailure?: (
       if (failed) throw failure;
     },
   };
+}
+
+/**
+ * Start the bot's computer for a run. A busy computer is waited out, bounded, instead of failing
+ * the run and replaying it; a Space being deleted is not.
+ */
+export function provisionRunComputer(
+  deps: Parameters<typeof provisionComputer>[0],
+  computerId: string,
+  context: Parameters<typeof provisionComputer>[2],
+): Promise<ComputerRef> {
+  return startComputerWaitingOutBusy(
+    () => provisionComputer(deps, computerId, context, "bot"),
+    (error) => error instanceof ComputerBusyError && !(error instanceof ComputerSpaceDeletingError),
+    context.signal,
+  );
 }

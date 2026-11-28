@@ -21,7 +21,6 @@ import { USER_CLOUD_AGENT_KEY_PREFIX } from "../../cloud-agents/cloud-agent-fact
 import { diskNoteInstruction, recordComputerDisk } from "../../computers/computer-disk.js";
 import { scheduleComputerSleep } from "../../computers/computer-idle.js";
 import {
-  provisionComputer,
   screenLeaseIdForRun,
   waitForRunComputerLease,
 } from "../../computers/computer-lifecycle.js";
@@ -84,7 +83,7 @@ import { refreshTakeoverContinuePlan } from "../turn/takeover-resume.js";
 import { historyReplaysOutsideContent, historyToolResults } from "../turn/tool-step-calls.js";
 import type { ThreadHistory, TurnContext } from "./run-assembly-history.js";
 import type { ConnectedRun, RunRecords, SavedTurn } from "./run-assembly-records.js";
-import { lazyRunComputer } from "./run-computer.js";
+import { lazyRunComputer, provisionRunComputer } from "./run-computer.js";
 import {
   BOT_DIRECTORY_LIMIT,
   COMPUTER_USE_INSTRUCTION,
@@ -268,7 +267,8 @@ export async function prepareRunComputer(
         context.screenLeaseId = screenLeaseIdForRun(hold.computerLease, runId, hold.fence);
       }
       getLogger().info("computer.requested");
-      const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
+      // A busy computer is waited out here, bounded, instead of failing the run and replaying it.
+      const computer = await provisionRunComputer(deps, storedComputer.id, context);
       earlierFiles.computerStarted();
       computerUse.screenRelease = { computer, context, keepWarm: false };
       recordComputerDisk(deps, storedComputer.id, computer, context);

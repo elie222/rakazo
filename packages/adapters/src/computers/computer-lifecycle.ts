@@ -47,6 +47,7 @@ import {
   removeDeletedBotWorkspaces,
   restoreComputerWorkspace,
 } from "./computer-workspace.js";
+import { ComputerWaitTimedOutError, RUN_COMPUTER_WAIT_MS } from "./run-computer-wait.js";
 import { sandboxAllowanceUsedUp } from "./sandbox/sandbox-allowance.js";
 import {
   isSandboxDamagedError,
@@ -1135,7 +1136,10 @@ async function validateAcquiredComputerLease(
   throw new ComputerBusyError();
 }
 
-/** Wait only for this bot's computer; model and connector work never acquires this lease. */
+/**
+ * Wait only for this bot's computer; model and connector work never acquires this lease. The wait
+ * is bounded, so a computer held by another run or a home save cannot stall a run forever.
+ */
 export async function waitForRunComputerLease(
   prisma: PrismaClient,
   input: { computerId: string; botId: string; runId: string; workerId: string; runFence: number },
@@ -1176,9 +1180,11 @@ export async function waitForRunComputerLease(
     },
     {
       intervalMs: (attempt) => Math.min(250 * 2 ** Math.min(attempt - 1, 5), 5_000),
-      timeoutMs: Number.POSITIVE_INFINITY,
+      timeoutMs: RUN_COMPUTER_WAIT_MS,
       signal,
-      waitingFor: "the bot's computer",
+      onTimeout: () => {
+        throw new ComputerWaitTimedOutError();
+      },
     },
   );
   if (outcome && "changed" in outcome)
