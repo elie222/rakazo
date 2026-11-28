@@ -453,7 +453,11 @@ export function createUserDeviceAccess(deps: {
     pair,
     state(origin: string): Omit<RakazoDesktopDevice, "name"> | null {
       if (origin !== current) return null;
-      return { deviceId: paired.get(origin)?.deviceId ?? null, allowed: isAllowed(origin) };
+      return {
+        deviceId: paired.get(origin)?.deviceId ?? null,
+        allowed: isAllowed(origin),
+        declined: consent.get(origin)?.consent === "declined",
+      };
     },
     /**
      * Turning it on asks with the native prompt and keeps the answer only once this computer is
