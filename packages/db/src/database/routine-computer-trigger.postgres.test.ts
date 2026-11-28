@@ -180,6 +180,65 @@ describePostgres("a routine's computer approval (PostgreSQL)", () => {
       where: { tokenHash },
       data: { revokedAt: new Date(), revokedBy: "owner" },
     });
+  it("restores the device and its original approval before a waiting approval can write after rollback", async () => {
+    const routine = { where: { id: ids.routineId }, select: { computerPromptHash: true } };
+    const rollback = new Error("abort the unpair transaction");
+    await runAsSystem("test a rolled-back owner unpair", async () => {
+      const paired = await device(ids.userId, `rollback-${suffix}`);
+      expect(await afterChange({})).toBe("approved");
+      let approval: Promise<unknown> | undefined;
+      try {
+        await expect(
+          prisma.$transaction(async (change) => {
+            const revoked = await change.userDevice.updateMany({
+              where: { id: paired.id, userId: ids.userId, kind: "computer", revokedAt: null },
+              data: { revokedAt: new Date(), revokedBy: "owner" },
+            });
+            expect(revoked.count).toBe(1);
+            expect((await change.routine.findUniqueOrThrow(routine)).computerPromptHash).toBeNull();
+
+            approval = prisma.$transaction(async (writer) => {
+              await writer.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('routine_computer'), hashtext(${ids.userId}))`;
+              const active = await writer.userDevice.count({
+                where: { id: paired.id, userId: ids.userId, kind: "computer", revokedAt: null },
+              });
+              expect(active).toBe(1);
+              expect((await writer.routine.findUniqueOrThrow(routine)).computerPromptHash).toBe(
+                "approved",
+              );
+              await writer.routine.update({
+                where: routine.where,
+                data: { computerPromptHash: "approved-again" },
+              });
+            });
+            await Promise.race([
+              approval.then(() => {
+                throw new Error("approval finished before rollback");
+              }),
+              vi.waitFor(async () => {
+                const [lock] = await change.$queryRaw<{ blocked: boolean }[]>`
+                  SELECT EXISTS (
+                    SELECT 1 FROM pg_locks
+                    WHERE locktype = 'advisory' AND NOT granted AND objsubid = 2
+                      AND classid = hashtext('routine_computer')::oid
+                      AND objid = hashtext(${ids.userId})::oid
+                      AND pg_backend_pid() = ANY(pg_blocking_pids(pid))
+                  ) AS blocked`;
+                expect(lock?.blocked).toBe(true);
+              }),
+            ]);
+            throw rollback;
+          }),
+        ).rejects.toBe(rollback);
+      } finally {
+        await approval;
+      }
+      expect((await prisma.routine.findUniqueOrThrow(routine)).computerPromptHash).toBe(
+        "approved-again",
+      );
+    });
+  });
+
   it.each<{ label: string; paired: boolean; change: (tokenHash: string) => Promise<unknown> }>([
     { label: "pairs a computer", paired: false, change: device.bind(null, ids.userId) },
     { label: "unpairs one", paired: true, change: revoke },

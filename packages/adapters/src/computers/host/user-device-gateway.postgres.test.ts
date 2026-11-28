@@ -16,12 +16,15 @@ const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe :
 
 class Socket extends EventEmitter implements UserDeviceSocket {
   sent: Array<{ type: string; id?: string }> = [];
+  constructor(readonly reply = "ok") {
+    super();
+  }
   send(data: string) {
     const message = JSON.parse(data);
     this.sent.push(message);
     if (message.type === "request") {
       queueMicrotask(() => {
-        for (const frame of [{ value: "ok" }, { done: true }])
+        for (const frame of [{ value: this.reply }, { done: true }])
           this.emit("message", JSON.stringify({ type: "frame", id: message.id, frame }));
       });
     }
@@ -299,6 +302,88 @@ describePostgres("user devices (PostgreSQL)", () => {
     await expect(
       new UserDevices({ prisma: raw, forwardSecret: "k", hub }).connected(userId),
     ).resolves.toBeNull();
+  });
+
+  it("routes default and explicit owner requests to the authenticated computer socket", async () => {
+    const owners = [`route-a-${suffix}`, `route-b-${suffix}`] as const;
+    const hub = new UserDeviceHub({ prisma: raw, address: "http://127.0.0.1:1" });
+    const gateway = new UserDevices({ prisma: raw, forwardSecret: "fixture", hub });
+    try {
+      for (const owner of owners) {
+        await prisma.user.create({
+          data: {
+            id: owner,
+            name: "Owner",
+            email: `${owner}@example.test`,
+            sessions: {
+              create: {
+                id: `session-${owner}`,
+                token: createUserDeviceToken(),
+                expiresAt: new Date(Date.now() + 300_000),
+              },
+            },
+          },
+        });
+      }
+      await prisma.userDevice.create({
+        data: {
+          userId: owners[0],
+          sessionId: `session-${owners[0]}`,
+          name: "Device",
+          platform: "linux",
+          kind: "mobile",
+          createdAt: new Date(0),
+          tokenHash: hashUserDeviceToken(createUserDeviceToken()),
+        },
+      });
+      async function connect(owner: string, reply: string, time: number) {
+        const token = createUserDeviceToken();
+        const device = await prisma.userDevice.create({
+          data: {
+            userId: owner,
+            sessionId: `session-${owner}`,
+            name: "Device",
+            platform: "linux",
+            kind: "computer",
+            createdAt: new Date(time),
+            tokenHash: hashUserDeviceToken(token),
+          },
+        });
+        const authenticated = await hub.authenticate(`Bearer ${token}`);
+        expect(authenticated).toMatchObject({ id: device.id, userId: owner });
+        const socket = new Socket(reply);
+        await hub.attach(authenticated!, socket);
+        return { owner, id: device.id, socket };
+      }
+      const first = await connect(owners[0], "A first", 1000);
+      const extra = await connect(owners[0], "A second", 2000);
+      const second = await connect(owners[1], "B only", 3000);
+      const sockets = [first.socket, extra.socket, second.socket];
+      const deliveries = () =>
+        sockets.map((s) => s.sent.filter((m) => m.type === "request").length);
+      for (const [target, selected] of [
+        [first, undefined],
+        [extra, extra.id],
+        [second, undefined],
+      ] as const) {
+        const before = deliveries();
+        const frames: unknown[] = [];
+        const request = gateway.request(
+          target.owner,
+          { method: "environment", botId: "fixture" },
+          new AbortController().signal,
+          selected,
+        );
+        for await (const value of request) frames.push(value);
+        expect(frames).toEqual([target.socket.reply]);
+        expect(deliveries()).toEqual(
+          before.map((n, i) => n + Number(sockets[i] === target.socket)),
+        );
+      }
+    } finally {
+      await hub.close();
+      await prisma.user.deleteMany({ where: { id: { in: [...owners] } } });
+    }
   });
 
   it("deletes devices and their connections with the user", async () => {
