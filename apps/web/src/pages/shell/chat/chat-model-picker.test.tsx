@@ -161,7 +161,7 @@ describe("ChatModelPicker", () => {
     expect(options()).toHaveLength(12);
   });
 
-  it("names its keys on the compact button's tooltip, and hides it while the list is open", async () => {
+  it("names the model and its keys on the compact button's tooltip, and hides it while the list is open", async () => {
     act(() =>
       root.render(
         <ChatModelPicker
@@ -183,6 +183,9 @@ describe("ChatModelPicker", () => {
       trigger.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
     });
     await vi.waitFor(() => expect(tooltip()?.textContent).toContain("Model ⌘⇧M"));
+    // A name cut off on a narrow screen can be read in full here.
+    expect(tooltip()?.textContent).toContain("Space default");
+    expect(trigger.title).toBe("");
     act(() => trigger.click());
     expect(options().length).toBeGreaterThan(0);
     await vi.waitFor(() => expect(tooltip()).toBeNull());

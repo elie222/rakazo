@@ -724,11 +724,13 @@ const ComposerBody = memo(function Composer({
           onAction={runSlashAction}
         />
       ) : null}
+      {/* The text keeps 6rem and the controls give way (the model name truncates), so a wide model
+          button never sits over the draft on a narrow screen. */}
       <div
         ref={composerBarRef}
         data-testid="composer-bar"
         data-expanded={expanded}
-        className={`grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[26px] border border-border pe-2.5 ps-3 transition-colors focus-within:border-input ${
+        className={`grid grid-cols-[auto_minmax(6rem,1fr)_minmax(0,auto)] content-end items-center rounded-[26px] border border-border pe-2.5 ps-3 transition-colors focus-within:border-input ${
           docked ? "bg-card" : "bg-background dark:bg-card"
         } ${
           expanded
@@ -778,7 +780,7 @@ const ComposerBody = memo(function Composer({
             />
           ) : null}
           <HoldToTalkStrip talk={talk} />
-          <div className="relative min-w-[8rem] flex-1" hidden={talk.recording !== null}>
+          <div className="relative min-w-[6rem] flex-1" hidden={talk.recording !== null}>
             <textarea
               ref={textareaRef}
               onScroll={onTextareaScroll}
