@@ -476,10 +476,13 @@ describe("approval card arguments", () => {
       { batch: { items: "tools", action: "tool_slug", arguments: "arguments" } },
     );
     if (block.kind !== "ask") throw new Error("expected ask block");
-    expect(block.detail?.split("\n").slice(0, 3)).toEqual([
+    expect(block.detail?.split("\n").slice(0, 6)).toEqual([
       "Draft post",
+      "",
       "Gmail send email",
       "To email: g@example.test",
+      "",
+      "Draft post",
     ]);
   });
 
@@ -513,6 +516,7 @@ describe("approval card arguments", () => {
     ["web_fetch", "Web fetch"],
     ["createIssue", "Create issue"],
     ["mcp__tasklog__add_task", "Tasklog add task"],
+    ["NOTEPAD_NOTE_PAD_DELETE_PAGE", "Notepad delete page"],
   ])("reads the tool name %s as words", (name, words) => {
     expect(readableToolName(name)).toBe(words);
   });
@@ -544,15 +548,11 @@ describe("approval card arguments", () => {
       { batch: { items: "tools", action: "tool_slug", arguments: "arguments" } },
     );
     if (block.kind !== "ask") throw new Error("expected ask block");
-    expect(block.detail?.split("\n")).toEqual([
-      "Send note",
-      "ID: 1",
-      "Send note",
-      "ID: 1",
-      "Archive",
-      "ID: 1",
-      "Send note",
-      "ID: 1",
+    expect(block.detail?.split("\n\n")).toEqual([
+      "Send note\nID: 1",
+      "Send note\nID: 1",
+      "Archive\nID: 1",
+      "Send note\nID: 1",
     ]);
   });
 
@@ -582,7 +582,7 @@ describe("approval card arguments", () => {
       { batch: { items: "tools", action: "tool_slug", arguments: "arguments" } },
     );
     if (block.kind !== "ask") throw new Error("expected ask block");
-    expect(block.detail?.split("\n")).toEqual(["Send note", "Send note"]);
+    expect(block.detail).toBe("Send note\n\nSend note");
   });
 
   it("redacts a secret in a tool name or argument key before rewording it", () => {
