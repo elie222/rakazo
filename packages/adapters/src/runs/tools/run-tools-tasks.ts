@@ -1,4 +1,4 @@
-import { redactSecrets } from "@rakazo/core";
+import { redactSecrets, textEditsGiven } from "@rakazo/core";
 import type { FleetCardSummary } from "../../approvals/approval-ask.js";
 import { approvalDetailLength, MAX_APPROVAL_SUMMARY_LENGTH } from "../../approvals/approval-ask.js";
 import {
@@ -226,11 +226,10 @@ export const taskTools: ToolHandlers = {
     return call.finish(created);
   },
   async schedule_update(ctx, call) {
-    return call.finish(
-      await onScheduleUpdateCall(ctx, call.args, (deps, input) =>
-        updateScheduleFromTool(deps, input),
-      ),
+    const saved = await onScheduleUpdateCall(ctx, call.args, (deps, input) =>
+      updateScheduleFromTool(deps, input),
     );
+    return call.finish(textEditsGiven(call.args.promptEdits) ? withoutPromptTexts(saved) : saved);
   },
   async schedule_list(ctx, call) {
     const { deps, run } = ctx;
@@ -337,6 +336,14 @@ function routinesTarget(ctx: RunContext, name: string, args: Record<string, unkn
   return findRoutinesTarget({ prisma: deps.prisma, fleetRun, botId: bot.id, thread }, name, args);
 }
 
+/** A save by edits answers with the new prompt's length: the call already holds what changed. */
+function withoutPromptTexts<T extends object>(saved: T): T {
+  const changes = "changes" in saved ? (saved.changes as Record<string, { after: unknown }>) : {};
+  const after = changes.prompt?.after;
+  if (typeof after !== "string") return saved;
+  return { ...saved, changes: { ...changes, prompt: { promptLength: after.length } } };
+}
+
 /** A schedule_update call's fields, as its save and its preview both take them. */
 function scheduleUpdateInput(args: Record<string, unknown>) {
   const expected = args.expected as { name?: unknown; prompt?: unknown } | undefined;
@@ -346,6 +353,7 @@ function scheduleUpdateInput(args: Record<string, unknown>) {
     routineId: String(args.routineId ?? ""),
     name: isScheduleValueProvided(args.name) ? String(args.name) : undefined,
     prompt: isScheduleValueProvided(args.prompt) ? String(args.prompt) : undefined,
+    promptEdits: textEditsGiven(args.promptEdits) ? args.promptEdits : undefined,
     inChat: typeof args.inChat === "boolean" ? args.inChat : undefined,
     active: typeof args.active === "boolean" ? args.active : undefined,
     timezone: isScheduleValueProvided(args.timezone) ? String(args.timezone) : undefined,
@@ -446,6 +454,9 @@ export async function scheduleUpdatePreview(
               ? changes.prompt.before
               : String(args.prompt).trim(),
         }
+      : {}),
+    ...(textEditsGiven(args.promptEdits) && typeof changes.prompt?.before === "string"
+      ? { prompt: changes.prompt.before }
       : {}),
   };
   const plain = Object.keys(pinned).length ? { pinned } : {};

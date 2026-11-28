@@ -13,24 +13,27 @@ export function isReviewedChanges(value: unknown): value is ReviewedChanges {
 
 /**
  * What Auto Review sees of an edit to the bot's own instructions (`update_bot`, which carries the
- * text it replaces) or a routine's prompt (`schedule_update`, given the stored prompt): the changed
- * lines with a little context instead of the whole new text, so a small edit to a long text fits
- * the review. Unchanged lines were already in force. The call is reviewed as it was when the old
- * text is unknown or empty, or when the changes leave nothing out: a rewrite or a short text reads
- * best whole, beside the text it replaces.
+ * text it replaces) or a routine's prompt (`schedule_update`, given the stored prompt and, for a
+ * call that sends edits, the prompt they make of it): the changed lines with a little context
+ * instead of the whole new text, so a small edit to a long text fits the review. Unchanged lines
+ * were already in force. The call is reviewed as it was when the old text is unknown or empty, or
+ * when the changes leave nothing out: a rewrite or a short text reads best whole, beside the text
+ * it replaces.
  */
 export function changedTextReviewArgs(
   toolName: string,
   args: Record<string, unknown>,
   currentRoutinePrompt: string | undefined,
+  editedRoutinePrompt?: string,
 ): Record<string, unknown> {
-  return reshape(toolName, args, currentRoutinePrompt) ?? args;
+  return reshape(toolName, args, currentRoutinePrompt, editedRoutinePrompt) ?? args;
 }
 
 function reshape(
   toolName: string,
   args: Record<string, unknown>,
   currentRoutinePrompt: string | undefined,
+  editedRoutinePrompt: string | undefined,
 ): Record<string, unknown> | undefined {
   if (toolName === "update_bot") {
     const {
@@ -46,9 +49,17 @@ function reshape(
     return changes && { ...rest, instructions: changes };
   }
   if (toolName === "schedule_update") {
-    if (typeof args.prompt !== "string" || !currentRoutinePrompt?.trim()) return undefined;
-    const changes = changesOf(currentRoutinePrompt, args.prompt);
-    return changes && { ...args, prompt: changes };
+    if (!currentRoutinePrompt?.trim()) return undefined;
+    const { promptEdits: _edits, ...rest } = args;
+    if (typeof args.prompt === "string" && args.prompt.trim()) {
+      const changes = changesOf(currentRoutinePrompt, args.prompt);
+      return changes && { ...args, prompt: changes };
+    }
+    // Edits alone do not show what they make of the text around them, so a prompt too short for
+    // its changed lines to help is shown whole.
+    if (editedRoutinePrompt === undefined) return undefined;
+    const changes = changesOf(currentRoutinePrompt, editedRoutinePrompt);
+    return { ...rest, prompt: changes ?? editedRoutinePrompt };
   }
   return undefined;
 }

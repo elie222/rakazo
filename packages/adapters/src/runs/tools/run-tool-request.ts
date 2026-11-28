@@ -1,6 +1,6 @@
 import type { ConnectorCall, ConnectorTool } from "@rakazo/adapter-kit";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, BotSecretAuth, OneTimeCodeTarget } from "@rakazo/contracts";
-import { approvalCardExpires, redactSecrets } from "@rakazo/core";
+import { approvalCardExpires, redactSecrets, textEditsGiven } from "@rakazo/core";
 import { runLoginKind } from "@rakazo/db";
 import type { FleetCardSummary } from "../../approvals/approval-ask.js";
 import type { TerminatingToolResult } from "../../approvals/approval-effect.js";
@@ -531,6 +531,13 @@ export async function prepareToolRequest(
     if (managedRoutines && nextApprovedTool !== name) {
       const target = await resolveBot(deps.prisma, ctx.fleetRun, args);
       if ("error" in target) return refusal("bot_management_request_invalid", target.error);
+      // Whether an edit's text is found would tell a run nobody is watching what another bot's
+      // prompt holds, before any card.
+      if (target.id !== bot.id && unattended && textEditsGiven(args.promptEdits))
+        return refusal(
+          "bot_management_request_invalid",
+          "promptEdits needs a run the owner started. Send the whole prompt instead.",
+        );
       const { bot_id: _id, bot_name: _name, ...rest } = args;
       args = target.id === bot.id ? rest : { ...rest, bot_id: target.id, bot_name: target.name };
     }

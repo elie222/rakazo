@@ -15,6 +15,7 @@ import {
   containsSecret,
   escapeSearchWildcards,
   redactSecrets,
+  textEditsGiven,
 } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
@@ -34,6 +35,7 @@ import { z } from "zod";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "../../approvals/approval-ask.js";
 import { argumentGiven } from "../../bots/update-bot-patch.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "../../runtime/pi/pi-runtime-limits.js";
+import { editText } from "../../tools/text-edits.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { markReadOutsideContent, neverAsks } from "../assembly/run-context.js";
 import { publishMessage } from "../assembly/run-messages.js";
@@ -48,46 +50,6 @@ import {
   stagePageImages,
   storePageImages,
 } from "./run-tools-page-images.js";
-
-const MAX_EDITS = 50;
-
-type PageEdit = { find: string; replace: string };
-
-/** All edits or none: each `find` must occur exactly once in the result of the edits before it. */
-function applyPageEdits(
-  source: string,
-  edits: readonly PageEdit[],
-): { ok: true; source: string } | { ok: false; error: string } {
-  let next = source;
-  for (const [index, edit] of edits.entries()) {
-    const label = `Edit ${index + 1}`;
-    if (!edit.find) return { ok: false, error: `${label}: find is empty.` };
-    const at = next.indexOf(edit.find);
-    if (at === -1) return { ok: false, error: `${label}: find text was not found in the page.` };
-    if (next.indexOf(edit.find, at + 1) !== -1) {
-      return {
-        ok: false,
-        error: `${label}: find text occurs more than once; include more surrounding text.`,
-      };
-    }
-    next = next.slice(0, at) + edit.replace + next.slice(at + edit.find.length);
-  }
-  return { ok: true, source: next };
-}
-
-function parseEdits(value: unknown): PageEdit[] | string {
-  if (!Array.isArray(value) || value.length === 0) return "edits must be a non-empty list.";
-  if (value.length > MAX_EDITS) return `Send at most ${MAX_EDITS} edits at once.`;
-  const edits: PageEdit[] = [];
-  for (const [index, item] of value.entries()) {
-    const edit = item as Partial<PageEdit> | null;
-    if (typeof edit?.find !== "string" || typeof edit.replace !== "string") {
-      return `Edit ${index + 1}: needs find and replace strings.`;
-    }
-    edits.push({ find: edit.find, replace: edit.replace });
-  }
-  return edits;
-}
 
 /**
  * A bot reaches its own pages and its group's pages, from any of its chats or routines; another
@@ -158,8 +120,7 @@ async function listPages(ctx: RunContext, args: Record<string, unknown>) {
 }
 
 function editsGiven(args: Record<string, unknown>): boolean {
-  // Serializers send unused optional fields blank, an empty list included.
-  return Array.isArray(args.edits) ? args.edits.length > 0 : argumentGiven(args.edits);
+  return textEditsGiven(args.edits);
 }
 
 function imagesGiven(args: Record<string, unknown>): boolean {
@@ -175,8 +136,8 @@ function proposedSource(
 ): { ok: true; source: string } | { ok: false; error: string } {
   if (!editsGiven(args))
     return { ok: true, source: argumentGiven(args.source) ? String(args.source) : current };
-  const edits = parseEdits(args.edits);
-  return typeof edits === "string" ? { ok: false, error: edits } : applyPageEdits(current, edits);
+  const edited = editText(current, args.edits, "edits", "the page");
+  return edited.ok ? { ok: true, source: edited.text } : edited;
 }
 
 /** Text kept on each side of a change inside a line, so the card shows where it is. */

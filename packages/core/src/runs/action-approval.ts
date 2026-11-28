@@ -9,6 +9,7 @@ import { BUILTIN_TOOL_NAMES } from "@rakazo/contracts";
 export { isSecretAskBlock } from "../asks/ask-kind.js";
 
 import { humanizeToolName } from "../messages/events.js";
+import { argumentGiven, writesRoutinePrompt } from "./given-arguments.js";
 
 const APPROVAL_EXEMPT_TOOLS = new Set([
   "computer_observe",
@@ -372,12 +373,6 @@ export async function savedContextWriteNeedsReview(
 
 export type LastingWrite = "memory" | "routine" | "instructions";
 
-/** Providers send omitted optional fields as null or blank; only anything else counts as given. */
-export function argumentGiven(value: unknown): boolean {
-  if (value === undefined || value === null) return false;
-  return typeof value !== "string" || value.trim().length > 0;
-}
-
 /**
  * The write that outlives the run an Auto Review is about, which gets its own narrow question:
  * a memory or skill save after outside content, a routine's words, or the bot's own instructions.
@@ -398,7 +393,7 @@ export function lastingWriteKind(input: {
     return "routine";
   if (
     input.toolName === "schedule_update" &&
-    (argumentGiven(input.args.prompt) || argumentGiven(input.args.on))
+    (writesRoutinePrompt(input.args) || argumentGiven(input.args.on))
   )
     return "routine";
   // A blank value leaves the instructions as they are, and a paged read (an offset) only returns

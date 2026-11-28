@@ -973,6 +973,12 @@ describe("lastingWriteKind", () => {
     expect(lastingWriteKind({ toolName: "schedule_update", args: { on: "email" } })).toBe(
       "routine",
     );
+    expect(
+      lastingWriteKind({
+        toolName: "schedule_update",
+        args: { promptEdits: [{ find: "a", replace: "b" }] },
+      }),
+    ).toBe("routine");
     expect(lastingWriteKind({ toolName: "update_bot", args: { instructions: "i" } })).toBe(
       "instructions",
     );
@@ -986,7 +992,10 @@ describe("lastingWriteKind", () => {
       undefined,
     );
     expect(
-      lastingWriteKind({ toolName: "schedule_update", args: { prompt: "  ", active: false } }),
+      lastingWriteKind({
+        toolName: "schedule_update",
+        args: { prompt: "  ", promptEdits: [], active: false },
+      }),
     ).toBe(undefined);
     expect(lastingWriteKind({ toolName: "update_bot", args: { model: "m" } })).toBe(undefined);
     expect(

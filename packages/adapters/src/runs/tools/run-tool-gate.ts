@@ -20,6 +20,7 @@ import {
   savedContextWriteNeedsReview,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
+  writesRoutinePrompt,
 } from "@rakazo/core";
 import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
@@ -250,7 +251,7 @@ export async function gateToolCall(
   const routineWrittenAfterOutside =
     (name === "schedule_create" ||
       name === "create_child_routine" ||
-      (name === "schedule_update" && (Boolean(args.prompt) || asksRoutineEvents(args.on)))) &&
+      (name === "schedule_update" && (writesRoutinePrompt(args) || asksRoutineEvents(args.on)))) &&
     (await isRunTainted(ctx));
   const savedContextWriteReviewed = await savedContextWriteNeedsReview(name, () =>
     isRunTainted(ctx),

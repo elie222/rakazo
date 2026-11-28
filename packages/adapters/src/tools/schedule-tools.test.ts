@@ -1268,6 +1268,51 @@ describe("updateScheduleFromTool", () => {
     });
   });
 
+  it("changes part of the prompt, saved only over the prompt it read", async () => {
+    const { updateMany, update } = setup();
+    await expect(
+      update({ promptEdits: [{ find: "the usual", replace: "this week's" }] }),
+    ).resolves.toMatchObject({
+      ok: true,
+      changes: {
+        prompt: { before: "Order the usual groceries", after: "Order this week's groceries" },
+      },
+    });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ prompt: "Order the usual groceries" }),
+      data: { prompt: "Order this week's groceries" },
+    });
+  });
+
+  it("leaves the prompt's own leading and trailing space as stored", async () => {
+    const { updateMany, update } = setup({ ...weekly, prompt: "  Order the usual groceries " });
+    await update({ promptEdits: [{ find: "usual", replace: "weekly" }] });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { prompt: "  Order the weekly groceries " } }),
+    );
+  });
+
+  it("saves nothing when a prompt edit's text is not in the prompt", async () => {
+    const { updateMany, update } = setup();
+    await expect(
+      update({
+        promptEdits: [
+          { find: "usual", replace: "weekly" },
+          { find: "cheddar", replace: "gouda" },
+        ],
+      }),
+    ).resolves.toEqual({ error: "Edit 2: find text was not found in the prompt." });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("refuses prompt edits that change nothing, so every saved edit shows a change", async () => {
+    const { updateMany, update } = setup();
+    await expect(
+      update({ promptEdits: [{ find: "groceries", replace: "groceries" }], active: false }),
+    ).resolves.toEqual({ error: "promptEdits change nothing." });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
   it("edits the prompt in place and keeps the timing", async () => {
     const { updateMany, enqueue, append, update } = setup();
     const prompt = "Order the usual; if cheddar is out of stock, skip it";

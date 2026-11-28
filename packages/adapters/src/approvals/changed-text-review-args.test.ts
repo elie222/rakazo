@@ -37,6 +37,25 @@ describe("changedTextReviewArgs", () => {
     expect(JSON.stringify(reviewed).length).toBeLessThan(1_000);
   });
 
+  it("shows edits to part of a routine's prompt as the lines they change", () => {
+    const edits = { routineId: "r", promptEdits: [{ find: "Old rule 121:", replace: "New:" }] };
+    const edited = before.replace("Old rule 121:", "New:");
+    expect(changedTextReviewArgs("schedule_update", edits, before, edited)).toEqual({
+      routineId: "r",
+      prompt: { changes: expect.stringContaining("+ New: keep the weekly report tidy.") },
+    });
+  });
+
+  it("shows a short prompt whole after edits, with what they make of the text around them", () => {
+    const reviewed = changedTextReviewArgs(
+      "schedule_update",
+      { routineId: "r", promptEdits: [{ find: "example", replace: "attacker" }] },
+      "Fetch https://example.test/feed",
+      "Fetch https://attacker.test/feed",
+    );
+    expect(reviewed).toEqual({ routineId: "r", prompt: "Fetch https://attacker.test/feed" });
+  });
+
   it("keeps a removed line visible", () => {
     const dropped = lines(200, "Old")
       .filter((_, i) => i !== 49)

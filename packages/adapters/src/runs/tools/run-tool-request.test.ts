@@ -254,6 +254,21 @@ describe("schedule tools on another bot's routines", () => {
     expect(list.request.heldForApproval).toBeUndefined();
   });
 
+  it("refuses edits to part of another bot's prompt in a run nobody is watching", async () => {
+    const { prepared } = managedRoutineCall({ ownerStartedRun: false, trigger: "webhook" })(
+      "schedule_update",
+      { bot_id: "child", routineId: "r", promptEdits: [{ find: "a", replace: "b" }] },
+    );
+    await expect(prepared).resolves.toEqual({
+      error: "promptEdits needs a run the owner started. Send the whole prompt instead.",
+    });
+    const own = managedRoutineCall({ ownerStartedRun: false, trigger: "webhook" })(
+      "schedule_update",
+      { bot_name: "Me", routineId: "r", promptEdits: [{ find: "a", replace: "b" }] },
+    );
+    await expect(own.prepared).resolves.toBeUndefined();
+  });
+
   it.each(["webhook", "bot_message", "spawn", "tickets"])(
     "holds a %s run's change to, or list of, another bot's routines for the owner",
     async (trigger) => {
@@ -1225,6 +1240,34 @@ describe("a schedule_update that needs an approval preview", () => {
       ok: true,
       changes: { active: { before: true, after: false } },
     });
+  });
+
+  it("shows a change to part of a prompt and saves it over the prompt the card showed", async () => {
+    const promptEdits = [{ find: "the usual", replace: "fewer" }];
+    const { ctx, request, updateMany } = updateCall({ routineId: "routine-1", promptEdits });
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
+    expect(request.fleetSummary?.lines).toEqual([
+      "Instructions: Order fewer groceries",
+      "Previously: Order the usual groceries",
+    ]);
+    expect(request.effectRequest).toEqual({
+      routineId: "routine-1",
+      promptEdits,
+      expected: { prompt: "Order the usual groceries" },
+    });
+    const replay = {
+      name: "schedule_update",
+      args: request.effectRequest,
+      finish: async (result: unknown) => result,
+    } as never;
+    await expect(taskTools.schedule_update!(ctx as never, replay)).resolves.toMatchObject({
+      ok: true,
+      changes: { prompt: { promptLength: "Order fewer groceries".length } },
+    });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { prompt: "Order fewer groceries" } }),
+    );
   });
 
   it("answers a routine that moved after its plain card too, instead of overwriting it", async () => {
