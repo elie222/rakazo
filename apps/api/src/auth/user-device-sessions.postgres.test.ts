@@ -114,7 +114,7 @@ describe.skipIf(!databaseUrl)("paired computers end with the sign-in that paired
     sessionId: string | null,
   ) {
     const token = createUserDeviceToken();
-    const { id } = await runAsSystem("insert an paired device fixture", () =>
+    const { id } = await runAsSystem("insert a paired device fixture", () =>
       handles.prisma.userDevice.create({
         data: {
           userId,
@@ -131,34 +131,57 @@ describe.skipIf(!databaseUrl)("paired computers end with the sign-in that paired
     return { id, token };
   }
 
-  it("lists, binds and removes the owner's computers among same-platform mixed devices", async () => {
+  it("lists only the owner's computers among same-platform mixed devices", async () => {
     const owner = await newAccount();
     const cookie = await owner.signIn();
     const mine = await pair(cookie);
-    const other = await pair(await (await newAccount()).signIn());
-    const otherBefore = await deviceState(other.deviceId);
-    const mineBefore = await deviceState(mine.deviceId);
-    const mobile = await deviceFixture(mine.userId, "mobile", null);
+    await pair(await (await newAccount()).signIn());
+    await deviceFixture(mine.userId, "mobile", null);
     const legacy = await deviceFixture(mine.userId, "computer", null);
-    const mobileBefore = await deviceState(mobile.id);
 
     const list = await handles.app.request(USER_DEVICE_PATH, { headers: { cookie } });
     expect(list.status).toBe(200);
     const { devices } = userDeviceListSchema.parse(await list.json());
     expect(devices.map((row) => row.deviceId)).toEqual([mine.deviceId, legacy.id]);
+  });
+
+  it("binds an unbound legacy computer to the current sign-in", async () => {
+    const cookie = await (await newAccount()).signIn();
+    const mine = await pair(cookie);
+    const mineBefore = await deviceState(mine.deviceId);
     expect(mineBefore.sessionId).toEqual(expect.any(String));
+    const legacy = await deviceFixture(mine.userId, "computer", null);
+
     const tied = await handles.app.request(USER_DEVICE_SESSION_PATH, {
       method: "POST",
       headers: { cookie, authorization: `Bearer ${legacy.token}` },
     });
     expect(tied.status).toBe(204);
     expect(await deviceState(legacy.id)).toEqual(mineBefore);
+  });
+
+  it("does not remove a same-platform mobile device through the computer route", async () => {
+    const cookie = await (await newAccount()).signIn();
+    const mine = await pair(cookie);
+    const mobile = await deviceFixture(mine.userId, "mobile", null);
+    const mobileBefore = await deviceState(mobile.id);
+
     const mobileRemoval = await handles.app.request(`${USER_DEVICE_PATH}/${mobile.id}`, {
       method: "DELETE",
       headers: { cookie },
     });
     expect(mobileRemoval.status).toBe(404);
     expect(await deviceState(mobile.id)).toEqual(mobileBefore);
+  });
+
+  it("removes only the requested computer", async () => {
+    const cookie = await (await newAccount()).signIn();
+    const mine = await pair(cookie);
+    const other = await pair(await (await newAccount()).signIn());
+    const otherBefore = await deviceState(other.deviceId);
+    const mineBefore = await deviceState(mine.deviceId);
+    const legacy = await deviceFixture(mine.userId, "computer", mineBefore.sessionId);
+
     const removed = await handles.app.request(`${USER_DEVICE_PATH}/${legacy.id}`, {
       method: "DELETE",
       headers: { cookie },

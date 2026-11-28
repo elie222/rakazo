@@ -187,7 +187,7 @@ describePostgres("user devices (PostgreSQL)", () => {
       },
     });
     try {
-      // The previous API inserts these columns without naming the new kind.
+      // compat-shim(after v0.16.0): The previous API inserts these columns without naming kind.
       await prisma.$executeRaw`INSERT INTO "user_devices"
         ("id", "userId", "name", "platform", "tokenHash", "createdAt", "sessionId")
         VALUES (${computerId}, ${userId}, 'Legacy computer', 'win32', ${computerTokenHash}, ${pairedAt}, ${session.id})`;
