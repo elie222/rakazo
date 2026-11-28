@@ -11,8 +11,15 @@ import { Animated, Modal, Platform, Pressable, StyleSheet, Text, View } from "re
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { startCallBackground, stopCallBackground } from "../../lib/calls/call-background";
-import type { CallPhase, CallState } from "../../lib/calls/call-session";
-import { hangUp, toggleMute, toggleTranscript, useCallSession } from "../../lib/calls/call-session";
+import type { CallPhase } from "../../lib/calls/call-session";
+import {
+  getCallId,
+  hangUp,
+  toggleMute,
+  toggleTranscript,
+  useCallSession,
+} from "../../lib/calls/call-session";
+import { onShowCall } from "../../lib/calls/header-call";
 import { useMobileTokens } from "../../lib/native/native";
 import { getVoicePlaybackState, subscribeVoicePlayback } from "../../lib/voice/voice";
 import { BotAvatar } from "../bots/bot-avatar";
@@ -29,13 +36,15 @@ function callClock(seconds: number): string {
   return `${String(minutes).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-/** Whole seconds since this call opened, ticking while it is on. */
-function useCallElapsed(call: CallState | null): number {
-  const [opened, setOpened] = useState<{ botId: string; at: number } | null>(null);
-  if (call && opened?.botId !== call.botId) setOpened({ botId: call.botId, at: Date.now() });
-  if (!call && opened) setOpened(null);
-  const now = useNow(call ? 1000 : null);
-  return opened ? Math.max(0, Math.floor((now - opened.at) / 1000)) : 0;
+/** Whole seconds since this call opened, ticking while it is on; a replacing call starts at 0. */
+function useCallElapsed(callKey: string | null): number {
+  const [opened, setOpened] = useState<{ callKey: string; at: number } | null>(null);
+  if (callKey && opened?.callKey !== callKey) setOpened({ callKey, at: Date.now() });
+  if (!callKey && opened) setOpened(null);
+  const now = useNow(callKey ? 1000 : null);
+  return opened && opened.callKey === callKey
+    ? Math.max(0, Math.floor((now - opened.at) / 1000))
+    : 0;
 }
 
 /** Fallback until the native call service owns the call. */
@@ -52,7 +61,12 @@ export function CallCard() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   // The call fills the screen, as on desktop; minimized, it waits in a bar above the composer.
-  const [minimized, setMinimized] = useState(false);
+  // Minimizing belongs to one call, so a call that replaces it opens full screen.
+  const callKey = call ? (getCallId() ?? call.botId) : null;
+  const [minimizedFor, setMinimizedFor] = useState<string | null>(null);
+  const minimized = callKey !== null && minimizedFor === callKey;
+  const setMinimized = (on: boolean) => setMinimizedFor(on ? callKey : null);
+  useEffect(() => onShowCall(() => setMinimizedFor(null)), []);
   const [serviceStarted, setServiceStarted] = useState(false);
   const serviceStartedFor = useRef<string | null>(null);
   const startSeq = useRef(0);
@@ -74,7 +88,6 @@ export function CallCard() {
   // the permission prompt.
   useEffect(() => {
     if (!call) {
-      setMinimized(false);
       startSeq.current += 1;
       serviceStartedFor.current = null;
       setServiceStarted(false);
@@ -114,7 +127,7 @@ export function CallCard() {
     };
   }, [call?.botId, call?.botName, call?.phase]);
 
-  const elapsed = useCallElapsed(call);
+  const elapsed = useCallElapsed(callKey);
   if (!call) return null;
   const recentExchanges = call.exchanges.slice(-TRANSCRIPT_LINES);
   const activity =

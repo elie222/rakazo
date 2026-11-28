@@ -170,6 +170,11 @@ export function getSnapshot(): CallState | null {
   return state;
 }
 
+/** The current call's id, which changes when a call replaces another; null with no call. */
+export function getCallId(): string | null {
+  return state ? callId : null;
+}
+
 function getCallActiveSnapshot(): boolean {
   return state !== null;
 }

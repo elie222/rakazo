@@ -22,7 +22,7 @@ import {
   startCall,
 } from "../calls/call-session";
 import { loadCallGreetingEnabled } from "../calls/call-sounds";
-import { onCallRequest } from "../calls/header-call";
+import { onCallRequest, showCall } from "../calls/header-call";
 import {
   loadCallCallerName,
   probeProviderTranscribe,
@@ -319,7 +319,11 @@ export function useThreadVoiceCall({
     const unsubscribeShortcut = onShortcutVoiceChat(() => {
       if (takeShortcutVoiceChat(botId)) void startVoiceCallRef.current();
     });
-    const unsubscribeHeader = onCallRequest(botId, () => void startVoiceCallRef.current());
+    // During a call, Call brings it back instead of hanging up to dial again.
+    const unsubscribeHeader = onCallRequest(botId, () => {
+      if (getCallSnapshot()) showCall();
+      else void startVoiceCallRef.current();
+    });
     const unsubscribe = () => {
       unsubscribeShortcut();
       unsubscribeHeader();

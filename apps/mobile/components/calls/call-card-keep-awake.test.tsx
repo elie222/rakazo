@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CallDeps } from "../../lib/calls/call-session";
 import { endCall, startCall, toggleTranscript, useCallActive } from "../../lib/calls/call-session";
+import { showCall } from "../../lib/calls/header-call";
 import { hapticImpact } from "../../lib/native/haptics";
 import { CallCard } from "./CallCard";
 
@@ -284,6 +285,25 @@ describe("CallCard background lifetime", () => {
     const back = container.querySelector('[aria-label="Return to call with Rex"]') as HTMLElement;
     expect(back).not.toBeNull();
     act(() => back.click());
+    expect(container.querySelector("section")).not.toBeNull();
+    await act(async () => endCall());
+  });
+
+  it("opens a call that replaces a minimized one full screen, and Call brings a call back", async () => {
+    act(() => root.render(<CallCard />));
+    await act(async () => {
+      startCall({ botId: "bot-1", botName: "Rex" }, deps);
+    });
+    act(() => (container.querySelector('[aria-label="Minimize call"]') as HTMLElement).click());
+    expect(container.querySelector("section")).toBeNull();
+    // The new call replaces the old one without a render in between.
+    await act(async () => {
+      startCall({ botId: "bot-1", botName: "Rex" }, deps);
+    });
+    expect(container.querySelector("section")).not.toBeNull();
+
+    act(() => (container.querySelector('[aria-label="Minimize call"]') as HTMLElement).click());
+    act(() => showCall());
     expect(container.querySelector("section")).not.toBeNull();
     await act(async () => endCall());
   });
