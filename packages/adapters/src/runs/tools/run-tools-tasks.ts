@@ -83,7 +83,6 @@ export const taskTools: ToolHandlers = {
       botId: bot.id,
       userId: run.userId,
       ...(thread.groupId ? { groupThreadId: thread.id } : {}),
-      tools: ctx.tools.offered,
     });
   },
   async scratchpad_list(ctx, call) {

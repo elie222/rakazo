@@ -45,26 +45,13 @@ export const serviceTools: ConnectorTool[] = [
     readOnly: true,
   },
   {
-    name: "service_search",
-    description:
-      "Find a paid data service by the job it does: map places, search results, work emails, people and company profiles, social posts, SEO and backlink data. Returns service ids, prices in USD per call, and params. Then call one with service_call.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        query: { type: "string", description: "The job, for example 'find a work email'." },
-      },
-      required: ["query"],
-    },
-    readOnly: true,
-  },
-  {
     name: "service_call",
     description:
-      "Call a service from service_search. Charges what the service bills, about its listed price. Put each param where its params list it: query or body. Don't repeat a call that answered; found emails and phone numbers are best matches, not confirmed.",
+      "Call a paid service returned by find_tool. Charges what the service bills, about its listed price. Put each param where its params list it: query or body. Don't repeat a call that answered; found emails and phone numbers are best matches, not confirmed.",
     inputSchema: {
       type: "object",
       properties: {
-        service: { type: "string", description: "Service id from service_search." },
+        service: { type: "string", description: "Service ID from find_tool." },
         query: { type: "object", description: "Params listed under query." },
         body: { type: "object", description: "Params listed under body." },
         max_cost_usd: {

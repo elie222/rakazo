@@ -10,7 +10,7 @@ import {
 } from "../../integrations/connector-safety.js";
 import { mcpAppViewArguments, mcpAppViewResult } from "../../mcp/mcp-app.js";
 import { addMcpServerFromTool, removeMcpServerFromTool } from "../../mcp/mcp-server-tool.js";
-import { serviceCallFromTool, serviceSearchFromTool } from "../../payments/paid-service-tools.js";
+import { serviceCallFromTool } from "../../payments/paid-service-tools.js";
 import { collectLogIds } from "../../providers/integration/composio/composio-connector.js";
 import { storeMcpAppHtml } from "../../storage/thread-artifacts.js";
 import { webFetchFromTool, webSearchFromTool } from "../../web/web-tools.js";
@@ -174,20 +174,6 @@ export const integrationTools: ToolHandlers = {
     const { args } = call;
     return call.finish(
       await webFetchFromTool(ctx.providers.web, context, args, ctx.computer.modelSeesImages),
-    );
-  },
-  async service_search(ctx, call) {
-    const provider = ctx.providers.paidServices;
-    if (!provider || !paidServicesOffered(ctx)) {
-      return call.finish({ error: "Paid services are unavailable." });
-    }
-    return call.finish(
-      await serviceSearchFromTool(
-        provider,
-        ctx.context,
-        call.args,
-        await modelCreditBillingEnabled(ctx.deps),
-      ),
     );
   },
   async service_call(ctx, call) {

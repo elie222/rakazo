@@ -3,7 +3,7 @@ import { taskCatalogFromTool } from "./task-catalog.js";
 import { TASK_CATALOG_GUIDANCE } from "./task-catalog.prompt.js";
 
 describe("task catalog", () => {
-  it("returns the bot's real work records and exposed tool roster", async () => {
+  it("returns the bot's saved work records", async () => {
     const prisma = {
       scratchpadItem: {
         findMany: vi.fn(async () => [
@@ -54,11 +54,6 @@ describe("task catalog", () => {
         spaceId: "space-1",
         botId: "bot-1",
         userId: "user-1",
-        tools: [
-          { name: "task_catalog", description: "Catalog", readOnly: true },
-          { name: "task_catalog", description: "Duplicate", readOnly: true },
-          { name: "GITHUB_LIST_RELEASES", description: "List releases", readOnly: true },
-        ],
       },
     );
 
@@ -96,10 +91,6 @@ describe("task catalog", () => {
         expect.objectContaining({ name: "Daily report", source: "user", readOnly: false }),
       ]),
     );
-    expect(result.tools).toEqual([
-      { name: "task_catalog", description: "Catalog", readOnly: true },
-      { name: "GITHUB_LIST_RELEASES", description: "List releases", readOnly: true },
-    ]);
     expect(result.guidance).toBe(TASK_CATALOG_GUIDANCE);
   });
 
@@ -121,7 +112,6 @@ describe("task catalog", () => {
         botId: "bot-1",
         userId: "user-1",
         groupThreadId: "group-thread",
-        tools: [],
       },
     );
     expect(findMany.mock.calls[0]?.[0]).toMatchObject({

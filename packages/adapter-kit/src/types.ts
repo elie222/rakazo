@@ -811,10 +811,9 @@ export interface AgentRunRequest {
   ) => Promise<unknown>;
   /**
    * Finds tools, apps and services this run does not list, for find_tool: by words, or by the
-   * exact names. A search answers the final ranked list, at most
-   * `limit` hits, so what it marks as read from outside is only what the model is shown.
+   * exact names. Results include unavailable sources. Only shown hits mark outside content as read.
    */
-  searchTools?: (request: ToolSearchRequest) => Promise<ToolSearchHit[]>;
+  searchTools?: (request: ToolSearchRequest) => Promise<ToolSearchResult>;
   /** Called after a tool returns; implementations must not persist raw result contents. */
   onToolCompleted?: (completion: AgentToolCompletion) => Promise<void> | void;
   /**
@@ -834,7 +833,14 @@ export interface AgentRunRequest {
 
 export type ToolSearchRequest =
   /** `alongside`: hits the caller found itself, ranked together with these into one list. */
-  { query: string; limit: number; alongside?: ToolSearchHit[] } | { ids: string[] };
+  ({ query: string; limit: number; alongside?: ToolSearchHit[] } | { ids: string[] }) & {
+    source?: "paid_services";
+  };
+
+export interface ToolSearchResult {
+  hits: ToolSearchHit[];
+  unavailableSources?: string[];
+}
 
 /**
  * One thing find_tool found. `next` is the tool the model calls for it: use_tool runs it with

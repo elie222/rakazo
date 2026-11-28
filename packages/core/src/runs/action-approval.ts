@@ -67,7 +67,6 @@ const OUTSIDE_RUN_SAFE_BUILTIN_TOOLS = new Set([
   "schedule_list",
   "scratchpad_list",
   "search_history",
-  "service_search",
   "skill_read",
   "task_catalog",
   "web_fetch",

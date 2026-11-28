@@ -33,16 +33,26 @@ export const FIND_TOOL = "find_tool";
 export const USE_TOOL = "use_tool";
 
 /** The two tools that reach built-ins left out of the tool list; `nameIndex` lists those by area. */
-export function bridgeToolDefinitions(nameIndex: string): ConnectorTool[] {
+export function bridgeToolDefinitions(
+  nameIndex: string,
+  paidServices: boolean,
+): [ConnectorTool, ConnectorTool] {
   return [
     {
       name: FIND_TOOL,
-      description: `Find tools, apps and paid services by name or query. Each result's next is the tool to call.\n${nameIndex}`,
+      description: `Find tools, apps and paid services by name or query. Each result's next is the tool to call.${nameIndex ? `\n${nameIndex}` : ""}`,
       inputSchema: {
         type: "object",
         properties: {
           names: { type: "array", items: { type: "string" }, maxItems: 5 },
           query: { type: "string", maxLength: 200, description: "Words describing the task" },
+          ...(paidServices && {
+            source: {
+              type: "string",
+              enum: ["paid_services"],
+              description: "Limit the search to paid services.",
+            },
+          }),
         },
       },
       readOnly: true,

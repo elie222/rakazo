@@ -6,7 +6,7 @@ import {
   reserveModelCredits,
 } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { serviceCallFromTool, serviceSearchFromTool } from "./paid-service-tools.js";
+import { findPaidServices, serviceCallFromTool } from "./paid-service-tools.js";
 import { FakePaidServiceProvider } from "./paid-services-factory.js";
 
 vi.mock("@rakazo/db", () => ({
@@ -26,29 +26,25 @@ beforeEach(() => {
   vi.mocked(reserveModelCredits).mockResolvedValue("hold-1");
 });
 
-describe("service_search", () => {
+describe("paid service search", () => {
   it("shows hosted prices with the markup and self-hosted prices at cost", async () => {
     const provider = new FakePaidServiceProvider();
-    const hosted = await serviceSearchFromTool(provider, context, { query: "email" }, true);
-    expect(hosted).toEqual({
-      services: [expect.objectContaining({ id: "people.email", price_usd: 0.006 })],
-    });
-    const selfHosted = await serviceSearchFromTool(provider, context, { query: "email" }, false);
-    expect(selfHosted).toEqual({
-      services: [expect.objectContaining({ id: "people.email", price_usd: 0.005 })],
-    });
+    expect(await findPaidServices(provider, "email", context, true)).toEqual([
+      expect.objectContaining({ id: "people.email", price_usd: 0.006 }),
+    ]);
+    expect(await findPaidServices(provider, "email", context, false)).toEqual([
+      expect.objectContaining({ id: "people.email", price_usd: 0.005 }),
+    ]);
   });
 
   it("leaves out services whose price is over the per-call cap", async () => {
     const provider = new FakePaidServiceProvider();
     const [email] = await provider.search("email");
     vi.spyOn(provider, "search").mockResolvedValue([{ ...email!, priceUsd: 1.8 }]);
-    expect(await serviceSearchFromTool(provider, context, { query: "email" }, true)).toEqual({
-      services: [],
-    });
-    expect(await serviceSearchFromTool(provider, context, { query: "email" }, false)).toMatchObject(
-      { services: [{ id: "people.email" }] },
-    );
+    expect(await findPaidServices(provider, "email", context, true)).toEqual([]);
+    expect(await findPaidServices(provider, "email", context, false)).toMatchObject([
+      { id: "people.email" },
+    ]);
   });
 
   it("fills its ten results from affordable services further down the list", async () => {
@@ -60,9 +56,9 @@ describe("service_search", () => {
       priceUsd: 5,
     }));
     vi.spyOn(provider, "search").mockResolvedValue([...expensive, email!]);
-    expect(await serviceSearchFromTool(provider, context, { query: "email" }, true)).toMatchObject({
-      services: [{ id: "people.email" }],
-    });
+    expect(await findPaidServices(provider, "email", context, true)).toMatchObject([
+      { id: "people.email" },
+    ]);
   });
 });
 

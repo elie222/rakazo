@@ -56,7 +56,6 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "skill_read",
   "web_search",
   "web_fetch",
-  "service_search",
   "browser_snapshot",
   "list_secrets",
   "cloud_agent_status",
@@ -79,7 +78,6 @@ const OWN_PROMPT_ONLY_TOOLS: ReadonlySet<string> = new Set([
 
 /** The bot's own inbox, offered only in its owner's runs outside groups and channels. */
 const EMAIL_INBOX_TOOL_NAMES = new Set(["read_email", "delete_email"]);
-const PAID_SERVICE_TOOL_NAMES = new Set(["service_search", "service_call"]);
 
 /** Offered only to a user who connected a wallet. */
 const PURCHASE_TOOL_NAMES = new Set(["request_purchase", "purchase_status", "paid_request"]);
@@ -240,7 +238,7 @@ export function selectBuiltinToolsForRun(options: {
       (options.paymentWalletEnabled || !PURCHASE_TOOL_NAMES.has(tool.name)) &&
       (options.mediaImagesEnabled || tool.name !== "generate_image") &&
       (options.mediaVideoEnabled || tool.name !== "generate_video") &&
-      (options.paidServicesEnabled || !PAID_SERVICE_TOOL_NAMES.has(tool.name)) &&
+      (options.paidServicesEnabled || tool.name !== "service_call") &&
       // Alone in its Space a bot has nobody to message. A bot it creates gets its first task
       // from spawn_bot, and its reply starts a run that offers message_bot.
       (options.hasTeammates !== false || tool.name !== "message_bot") &&

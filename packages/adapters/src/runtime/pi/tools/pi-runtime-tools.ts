@@ -83,7 +83,7 @@ export function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost)
   const tools = named.map(({ tool, name }) =>
     toAgentTool(tool, host, name, { deferred, listed: listedByExposedName }),
   );
-  if (!deferred.length) return tools;
+  if (!listed.some((tool) => tool.name === USE_TOOL && !tool.route)) return tools;
   const runnable = new Map(
     [...tools, ...deferred.map((tool) => toAgentTool(tool, host, tool.name, { viaUseTool: true }))]
       .filter((tool) => tool.name !== FIND_TOOL && tool.name !== USE_TOOL)
@@ -254,7 +254,6 @@ export function describeToolActivity(
   if (toolName === "delete_shared_memory") return `Deleting shared memory: ${detail(record.path)}`;
   if (toolName === "web_search") return `Searching the web: ${detail(record.query)}`;
   if (toolName === "web_fetch") return `Reading page: ${detail(redactActivityUrl(record.url))}`;
-  if (toolName === "service_search") return `Finding a service: ${detail(record.query)}`;
   if (toolName === "service_call") return `Using service: ${detail(record.service)}`;
   if (toolName === "skill_read")
     return record.file

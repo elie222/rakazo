@@ -91,6 +91,21 @@ describe("built-in tool bridge", () => {
     expect(partitionTools(core)).toEqual({ listed: core, deferred: [] });
   });
 
+  it("offers search when paid services are enabled and there are no deferred tools", () => {
+    const paidTool = selectBuiltinToolsForRun({
+      graphicalToolsAllowed: false,
+      groupId: null,
+      trigger: "user",
+      semanticMemoryEnabled: false,
+      messagingChannelRun: false,
+      paidServicesEnabled: true,
+    }).filter((tool) => tool.name === "service_call");
+    expect(partitionTools(paidTool).listed.map((tool) => tool.name)).toEqual([
+      "service_call",
+      FIND_TOOL,
+    ]);
+  });
+
   it("names deferred tools by area in find_tool, without schemas", () => {
     const { listed, deferred } = partitionTools(ownerChat);
     const description = listed.find((tool) => tool.name === FIND_TOOL)!.description;
