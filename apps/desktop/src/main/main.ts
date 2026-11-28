@@ -72,6 +72,7 @@ import {
   reportDesktopError,
 } from "./system/monitoring.js";
 import { createSystemSpeech } from "./system/system-speech.js";
+import { focusDesktopComposer, startDesktopTrayQuickAsk } from "./system/tray-quick-ask.js";
 import {
   confirmRemoteComputerAccess,
   createComputerAccessHandler,
@@ -543,7 +544,8 @@ async function recoverFromCrashedSave(
   showSetupWindow(message);
   return message;
 }
-function reopenAppWindow() {
+function reopenAppWindow(focusComposer = false) {
+  if (appOpener.busy() || isSetupSaveInProgress()) return;
   if (desktop.currentTargetUrl === null) {
     showSetupWindow(desktop.setupError);
     return;
@@ -552,6 +554,7 @@ function reopenAppWindow() {
     if (!opened) return;
     commitPendingAppSwitch();
     deepLinks?.applyPending();
+    if (focusComposer) focusDesktopComposer(desktop.mainWindow);
   });
 }
 
@@ -867,10 +870,8 @@ app.whenReady().then(async () => {
     "desktop.locale.set",
     createLocaleHandler((locale) => writeUiLocale(userDataDir, locale), installApplicationMenu),
   );
-  handleIpc(
-    "desktop.badge.set",
-    createBadgeHandler((count) => app.setBadgeCount(count)),
-  );
+  const trayQuickAsk = startDesktopTrayQuickAsk((focusComposer) => reopenAppWindow(focusComposer));
+  handleIpc("desktop.badge.set", createBadgeHandler(trayQuickAsk.setBadgeCount));
   if (process.platform === "darwin") {
     // Installed builds ship the helper as an extra resource; `pnpm build` compiles it for development.
     const helper = app.isPackaged
