@@ -522,11 +522,11 @@ msgstr "{name}が停止しました"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "{name}, {price} / month"
-msgstr ""
+msgstr "{name}、月額 {price}"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "{name}, {price} / year"
-msgstr ""
+msgstr "{name}、年額 {price}"
 
 #: apps/mobile/lib/routines/routine.ts
 msgid "{name}, Off"
@@ -1858,7 +1858,7 @@ msgstr "事前に確認"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Ask the bot questions"
-msgstr ""
+msgstr "ボットに質問する"
 
 #: apps/mobile/app/routines.tsx
 msgid "Ask this Bot in chat to set up a routine."
@@ -2291,7 +2291,7 @@ msgstr "MCPサーバーを探す"
 #: apps/mobile/components/cards/feedback-receipt-card.tsx
 #: apps/web/src/pages/shell/chat/message-view.tsx
 msgid "Bug report sent"
-msgstr ""
+msgstr "バグレポートを送信しました"
 
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
@@ -4777,7 +4777,7 @@ msgstr "コピーできませんでした。リンクを選択してコピーし
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Couldn't install this app. Try again."
-msgstr ""
+msgstr "このアプリをインストールできませんでした。もう一度お試しください。"
 
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Couldn't load grants"
@@ -6055,7 +6055,7 @@ msgstr "失敗時の対応"
 #: apps/mobile/components/cards/feedback-receipt-card.tsx
 #: apps/web/src/pages/shell/chat/message-view.tsx
 msgid "Feedback sent"
-msgstr ""
+msgstr "フィードバックを送信しました"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Feet"
@@ -6749,16 +6749,16 @@ msgstr "入力"
 #: apps/web/src/components/pages/PageAppButton.tsx
 #: apps/web/src/pages/PageAppPage.tsx
 msgid "Install"
-msgstr ""
+msgstr "インストール"
 
 #. placeholder {0}: page.title
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Install {0}?"
-msgstr ""
+msgstr "{0}をインストールしますか？"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Install app"
-msgstr ""
+msgstr "アプリをインストール"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -6901,7 +6901,7 @@ msgstr "分離されたプレビュー: アカウントにはアクセスでき�
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "It can:"
-msgstr ""
+msgstr "できること:"
 
 #: apps/mobile/app/new-space.tsx
 msgid "It could not be opened. Try again from the sidebar."
@@ -6914,7 +6914,7 @@ msgstr "削除されたか、別のユーザーのページの可能性があり
 
 #: apps/web/src/components/vault/VaultSettings.tsx
 msgid "Items"
-msgstr ""
+msgstr "項目"
 
 #: apps/mobile/lib/inbox/sections/confirm-delete-section.ts
 #: apps/web/src/pages/shell/shell-dialogs.tsx
@@ -7587,7 +7587,7 @@ msgstr "{title}のメモリ"
 
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 msgid "Memory provider"
-msgstr ""
+msgstr "メモリプロバイダー"
 
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "Mentions"
@@ -8756,7 +8756,7 @@ msgstr "{title} を開く"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Open app"
-msgstr ""
+msgstr "アプリを開く"
 
 #: apps/web/src/pages/shell/chat/chat-header.tsx
 msgid "Open call"
@@ -9620,7 +9620,7 @@ msgstr "参照のみ"
 #: apps/mobile/components/cards/feedback-receipt-card.tsx
 #: apps/web/src/pages/shell/chat/message-view.tsx
 msgid "Receipt {0}"
-msgstr ""
+msgstr "受付番号 {0}"
 
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Received"
@@ -10038,7 +10038,7 @@ msgstr "セクション名を変更"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Renew for {price}"
-msgstr ""
+msgstr "{price}で更新"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/lib/cards/run-error-presentation.ts
@@ -11220,7 +11220,7 @@ msgstr "さらに表示"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Show notifications"
-msgstr ""
+msgstr "通知を表示する"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/components/I18nBootstrap.tsx
@@ -13786,7 +13786,7 @@ msgstr "他のスペースは非公開のままです"
 
 #: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Your own AI"
-msgstr ""
+msgstr "自分のAI"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."

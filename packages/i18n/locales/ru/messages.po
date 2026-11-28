@@ -522,11 +522,11 @@ msgstr "{name}: остановлено"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "{name}, {price} / month"
-msgstr ""
+msgstr "{name}, {price} в месяц"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "{name}, {price} / year"
-msgstr ""
+msgstr "{name}, {price} в год"
 
 #: apps/mobile/lib/routines/routine.ts
 msgid "{name}, Off"
@@ -1858,7 +1858,7 @@ msgstr "Сначала спросить"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Ask the bot questions"
-msgstr ""
+msgstr "Задавать вопросы боту"
 
 #: apps/mobile/app/routines.tsx
 msgid "Ask this Bot in chat to set up a routine."
@@ -2291,7 +2291,7 @@ msgstr "Просмотреть MCP-серверы"
 #: apps/mobile/components/cards/feedback-receipt-card.tsx
 #: apps/web/src/pages/shell/chat/message-view.tsx
 msgid "Bug report sent"
-msgstr ""
+msgstr "Отчёт об ошибке отправлен"
 
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
@@ -4777,7 +4777,7 @@ msgstr "Не удалось скопировать. Выделите ссылк�
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Couldn't install this app. Try again."
-msgstr ""
+msgstr "Не удалось установить это приложение. Повторите попытку."
 
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Couldn't load grants"
@@ -6055,7 +6055,7 @@ msgstr "Обработка сбоев"
 #: apps/mobile/components/cards/feedback-receipt-card.tsx
 #: apps/web/src/pages/shell/chat/message-view.tsx
 msgid "Feedback sent"
-msgstr ""
+msgstr "Отзыв отправлен"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Feet"
@@ -6749,16 +6749,16 @@ msgstr "Входы"
 #: apps/web/src/components/pages/PageAppButton.tsx
 #: apps/web/src/pages/PageAppPage.tsx
 msgid "Install"
-msgstr ""
+msgstr "Установить"
 
 #. placeholder {0}: page.title
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Install {0}?"
-msgstr ""
+msgstr "Установить {0}?"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Install app"
-msgstr ""
+msgstr "Установить приложение"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -6901,7 +6901,7 @@ msgstr "Изолированный предпросмотр: без доступ
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "It can:"
-msgstr ""
+msgstr "Приложение сможет:"
 
 #: apps/mobile/app/new-space.tsx
 msgid "It could not be opened. Try again from the sidebar."
@@ -6914,7 +6914,7 @@ msgstr "Возможно, она удалена или принадлежит д
 
 #: apps/web/src/components/vault/VaultSettings.tsx
 msgid "Items"
-msgstr ""
+msgstr "Записи"
 
 #: apps/mobile/lib/inbox/sections/confirm-delete-section.ts
 #: apps/web/src/pages/shell/shell-dialogs.tsx
@@ -7587,7 +7587,7 @@ msgstr "Память для {title}"
 
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 msgid "Memory provider"
-msgstr ""
+msgstr "Поставщик памяти"
 
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "Mentions"
@@ -8756,7 +8756,7 @@ msgstr "Открыть {title}"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Open app"
-msgstr ""
+msgstr "Открыть приложение"
 
 #: apps/web/src/pages/shell/chat/chat-header.tsx
 msgid "Open call"
@@ -9620,7 +9620,7 @@ msgstr "Только вспоминать"
 #: apps/mobile/components/cards/feedback-receipt-card.tsx
 #: apps/web/src/pages/shell/chat/message-view.tsx
 msgid "Receipt {0}"
-msgstr ""
+msgstr "Номер обращения {0}"
 
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Received"
@@ -10038,7 +10038,7 @@ msgstr "Переименовать раздел"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Renew for {price}"
-msgstr ""
+msgstr "Продлить за {price}"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/lib/cards/run-error-presentation.ts
@@ -11220,7 +11220,7 @@ msgstr "Показать ещё"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Show notifications"
-msgstr ""
+msgstr "Показывать уведомления"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/components/I18nBootstrap.tsx
@@ -13786,7 +13786,7 @@ msgstr "Ваши другие пространства остаются прив
 
 #: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Your own AI"
-msgstr ""
+msgstr "Свой ИИ"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."

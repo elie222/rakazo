@@ -522,11 +522,11 @@ msgstr "{name} is gestopt"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "{name}, {price} / month"
-msgstr ""
+msgstr "{name}, {price} per maand"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "{name}, {price} / year"
-msgstr ""
+msgstr "{name}, {price} per jaar"
 
 #: apps/mobile/lib/routines/routine.ts
 msgid "{name}, Off"
@@ -1858,7 +1858,7 @@ msgstr "Eerst vragen"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Ask the bot questions"
-msgstr ""
+msgstr "De bot vragen stellen"
 
 #: apps/mobile/app/routines.tsx
 msgid "Ask this Bot in chat to set up a routine."
@@ -2291,7 +2291,7 @@ msgstr "MCP-servers doorzoeken"
 #: apps/mobile/components/cards/feedback-receipt-card.tsx
 #: apps/web/src/pages/shell/chat/message-view.tsx
 msgid "Bug report sent"
-msgstr ""
+msgstr "Bugrapport verzonden"
 
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
@@ -4777,7 +4777,7 @@ msgstr "Kopiëren lukte niet. Selecteer de link en kopieer hem."
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Couldn't install this app. Try again."
-msgstr ""
+msgstr "Deze app installeren mislukt. Probeer het opnieuw."
 
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Couldn't load grants"
@@ -6055,7 +6055,7 @@ msgstr "Foutafhandeling"
 #: apps/mobile/components/cards/feedback-receipt-card.tsx
 #: apps/web/src/pages/shell/chat/message-view.tsx
 msgid "Feedback sent"
-msgstr ""
+msgstr "Feedback verzonden"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Feet"
@@ -6749,16 +6749,16 @@ msgstr "Invoer"
 #: apps/web/src/components/pages/PageAppButton.tsx
 #: apps/web/src/pages/PageAppPage.tsx
 msgid "Install"
-msgstr ""
+msgstr "Installeren"
 
 #. placeholder {0}: page.title
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Install {0}?"
-msgstr ""
+msgstr "{0} installeren?"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Install app"
-msgstr ""
+msgstr "App installeren"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -6901,7 +6901,7 @@ msgstr "Geïsoleerd voorbeeld: geen toegang tot je account"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "It can:"
-msgstr ""
+msgstr "De app kan:"
 
 #: apps/mobile/app/new-space.tsx
 msgid "It could not be opened. Try again from the sidebar."
@@ -6914,7 +6914,7 @@ msgstr "Misschien is hij verwijderd, of is hij van iemand anders."
 
 #: apps/web/src/components/vault/VaultSettings.tsx
 msgid "Items"
-msgstr ""
+msgstr "Items"
 
 #: apps/mobile/lib/inbox/sections/confirm-delete-section.ts
 #: apps/web/src/pages/shell/shell-dialogs.tsx
@@ -7587,7 +7587,7 @@ msgstr "Geheugen voor {title}"
 
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 msgid "Memory provider"
-msgstr ""
+msgstr "Geheugenaanbieder"
 
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "Mentions"
@@ -8756,7 +8756,7 @@ msgstr "{title} openen"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Open app"
-msgstr ""
+msgstr "App openen"
 
 #: apps/web/src/pages/shell/chat/chat-header.tsx
 msgid "Open call"
@@ -9620,7 +9620,7 @@ msgstr "Alleen ophalen"
 #: apps/mobile/components/cards/feedback-receipt-card.tsx
 #: apps/web/src/pages/shell/chat/message-view.tsx
 msgid "Receipt {0}"
-msgstr ""
+msgstr "Ontvangstbewijs {0}"
 
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Received"
@@ -10038,7 +10038,7 @@ msgstr "Sectie hernoemen"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Renew for {price}"
-msgstr ""
+msgstr "Verlengen voor {price}"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/lib/cards/run-error-presentation.ts
@@ -11220,7 +11220,7 @@ msgstr "Meer tonen"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Show notifications"
-msgstr ""
+msgstr "Meldingen tonen"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/components/I18nBootstrap.tsx
@@ -13786,7 +13786,7 @@ msgstr "Je andere spaces blijven privé"
 
 #: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Your own AI"
-msgstr ""
+msgstr "Je eigen AI"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."

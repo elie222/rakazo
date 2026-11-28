@@ -522,11 +522,11 @@ msgstr "{name} 已停止"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "{name}, {price} / month"
-msgstr ""
+msgstr "{name}，每月 {price}"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "{name}, {price} / year"
-msgstr ""
+msgstr "{name}，每年 {price}"
 
 #: apps/mobile/lib/routines/routine.ts
 msgid "{name}, Off"
@@ -1858,7 +1858,7 @@ msgstr "先询问"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Ask the bot questions"
-msgstr ""
+msgstr "向 Bot 提问"
 
 #: apps/mobile/app/routines.tsx
 msgid "Ask this Bot in chat to set up a routine."
@@ -2291,7 +2291,7 @@ msgstr "浏览 MCP 服务器"
 #: apps/mobile/components/cards/feedback-receipt-card.tsx
 #: apps/web/src/pages/shell/chat/message-view.tsx
 msgid "Bug report sent"
-msgstr ""
+msgstr "错误报告已发送"
 
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
@@ -4777,7 +4777,7 @@ msgstr "无法复制。请选中链接后复制。"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Couldn't install this app. Try again."
-msgstr ""
+msgstr "无法安装此应用。请重试。"
 
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Couldn't load grants"
@@ -6055,7 +6055,7 @@ msgstr "失败处理"
 #: apps/mobile/components/cards/feedback-receipt-card.tsx
 #: apps/web/src/pages/shell/chat/message-view.tsx
 msgid "Feedback sent"
-msgstr ""
+msgstr "反馈已发送"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Feet"
@@ -6749,16 +6749,16 @@ msgstr "输入"
 #: apps/web/src/components/pages/PageAppButton.tsx
 #: apps/web/src/pages/PageAppPage.tsx
 msgid "Install"
-msgstr ""
+msgstr "安装"
 
 #. placeholder {0}: page.title
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Install {0}?"
-msgstr ""
+msgstr "安装 {0}？"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Install app"
-msgstr ""
+msgstr "安装应用"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -6901,7 +6901,7 @@ msgstr "隔离预览：无法访问你的账户"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "It can:"
-msgstr ""
+msgstr "它可以："
 
 #: apps/mobile/app/new-space.tsx
 msgid "It could not be opened. Try again from the sidebar."
@@ -6914,7 +6914,7 @@ msgstr "它可能已被删除，或属于其他人。"
 
 #: apps/web/src/components/vault/VaultSettings.tsx
 msgid "Items"
-msgstr ""
+msgstr "条目"
 
 #: apps/mobile/lib/inbox/sections/confirm-delete-section.ts
 #: apps/web/src/pages/shell/shell-dialogs.tsx
@@ -7587,7 +7587,7 @@ msgstr "{title} 的记忆"
 
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 msgid "Memory provider"
-msgstr ""
+msgstr "记忆提供商"
 
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "Mentions"
@@ -8756,7 +8756,7 @@ msgstr "打开 {title}"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Open app"
-msgstr ""
+msgstr "打开应用"
 
 #: apps/web/src/pages/shell/chat/chat-header.tsx
 msgid "Open call"
@@ -9620,7 +9620,7 @@ msgstr "只读取"
 #: apps/mobile/components/cards/feedback-receipt-card.tsx
 #: apps/web/src/pages/shell/chat/message-view.tsx
 msgid "Receipt {0}"
-msgstr ""
+msgstr "回执 {0}"
 
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Received"
@@ -10038,7 +10038,7 @@ msgstr "重命名分组"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Renew for {price}"
-msgstr ""
+msgstr "以 {price} 续订"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/lib/cards/run-error-presentation.ts
@@ -11220,7 +11220,7 @@ msgstr "显示更多"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Show notifications"
-msgstr ""
+msgstr "显示通知"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/components/I18nBootstrap.tsx
@@ -13786,7 +13786,7 @@ msgstr "你的其他空间仍保持私密"
 
 #: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Your own AI"
-msgstr ""
+msgstr "你自己的 AI"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."

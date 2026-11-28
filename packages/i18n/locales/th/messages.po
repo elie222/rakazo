@@ -516,11 +516,11 @@ msgstr "{name} หยุดแล้ว"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "{name}, {price} / month"
-msgstr ""
+msgstr "{name}, {price} / เดือน"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "{name}, {price} / year"
-msgstr ""
+msgstr "{name}, {price} / ปี"
 
 #: apps/mobile/lib/routines/routine.ts
 msgid "{name}, Off"
@@ -1852,7 +1852,7 @@ msgstr "ถามก่อน"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Ask the bot questions"
-msgstr ""
+msgstr "ถามคำถามบอท"
 
 #: apps/mobile/app/routines.tsx
 msgid "Ask this Bot in chat to set up a routine."
@@ -2285,7 +2285,7 @@ msgstr "เรียกดูเซิร์ฟเวอร์ MCP"
 #: apps/mobile/components/cards/feedback-receipt-card.tsx
 #: apps/web/src/pages/shell/chat/message-view.tsx
 msgid "Bug report sent"
-msgstr ""
+msgstr "ส่งรายงานข้อบกพร่องแล้ว"
 
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
@@ -4771,7 +4771,7 @@ msgstr "คัดลอกไม่สำเร็จ เลือกลิง�
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Couldn't install this app. Try again."
-msgstr ""
+msgstr "ติดตั้งแอปนี้ไม่สำเร็จ ลองอีกครั้ง"
 
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Couldn't load grants"
@@ -6049,7 +6049,7 @@ msgstr "การจัดการเมื่อล้มเหลว"
 #: apps/mobile/components/cards/feedback-receipt-card.tsx
 #: apps/web/src/pages/shell/chat/message-view.tsx
 msgid "Feedback sent"
-msgstr ""
+msgstr "ส่งความคิดเห็นแล้ว"
 
 #: packages/i18n/src/app-icon.ts
 msgid "Feet"
@@ -6743,16 +6743,16 @@ msgstr "อินพุต"
 #: apps/web/src/components/pages/PageAppButton.tsx
 #: apps/web/src/pages/PageAppPage.tsx
 msgid "Install"
-msgstr ""
+msgstr "ติดตั้ง"
 
 #. placeholder {0}: page.title
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Install {0}?"
-msgstr ""
+msgstr "ติดตั้ง {0} ไหม"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Install app"
-msgstr ""
+msgstr "ติดตั้งแอป"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -6895,7 +6895,7 @@ msgstr "ตัวอย่างแบบแยกส่วน: ไม่มี�
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "It can:"
-msgstr ""
+msgstr "แอปนี้สามารถ:"
 
 #: apps/mobile/app/new-space.tsx
 msgid "It could not be opened. Try again from the sidebar."
@@ -6908,7 +6908,7 @@ msgstr "อาจถูกลบไปแล้ว หรือเป็นข�
 
 #: apps/web/src/components/vault/VaultSettings.tsx
 msgid "Items"
-msgstr ""
+msgstr "รายการ"
 
 #: apps/mobile/lib/inbox/sections/confirm-delete-section.ts
 #: apps/web/src/pages/shell/shell-dialogs.tsx
@@ -7581,7 +7581,7 @@ msgstr "ความจำของ {title}"
 
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 msgid "Memory provider"
-msgstr ""
+msgstr "ผู้ให้บริการความจำ"
 
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "Mentions"
@@ -8750,7 +8750,7 @@ msgstr "เปิด {title}"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Open app"
-msgstr ""
+msgstr "เปิดแอป"
 
 #: apps/web/src/pages/shell/chat/chat-header.tsx
 msgid "Open call"
@@ -9614,7 +9614,7 @@ msgstr "เรียกคืนเท่านั้น"
 #: apps/mobile/components/cards/feedback-receipt-card.tsx
 #: apps/web/src/pages/shell/chat/message-view.tsx
 msgid "Receipt {0}"
-msgstr ""
+msgstr "เลขที่รับเรื่อง {0}"
 
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Received"
@@ -10032,7 +10032,7 @@ msgstr "เปลี่ยนชื่อส่วน"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Renew for {price}"
-msgstr ""
+msgstr "ต่ออายุในราคา {price}"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/lib/cards/run-error-presentation.ts
@@ -11214,7 +11214,7 @@ msgstr "แสดงเพิ่มเติม"
 
 #: apps/web/src/components/pages/PageAppButton.tsx
 msgid "Show notifications"
-msgstr ""
+msgstr "แสดงการแจ้งเตือน"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/components/I18nBootstrap.tsx
@@ -13780,7 +13780,7 @@ msgstr "สเปซอื่น ๆ ยังคงเป็นส่วนต�
 
 #: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Your own AI"
-msgstr ""
+msgstr "AI ของคุณเอง"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."
