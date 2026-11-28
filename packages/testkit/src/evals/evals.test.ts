@@ -223,9 +223,9 @@ describe("independent outcome graders", () => {
     e.files["results/language.txt"] = "French";
     expect(passes("updated-preference", e)).toBe(false);
   });
-  it("has 19 distinct cases, each rejects empty evidence and a completion claim", () => {
-    expect(EVAL_CASES).toHaveLength(19);
-    expect(new Set(EVAL_CASES.map((c) => c.id)).size).toBe(19);
+  it("has 20 distinct cases, each rejects empty evidence and a completion claim", () => {
+    expect(EVAL_CASES).toHaveLength(20);
+    expect(new Set(EVAL_CASES.map((c) => c.id)).size).toBe(20);
     for (const scenario of EVAL_CASES) {
       expect(
         passes(scenario.id, { ...evidence(), text: "Done! I completed everything." }),
@@ -473,6 +473,16 @@ const PRODUCT_EVIDENCE: Record<string, (e: Evidence, reviewed: Record<string, st
     e.text = reply!;
   },
   "what-is-rakazo": conversation,
+  "store-prices-past-failures": (e, { reply }) => {
+    for (const url of [
+      "https://trailhead.example.test/stockists",
+      "https://summit.example.test/trailhead-40l",
+      "https://ridgeline.example.test/trailhead-40l",
+      "https://basecamp.example.test/trailhead-40l",
+    ])
+      e.toolCalls.push({ step: 1, name: "web_fetch", args: { url } });
+    e.text = reply!;
+  },
 };
 /** Every reviewed example that is a product case's own judge input, with the evidence behind it. */
 const PRODUCT_REVIEWED = PRODUCT_JUDGE_CALIBRATION.flatMap((anchor) =>

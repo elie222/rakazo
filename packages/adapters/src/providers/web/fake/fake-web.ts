@@ -25,6 +25,7 @@ export class FakeWebProvider implements WebProvider {
   lastFetch?: WebFetchRequest;
   searchError?: Error;
   fetchError?: Error;
+  fetchErrors: Record<string, Error> = {};
 
   describe() {
     return {
@@ -51,6 +52,8 @@ export class FakeWebProvider implements WebProvider {
   async fetch(request: WebFetchRequest, _context: AdapterContext): Promise<WebFetchResult> {
     this.lastFetch = request;
     if (this.fetchError) throw this.fetchError;
+    const failure = this.fetchErrors[request.url];
+    if (failure) throw failure;
     const image = this.images[request.url];
     if (image) return { url: request.url, title: "", text: "", truncated: false, image };
     const page = this.pages[request.url];

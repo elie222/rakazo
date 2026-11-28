@@ -252,12 +252,24 @@ The user asked the bot to save the newest release's exact version and the change
 The user gave the bot the URL of a picture and asked what it shows. The picture is a red circle on the left and a blue square on the right, on a white background, and nothing else. Pass only if "reply" says it shows a red circle and a blue square. Fail if either shape or its color is missing or wrong, if the reply describes something the picture does not show, or if it says the bot could not see or open the picture. Positions, sizes and the background may be left out.`,
   "rakazo-platform": `${preamble}
 The bot runs on Rakazo: an open-source platform, which people can also self-host, where they create and chat with AI bots that have their own memory, routines, connected apps and computer. "conversation" holds each message the user sent and the bot's reply to it. Pass only if every reply treats Rakazo as that platform: it says so, or works on the request as being about that platform, without asking the user what Rakazo is. Fail if any reply asks the user what Rakazo is, what it is for or how it works, says it does not know what Rakazo is, takes up an offer to have Rakazo explained, or describes Rakazo as something else, such as the user's own company or an unrelated product. Asking about the request itself (its scope, goals, priorities, conventions or which part to work on) is fine, even in answer to that offer, once the reply shows it knows what Rakazo is; so is a reply that offers or starts the requested work.`,
+  "store-prices": `${preamble}
+The user asked for every store's price for one backpack and the lowest, from a page listing five stores. Northpeak Outfitters and Cedar & Pine refused every read. Summit Supply sells it for 189.99, Ridgeline Gear for 174.50 and Basecamp Co. for 199.00. Pass only if "reply" gives all three of those prices, names Ridgeline Gear as the lowest of the stores read, and says Northpeak Outfitters and Cedar & Pine could not be read. Fail if any of the three prices is missing or wrong, if it gives a price for Northpeak Outfitters or Cedar & Pine, or if it says it will check a store or a price next or later instead of having done it. Noting that an unread store might be cheaper, or suggesting the user check it, is fine.`,
 };
 type ProductRubric = keyof typeof rubrics;
 const judgeInput = (kind: ProductRubric, evidence: Record<string, unknown>): JudgeInput => ({
   rubric: rubrics[kind],
   evidence,
 });
+const STOCKISTS_URL = "https://trailhead.example.test/stockists";
+const STORES = [
+  { name: "Northpeak Outfitters", url: "https://northpeak.example.test/trailhead-40l" },
+  { name: "Cedar & Pine", url: "https://cedarpine.example.test/p/trailhead-40l" },
+  { name: "Summit Supply", url: "https://summit.example.test/trailhead-40l", price: "189.99" },
+  { name: "Ridgeline Gear", url: "https://ridgeline.example.test/trailhead-40l", price: "174.50" },
+  { name: "Basecamp Co.", url: "https://basecamp.example.test/trailhead-40l", price: "199.00" },
+];
+const STORE_PRICES_ASK = `Find the lowest price for the Trailhead 40L backpack across every store listed on ${STOCKISTS_URL}, and tell me each store's price.`;
+const storePricesInput = (reply: string) => judgeInput("store-prices", { reply });
 const SHAPES_URL = "https://example.test/shapes.png";
 const SHAPES_ASK = `What does the picture at ${SHAPES_URL} show?`;
 /** Opening a page or the screen to look at the picture, instead of fetching the picture itself. */
@@ -299,6 +311,24 @@ const repliedToEach = (e: Evidence, asks: string[]) =>
 // Reference labels for human review. Each rubric has a right answer in other words or a wrong one
 // that repeats the right words: the replies a word match gets wrong.
 export const PRODUCT_JUDGE_CALIBRATION = [
+  {
+    input: storePricesInput(
+      "Lowest: Ridgeline Gear at 174.50.\n- Summit Supply: 189.99\n- Basecamp Co.: 199.00\nNorthpeak Outfitters and Cedar & Pine blocked every read (HTTP 403), so I couldn't get their prices.",
+    ),
+    pass: true,
+  },
+  {
+    input: storePricesInput(
+      "Northpeak Outfitters and Cedar & Pine are blocking me (HTTP 403). Summit Supply is 189.99 so far. Next I'll check Ridgeline Gear and Basecamp Co.",
+    ),
+    pass: false,
+  },
+  {
+    input: storePricesInput(
+      "Ridgeline Gear is lowest at 174.50. Summit Supply 189.99, Basecamp Co. 199.00, Northpeak Outfitters 179.00. Cedar & Pine could not be read.",
+    ),
+    pass: false,
+  },
   {
     input: judgeInput("urgent-items", {
       file: "1. Sign-off still missing on the contract, which blocks the launch: review by Fri.\n2. Invoice INV-42: fix the amount from 900 to 720 credits by Thu.\n(Left out: the optional lunch club, not urgent.)",
@@ -885,6 +915,39 @@ export const EVAL_CASES: EvalCase[] = [
     grade: (e) => [repliedToEach(e, [WHAT_IS_RAKAZO_ASK]), noWrites(e)],
     judge: (e) => platformInput([WHAT_IS_RAKAZO_ASK], e.replies ?? []),
     observe: (e) => ({ "read-rakazo-skill": readRakazoSkill(e) }),
+  },
+  {
+    id: "store-prices-past-failures",
+    purpose:
+      "Keep reading the remaining sources when the first ones refuse, instead of stopping to report them.",
+    shellUnneeded: true,
+    configure: (s) => {
+      s.web.pages[STOCKISTS_URL] = [
+        "Trailhead 40L backpack stockists:",
+        ...STORES.map((store) => `- ${store.name}: ${store.url}`),
+      ].join("\n");
+      for (const store of STORES) {
+        if (store.price)
+          s.web.pages[store.url] =
+            `${store.name}. Trailhead 40L backpack. Price: ${store.price}. In stock.`;
+        else s.web.fetchErrors[store.url] = new Error("Request failed: HTTP 403");
+      }
+    },
+    fixtureData: { stockists: STOCKISTS_URL, stores: STORES },
+    steps: [{ ask: STORE_PRICES_ASK }],
+    grade: (e) => {
+      const fetched = (url: string) =>
+        e.toolCalls.some((call) => call.name === "web_fetch" && call.args.url === url);
+      return [
+        check("read-stockists", fetched(STOCKISTS_URL)),
+        check(
+          "read-every-reachable-store",
+          STORES.every((store) => !store.price || fetched(store.url)),
+        ),
+        noWrites(e),
+      ];
+    },
+    judge: (e) => storePricesInput(e.text),
   },
 ];
 
