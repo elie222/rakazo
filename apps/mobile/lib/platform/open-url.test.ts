@@ -30,6 +30,14 @@ it("falls back when the system opener throws instead of rejecting", async () => 
   expect(mocks.openBrowserAsync).toHaveBeenCalledWith("https://example.test/terms/");
 });
 
+it("never hands another scheme to the system opener", async () => {
+  await openExternalUrl("javascript:alert(1)");
+  await openExternalUrl("file:///etc/passwd");
+  await openExternalUrl("rakazo://auth/callback?token=secret");
+  expect(mocks.openURL).not.toHaveBeenCalled();
+  expect(mocks.openBrowserAsync).not.toHaveBeenCalled();
+});
+
 it("settles without a browser fallback when nothing can open the link", async () => {
   mocks.openURL.mockRejectedValue(new Error("No Activity found to handle Intent"));
   await expect(openExternalUrl("example")).resolves.toBeUndefined();
