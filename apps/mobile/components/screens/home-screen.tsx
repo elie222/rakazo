@@ -85,7 +85,11 @@ import {
   spaceInboxItems,
 } from "../../lib/inbox/inbox-spaces";
 import { applyUnreadOverrides, withoutArchiving } from "../../lib/inbox/inbox-swipe";
-import { useInboxDecisions } from "../../lib/inbox/open-decisions";
+import {
+  decisionBotIds,
+  useInboxDecisions,
+  withDecisionAttention,
+} from "../../lib/inbox/open-decisions";
 import { inboxChats, preloadChats } from "../../lib/inbox/preload-chats";
 import { loadSavedInbox } from "../../lib/inbox/saved-chats";
 import type { OrganizeTarget } from "../../lib/inbox/sections/organize-target";
@@ -342,6 +346,8 @@ function Home({
     bots: visible,
     groups: visibleGroups,
   });
+  // The jump pills' "needs attention" follows the same decisions.
+  const attentionBots = useMemo(() => decisionBotIds(decisions), [decisions]);
   const shownSpaces = useMemo(
     () =>
       archiving.size === 0
@@ -477,7 +483,9 @@ function Home({
     useMemo(() => {
       let previous: ReturnType<typeof inboxSignal>[] = [];
       return () => {
-        const next = listData.map(inboxSignal);
+        const next = listData.map((item) =>
+          withDecisionAttention(item, inboxSignal(item), attentionBots),
+        );
         if (
           next.length !== previous.length ||
           next.some(
@@ -489,7 +497,7 @@ function Home({
           previous = next;
         return previous;
       };
-    }, [listData]),
+    }, [listData, attentionBots]),
   );
   const jumpKeys = useMemo(() => listData.map(inboxItemKey), [listData]);
   const unreadJump = useUnreadJumpPills({

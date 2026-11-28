@@ -3,7 +3,7 @@ import { expect, it, vi } from "vitest";
 
 vi.mock("../api/api", () => ({ rpc: vi.fn() }));
 
-const { openDecision } = await import("./open-decisions");
+const { decisionBotIds, openDecision, withDecisionAttention } = await import("./open-decisions");
 
 const message = (seq: number, runId: string, blocks: unknown[]) =>
   ({ id: `m${seq}`, seq, runId, blocks }) as Pick<ThreadMessage, "id" | "seq" | "runId" | "blocks">;
@@ -45,4 +45,29 @@ it("leaves out answered questions and forms that expired", () => {
   expect(
     openDecision(waiting, [message(2, "run-1", [form])], Date.parse("2026-01-02T00:00:00.000Z")),
   ).toBeNull();
+});
+
+it("marks only bots with an open decision as needing attention in the jump pills", () => {
+  const botIds = decisionBotIds([
+    { run: { botId: "b1" }, messageId: "m1", text: "Q" },
+    { run: { botId: "b2", groupId: "g1" }, messageId: "m2", text: "Q" },
+  ] as never);
+  const stale = { unread: 0, attention: 1 };
+  const bot = (id: string) => ({ type: "bot", bot: { id } }) as never;
+  expect(withDecisionAttention(bot("b1"), { unread: 0, attention: 0 }, botIds).attention).toBe(1);
+  expect(withDecisionAttention(bot("b3"), stale, botIds).attention).toBe(0);
+  expect(withDecisionAttention(bot("b2"), stale, botIds).attention).toBe(0);
+  const pinned = {
+    type: "pinned",
+    chats: [
+      { kind: "bot", bot: { id: "b1" } },
+      { kind: "bot", bot: { id: "b3" } },
+    ],
+  } as never;
+  expect(withDecisionAttention(pinned, { unread: 2, attention: 2 }, botIds)).toEqual({
+    unread: 2,
+    attention: 1,
+  });
+  // Before the first check, the row keeps its own signal.
+  expect(withDecisionAttention(bot("b3"), stale, null)).toBe(stale);
 });

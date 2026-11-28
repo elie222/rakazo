@@ -3,6 +3,8 @@ import { chatSnoozed } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging/best-effort";
 import { useEffect, useMemo, useState } from "react";
 import { rpc } from "../api/api";
+import type { InboxItem } from "./inbox-spaces";
+import type { InboxSignal } from "./offscreen-unreads";
 
 /** A question, approval or form a bot is stopped on, which only the person can answer. */
 export type OpenDecision = {
@@ -105,4 +107,33 @@ export function useInboxDecisions({
     return active.filter((run) => run.status === "waiting_input" && listed(run));
   }, [enabled, active, bots, groups]);
   return useOpenDecisions(waiting);
+}
+
+/** The bots with an open decision in a one-to-one chat, or null before the first check. */
+export function decisionBotIds(
+  decisions: readonly OpenDecision[] | null,
+): ReadonlySet<string> | null {
+  return decisions
+    ? new Set(decisions.flatMap((decision) => (decision.run.groupId ? [] : [decision.run.botId])))
+    : null;
+}
+
+/**
+ * A row's jump-pill signal with "needs attention" meaning what Needs you means: a bot with an open
+ * decision. Before the first check, the row keeps the signal it came with.
+ */
+export function withDecisionAttention(
+  item: InboxItem,
+  signal: InboxSignal,
+  botIds: ReadonlySet<string> | null,
+): InboxSignal {
+  if (!botIds) return signal;
+  if (item.type === "bot") return { ...signal, attention: botIds.has(item.bot.id) ? 1 : 0 };
+  if (item.type === "pinned") {
+    const attention = item.chats.filter(
+      (chat) => chat.kind === "bot" && botIds.has(chat.bot.id),
+    ).length;
+    return { ...signal, attention };
+  }
+  return signal;
 }
