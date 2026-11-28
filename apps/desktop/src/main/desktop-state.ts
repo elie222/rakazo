@@ -10,6 +10,7 @@ export const desktop = {
   mainWindow: null,
   replacedAppWindow: null,
   setupWindow: null,
+  pageAppWindow: null,
   currentSetup: null,
   currentTargetUrl: null,
   setupError: null,
@@ -31,6 +32,8 @@ export const desktop = {
    */
   replacedAppWindow: BrowserWindow | null;
   setupWindow: BrowserWindow | null;
+  /** In an installed page app, its one window. */
+  pageAppWindow: BrowserWindow | null;
   currentSetup: DesktopSetup | null;
   currentTargetUrl: string | null;
   setupError: string | null;

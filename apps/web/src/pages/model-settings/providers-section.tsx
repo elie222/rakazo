@@ -102,9 +102,8 @@ export function ConnectionNameField({
     return (
       <Button
         type="button"
-        variant="ghost"
+        variant="secondary"
         size="sm"
-        className="-ms-2.5 text-muted-foreground"
         disabled={disabled}
         onClick={() => setName(credential.label)}
       >

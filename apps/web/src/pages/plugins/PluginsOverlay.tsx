@@ -15,6 +15,7 @@ import {
   connectionSharingOrganization,
   customMcpServerInput,
   installedPluginParts,
+  installedPluginSelection,
   managedAppFor,
   organizationOfSpace,
 } from "@rakazo/core";
@@ -211,10 +212,7 @@ export function PluginsOverlay({
   };
 
   function installedSelection(install: CapabilityInstall): PluginSelection {
-    const entry = catalogEntries.find((row) => row.installedSource === install.source);
-    return entry
-      ? pluginSelection(entry)
-      : { source: install.source, installedSource: install.source, name: install.name };
+    return installedPluginSelection(install, catalogEntries);
   }
 
   function managedLink(selection: PluginSelection): ManagedAppLink | undefined {
@@ -595,7 +593,7 @@ export function PluginsOverlay({
 
           {plugin ? (
             <PluginDetail
-              key={plugin.installedSource}
+              key={plugin.installId ?? plugin.installedSource}
               selection={plugin}
               installs={pluginInstalls}
               servers={mcpServers}

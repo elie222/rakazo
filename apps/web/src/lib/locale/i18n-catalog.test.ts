@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { i18n, setupI18n } from "@lingui/core";
+import { setupI18n } from "@lingui/core";
 import { formatter } from "@lingui/format-po";
 import { RUN_ERROR_LIMIT_MESSAGES } from "@rakazo/core";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { UI_LOCALES } from "./ui-locale";
 
 describe("lingui catalogs", () => {
@@ -173,11 +173,6 @@ describe("lingui catalogs", () => {
     }
   });
 
-  beforeEach(() => {
-    i18n.load("en", {});
-    i18n.activate("en");
-  });
-
   it("translates command credential controls in every locale", () => {
     const messages = [
       "Available to shell commands as {commandVariable}",
@@ -222,6 +217,7 @@ describe("lingui catalogs", () => {
   });
 
   it("says how late a run started for one and for many in every locale", () => {
+    const i18n = setupI18n();
     const ids = ["Started {count}m late", "Started {count}h late", "Started {count}d late"];
     for (const locale of UI_LOCALES.filter((locale) => locale !== "en")) {
       const catalog = readFileSync(
@@ -261,6 +257,7 @@ describe("lingui catalogs", () => {
   });
 
   it("translates counted peer exchanges and close controls in every locale", () => {
+    const i18n = setupI18n();
     const message = "{count, plural, one {# message with {peer}} other {# messages with {peer}}}";
     for (const locale of UI_LOCALES.filter((locale) => locale !== "en")) {
       const catalog = readFileSync(

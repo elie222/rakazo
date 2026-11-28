@@ -23,6 +23,7 @@ import {
   clearAccountIdentity,
   OwnedOrganizationHasMembersError,
   recordSecurityEvent,
+  runAsSystem,
   SpaceDeletionInProgressError,
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
@@ -171,6 +172,27 @@ export const CLIENT_IP_HEADER = "x-rakazo-client-ip";
 
 /** Routes that end sessions other than the caller's own sign-out. Recorded per deleted session. */
 const REVOCATION_PATHS = new Set(["/revoke-session", "/revoke-sessions", "/revoke-other-sessions"]);
+
+/**
+ * Whether a successful request ends every other sign-in, as someone does after losing a device.
+ * Installed page apps hold their own tokens, so those end with it even when no session was left.
+ */
+function signsOutEverywhere(path: string, body: unknown): boolean {
+  if (path === "/revoke-sessions" || path === "/revoke-other-sessions") return true;
+  return path === "/change-password" && isRecord(body) && body.revokeOtherSessions === true;
+}
+
+/** Runs every cleanup even when one fails, then reports the first failure. */
+async function allThenThrow(work: readonly (Promise<unknown> | undefined)[]) {
+  const failed = (await Promise.allSettled(work)).find((outcome) => outcome.status === "rejected");
+  if (failed) throw failed.reason;
+}
+
+function revokePageApps(prisma: PrismaClient, userId: string) {
+  return runAsSystem("revoke page apps with every sign-in", () =>
+    prisma.pageApp.deleteMany({ where: { userId } }),
+  );
+}
 
 /** Successful account changes worth an audit row. Sign-in, sign-up, sign-out and deletion use hooks. */
 const ACCOUNT_EVENT_PATHS: Record<string, SecurityEventType> = {
@@ -338,6 +360,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       maxPasswordLength: MAX_PASSWORD_LENGTH,
       revokeSessionsOnPasswordReset: true,
       onPasswordReset: async ({ user }) => {
+        await revokePageApps(prisma, user.id);
         await recordSecurityEvent({
           type: "auth.password.changed",
           userId: user.id,
@@ -732,6 +755,13 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             metadata: { via: ctx.path },
           });
         }
+        const signedIn = ctx.context.session?.user.id;
+        if (
+          signedIn &&
+          signsOutEverywhere(ctx.path, ctx.body) &&
+          !(ctx.context.returned instanceof APIError)
+        )
+          await revokePageApps(prisma, signedIn);
         const returned = ctx.context.returned;
         // These routes fall back to the stored ID token, which is sealed at rest.
         if (
@@ -852,7 +882,17 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               });
             }
             const previous = replacedSession(ctx);
-            if (previous) await env.afterReplaceSession?.(previous, session);
+            if (previous) {
+              await allThenThrow([
+                runAsSystem("move page apps to the replacing sign-in", () =>
+                  prisma.pageApp.updateMany({
+                    where: { sessionId: previous.id },
+                    data: { sessionId: session.id },
+                  }),
+                ),
+                env.afterReplaceSession?.(previous, session),
+              ]);
+            }
           },
         },
         delete: {
@@ -866,7 +906,15 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                 metadata: { via: ctx.path },
               });
             }
-            if (replacedSession(ctx)?.id !== session.id) await env.afterDeleteSession?.(session);
+            if (replacedSession(ctx)?.id !== session.id) {
+              // A page app ends with the sign-in it was installed through, as a paired computer does.
+              await allThenThrow([
+                runAsSystem("end page apps with their sign-in", () =>
+                  prisma.pageApp.deleteMany({ where: { sessionId: session.id } }),
+                ),
+                env.afterDeleteSession?.(session),
+              ]);
+            }
           },
         },
       },
@@ -987,6 +1035,7 @@ async function revokeUnprovenCredentials(prisma: PrismaClient, userId: string) {
     await tx.account.deleteMany({ where: { userId, providerId: { not: "credential" } } });
     await tx.messagingIdentity.deleteMany({ where: { userId } });
     await tx.messagingLinkCode.deleteMany({ where: { userId } });
+    await tx.pageApp.deleteMany({ where: { userId } });
     await tx.userDevice.updateMany({
       where: { userId, revokedAt: null },
       data: { revokedAt: new Date() },

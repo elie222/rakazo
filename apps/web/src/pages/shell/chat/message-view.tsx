@@ -16,6 +16,7 @@ import { BotAvatar, cn, resolvePersonaColorDef } from "@rakazo/ui-web";
 import { UserRound } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
 import { CollaborationMarker } from "../../../components/ai/CollaborationMarker";
+import { BuiCard } from "../../../components/ai/primitives";
 import { ComputerCard } from "../../../components/computers/ComputerCard";
 import { ArtifactFileCard } from "../../../components/messages/ArtifactFileCard";
 import { AskCard } from "../../../components/messages/AskCard";
@@ -253,7 +254,8 @@ export const MessageView = memo(function MessageView({
   // Anchored below the speaker and reply line so the rail centers on the bubble itself.
   // A message with text and attachments anchors it on its first text bubble.
   const textAnchorIndex = message.blocks.findIndex((block) => block.kind === "text");
-  const hasText = textAnchorIndex !== -1;
+  const canReadAloud =
+    textAnchorIndex !== -1 || message.blocks.some((block) => block.kind === "feedback_receipt");
   const hoverAnchorIndex =
     textAnchorIndex === -1
       ? message.blocks.findIndex((block) => block.kind === "ask")
@@ -269,7 +271,7 @@ export const MessageView = memo(function MessageView({
       markedUnread={markedUnread}
       onReact={onReact}
       speech={
-        voiceReady && !isLive && hasText && message.role !== "user"
+        voiceReady && !isLive && canReadAloud && message.role !== "user"
           ? { speaking, disabled: callHoldsSpeaker && !speaking, onSpeak: () => onSpeak(message) }
           : undefined
       }
@@ -533,6 +535,29 @@ export const MessageView = memo(function MessageView({
                   canAnswer={canAnswer}
                 />
               </div>
+            );
+          }
+          if (block.kind === "feedback_receipt") {
+            return (
+              <BuiCard
+                key={i}
+                data-testid="feedback-receipt"
+                className="grid min-w-0 gap-1.5 px-4 py-3"
+              >
+                <div className="font-medium text-label">
+                  {block.reportKind === "bug" ? (
+                    <Trans>Bug report sent</Trans>
+                  ) : (
+                    <Trans>Feedback sent</Trans>
+                  )}
+                </div>
+                <p dir="auto" className="whitespace-pre-wrap wrap-anywhere text-body">
+                  {block.description}
+                </p>
+                <div className="wrap-anywhere text-caption text-muted-foreground">
+                  <Trans>Receipt {block.reportId}</Trans>
+                </div>
+              </BuiCard>
             );
           }
           if (block.kind === "import_setup") {

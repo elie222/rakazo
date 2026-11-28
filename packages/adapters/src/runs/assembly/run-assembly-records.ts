@@ -251,6 +251,8 @@ export async function loadRunRecords(
     deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } }),
     deps.prisma.connection.findMany({
       where: connectionIn(run),
+      // This order feeds the system prompt and must survive updates to the same rows.
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       select: {
         id: true,
         organizationId: true,

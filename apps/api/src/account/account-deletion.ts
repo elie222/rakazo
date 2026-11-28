@@ -36,6 +36,8 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { BillingService } from "../billing/billing.js";
+import { cleanOrganizationConnections } from "../integrations/organization-connection-deletion.js";
+import type { RouterDeps } from "../router.js";
 import type { SpaceDeletionDeps } from "../spaces/space-deletion.js";
 import { disconnectMeetingCalendarsForDeletion } from "../spaces/space-deletion.js";
 import { afterSpaceDeparture } from "../spaces/space-departure.js";
@@ -195,9 +197,10 @@ export async function deleteAccountContent(
   }
 }
 
-type OrganizationDeletionDeps = SpaceDeletionDeps & {
-  billing?: Pick<BillingService, "cancelOrganizationSubscriptions">;
-};
+type OrganizationDeletionDeps = SpaceDeletionDeps &
+  Pick<RouterDeps, "connectors"> & {
+    billing?: Pick<BillingService, "cancelOrganizationSubscriptions">;
+  };
 
 /**
  * Claiming hides the organization from the owner's list. Calendar cleanup and subscription
@@ -267,6 +270,12 @@ export async function deleteOrganization(
     stillLeased();
     await deps.billing?.cancelOrganizationSubscriptions(organizationId);
     billingCancelled = true;
+    stillLeased();
+    await cleanOrganizationConnections(
+      deps,
+      { organizationId, userId, spaceId: spaceIds[0] ?? organizationId },
+      lease,
+    );
     stillLeased();
     const inOrganization = { spaceId: { in: spaceIds } };
     // The claim leaves the owner as its only member, so every Space goes: its files can go before

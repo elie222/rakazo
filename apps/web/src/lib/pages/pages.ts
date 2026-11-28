@@ -1,12 +1,21 @@
 import { useLingui } from "@lingui/react/macro";
 import type {
+  AiDataUse,
   MessageBlock,
   PageImageSource,
   PageImages,
   PageSectionAnchor,
   PageState,
 } from "@rakazo/contracts";
-import { PAGE_RUNTIME_PATH, pageReply, pageReplyText, pageViewerDocument } from "@rakazo/core";
+import {
+  ensureAiDataConsent,
+  newClientId,
+  PAGE_RUNTIME_PATH,
+  pageReply,
+  pageReplyText,
+  pageViewerDocument,
+} from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import type { QueryKey } from "@tanstack/react-query";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -19,7 +28,9 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useSearchParams } from "react-router-dom";
+import { promptDataConsent } from "../calls/voice-consent";
 import { useSpaceQueries } from "../query/query";
+import type { RpcClient } from "../query/rpc";
 import { errorCode } from "../query/user-error";
 
 /** The search parameter naming the page open full screen over a chat. */
@@ -145,6 +156,8 @@ export function usePageDocument(
   review = false,
   reviewAnchor?: PageSectionAnchor,
   state?: PageState,
+  /** The page's chat can take its questions. */
+  ask = false,
 ): { document: string | null; failed: boolean; retry: () => void } {
   const { t, i18n } = useLingui();
   const theme = useAppTheme();
@@ -171,6 +184,7 @@ export function usePageDocument(
             surface,
             touch,
             reply,
+            ask,
             bottomInset,
             review,
             reviewAnchor: reviewAnchor?.section,
@@ -187,6 +201,7 @@ export function usePageDocument(
       surface,
       touch,
       reply,
+      ask,
       bottomInset,
       review,
       reviewAnchor,
@@ -196,6 +211,52 @@ export function usePageDocument(
   const { refetch } = runtime;
   const retry = useCallback(() => void refetch(), [refetch]);
   return { document: viewerDocument, failed: runtime.isError && runtime.data === undefined, retry };
+}
+
+/** The chat a page's questions go to; null for a page with none. */
+export function pageAskChat(page: {
+  botId: string | null;
+  groupId: string | null;
+}): { botId: string } | { groupId: string } | null {
+  return page.groupId ? { groupId: page.groupId } : page.botId ? { botId: page.botId } : null;
+}
+
+const ASK_USES: AiDataUse[] = ["model", "memory"];
+
+/**
+ * A page's question to its bot, answered with the text of the bot's reply; null when there is
+ * none. The question is a message in the chat, so its AI data sharing is confirmed first.
+ */
+export async function askPageBot(
+  rpc: RpcClient,
+  page: { id: string; botId: string | null; groupId: string | null },
+  text: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const chat = pageAskChat(page);
+  if (!chat) return null;
+  const answer = await bestEffort(
+    "page ask",
+    (async () => {
+      await ensureAiDataConsent({
+        uses: ASK_USES,
+        status: () => rpc.aiConsent.status({ ...chat, uses: ASK_USES }),
+        // A page that closes takes its unanswered prompt with it.
+        prompt: (recipient, privacyUrl) => promptDataConsent(recipient, privacyUrl, signal),
+        allow: (input) => rpc.aiConsent.allow(input),
+      });
+      const events = await rpc.pages.ask(
+        { pageId: page.id, text, clientNonce: newClientId() },
+        { signal },
+      );
+      for await (const event of events) {
+        if (event.kind === "answer") return event.text;
+        if (event.kind === "failed") return null;
+      }
+      return null;
+    })(),
+  );
+  return answer ?? null;
 }
 
 type Dock = { node: HTMLElement | null; page: { id: string; title: string } | null };

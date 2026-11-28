@@ -351,7 +351,7 @@ export class StripeBillingProvider implements BillingProvider {
   async changeByokPlan(
     customerId: string,
     subscriptionId: string,
-    { from, to }: { from: BillingByokPlan; to: BillingByokPlan },
+    { from, to, resume = false }: { from: BillingByokPlan; to: BillingByokPlan; resume?: boolean },
   ) {
     // Re-read just before charging: a credit checkout may have completed since the caller checked.
     const subscriptions = await this.listSubscriptions(customerId);
@@ -365,9 +365,9 @@ export class StripeBillingProvider implements BillingProvider {
       !item ||
       !isByokPlan(subscription) ||
       // Paid up and not cancelling: an overdue period must not be credited against the new plan.
-      (status !== "active" && status !== "trialing") ||
-      subscription.cancel_at_period_end ||
-      subscription.cancel_at != null ||
+      // Resuming takes only a cancelling trial, which has paid nothing to credit.
+      (resume ? status !== "trialing" : status !== "active" && status !== "trialing") ||
+      (Boolean(subscription.cancel_at_period_end) || subscription.cancel_at != null) !== resume ||
       // Still the one plan the caller saw, as own-key checkout creates it.
       subscription.items.data.length !== 1 ||
       (item.quantity ?? 1) !== 1 ||
@@ -383,6 +383,9 @@ export class StripeBillingProvider implements BillingProvider {
       items: [{ id: item.id, price: await this.byokPrice(to), quantity: 1 }],
       proration_behavior: "always_invoice",
       payment_behavior: "error_if_incomplete",
+      // An empty date clears a cancellation that was scheduled as a date.
+      ...(resume &&
+        (subscription.cancel_at_period_end ? { cancel_at_period_end: false } : { cancel_at: "" })),
     });
     return true;
   }

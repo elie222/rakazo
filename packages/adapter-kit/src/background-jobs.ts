@@ -18,6 +18,7 @@ export const MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS = 20;
 
 const payloadSchemas = {
   "page.revise": z.object({ requestId: z.string().min(1) }),
+  "page.app-unused": z.object({ appId: z.string().min(1) }),
   "run.continue": z.object({ runId: z.string().min(1) }),
   "routine.wakeup": z.object({
     routineId: z.string().min(1),
@@ -116,6 +117,16 @@ const payloadSchemas = {
     connectorId: z.string().min(1),
     provider: z.string().min(1),
     ref: z.string().min(1).optional(),
+  }),
+  "connection.hosted-sign-in-cleanup": z.object({
+    organizationId: z.string().min(1),
+    spaceId: z.string().min(1),
+    userId: z.string().min(1),
+    connectorId: z.string().min(1),
+    provider: z.string().min(1),
+    connectionId: z.string().min(1),
+    removeUnreferenced: z.literal(true).optional(),
+    legacyIssuedAt: z.iso.datetime().optional(),
   }),
   "connection.organization-cleanup": z.object({
     organizationId: z.string().min(1),

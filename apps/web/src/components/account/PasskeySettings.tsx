@@ -158,7 +158,7 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
                   </p>
                   <Button
                     variant="ghost"
-                    size="icon-sm"
+                    size="icon"
                     aria-label={t`Rename`}
                     disabled={pending}
                     onClick={() => setRenaming({ id: passkey.id, name: passkey.name ?? "" })}
@@ -167,10 +167,10 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
                   </Button>
                   <Button
                     variant="ghost"
-                    size="icon-sm"
+                    size="icon"
                     aria-label={t`Delete`}
                     disabled={pending}
-                    className="text-destructive hover:text-destructive"
+                    className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive active:bg-destructive/20 dark:hover:bg-destructive/20 dark:active:bg-destructive/30"
                     onClick={() => setDeleting(passkey)}
                   >
                     <Trash2 />

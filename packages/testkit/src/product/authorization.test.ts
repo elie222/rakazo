@@ -254,6 +254,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["updater/apply", {}],
       ["models/list"],
       ["models/credentials"],
+      ["models/organizationConnections/available"],
+      ["models/organizationConnections/select", { id: null }],
       ["models/organizationConnections/list", {}],
       [
         "models/organizationConnections/create",
@@ -303,6 +305,24 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["spaces/invites/accept", { token: "missing-token" }],
       ["spaces/invites/cancel", { spaceId: "missing-space" }],
       ["organizations/list"],
+      ["organizations/vault/list"],
+      ["organizations/vault/settings"],
+      ["organizations/vault/revokeSession", { loginId: "missing-login" }],
+      [
+        "organizations/vault/signIn",
+        {
+          loginId: "missing-login",
+          url: "https://example.test",
+          steps: [
+            { kind: "fill", role: "textbox", name: "Password", text: "fake-password" },
+            { kind: "click", role: "button", name: "Sign in" },
+            { kind: "wait", role: "heading", name: "Account" },
+          ],
+        },
+      ],
+      ["organizations/vault/create", { origin: "https://example.test", name: "Test", botIds: [] }],
+      ["organizations/vault/setAgents", { loginId: "missing-login", botIds: [] }],
+      ["organizations/vault/remove", { loginId: "missing-login" }],
       ["organizations/create", { name: "Nope" }],
       ["organizations/rename", { organizationId: "missing-organization", name: "Nope" }],
       ["organizations/remove", { organizationId: "missing-organization" }],
@@ -560,6 +580,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["pages/setVisibility"],
       ["pages/pin"],
       ["pages/remove"],
+      ["pageApps/install"],
+      ["pageApps/remove"],
+      ["pages/ask"],
       ["usage/list"],
       ["usage/summary"],
       ["usage/limits"],
@@ -610,6 +633,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["billing/endTrial"],
       ["billing/switchToYearly"],
       ["billing/changeTier"],
+      ["billing/renewTrial"],
       ["billing/claimReferral"],
       ["billing/redeemCreditCode", { code: "NOT-A-REAL-CODE" }],
       ["accessGrants/list"],
@@ -984,7 +1008,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       connectionId: ownerConnection.connectionId,
     });
     expect(
-      await handles.prisma.capabilityInstall.findUnique({ where: { id: ownerCapability.id } }),
+      await db.capabilityInstall.findUnique({ where: { id: ownerCapability.id } }),
     ).not.toBeNull();
     expect(
       await asSystem(handles.prisma).connection.findUniqueOrThrow({

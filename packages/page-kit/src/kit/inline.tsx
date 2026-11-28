@@ -16,6 +16,9 @@ export function webUrl(value: unknown): string | undefined {
 
 export function openViaHost(event: MouseEvent<HTMLAnchorElement>) {
   event.preventDefault();
+  const control =
+    event.target instanceof Element ? event.target.closest("button, [role=dialog]") : null;
+  if (control && event.currentTarget.contains(control)) return;
   window.parent?.postMessage({ type: OPEN_LINK_MESSAGE, url: event.currentTarget.href }, "*");
 }
 

@@ -190,6 +190,8 @@ vi.mock("../api/api", () => ({
           managed: true,
         },
       ];
+    if (procedure === "models/organizationConnections/available")
+      return { connections: [], canManage: false, selectedId: null };
     if (procedure === "models/credentials")
       return [
         ...saved.extraCredentials,

@@ -39,6 +39,13 @@ it("returns to a Page review or the shared Pages list, including a trailing slas
     expect(signInNext(next)).toBeNull();
 });
 
+it("returns to a page open on its own, in its Space", () => {
+  for (const next of ["/page/page-1", "/page/page-1?space=space_1"])
+    expect(signInNext(next)).toBe(next);
+  for (const next of ["/page/../app", "/page/page-1?next=//evil.test", "/page/page-1/x"])
+    expect(signInNext(next)).toBeNull();
+});
+
 it("returns to a bot's chat", () => {
   expect(signInNext("/app/bot_1-A")).toBe("/app/bot_1-A");
   expect(signInNext("/app/bot/../../admin")).toBeNull();

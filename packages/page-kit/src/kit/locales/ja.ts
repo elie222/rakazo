@@ -51,6 +51,8 @@ export const ja: Messages = {
   photos: { other: "写真 {count} 枚" },
   slideOf: "{total} 件中 {n} 件目",
   showPhoto: "写真 {n} を表示",
+  previousPhoto: "前の写真",
+  nextPhoto: "次の写真",
   view: "表示",
   viewTitle: "{title}を表示",
   rated: "5 段階中 {rating} の評価",

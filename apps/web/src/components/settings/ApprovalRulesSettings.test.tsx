@@ -92,6 +92,7 @@ vi.mock("@rakazo/ui-web", async () => {
         </button>
       );
     },
+    SectionHeading: ({ children }: { children?: ReactNode }) => <h3>{children}</h3>,
     Popover: Plain,
     PopoverTrigger: Trigger,
     PopoverContent: Plain,

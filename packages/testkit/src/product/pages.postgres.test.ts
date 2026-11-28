@@ -12,12 +12,20 @@ import {
 import type { createApp } from "@rakazo/api/app";
 import type {
   AiConsentStatus,
+  PageAppInstall,
+  PageAppView,
+  PageAskEvent,
   PageDetail,
   PageReview,
   PageSummary,
   ThreadSnapshot,
 } from "@rakazo/contracts";
-import { PAGE_REVISION_NOT_FOUND, SHARED_PAGE_PATH_PREFIX } from "@rakazo/contracts";
+import {
+  PAGE_APP_API_PATH,
+  PAGE_APP_TOKEN_PREFIX,
+  PAGE_REVISION_NOT_FOUND,
+  SHARED_PAGE_PATH_PREFIX,
+} from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import { deletePageShareSecrets, pageRevisionPendingCutoff } from "@rakazo/db";
 import { pageViewerCode } from "@rakazo/page-kit/compile";
@@ -1878,6 +1886,138 @@ describePages("pages", () => {
       last = (await app.request(`${SHARED_PAGE_PATH_PREFIX}${"y".repeat(43)}`)).status;
     }
     expect(last).toBe(429);
+  });
+
+  it("lets an installed page app read and save only its own page until it is removed", async () => {
+    const owner = await signup(app, `app-owner-${stamp}@example.test`, "Owner");
+    const outsider = await signup(app, `app-outsider-${stamp}@example.test`, "Outsider");
+    const bot = await createBot(app, owner, "App bot");
+    const save = async (args: Record<string, unknown>) => {
+      await sendAndWait(app, owner, bot.id, {
+        text: `call save_page with ${JSON.stringify(args)}`,
+      });
+      return (await lastResult(bot.id)) as { pageId: string };
+    };
+    const { pageId } = await save({
+      title: "Deals",
+      source: page("Deals"),
+      icon: "rocket",
+      iconColor: "green",
+    });
+    const other = await save({ title: "Other", source: page("Other") });
+    expect((await raw(app, outsider, "pageApps/install", { pageId, abilities: [] })).status).toBe(
+      404,
+    );
+    const installed = await rpc<PageAppInstall>(app, owner, "pageApps/install", {
+      pageId,
+      abilities: ["notify"],
+    });
+    expect(installed).toMatchObject({ title: "Deals", icon: "rocket", iconColor: "green" });
+    const call = (path = "", init: RequestInit = {}, token = installed.token) =>
+      app.request(`${PAGE_APP_API_PATH}${path}`, {
+        ...init,
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      });
+
+    const view = (await (await call()).json()) as PageAppView;
+    // Asked for, but this version never calls notify, so nothing is approved yet.
+    expect(view).toMatchObject({ appId: installed.appId, approved: [] });
+    expect(view.page).toMatchObject({ id: pageId, title: "Deals" });
+    const saved = await call("/state", {
+      method: "PUT",
+      body: JSON.stringify({ values: { done: true } }),
+    });
+    expect(saved.status).toBe(200);
+    expect((await rpc<PageDetail>(app, owner, "pages/get", { pageId })).readerState).toEqual({
+      done: true,
+    });
+    const question = () =>
+      call("/ask", {
+        method: "POST",
+        body: JSON.stringify({ text: "Next?", clientNonce: "app-ask-1" }),
+      });
+    expect((await question()).status).toBe(403);
+    const approved = await call("/abilities", {
+      method: "PUT",
+      body: JSON.stringify({ abilities: ["ask", "notify"] }),
+    });
+    expect(await approved.json()).toEqual({ approved: ["ask", "notify"] });
+    // Approved, but this version never calls askBot, so nothing reaches the chat.
+    expect((await question()).status).toBe(403);
+
+    // The token names one page: nothing in it reaches the owner's other pages or session routes.
+    const forged = `${PAGE_APP_TOKEN_PREFIX}${"x".repeat(43)}`;
+    expect((await call("", {}, forged)).status).toBe(401);
+    expect(
+      (
+        await app.request(`/rpc/pages/get`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${installed.token}`,
+            "content-type": "application/json",
+            origin: "http://127.0.0.1:5173",
+          },
+          body: JSON.stringify({ json: { pageId: other.pageId } }),
+        })
+      ).status,
+    ).toBe(401);
+
+    expect((await call("", { method: "DELETE" })).status).toBe(200);
+    expect((await call()).status).toBe(401);
+
+    const again = await rpc<PageAppInstall>(app, owner, "pageApps/install", {
+      pageId,
+      abilities: [],
+    });
+    await rpc(app, owner, "pages/remove", { pageId });
+    expect((await call("", {}, again.token)).status).toBe(401);
+  });
+
+  it("ends an installed app with the sign-in that installed it", async () => {
+    const owner = await signup(app, `app-session-${stamp}@example.test`, "Owner");
+    const bot = await createBot(app, owner, "Session bot");
+    await sendAndWait(app, owner, bot.id, {
+      text: `call save_page with ${JSON.stringify({ title: "Mine", source: page("Mine") })}`,
+    });
+    const { pageId } = (await lastResult(bot.id)) as { pageId: string };
+    const installed = await rpc<PageAppInstall>(app, owner, "pageApps/install", {
+      pageId,
+      abilities: [],
+    });
+    const read = () =>
+      app.request(PAGE_APP_API_PATH, { headers: { authorization: `Bearer ${installed.token}` } });
+    expect((await read()).status).toBe(200);
+    await app.request("/api/auth/sign-out", {
+      method: "POST",
+      headers: { cookie: owner, origin: "http://127.0.0.1:5173" },
+    });
+    expect((await read()).status).toBe(401);
+  });
+
+  it("streams an installed app's question to the page's bot and back", async () => {
+    const owner = await signup(app, `app-asker-${stamp}@example.test`, "Asker");
+    const bot = await createBot(app, owner, "Asked bot");
+    const source =
+      'const App = () => <Page title="Ask"><Button label="Ask" onClick={() => askBot("Next?")} /></Page>;\nexport default App;\n';
+    await sendAndWait(app, owner, bot.id, {
+      text: `call save_page with ${JSON.stringify({ title: "Ask", source })}`,
+    });
+    const { pageId } = (await lastResult(bot.id)) as { pageId: string };
+    const installed = await rpc<PageAppInstall>(app, owner, "pageApps/install", {
+      pageId,
+      abilities: ["ask"],
+    });
+    const response = await app.request(`${PAGE_APP_API_PATH}/ask`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${installed.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ text: "Next?", clientNonce: "app-ask-stream" }),
+    });
+    expect(response.status).toBe(200);
+    const events = (await response.text())
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as PageAskEvent);
+    expect(events.at(-1)).toMatchObject({ kind: "answer", text: expect.any(String) });
   });
 });
 

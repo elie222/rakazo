@@ -30,6 +30,7 @@
     "@rakazo/db": "workspace:*",
     "@rakazo/i18n": "workspace:*",
     "@rakazo/logging": "workspace:*",
+    "@rakazo/page-kit": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
     "@rakazo/ui-web": "workspace:*",
     "@rolldown/plugin-babel": "0.2.4",

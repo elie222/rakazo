@@ -9,7 +9,13 @@ import type {
   PageVisibility,
   SharedPage,
 } from "@rakazo/contracts";
-import { pageReviewPath, pageShareTokenFromSlug, pageShareUrl } from "@rakazo/contracts";
+import {
+  knownPageAbilities,
+  PageIconColorSchema,
+  pageReviewPath,
+  pageShareTokenFromSlug,
+  pageShareUrl,
+} from "@rakazo/contracts";
 import { ClientError, escapeSearchWildcards } from "@rakazo/core";
 import type {
   PageShareSecret,
@@ -53,6 +59,8 @@ const summarySelect = {
   visibility: true,
   currentVersion: true,
   pinnedAt: true,
+  icon: true,
+  iconColor: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.PageSelect;
@@ -69,6 +77,8 @@ function pageSummary(row: SummaryRow): PageSummary {
       row.visibility === "link" || row.visibility === "people" ? row.visibility : "private",
     currentVersion: row.currentVersion,
     pinned: row.pinnedAt !== null,
+    icon: row.icon,
+    iconColor: PageIconColorSchema.safeParse(row.iconColor).data ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -97,6 +107,15 @@ async function requirePage(prisma: PrismaClient, actor: Actor, pageId: string) {
   });
   if (!row) throw new IsolationError();
   return row;
+}
+
+/** Title, icon and color of the actor's own page, without its code. */
+export async function getPageSummary(
+  prisma: PrismaClient,
+  actor: Actor,
+  pageId: string,
+): Promise<PageSummary> {
+  return pageSummary(await requirePage(prisma, actor, pageId));
 }
 
 export class PageListCursorError extends ClientError {
@@ -197,7 +216,7 @@ export async function getPage(
   const [stored, owner, readerState] = await Promise.all([
     deps.prisma.pageVersion.findUnique({
       where: { pageId_version: { pageId: row.id, version } },
-      select: { id: true, code: true, images: true },
+      select: { id: true, code: true, images: true, abilities: true },
     }),
     deps.prisma.user.findUnique({
       where: { id: actor.userId },
@@ -215,6 +234,7 @@ export async function getPage(
     version,
     code: stored.code,
     images: pageVersionImages(stored),
+    abilities: knownPageAbilities(stored.abilities),
     owner: { name: owner?.name ?? "", image: owner?.image ?? null },
     // Cards skip the secret store; a token it cannot read hides only the link.
     shareUrl: input.link

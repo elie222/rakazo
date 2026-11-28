@@ -168,6 +168,11 @@ export function createBackgroundJobHandlers(deps: {
     "page.revise": async ({ requestId }, _execution, attempt) => {
       await deps.pageRevisionWork?.(requestId, attempt);
     },
+    "page.app-unused": async ({ appId }) => {
+      await runAsSystem("remove an unused page app", () =>
+        deps.prisma.pageApp.deleteMany({ where: { id: appId, lastUsedAt: null } }),
+      );
+    },
     "run.continue": asOwner(run, async (payload, execution, { spaceId }) => {
       try {
         if (execution)
@@ -208,6 +213,13 @@ export function createBackgroundJobHandlers(deps: {
         );
       },
     ),
+    "connection.hosted-sign-in-cleanup": async (payload) => {
+      const connectors = deps.connectors;
+      if (!connectors) throw new Error("connection cleanup has no connector registry");
+      await runAsSystem("remove a cancelled hosted sign-in", () =>
+        retryConnectionCleanup({ prisma: deps.prisma, connectors, jobs: deps.jobs }, payload),
+      );
+    },
     "connection.organization-cleanup": async (payload) => {
       const connectors = deps.connectors;
       if (!connectors) throw new Error("connection cleanup has no connector registry");

@@ -2,7 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { ConnectionCatalogItem } from "@rakazo/contracts";
 import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
 import type { ConnectionOwnerChoice } from "@rakazo/core";
-import { catalogItemAccounts, catalogItemKey, organizationConnectionForApp } from "@rakazo/core";
+import { catalogItemAccounts, catalogItemKey } from "@rakazo/core";
 import { Button, FieldGroup, Input, Spinner } from "@rakazo/ui-web";
 import { ChevronLeft, Plus } from "lucide-react";
 import { useState } from "react";
@@ -43,9 +43,6 @@ export function ConnectorDetail({
   const accounts = catalogItemAccounts(connections, item);
   const shared = accounts.some((row) => row.organization);
   const adding = !accounts.length && !item.connected;
-  const offerOwnership = organizationConnectionForApp(connections, item.slug)
-    ? null
-    : organizationName;
   const key = catalogItemKey(item);
   const connecting = pending === key;
   const uninstalling = pending === `uninstall:${key}`;
@@ -159,10 +156,10 @@ export function ConnectorDetail({
             ) : null}
           </div>
         ))}
-        {offerOwnership ? (
+        {organizationName ? (
           <FieldGroup className="px-2">
             <ConnectionOwnerPicker
-              organizationName={offerOwnership}
+              organizationName={organizationName}
               value={owner}
               onChange={setOwner}
             />
@@ -174,7 +171,7 @@ export function ConnectorDetail({
           className="px-2 text-body text-muted-foreground"
           size="lg"
           disabled={connecting || uninstalling}
-          onClick={() => connect(item, offerOwnership ? owner : "me")}
+          onClick={() => connect(item, organizationName ? owner : "me")}
         >
           <Plus />
           {connecting ? (

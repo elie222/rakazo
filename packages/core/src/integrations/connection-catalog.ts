@@ -47,15 +47,6 @@ export function catalogItemAccounts(connections: readonly Connection[], item: Ca
   );
 }
 
-export function organizationConnectionForApp(connections: readonly Connection[], slug: string) {
-  return connections.find(
-    (row) =>
-      row.organization &&
-      row.status !== "revoked" &&
-      row.provider.toLowerCase() === slug.toLowerCase(),
-  );
-}
-
 /** A saved shared account still needs management when its provider's catalog is unavailable. */
 export function catalogWithOrganizationConnections(
   catalog: ConnectionCatalogItem[],
@@ -159,7 +150,7 @@ export async function connectCatalogItem(
     isCurrent: deps.isCurrent,
     attempts: CATALOG_CONNECT_POLL_ATTEMPTS,
   });
-  return result.status === "connected" ? { ...result, connectionId: started.connectionId } : result;
+  return result.status === "connected" ? { ...result, connectionId: result.row.id } : result;
 }
 
 /**

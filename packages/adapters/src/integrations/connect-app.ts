@@ -62,7 +62,8 @@ export async function connectApp(
       row.connectorId === entry.connectorId &&
       row.externalId.toLowerCase() === entry.slug.toLowerCase(),
   );
-  const shared = matching?.find((row) => row.organizationId);
+  const sharedAccounts = matching?.filter((row) => row.organizationId) ?? [];
+  const shared = sharedAccounts[0];
   const orgOnly = shared && !matching?.some((row) => !row.organizationId);
   const checkShared =
     orgOnly && provider
@@ -75,7 +76,10 @@ export async function connectApp(
         )
       : undefined;
   const reconnect = orgOnly
-    ? checkShared?.({ provider: entry.slug, providerRef: shared.providerRef ?? null })
+    ? checkShared &&
+      sharedAccounts.every((row) =>
+        checkShared({ provider: entry.slug, providerRef: row.providerRef ?? null }),
+      )
     : entry.connected && ((await provider?.needsReconnect?.(context, entry.slug)) ?? false);
   if (entry.connected && !reconnect)
     return {
@@ -94,9 +98,9 @@ export async function connectApp(
       select: { id: true },
     });
     if (replayed) return null;
-    // Only recent cards count as already shown; an old one far up the chat should not block a new one.
+    // A later request needs a card tied to its own run, even when the app is the same.
     const recent = await tx.message.findMany({
-      where: { threadId: target.threadId },
+      where: { threadId: target.threadId, runId: target.id },
       select: { id: true, blocks: true },
       orderBy: { createdAt: "desc" },
       take: RECENT_MESSAGES,

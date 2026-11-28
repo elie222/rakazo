@@ -2,6 +2,8 @@ import { useLingui } from "@lingui/react/macro";
 import { useNativeLinkConfirm } from "@rakazo/chat-ui/native";
 import type { PageDetail } from "@rakazo/contracts";
 import {
+  pageAskAnswer,
+  pageAskRequest,
   pageCopyRequest,
   pageCopyResult,
   pageLinkRequest,
@@ -19,6 +21,7 @@ import { NativeActionButton } from "../components/native/native-action-button";
 import { currentApiBase } from "../lib/api/api";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native/native";
 import { HEADER_CONTROL_SIZE } from "../lib/native/native-controls";
+import { askPageBot } from "../lib/pages/page-ask";
 import { PageLoadFailure } from "../lib/pages/page-load-failure";
 import { usePageStateSaver } from "../lib/pages/page-state";
 import {
@@ -73,7 +76,11 @@ export default function PageScreen() {
           { ...page, pageId: page.id },
           theme,
           t`This page couldn't be shown.`,
-          { reply: pageChat(page) !== null, state: page.readerState },
+          {
+            reply: pageChat(page) !== null,
+            ask: pageAsks(page),
+            state: page.readerState,
+          },
         );
         if (!active) return;
         setLoaded({ status: "ready", page, document });
@@ -85,6 +92,14 @@ export default function PageScreen() {
       active = false;
     };
   }, [pageId, theme, t, attempt]);
+
+  // Questions a page is still waiting on end when it reloads or closes.
+  const asking = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    asking.current = controller;
+    return () => controller.abort();
+  }, [pageId, attempt]);
 
   const openLink = useNativeLinkConfirm();
   // The app sees every touch on the WebView too (React Native's root handler, on iOS and Android),
@@ -102,10 +117,23 @@ export default function PageScreen() {
         stateSaver.save(values);
         return;
       }
-      if (!pageActionAllowed(tappedAt.current, Date.now())) return;
+      const allowed = pageActionAllowed(tappedAt.current, Date.now());
       const message = pageMessage(data) as { type?: unknown; text?: unknown } | null;
-      const reply = message?.type === "rakazo-page:reply" ? pageReplyText(message.text) : null;
       const page = loaded.status === "ready" ? loaded.page : null;
+      const ask = pageAskRequest(message);
+      if (ask) {
+        // A page waits on every question, so one it may not send is answered at once.
+        if (!allowed || !page || !pageAsks(page)) {
+          answer(pageAskAnswer(ask.id, null));
+          return;
+        }
+        tappedAt.current = null;
+        const signal = asking.current?.signal ?? AbortSignal.abort();
+        void askPageBot(page, ask.text, signal).then((text) => answer(pageAskAnswer(ask.id, text)));
+        return;
+      }
+      if (!allowed) return;
+      const reply = message?.type === "rakazo-page:reply" ? pageReplyText(message.text) : null;
       const chat = reply && page ? pageChat(page) : null;
       const url = pageLinkRequest(message);
       const copy = pageCopyRequest(message);
@@ -219,6 +247,11 @@ export default function PageScreen() {
       </View>
     </View>
   );
+}
+
+/** A page that uses askBot and has a chat to ask in; an older server may not say what it uses. */
+function pageAsks(page: PageDetail): boolean {
+  return pageChat(page) !== null && page.abilities?.includes("ask") === true;
 }
 
 const styles = StyleSheet.create({

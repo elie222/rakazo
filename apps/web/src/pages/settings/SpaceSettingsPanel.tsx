@@ -1,10 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { Button, Input } from "@rakazo/ui-web";
+import { Trash2 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { SettingsGroup, SettingsRow } from "../../components/settings/SettingsRows";
 import { SpaceMembersSettings } from "../../components/spaces/SpaceMembersSettings";
 import { useSave } from "../../lib/query/query";
 import type { RpcClient } from "../../lib/query/rpc";
+import { errorText } from "../../lib/query/user-error";
 import type { SettingsSpace } from "../shell/create-delete-dialogs";
 import { DeleteSpaceDialog } from "../shell/create-delete-dialogs";
 import { SpaceSettingOverrides } from "./SpaceSettingOverrides";
@@ -98,7 +100,7 @@ export function SpaceSettingsPanel({
           >
             {rename.error ? (
               <p role="alert" className="pt-2 text-body-sm text-destructive">
-                {rename.error.message.trim() || t`Could not rename space`}
+                {errorText(rename.error, t`Could not rename space`)}
               </p>
             ) : null}
           </SettingsRow>
@@ -111,11 +113,8 @@ export function SpaceSettingsPanel({
         onBusyChange={setOverridesBusy}
       />
       {space.canDelete ? (
-        <Button
-          variant="destructive"
-          className="rounded-full"
-          onClick={() => setConfirmingDelete(true)}
-        >
+        <Button variant="destructive-secondary" onClick={() => setConfirmingDelete(true)}>
+          <Trash2 data-icon="inline-start" />
           <Trans>Delete space</Trans>
         </Button>
       ) : null}

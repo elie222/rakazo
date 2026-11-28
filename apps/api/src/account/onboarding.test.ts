@@ -14,10 +14,18 @@ vi.mock("@rakazo/db", async (original) => ({
 }));
 // These transactions lock the thread row, which snapshot reads hold for up to 15s.
 const budget = { timeout: 20_000 };
+type ConnectionOrigin = Pick<db.Run, "id" | "botId" | "status" | "trigger"> & {
+  sourceMessage: Pick<db.Message, "id" | "role" | "authorUserId" | "threadId"> | null;
+};
 function fixture(catalog: unknown[]) {
   posted.length = 0;
   const tx = {
     $executeRaw: vi.fn(),
+    task: { create: vi.fn(async () => ({ id: "follow-up-task" })) },
+    run: {
+      findMany: vi.fn(async (): Promise<ConnectionOrigin[]> => []),
+      create: vi.fn(async () => ({ id: "follow-up-run" })),
+    },
     message: {
       findMany: vi.fn(async () => [{ id: "choice", blocks: [{ kind: "choice", answerId: null }] }]),
       update: vi.fn(),
@@ -29,12 +37,13 @@ function fixture(catalog: unknown[]) {
       $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(tx)),
     },
     events: { notify: vi.fn() },
+    jobs: { enqueue: vi.fn() },
     connectors: {
       defaultConnectorId: "first-connector",
       managedProviders: () => [{ catalog: async () => catalog }],
       managed: vi.fn(() => ({ catalog: async () => catalog })),
     },
-  } as unknown as Parameters<typeof chooseFocus>[0];
+  } as unknown as Parameters<typeof markAppConnected>[0];
   const actor = {
     userId: "user",
     spaceId: "space",
@@ -298,4 +307,141 @@ it("updates the authorized card's own message even outside the bounded scan", as
     where: { id: "middle" },
     data: { blocks: [{ ...card, status: "connected" }] },
   });
+  expect(tx.run.create).not.toHaveBeenCalled();
+});
+
+function botConnectionFixture() {
+  const f = fixture([
+    { connectorId: "fixture", slug: "calendar", name: "Calendar", connected: true },
+  ]);
+  const card = {
+    id: "requested-connection",
+    seq: 1,
+    runId: "origin-run",
+    botId: "bot",
+    blocks: [
+      {
+        kind: "app_connect",
+        connectorId: "fixture",
+        provider: "calendar",
+        status: "pending",
+      },
+    ],
+  };
+  f.tx.message.findMany.mockResolvedValue([card] as never);
+  f.tx.message.update.mockImplementation(async ({ data }) => {
+    card.blocks = data.blocks;
+  });
+  return {
+    ...f,
+    card,
+    complete: () =>
+      markAppConnected(f.deps, f.actor, "bot", "calendar", "fixture", "thread", card.id),
+  };
+}
+
+it("starts one follow-up for the same user and chat when a bot's card connects", async () => {
+  const { complete, deps, tx, actor } = botConnectionFixture();
+  tx.run.findMany.mockResolvedValue([
+    {
+      id: "origin-run",
+      botId: "bot",
+      status: "running",
+      trigger: "user",
+      sourceMessage: {
+        id: "request",
+        threadId: "thread",
+        role: "user",
+        authorUserId: actor.userId,
+      },
+    },
+  ]);
+  await complete();
+  await complete();
+  expect(tx.run.findMany).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: {
+        id: { in: ["origin-run"] },
+        botId: { in: ["bot"] },
+        bot: { archivedAt: null },
+        threadId: "thread",
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+      },
+    }),
+  );
+  expect(tx.run.create).toHaveBeenCalledExactlyOnceWith({
+    data: {
+      botId: "bot",
+      threadId: "thread",
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      taskId: "follow-up-task",
+      trigger: "follow_up",
+      status: "queued",
+      clientNonce: "app-connected:requested-connection",
+      sourceMessageId: "request",
+    },
+    select: { id: true },
+  });
+  expect(deps.jobs.enqueue).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ name: "run.continue", payload: { runId: "follow-up-run" } }),
+  );
+});
+
+it("does not use a bot-authored source as the user's request", async () => {
+  const { complete, tx } = botConnectionFixture();
+  tx.run.findMany.mockResolvedValue([
+    {
+      id: "origin-run",
+      botId: "bot",
+      status: "completed",
+      trigger: "follow_up",
+      sourceMessage: { id: "handoff", threadId: "thread", role: "bot", authorUserId: null },
+    },
+  ]);
+  await complete();
+  expect(tx.run.create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      data: expect.objectContaining({ trigger: "follow_up", sourceMessageId: undefined }),
+    }),
+  );
+});
+
+it("resumes the latest request when the user authorizes from an older card", async () => {
+  const { complete, tx, card, actor } = botConnectionFixture();
+  const latest = { ...card, id: "latest-card", seq: 2, runId: "latest-run" };
+  tx.message.findMany.mockImplementation(
+    async (query?: { where: { id?: string } }) =>
+      (query?.where.id ? [card] : [card, latest]) as never,
+  );
+  tx.run.findMany.mockResolvedValue(
+    [card, latest].map((entry) => ({
+      id: entry.runId,
+      botId: "bot",
+      status: "completed",
+      trigger: "user",
+      sourceMessage: {
+        id: `source-${entry.runId}`,
+        threadId: "thread",
+        role: "user",
+        authorUserId: actor.userId,
+      },
+    })),
+  );
+
+  await complete();
+
+  expect(tx.run.create).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      data: expect.objectContaining({ sourceMessageId: "source-latest-run" }),
+    }),
+  );
+});
+
+it("leaves another member's connection card pending", async () => {
+  const { complete, tx } = botConnectionFixture();
+  await complete();
+  expect(tx.message.update).not.toHaveBeenCalled();
+  expect(tx.run.create).not.toHaveBeenCalled();
 });

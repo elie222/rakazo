@@ -13,23 +13,21 @@ import type {
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
 import { ConnectorAuthUnavailableError } from "@rakazo/adapter-kit";
-import { humanizeToolName } from "@rakazo/core";
 import { isVitestRuntime } from "@rakazo/core/node/test-runtime";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { collectPages, filterCatalog } from "../../../integrations/connector-catalog.js";
 import { isLazyCatalogControlRoute } from "../../../tools/lazy-tool-catalog.js";
 import { connectedCalendarProvider } from "./calendar.js";
-import {
-  COMPOSIO_MULTI_EXECUTE_TOOL,
-  composioOutgoingDraft,
-  composioSessionToolBatch,
-} from "./composio-batch.js";
+import { composioAccountIdentity } from "./composio-account-identity.js";
+import { composioAccountTools, composioOwner, scopedAccounts } from "./composio-account-tools.js";
+import { COMPOSIO_MULTI_EXECUTE_TOOL } from "./composio-batch.js";
 import type { ToolkitDirectoryEntry } from "./composio-catalog-cache.js";
 import {
   composioToolkitDirectory,
   createToolkitDirectoryCache,
   mergeCatalogWithConnected,
 } from "./composio-catalog-cache.js";
+import { composioSlugKey } from "./composio-connection-state.js";
 import {
   collectLogIds,
   composioResultError,
@@ -42,9 +40,17 @@ import {
   staleAccountIds,
   withSharedAccessHint,
 } from "./composio-errors.js";
+import { asConnectorTools } from "./composio-tool-mapping.js";
 
-import { composioOwner, organizationConnector } from "./composio-organization.js";
-
+export type { PluginConnectionRow } from "./composio-connection-state.js";
+export {
+  AUTHORIZATION_WINDOW_MS,
+  mergeConnectedPlugins,
+  needsLivePluginSync,
+  personalComposioConnections,
+  pickReusableConnection,
+  planLiveConnectionSync,
+} from "./composio-connection-state.js";
 export {
   collectLogIds,
   composioResultError,
@@ -53,6 +59,11 @@ export {
   sanitizeIntegrationError,
   withSharedAccessHint,
 } from "./composio-errors.js";
+export { asConnectorTools } from "./composio-tool-mapping.js";
+
+function rethrowSanitizedIntegrationError(error: unknown): never {
+  throw new Error(sanitizeIntegrationError(error));
+}
 
 type SdkSession = Awaited<ReturnType<Composio["create"]>>;
 
@@ -67,12 +78,18 @@ export type ComposioClient = {
   tools?: Pick<Composio["tools"], "proxyExecute">;
   sessions: { use(sessionId: string): Promise<ComposioSession> };
   connectedAccounts: Pick<Composio["connectedAccounts"], "list" | "waitForConnection" | "delete">;
-  toolkits: {
-    get(query: {
-      limit?: number;
-    }): Promise<Array<{ slug: string; noAuth?: boolean; composioManagedAuthSchemes?: string[] }>>;
-  };
   getClient(): {
+    toolkits: {
+      list(query: { limit: number; cursor?: string }): Promise<{
+        items: Array<{
+          slug: string;
+          meta?: { description?: unknown };
+          no_auth?: boolean;
+          composio_managed_auth_schemes?: string[];
+        }>;
+        next_cursor?: string | null;
+      }>;
+    };
     tools: {
       list(
         query: { toolkit_slug: string; limit: number; cursor?: string },
@@ -98,76 +115,6 @@ export function isComposioEnabled(apiKey: string | undefined): boolean {
   return Boolean(apiKey) && !isVitestRuntime();
 }
 
-export function asConnectorTools(input: unknown): ConnectorTool[] {
-  const items = Array.isArray(input)
-    ? input
-    : input && typeof input === "object" && Array.isArray((input as { items?: unknown }).items)
-      ? ((input as { items: unknown[] }).items ?? [])
-      : [];
-  const tools: ConnectorTool[] = [];
-  for (const item of items) {
-    const mapped = mapOneTool(item);
-    if (mapped) tools.push(mapped);
-  }
-  return tools;
-}
-
-function mapOneTool(item: unknown): ConnectorTool | undefined {
-  if (!item || typeof item !== "object") return undefined;
-  const raw = item as Record<string, unknown>;
-  if (raw.type === "function" && raw.function && typeof raw.function === "object") {
-    const fn = raw.function as Record<string, unknown>;
-    const name = String(fn.name ?? "");
-    if (!name) return undefined;
-    return {
-      name,
-      description: String(fn.description ?? name),
-      inputSchema: asObject(fn.parameters) ?? { type: "object", properties: {} },
-      batch: composioSessionToolBatch(name),
-      outgoingDraft: composioOutgoingDraft(name),
-      ...composioToolLabel(name),
-      route: { connectorId: "composio", toolName: name },
-    };
-  }
-  const name = String(raw.slug ?? raw.name ?? "");
-  if (!name) return undefined;
-  return {
-    name,
-    description: String(raw.description ?? name),
-    inputSchema: asObject(raw.inputParameters) ??
-      asObject(raw.inputSchema) ??
-      asObject(raw.parameters) ?? { type: "object", properties: {} },
-    batch: composioSessionToolBatch(name),
-    outgoingDraft: composioOutgoingDraft(name),
-    ...composioToolLabel(name),
-    route: { connectorId: "composio", toolName: name },
-  };
-}
-
-const COMPOSIO_TOOL_PREFIX = "COMPOSIO_";
-const COMPOSIO_TOOL_LABELS: Record<string, string> = {
-  COMPOSIO_SEARCH_TOOLS: "Searching your apps",
-  COMPOSIO_GET_TOOL_SCHEMAS: "Checking app details",
-  COMPOSIO_MULTI_EXECUTE_TOOL: "Using your apps",
-  COMPOSIO_REMOTE_WORKBENCH: "Running code",
-  COMPOSIO_REMOTE_BASH_TOOL: "Running code",
-  COMPOSIO_MANAGE_CONNECTIONS: "Checking connections",
-};
-
-/** Session tools carry the vendor's name, which means nothing to the person watching. */
-function composioToolLabel(name: string): { label?: string } {
-  if (!name.startsWith(COMPOSIO_TOOL_PREFIX)) return {};
-  return {
-    label: COMPOSIO_TOOL_LABELS[name] ?? humanizeToolName(name.slice(COMPOSIO_TOOL_PREFIX.length)),
-  };
-}
-
-function asObject(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
 export interface ComposioProvider extends ManagedConnectorProvider {
   warmDirectory(): Promise<void>;
   listConnectedSlugs(userId: string): Promise<string[]>;
@@ -186,10 +133,6 @@ const TOOLKIT_NAMES = new Map([["whatsapp", "WhatsApp Business"]]);
 
 export function toolkitDisplayName(toolkit: { slug: string; name: string }): string {
   return TOOLKIT_NAMES.get(composioSlugKey(toolkit.slug)) ?? toolkit.name;
-}
-
-function composioSlugKey(slug: string): string {
-  return slug.trim().toLowerCase();
 }
 
 export function executeSessionKey(
@@ -279,15 +222,16 @@ function callUsesToolkit(call: ConnectorCall, toolkit: string, toolkits: string[
   });
 }
 
-function accountIsPinned(
+function accountPinCount(
   connectedAccounts: Record<string, string[]>,
   tool: string,
   account: string,
-): boolean {
+): number {
   const toolKey = composioSlugKey(tool);
-  return Object.entries(connectedAccounts).some(
+  const pin = Object.entries(connectedAccounts).find(
     ([toolkit, ids]) => toolKey.startsWith(`${composioSlugKey(toolkit)}_`) && ids.includes(account),
   );
+  return pin?.[1].length ?? 0;
 }
 
 function dropboxFolderListCall(item: unknown): ComposioExecutionCall | undefined {
@@ -329,156 +273,6 @@ function nonEmptyPath(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
-}
-
-export type PluginConnectionRow = {
-  id: string;
-  provider: string;
-  status: string;
-  displayName: string;
-  /** When the row last changed; for a pending row, when its authorization began. */
-  updatedAt?: Date;
-  /** The account its sign-in creates, the app's slug for an app without one, or nothing yet. */
-  providerRef?: string | null;
-};
-
-/**
- * Composio expires an authorization nobody finished about ten minutes after it began. Until
- * then the person may still be on the app's sign-in page, so the row is not abandoned yet.
- */
-export const AUTHORIZATION_WINDOW_MS = 15 * 60 * 1000;
-
-function stillAuthorizing(row: PluginConnectionRow, now: number): boolean {
-  return (
-    row.status === "pending" &&
-    row.updatedAt !== undefined &&
-    now - row.updatedAt.getTime() < AUTHORIZATION_WINDOW_MS
-  );
-}
-
-export function needsLivePluginSync(rows: { status: string }[]): boolean {
-  return rows.some((row) => row.status === "pending" || row.status === "error");
-}
-
-export function personalComposioConnections<
-  T extends { connectorId: string; organizationId?: string | null },
->(connections: readonly T[]): T[] {
-  return connections.filter((row) => row.connectorId === "composio" && !row.organizationId);
-}
-
-export function mergeConnectedPlugins(
-  rows: { provider: string; displayName: string; status?: string }[],
-  liveSlugs: string[],
-): { provider: string; displayName: string }[] {
-  const live = new Set(liveSlugs.map((slug) => composioSlugKey(slug)).filter(Boolean));
-  const byProvider = new Map<string, { provider: string; displayName: string }>();
-  for (const row of rows) {
-    if (!row.provider) continue;
-    const include =
-      row.status === "connected" ||
-      row.status === undefined ||
-      ((row.status === "pending" || row.status === "error") &&
-        live.has(composioSlugKey(row.provider)));
-    if (!include) continue;
-    const current = byProvider.get(composioSlugKey(row.provider));
-    if (!current || composioSlugKey(current.displayName) === composioSlugKey(current.provider)) {
-      byProvider.set(composioSlugKey(row.provider), {
-        provider: row.provider,
-        displayName: row.displayName,
-      });
-    }
-  }
-  return [...byProvider.values()];
-}
-
-/** Reuse a revoked/error row only when this provider has no live sibling. */
-export function pickReusableConnection<T extends { id: string; status: string }>(
-  rows: T[],
-): T | undefined {
-  if (rows.some((row) => row.status === "connected" || row.status === "pending")) {
-    return undefined;
-  }
-  return rows.find((row) => row.status === "revoked" || row.status === "error");
-}
-
-/**
- * The row to connect for an app the provider reports signed in. Trying again leaves an earlier
- * row holding a sign-in nobody finished, so the row is the one whose own account is live, and
- * the latest attempt when the live accounts are unknown.
- */
-function signedInRow(
-  rows: PluginConnectionRow[],
-  slug: string,
-  liveRefs: Set<string> | undefined,
-): PluginConnectionRow | undefined {
-  const latestFirst = rows
-    .filter((row) => row.status === "pending" || row.status === "error")
-    .sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
-  if (!liveRefs) return latestFirst[0];
-  const holdsNoAccount = (row: PluginConnectionRow) =>
-    !row.providerRef || composioSlugKey(row.providerRef) === slug;
-  return (
-    latestFirst.find((row) => row.providerRef && liveRefs.has(row.providerRef)) ??
-    latestFirst.find(holdsNoAccount)
-  );
-}
-
-export function planLiveConnectionSync(
-  rows: PluginConnectionRow[],
-  liveSlugs: string[],
-  now = Date.now(),
-  liveRefs?: string[],
-): { connectIds: string[]; revokeIds: string[] } {
-  const liveRefSet = liveRefs && new Set(liveRefs);
-  const live = new Set(liveSlugs.map(composioSlugKey).filter(Boolean));
-  const connectIds: string[] = [];
-  const connectedProviders = new Set(
-    rows.filter((row) => row.status === "connected").map((row) => composioSlugKey(row.provider)),
-  );
-  for (const slug of live) {
-    if (connectedProviders.has(slug)) continue;
-    const matches = rows.filter((row) => composioSlugKey(row.provider) === slug);
-    // Recover in-flight pending/error rows only. A revoked sibling stays
-    // revoked even when another row (or the upstream listing) is live for
-    // the same slug — reviving it would reattach a dead providerRef.
-    const reusable = signedInRow(matches, slug, liveRefSet);
-    if (!reusable) continue;
-    connectIds.push(reusable.id);
-    connectedProviders.add(slug);
-  }
-  // A further attempt whose own sign-in finished is another account of an app that is
-  // already connected, left unfinished only because its page stopped asking.
-  for (const row of rows) {
-    if (row.status !== "pending" || connectIds.includes(row.id)) continue;
-    if (row.providerRef && liveRefSet?.has(row.providerRef)) connectIds.push(row.id);
-  }
-  const connectIdSet = new Set(connectIds);
-  // Providers that already have a connected row before this sync. An extra pending row for
-  // one is an additional-account attempt: kept while its sign-in page may still be open, or
-  // when its age is unknown, and cleared after that. Concurrent pendings with no connected
-  // row yet still collapse to one connect + revoke the rest.
-  const previouslyConnected = new Set(
-    rows.filter((row) => row.status === "connected").map((row) => composioSlugKey(row.provider)),
-  );
-  const revokeIds = rows
-    .filter((row) => {
-      if (row.status !== "pending" && row.status !== "error") return false;
-      if (connectIdSet.has(row.id)) return false;
-      // Revoking it would cancel a sign-in the person is in the middle of.
-      if (stillAuthorizing(row, now)) return false;
-      // Keep an additional-account pending whose age is unknown; one past the authorization
-      // window was abandoned, and so is an error, which would otherwise be re-listed forever.
-      if (
-        row.status === "pending" &&
-        row.updatedAt === undefined &&
-        previouslyConnected.has(composioSlugKey(row.provider))
-      ) {
-        return false;
-      }
-      return true;
-    })
-    .map((row) => row.id);
-  return { connectIds, revokeIds };
 }
 
 export class ComposioConnector implements ComposioProvider {
@@ -695,51 +489,69 @@ export class ComposioConnector implements ComposioProvider {
 
   private async loadDirectory(): Promise<ToolkitDirectoryEntry[]> {
     const session = await this.sessionFor("__rakazo_catalog__");
-    const [toolkits, needsSetup] = await Promise.all([
+    const [toolkits, metadata] = await Promise.all([
       collectPages((cursor) => session.toolkits({ limit: 50, cursor })),
       // Without this lookup every app stays listed, as before.
-      this.toolkitsNeedingSignInSetup().catch((error: unknown) => {
-        getLogger().warn("composio sign-in setup lookup failed", {
-          error: sanitizeIntegrationError(error),
-        });
-        return new Set<string>();
-      }),
+      bestEffort(
+        "load composio toolkit metadata",
+        this.loadToolkitMetadata().catch(rethrowSanitizedIntegrationError),
+      ),
     ]);
-    return toolkits.map((toolkit) => ({
-      slug: toolkit.slug,
-      name: toolkitDisplayName(toolkit),
-      logo: toolkit.logo ?? null,
-      noAuth: Boolean(toolkit.isNoAuth),
-      ...(!toolkit.isNoAuth && needsSetup.has(composioSlugKey(toolkit.slug))
-        ? { needsSignInSetup: true }
-        : {}),
-    }));
+    return toolkits.map((toolkit) => {
+      const details = metadata?.get(composioSlugKey(toolkit.slug));
+      return {
+        slug: toolkit.slug,
+        name: toolkitDisplayName(toolkit),
+        logo: toolkit.logo ?? null,
+        noAuth: Boolean(toolkit.isNoAuth),
+        ...(details?.description ? { description: details.description } : {}),
+        ...(!toolkit.isNoAuth && details?.needsSignInSetup ? { needsSignInSetup: true } : {}),
+      };
+    });
   }
 
   /**
    * Apps Composio has no managed sign-in for (Shopify, Twitter) connect only
    * once this project has its own auth config for them; until then hide them.
    */
-  private async toolkitsNeedingSignInSetup(): Promise<Set<string>> {
+  private async loadToolkitMetadata() {
     const composio = await this.sdk();
     const [toolkits, authConfigs] = await Promise.all([
-      composio.toolkits.get({ limit: 1000 }),
       collectPages(async (cursor) => {
-        const page = await composio.authConfigs.list({ limit: 100, cursor });
-        return { items: page.items, cursor: page.nextCursor ?? undefined };
+        const page = await composio.getClient().toolkits.list({ limit: 1000, cursor });
+        return { items: page.items, cursor: page.next_cursor ?? undefined };
       }),
+      bestEffort(
+        "load composio sign-in setup",
+        collectPages(async (cursor) => {
+          const page = await composio.authConfigs.list({ limit: 100, cursor });
+          return { items: page.items, cursor: page.nextCursor ?? undefined };
+        }).catch(rethrowSanitizedIntegrationError),
+      ),
     ]);
-    const configured = new Set(
-      authConfigs
-        .filter((config) => config.status === "ENABLED")
-        .map((config) => composioSlugKey(config.toolkit.slug)),
-    );
-    return new Set(
-      toolkits
-        // A missing field is unknown, not "no managed sign-in".
-        .filter((toolkit) => !toolkit.noAuth && toolkit.composioManagedAuthSchemes?.length === 0)
-        .map((toolkit) => composioSlugKey(toolkit.slug))
-        .filter((slug) => !configured.has(slug)),
+    const configured =
+      authConfigs &&
+      new Set(
+        authConfigs
+          .filter((config) => config.status === "ENABLED")
+          .map((config) => composioSlugKey(config.toolkit.slug)),
+      );
+    return new Map(
+      toolkits.map((toolkit) => {
+        const slug = composioSlugKey(toolkit.slug);
+        const description = toolkit.meta?.description;
+        return [
+          slug,
+          {
+            description: typeof description === "string" ? description : undefined,
+            // A missing field is unknown, not "no managed sign-in".
+            needsSignInSetup:
+              !toolkit.no_auth &&
+              toolkit.composio_managed_auth_schemes?.length === 0 &&
+              configured?.has(slug) === false,
+          },
+        ];
+      }),
     );
   }
 
@@ -790,25 +602,39 @@ export class ComposioConnector implements ComposioProvider {
     return asConnectorTools(tools);
   }
 
-  private readonly organizationConnector = organizationConnector(
+  private readonly accountTools = composioAccountTools(
     (context, app) => this.listAppTools(context, app),
     (context, connection) => this.sessionForExecute(composioOwner(context), [connection]),
+    async (app) => {
+      try {
+        return (await this.directory()).some(
+          ({ slug, noAuth }) => noAuth && composioSlugKey(slug) === composioSlugKey(app),
+        );
+      } catch (error) {
+        if (!isComposioOutage(error)) throw error;
+        getLogger().warn("Composio could not verify whether the app requires an account", {
+          error: sanitizeIntegrationError(error),
+        });
+        return undefined;
+      }
+    },
   );
 
   resolveCall(call: ConnectorCall, context: AdapterContext) {
-    return this.organizationConnector.resolveCall(call, context);
+    return this.accountTools.resolveCall(call, context);
   }
 
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
     const [personal, shared] = await Promise.all([
       this.discoverPersonalTools(context),
-      this.organizationConnector.discoverTools(context),
+      this.accountTools.discoverTools(context),
     ]);
     return [...personal, ...shared];
   }
 
   private async discoverPersonalTools(context: AdapterContext): Promise<ConnectorTool[]> {
-    const connections = connectedComposioConnections(context);
+    const scoped = new Set(scopedAccounts(context).map(({ id }) => id));
+    const connections = connectedComposioConnections(context).filter(({ id }) => !scoped.has(id));
     if (connections.length === 0) return [];
     try {
       const { session } = await this.sessionForExecute(context.userId, connections);
@@ -826,7 +652,7 @@ export class ComposioConnector implements ComposioProvider {
 
   async *execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent> {
     if (call.route?.connectionId || isLazyCatalogControlRoute(call.route)) {
-      yield* this.organizationConnector.execute(call, context);
+      yield* this.accountTools.execute(call, context);
       return;
     }
     const executed = [];
@@ -852,10 +678,11 @@ export class ComposioConnector implements ComposioProvider {
         yield { type: "error", message: "No active Composio connection for this tool." };
         return;
       }
-      const planned = expandComposioMultiExecute(call.tool, call.args ?? {});
-      const unpinned = planned.find(
-        (item) => item.account && !accountIsPinned(connectedAccounts, item.tool, item.account),
-      );
+      const planned = expandComposioMultiExecute(call.tool, call.args ?? {}).map((item) => ({
+        ...item,
+        pinCount: item.account ? accountPinCount(connectedAccounts, item.tool, item.account) : 0,
+      }));
+      const unpinned = planned.find((item) => item.account && item.pinCount === 0);
       if (unpinned) {
         yield {
           type: "error",
@@ -867,7 +694,7 @@ export class ComposioConnector implements ComposioProvider {
         const result = await session.execute(
           item.tool,
           item.args,
-          item.account ? { account: item.account } : undefined,
+          item.account && item.pinCount > 1 ? { account: item.account } : undefined,
         );
         // A failed or hook-blocked call can come back with an empty error.
         if (result.error || result.resultType !== "completed") {
@@ -912,7 +739,7 @@ export class ComposioConnector implements ComposioProvider {
   async begin(
     request: { provider: string; redirectUrl: string },
     context: AdapterContext,
-  ): Promise<{ authorizationUrl: string | null; state: string }> {
+  ): ReturnType<ManagedConnectorProvider["begin"]> {
     const session = await this.sessionFor(composioOwner(context));
     try {
       const connectionRequest = await session.authorize(request.provider, {
@@ -923,11 +750,15 @@ export class ComposioConnector implements ComposioProvider {
         return {
           authorizationUrl: null,
           state: account?.id || connectionRequest.id || request.provider,
+          requiresCompletion:
+            composioSlugKey(request.provider) === "gmail" ||
+            Boolean(context.organizationId && (account?.id || connectionRequest.id)),
         };
       }
+      if (!connectionRequest.id) throw new Error("Authorization has no connection request ID.");
       return {
         authorizationUrl: connectionRequest.redirectUrl,
-        state: connectionRequest.id || request.provider,
+        state: connectionRequest.id,
       };
     } catch (error) {
       if (isNoAuthToolkitError(error)) {
@@ -939,6 +770,14 @@ export class ComposioConnector implements ComposioProvider {
       throw new Error(sanitizeIntegrationError(error));
     }
   }
+
+  readonly prepareAccountIdentityLookup = composioAccountIdentity(
+    (context, slug) =>
+      this.accountIds(composioOwner(context), [slug], ["ACTIVE"], {
+        signal: context.signal,
+      }),
+    async () => (await this.sdk()).tools,
+  );
 
   async connectionReady(context: AdapterContext, slug: string): Promise<boolean> {
     const session = await this.sessionFor(composioOwner(context));
@@ -1111,8 +950,8 @@ export class ComposioConnector implements ComposioProvider {
     }
 
     const ids = await this.listConnectedAccountIds(composioOwner({ userId, organizationId }), slug);
-    if (current && ids.includes(current) && !excluded.has(current)) return current;
-    return ids.find((id) => !excluded.has(id));
+    const available = ids.filter((id) => !excluded.has(id));
+    return available.length === 1 ? available[0] : undefined;
   }
 
   /** The SDK loads on first use, so deployments without Composio never load it. */

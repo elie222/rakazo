@@ -26,6 +26,9 @@ export * from "./browser/browser-provider-factory.js";
 export * from "./browser/browser-tools.js";
 export * from "./browser/fake-browser.js";
 export * from "./browser/page-browser-session.js";
+export type { ProtectedBrowserLauncher } from "./browser/protected-browser.js";
+export { ProtectedBrowserError } from "./browser/protected-browser.js";
+export { configuredProtectedBrowser } from "./browser/protected-browser-factory.js";
 export type { ApnsVoipConfig } from "./calls/apns-voip.js";
 export {
   apnsVoipConfig,
@@ -156,6 +159,7 @@ export { dispatcherFetch } from "./network/undici-fetch.js";
 export * from "./notifications/expo-push.js";
 export * from "./notifications/push-token-store.js";
 export * from "./notifications/realtime.js";
+export * from "./pages/page-app-icon.js";
 export * from "./pages/page-revision.js";
 export * from "./payments/paid-services-factory.js";
 export * from "./payments/payment-wallet-factory.js";

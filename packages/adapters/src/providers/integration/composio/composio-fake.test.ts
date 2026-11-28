@@ -65,6 +65,61 @@ describe("ComposioConnector over the fake Composio client", () => {
     expect(createConnectorStack(connector).connector.managed("composio")).toBe(connector);
   });
 
+  it("routes a shared action to the selected account when the app has two shared accounts", async () => {
+    const { fake, connector } = setup();
+    const organizationId = "team-fixture";
+    const owner = `organization:${organizationId}`;
+    const first = fake.connect(owner, "gmail");
+    const second = fake.connect(owner, "gmail");
+    const accounts = [first, second].map((ref) => ({
+      ...connection("GMAIL", ref),
+      organizationId,
+    }));
+    const ctx = context(accounts);
+    const tools = await connector.discoverTools(ctx);
+    const tool = tools.find(
+      ({ route }) =>
+        route?.connectionId === accounts[1]!.id && route.toolName === "GMAIL_LIST_LABELS",
+    );
+    expect(tool).toBeDefined();
+    const events: ConnectorEvent[] = [];
+    for await (const event of connector.execute(
+      { tool: tool!.name, route: tool!.route, args: {}, executionId: "selected-inbox" },
+      ctx,
+    ))
+      events.push(event);
+    expect(events[0]?.type).toBe("result");
+    expect(fake.created.at(-1)?.config).toMatchObject({ connectedAccounts: { GMAIL: [second] } });
+  });
+
+  it("offers only pinned variants when a personal app has multiple rows", async () => {
+    const { fake, connector } = setup();
+    const pinned = connection("GMAIL", fake.connect(USER, "gmail"));
+    const legacy = connection("GMAIL", "GMAIL");
+    const tools = await connector.discoverTools(context([pinned, legacy]));
+    expect(tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          route: expect.objectContaining({
+            connectionId: pinned.id,
+            toolName: "GMAIL_LIST_LABELS",
+          }),
+        }),
+      ]),
+    );
+    expect(tools.every((tool) => tool.route?.connectionId === pinned.id)).toBe(true);
+  });
+
+  it("settles instant non-mailbox organization authorizations through completion", async () => {
+    const { connector } = setup();
+    await expect(
+      connector.begin(
+        { provider: "GITHUB", redirectUrl: "https://example.test/callback" },
+        { ...context(), organizationId: "team-fixture" },
+      ),
+    ).resolves.toMatchObject({ authorizationUrl: null, requiresCompletion: true });
+  });
+
   it("uses separate personal and organization sessions for the same app", async () => {
     const { fake, connector } = setup();
     const organizationId = "team-fixture";
@@ -105,6 +160,61 @@ describe("ComposioConnector over the fake Composio client", () => {
     await expect(connector.catalog(context())).resolves.toHaveLength(6);
     await expect(connector.catalog(context(), "git")).resolves.toEqual([
       expect.objectContaining({ slug: "GITHUB", name: "GitHub", connected: false }),
+    ]);
+  });
+
+  it("carries toolkit descriptions from later metadata pages into the app catalog", async () => {
+    const client = new FakeComposioClient([
+      { slug: "OTHER", name: "Other", logo: null, noAuth: false },
+      {
+        slug: "EXAMPLE_MCP",
+        name: "Example",
+        description: "Organize your files.",
+        logo: null,
+        noAuth: false,
+      },
+    ]);
+    const raw = client.getClient();
+    const list = raw.toolkits.list;
+    raw.toolkits.list = (query) => list({ ...query, limit: 1 });
+    client.getClient = () => raw;
+
+    await expect(new ComposioConnector({ client }).catalog(context(), "example")).resolves.toEqual([
+      expect.objectContaining({ slug: "EXAMPLE_MCP", description: "Organize your files." }),
+    ]);
+  });
+
+  it("omits malformed descriptions from the toolkit catalog", async () => {
+    const { fake, connector } = setup();
+    const raw = fake.getClient();
+    raw.toolkits.list = async () => ({
+      items: [{ slug: "GMAIL", meta: { description: { text: "Read email." } } }],
+    });
+    fake.getClient = () => raw;
+
+    const [app] = await connector.catalog(context(), "gmail");
+
+    expect(app?.slug).toBe("GMAIL");
+    expect(app).not.toHaveProperty("description");
+  });
+
+  it("keeps catalog descriptions when sign-in metadata is unavailable", async () => {
+    const client = new FakeComposioClient([
+      {
+        slug: "EXAMPLE_MCP",
+        name: "Example",
+        description: "Organize your files.",
+        logo: null,
+        noAuth: false,
+        needsSignInSetup: true,
+      },
+    ]);
+    client.authConfigs.list = async () => {
+      throw new Error("Unavailable");
+    };
+
+    await expect(new ComposioConnector({ client }).catalog(context())).resolves.toEqual([
+      expect.objectContaining({ slug: "EXAMPLE_MCP", description: "Organize your files." }),
     ]);
   });
 
@@ -349,9 +459,11 @@ describe("ComposioConnector over the fake Composio client", () => {
   it("rejects an account the session did not pin", async () => {
     const { fake } = setup();
     const work = fake.connect(USER, "gmail");
+    const personal = fake.connect(USER, "gmail");
     const session = await fake.create(USER, {
       toolkits: ["GMAIL"],
-      connectedAccounts: { GMAIL: [work] },
+      connectedAccounts: { GMAIL: [work, personal] },
+      multiAccount: { enable: true },
     });
 
     await expect(

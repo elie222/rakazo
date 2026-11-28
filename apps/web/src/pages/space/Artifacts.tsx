@@ -53,6 +53,7 @@ import { IconTooltip } from "../../components/IconTooltip";
 import { VideoPreview } from "../../components/messages/ArtifactFileCard";
 import { PdfViewer } from "../../components/messages/PdfViewer";
 import { SandboxedHtmlViewer } from "../../components/messages/SandboxedHtmlViewer";
+import { Notice } from "../../components/Notice";
 import { WindowChrome } from "../../components/WindowChrome";
 import { takeInitialBootstrap } from "../../lib/bootstrap";
 import { useCopyText } from "../../lib/copy-text";
@@ -1036,9 +1037,7 @@ function PreviewPane({
             <Spinner aria-label={t`Loading…`} />
           </div>
         ) : state.status === "error" ? (
-          <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive">
-            {state.message}
-          </div>
+          <Notice tone="error">{state.message}</Notice>
         ) : (
           <div className="relative h-full overflow-hidden rounded-2xl border border-border">
             <ArtifactPreview artifact={state.artifact} bytes={state.bytes} />

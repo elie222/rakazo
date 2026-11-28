@@ -1,6 +1,7 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "infra/sandboxes/protected-browser"
   - "infra/sandboxes/supervisor"
   - "infra/updater"
 

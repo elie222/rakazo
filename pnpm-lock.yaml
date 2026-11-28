@@ -293,6 +293,9 @@ importers:
       '@rakazo/page-kit':
         specifier: workspace:*
         version: link:../../packages/page-kit
+      '@rakazo/ui-tokens':
+        specifier: workspace:*
+        version: link:../../packages/ui-tokens
       fflate:
         specifier: 0.8.3
         version: 0.8.3(patch_hash=714376135bb621edb5604ee53e6831513d435a7f1e01bc481fac77a61ac4e14d)
@@ -669,6 +672,9 @@ importers:
       '@rakazo/logging':
         specifier: workspace:*
         version: link:../../packages/logging
+      '@rakazo/page-kit':
+        specifier: workspace:*
+        version: link:../../packages/page-kit
       '@rakazo/ui-tokens':
         specifier: workspace:*
         version: link:../../packages/ui-tokens
@@ -843,6 +849,12 @@ importers:
       typescript:
         specifier: 6.0.3
         version: 6.0.3
+
+  infra/sandboxes/protected-browser:
+    dependencies:
+      playwright-core:
+        specifier: 1.64.1
+        version: 1.64.1
 
   infra/sandboxes/supervisor:
     dependencies:

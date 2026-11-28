@@ -18,7 +18,6 @@ import {
   integrationCatalogsReady,
   isCatalogItemConnected,
   matchesWordPrefixes,
-  organizationConnectionForApp,
   pluginBrands,
   pluginCategories,
 } from "@rakazo/core";
@@ -55,8 +54,8 @@ import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
 import {
   gitImportParams,
   hasPluginConnector,
+  installedPluginParams,
   managedPluginParams,
-  pluginParams,
 } from "../../lib/integrations/plugin-marketplace";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { useThemedStyles } from "../../lib/native/native";
@@ -322,10 +321,7 @@ export default function Integrations() {
   }
 
   function installedParams(install: CapabilityInstall): PluginParams {
-    const entry = pluginEntries.find((row) => row.installedSource === install.source);
-    return entry
-      ? pluginParams(entry)
-      : { source: install.source, installedSource: install.source, name: install.name };
+    return installedPluginParams(install, pluginEntries);
   }
 
   function openDetail(item: ConnectionCatalogItem) {
@@ -540,11 +536,7 @@ export default function Integrations() {
               <IntegrationDetail
                 key={catalogItemKey(detailItem)}
                 item={detailItem}
-                organizationName={
-                  organizationConnectionForApp(connections, detailItem.slug)
-                    ? null
-                    : organizationName
-                }
+                organizationName={organizationName}
                 accounts={catalogItemAccounts(connections, detailItem)}
                 pending={pending}
                 labelDrafts={labelDrafts}

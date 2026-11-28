@@ -199,8 +199,8 @@ describe("favicon origins", () => {
 });
 
 describe("icon candidates", () => {
-  it("reads icon links in order, touch icons last, and skips SVG and mask icons", () => {
-    const candidates = iconCandidates(
+  it("reads icon links in order, touch icons last, and skips SVG and mask icons", async () => {
+    const candidates = await iconCandidates(
       `<link rel="apple-touch-icon" href="/touch.png">
        <LINK REL='shortcut icon' HREF='/a.ico?v=1&amp;b=2'>
        <link rel="icon" type="image/svg+xml" href="/vector">
@@ -220,9 +220,9 @@ describe("icon candidates", () => {
 });
 
 describe("document base", () => {
-  it("resolves relative icon links against the first base href", () => {
+  it("resolves relative icon links against the first base href", async () => {
     expect(
-      iconCandidates(
+      await iconCandidates(
         `<base href="https://cdn.example.test/assets/"><base href="https://other.example.test/">
          <link rel="icon" href="fav.png"><link rel="icon" href="/root.png">`,
         "https://site.example.test/home",
@@ -230,15 +230,15 @@ describe("document base", () => {
     ).toEqual(["https://cdn.example.test/assets/fav.png", "https://cdn.example.test/root.png"]);
   });
 
-  it("resolves a relative base against the page and ignores a base that is not http(s)", () => {
+  it("resolves a relative base against the page and ignores a base that is not http(s)", async () => {
     expect(
-      iconCandidates(
+      await iconCandidates(
         '<base href="/static/"><link rel="icon" href="i.png">',
         "https://site.example.test/home",
       ),
     ).toEqual(["https://site.example.test/static/i.png"]);
     expect(
-      iconCandidates(
+      await iconCandidates(
         '<base href="javascript:alert(1)"><link rel="icon" href="i.png">',
         "https://site.example.test/home",
       ),

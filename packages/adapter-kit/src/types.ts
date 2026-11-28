@@ -634,6 +634,7 @@ export type ModelBilling =
   | "subscription"
   | "api_key"
   | "custom_endpoint"
+  | "organization"
   | "credits"
   | "deployment";
 
@@ -1062,6 +1063,8 @@ export interface VoiceTranscribeRequest {
 export interface BackgroundJobPayloads {
   "run.continue": { runId: string };
   "page.revise": { requestId: string };
+  /** Removes an installed page app whose token was never used: its install never finished. */
+  "page.app-unused": { appId: string };
   "routine.wakeup": { routineId: string; scheduledFor: string };
   /** Run a failed routine run once more; the payload names the failed run. */
   "routine.retry": { runId: string };
@@ -1167,6 +1170,16 @@ export interface BackgroundJobPayloads {
     connectorId: string;
     provider: string;
     ref?: string;
+  };
+  "connection.hosted-sign-in-cleanup": {
+    organizationId: string;
+    spaceId: string;
+    userId: string;
+    connectorId: string;
+    provider: string;
+    connectionId: string;
+    removeUnreferenced?: true;
+    legacyIssuedAt?: string;
   };
   /** Separate task so previous workers cannot treat an organization's account as personal. */
   "connection.organization-cleanup": {

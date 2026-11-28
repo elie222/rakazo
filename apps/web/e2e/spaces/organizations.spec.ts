@@ -67,13 +67,12 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
   await signup(page, `organizations-${stamp}@rakazo.test`, "password12", "Org Owner");
   await completeOnboarding(page);
 
-  // One organization: settings show only its name and its members, and the avatar menu names it
-  // and opens a submenu that lists it and starts a new one.
+  // The avatar menu names the active organization and opens its switcher.
   let settings = await openUserSettings(page);
   await settings.getByTestId("settings-nav-organization").click();
   const single = settings.getByTestId("organization-settings");
   await expect(single.getByLabel("Name")).toHaveValue("Personal");
-  await expect(single.getByRole("button")).toHaveText([/^Members/]);
+  await expect(single.getByRole("button", { name: /^Members/ })).toBeVisible();
   // The options menu is in the page header, next to the close button.
   await settings
     .getByTestId("settings-header")
@@ -83,6 +82,11 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
   await expect(page.getByRole("menuitem", { name: "Delete organization" })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await captureScreenshot(page, testInfo, "org-settings-single");
+  await single.getByRole("button", { name: "Shared logins" }).click();
+  await expect(settings.getByRole("heading", { name: "Shared logins" })).toBeVisible();
+  await expect(settings.getByText("Protected sign-in is unavailable.")).toBeVisible();
+  await captureScreenshot(page, testInfo, "organization-shared-logins");
+  await settings.getByRole("button", { name: "Back", exact: true }).click();
   await page.keyboard.press("Escape");
 
   let menu = await openOrganizationMenu(page);

@@ -1,23 +1,18 @@
 import { useLingui } from "@lingui/react/macro";
-import { useTimeout } from "@rakazo/chat-ui/hooks";
 import { PageIcon } from "@rakazo/chat-ui/web";
 import type { PageSectionAnchor, PageState } from "@rakazo/contracts";
 import { PAGE_TITLE_MAX_LENGTH } from "@rakazo/contracts";
 import { cn, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import { Pencil, X } from "lucide-react";
 import type { ReactNode } from "react";
-import { useCallback, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   DARWIN_WINDOW_CONTROLS_WIDTH_PX,
   desktopBridge,
   windowChromeKind,
 } from "../../lib/platform/desktop";
 import { DownloadPdfButton } from "./DownloadPdfButton";
-import { PageFrame } from "./PageFrame";
-import { PageLoading, PageNotice } from "./PageNotice";
-
-/** How long a page may take to draw before the view offers to load it again. */
-const FRAME_TIMEOUT_MS = 15_000;
+import { PageDrawing, usePageDrawing } from "./PageDrawing";
 
 /**
  * A page full screen: close at the top left, the title pill in the middle (click to rename),
@@ -34,6 +29,7 @@ export function PageView({
   share,
   composer,
   onReply,
+  onAsk,
   onSections,
   onSaveState,
   returnFocus,
@@ -51,6 +47,8 @@ export function PageView({
   composer?: ReactNode;
   /** Takes a page's reply text into the docked composer. */
   onReply?: (text: unknown) => void;
+  /** Sends a page's question to its bot and resolves with the answer. */
+  onAsk?: (text: string) => Promise<string | null>;
   onSections?: (sections: PageSectionAnchor[]) => void;
   onSaveState?: (values: PageState) => void;
   /** Puts focus back on close; false tells the dialog it is done. */
@@ -62,21 +60,7 @@ export function PageView({
 }) {
   const { t } = useLingui();
   const closeButton = useRef<HTMLButtonElement>(null);
-  // The frame stays hidden until the page inside reports it has drawn, so neither a blank
-  // frame nor a browser error page shows; a page that never draws gets a way to try again.
-  const [drawn, setDrawn] = useState(false);
-  const [stalled, setStalled] = useState(false);
-  const [attempt, setAttempt] = useState(0);
-  // A new document (an update, a theme change) has to draw again before it shows.
-  const [shown, setShown] = useState(document);
-  if (shown !== document) {
-    setShown(document);
-    setDrawn(false);
-    setStalled(false);
-  }
-  const waiting = document !== null && !drawn && !stalled && notice === null;
-  useTimeout(() => setStalled(true), waiting ? FRAME_TIMEOUT_MS : null, document);
-  const onDrawn = useCallback(() => setDrawn(true), []);
+  const drawing = usePageDrawing(document, notice === null);
   // In the macOS app the window controls sit in the top-left corner over a full-window page, so
   // its top row starts below them, as the main window's rows do.
   const macChrome = !compact && windowChromeKind(desktopBridge()) === "darwin";
@@ -175,7 +159,7 @@ export function PageView({
           <div
             className={`app-no-drag absolute z-10 flex items-center gap-1.5 print:hidden ${compact ? "top-[6px] right-[6px]" : `${macChrome ? "top-[42.5px]" : "top-[6.5px]"} right-3`}`}
           >
-            {drawn && !stalled && notice === null ? (
+            {drawing.drawn && !drawing.stalled && notice === null ? (
               <DownloadPdfButton
                 className={control}
                 iconClassName={compact ? "size-5" : "size-[18px]"}
@@ -190,37 +174,15 @@ export function PageView({
             className={`absolute inset-x-0 bottom-0 print:static ${compact ? "top-[50px]" : macChrome ? "top-[70px]" : "top-[34px]"}`}
           >
             {notice ?? (
-              <>
-                {document !== null && !stalled ? (
-                  <div
-                    key={attempt}
-                    className={`h-full transition-opacity duration-200 motion-reduce:transition-none ${drawn ? "opacity-100" : "opacity-0"}`}
-                  >
-                    <PageFrame
-                      document={document}
-                      title={title}
-                      interactive
-                      onReply={onReply}
-                      onSections={onSections}
-                      onSaveState={onSaveState}
-                      onHeight={onDrawn}
-                    />
-                  </div>
-                ) : null}
-                {stalled ? (
-                  <PageNotice
-                    title={t`This page couldn't load`}
-                    detail={t`Check your connection and try again.`}
-                    onRetry={() => {
-                      setStalled(false);
-                      setAttempt((count) => count + 1);
-                    }}
-                    onClose={() => onOpenChange(false)}
-                  />
-                ) : !drawn ? (
-                  <PageLoading />
-                ) : null}
-              </>
+              <PageDrawing
+                drawing={drawing}
+                title={title}
+                onReply={onReply}
+                onAsk={onAsk}
+                onSections={onSections}
+                onSaveState={onSaveState}
+                onClose={() => onOpenChange(false)}
+              />
             )}
           </section>
         </div>

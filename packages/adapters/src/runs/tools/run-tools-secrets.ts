@@ -102,6 +102,7 @@ export const secretTools: ToolHandlers = {
         request: args,
         signal: context.signal,
         remote: deps.secretHttp,
+        allowPrivateEndpoint: deps.mcpAllowPrivateEndpoint === true,
         registerRedactions: (values) => addRunSecrets(ctx, values),
         recordUse: (item, site) => recordVaultUse(ctx, call.name, item, site),
       });
