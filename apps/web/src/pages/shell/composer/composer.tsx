@@ -724,11 +724,25 @@ const ComposerBody = memo(function Composer({
           onAction={runSlashAction}
         />
       ) : null}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: Padding redirects to the keyboard-accessible textarea. */}
       <div
         ref={composerBarRef}
         data-testid="composer-bar"
         data-expanded={expanded}
-        className={`grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[26px] border border-border pe-2.5 ps-3 transition-colors focus-within:border-input ${
+        onMouseDown={(event) => {
+          if (event.button !== 0 || disabled || talk.recording) return;
+          // Only the layout surfaces redirect focus. The textarea handles caret placement.
+          const target = event.target;
+          if (
+            target !== event.currentTarget &&
+            target !== composerFieldRef.current &&
+            target !== composerActionsRef.current
+          )
+            return;
+          event.preventDefault();
+          textareaRef.current?.focus({ preventScroll: true });
+        }}
+        className={`grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[26px] border border-border pe-2.5 ps-3 transition-colors focus-within:border-input [&_button:disabled]:pointer-events-auto ${
           docked ? "bg-card" : "bg-background dark:bg-card"
         } ${
           expanded
