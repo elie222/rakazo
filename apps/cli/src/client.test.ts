@@ -97,4 +97,29 @@ describe("createClient", () => {
     );
     await expect(client.bots()).rejects.toEqual(new ApiError(401, "Invalid API key"));
   });
+
+  it("falls back to the status text when a proxy answers instead of the API", async () => {
+    const client = createClient(
+      config,
+      async () =>
+        new Response("<html>Bad gateway</html>", { status: 502, statusText: "Bad Gateway" }),
+    );
+    await expect(client.bots()).rejects.toEqual(new ApiError(502, "Bad Gateway"));
+  });
+
+  it("reports the status when the connection drops while reading the error body", async () => {
+    const client = createClient(
+      config,
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.error(new Error("connection reset"));
+            },
+          }),
+          { status: 502, statusText: "Bad Gateway" },
+        ),
+    );
+    await expect(client.bots()).rejects.toEqual(new ApiError(502, "Bad Gateway"));
+  });
 });

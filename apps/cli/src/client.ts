@@ -22,6 +22,22 @@ export function assertSecureUrl(url: string): void {
 
 type Model = { id: string; name: string; owned_by: string };
 
+/**
+ * The server's own message when it sent one. A proxy or an HTML error page answers instead when
+ * the API is unreachable, so the status text is the fallback and an unreadable body is not an error.
+ */
+async function errorMessage(response: Response): Promise<string> {
+  try {
+    // A connection that drops mid-body is the same case as a body that is not JSON: the status
+    // is all the server told us, so it is what the CLI reports.
+    const body = await response.text();
+    const parsed = JSON.parse(body) as { error?: { message?: string } };
+    return parsed.error?.message ?? response.statusText;
+  } catch {
+    return response.statusText;
+  }
+}
+
 /** The few calls the CLI makes, all under the server's `/api/v1` and authorized by the key. */
 export function createClient(config: CliConfig, fetchImpl: typeof fetch = fetch) {
   assertSecureUrl(config.url);
@@ -45,12 +61,7 @@ export function createClient(config: CliConfig, fetchImpl: typeof fetch = fetch)
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => null)) as {
-        error?: { message?: string };
-      } | null;
-      throw new ApiError(response.status, payload?.error?.message ?? response.statusText);
-    }
+    if (!response.ok) throw new ApiError(response.status, await errorMessage(response));
     return response;
   }
 
