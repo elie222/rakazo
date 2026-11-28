@@ -8,6 +8,7 @@ import { Image, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassIconButton } from "../components/native/glass-icon-button";
 import { NativeSymbol } from "../components/native/native-symbol";
+import { HomeSession } from "../components/screens/home-screen";
 import type { MobileBot } from "../lib/api/mobile-types";
 import {
   cancelIncomingShare,
@@ -18,7 +19,6 @@ import {
 import { sharePreview } from "../lib/composer/share-preview";
 import { useMobileTokens } from "../lib/native/native";
 import { recordMobileShareAction, reportMobileError } from "../lib/platform/monitoring";
-import { HomeSession } from "./index";
 
 type LeaveAttempt = {
   action: "select" | "close" | "sign_in";
@@ -82,7 +82,7 @@ export default function ShareRoute() {
         const stack = navigation.getState();
         if (!stack) return;
         // Dismiss just this picker. A screen underneath may have an unsaved draft.
-        const action = stack.index > 0 ? StackActions.pop() : StackActions.replace("index");
+        const action = stack.index > 0 ? StackActions.pop() : StackActions.replace("(tabs)");
         navigation.dispatch({ ...action, target: stack.key });
       },
     });

@@ -18,6 +18,8 @@ export type SearchSheetRow = {
   group?: SpaceGroup | MobileGroup;
   kind: SearchHit["kind"];
   spaceId?: string;
+  /** A chat from the inbox, whose preview is one line as in Chats; a match may take two. */
+  chat?: boolean;
   destination: ReturnType<typeof mobileSearchDestination>;
 };
 
@@ -41,6 +43,7 @@ export function searchSheetRows(
         bot,
         kind: "conversation",
         spaceId: bot.spaceId,
+        chat: true,
         destination: { pathname: "/thread", params: { botId: bot.id, name: bot.name } },
       }),
     ),
@@ -55,6 +58,7 @@ export function searchSheetRows(
         group,
         kind: "conversation",
         spaceId: group.spaceId,
+        chat: true,
         destination: {
           pathname: "/group-thread",
           params: { groupId: group.id, name: group.name },

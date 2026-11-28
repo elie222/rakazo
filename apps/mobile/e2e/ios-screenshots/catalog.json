@@ -15,7 +15,7 @@
     "id": "inbox",
     "title": "Inbox",
     "flow": "flows/inbox.yaml",
-    "screens": ["index", "artifacts"]
+    "screens": ["index", "artifacts", "activity", "pages", "routines"]
   },
   {
     "id": "thread",
@@ -90,7 +90,7 @@
     "id": "bots",
     "title": "Bots",
     "flow": "flows/bots.yaml",
-    "screens": ["bot-profile", "routines", "bot-model", "chat-model", "peer-chat", "routine"]
+    "screens": ["bot-profile", "bot-routines", "bot-model", "chat-model", "peer-chat", "routine"]
   },
   {
     "id": "files",
@@ -153,7 +153,7 @@
     "id": "pages",
     "title": "Pages",
     "flow": "flows/pages.yaml",
-    "screens": ["page", "page-share", "page-review", "pages", "shared-pages"]
+    "screens": ["page", "page-share", "page-review", "bot-pages", "shared-pages"]
   },
   {
     "id": "organizations",

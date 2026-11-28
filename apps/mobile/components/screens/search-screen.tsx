@@ -27,24 +27,27 @@ import {
 } from "react-native";
 import { KeyboardController } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BotAvatar } from "../components/bots/bot-avatar";
-import { GroupAvatar } from "../components/bots/group-avatar";
-import { GlassIconButton } from "../components/native/glass-icon-button";
-import { NativeActionButton } from "../components/native/native-action-button";
-import { NativeSymbol } from "../components/native/native-symbol";
-import { currentApiBase, selectedSpaceId, spaceSelectionSeq } from "../lib/api/api";
-import { selectSpace } from "../lib/api/api-server";
-import { currentSessionGeneration } from "../lib/api/session";
-import { mobileTokens, resolveMobileAppearance } from "../lib/appearance/appearance";
-import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
-import { useUiLocale } from "../lib/i18n/i18n";
-import { readableGutters } from "../lib/layout/adaptive-layout";
-import { useContentBottomInset } from "../lib/layout/content-bottom-inset";
-import { native, useThemedStyles } from "../lib/native/native";
-import { getSearchInbox, subscribeSearchInbox } from "../lib/search/search-inbox";
-import type { SearchSheetRow } from "../lib/search/search-sheet";
-import { searchSheetRows } from "../lib/search/search-sheet";
-import { useSearch } from "../lib/search/use-search";
+import { BotAvatar } from "../../components/bots/bot-avatar";
+import { GroupAvatar } from "../../components/bots/group-avatar";
+import { GlassIconButton } from "../../components/native/glass-icon-button";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSymbol } from "../../components/native/native-symbol";
+import { currentApiBase, selectedSpaceId, spaceSelectionSeq } from "../../lib/api/api";
+import { selectSpace } from "../../lib/api/api-server";
+import { currentSessionGeneration } from "../../lib/api/session";
+import { mobileTokens, resolveMobileAppearance } from "../../lib/appearance/appearance";
+import { CallKeyboardContext } from "../../lib/calls/call-keyboard-context";
+import { useUiLocale } from "../../lib/i18n/i18n";
+import { readableGutters } from "../../lib/layout/adaptive-layout";
+import { useContentBottomInset } from "../../lib/layout/content-bottom-inset";
+import { useTopBarInset } from "../../lib/layout/floating-header";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { iosAtLeast } from "../../lib/native/native-controls";
+import { useHeaderSearch } from "../../lib/navigation/screen-header";
+import { getSearchInbox, subscribeSearchInbox } from "../../lib/search/search-inbox";
+import type { SearchSheetRow } from "../../lib/search/search-sheet";
+import { searchSheetRows } from "../../lib/search/search-sheet";
+import { useSearch } from "../../lib/search/use-search";
 
 const kindIcons = {
   conversation: { ios: "bubble.left.and.bubble.right", android: "chatbubbles-outline" },
@@ -54,7 +57,8 @@ const kindIcons = {
   routine: { ios: "clock.arrow.circlepath", android: "time-outline" },
 } as const;
 
-export default function SearchSheet() {
+/** Search as a sheet over the app, or (`inTab`) as the tab bar's search tab. */
+export default function SearchSheet({ inTab = false }: { inTab?: boolean }) {
   const { t } = useLingui();
   const locale = useUiLocale();
   const router = useRouter();
@@ -71,6 +75,11 @@ export default function SearchSheet() {
   const attempt = useRef(0);
   const focused = useRef(false);
   const [query, setQuery] = useState("");
+  // As the search tab on iOS 26, the system search field takes the tab bar's place.
+  const nativeSearch = inTab && Platform.OS === "ios" && iosAtLeast(26);
+  // The glass header floats over the screen, so the results start under it.
+  const topBarInset = useTopBarInset();
+  useHeaderSearch({ placeholder: t`Search`, shown: nativeSearch, onChange: setQuery });
   const spaces = useSyncExternalStore(subscribeSearchInbox, getSearchInbox);
   const { hits, loading, error, retry } = useSearch(query);
   const rows = useMemo(() => searchSheetRows(spaces, query, hits), [spaces, query, hits, locale]);
@@ -154,9 +163,11 @@ export default function SearchSheet() {
           (selectionSeq !== spaceSelectionSeq() || selectedSpaceId() !== row.spaceId))
       )
         return;
-      // Replace removes the sheet from history while preserving messageId search jumps.
+      // Replace removes the sheet from history while preserving messageId search jumps; the tab
+      // stays, so the chat opens over it.
       navigated = true;
-      router.replace(row.destination);
+      if (inTab) router.push(row.destination);
+      else router.replace(row.destination);
     } finally {
       // Native dismissal can outlive the switch; newer selections (even pending) own it now.
       if (
@@ -179,72 +190,86 @@ export default function SearchSheet() {
   return (
     <View
       collapsable={false}
-      style={[styles.screen, { paddingTop: Platform.OS === "ios" ? 16 : insets.top + 8 }]}
+      style={[
+        styles.screen,
+        {
+          paddingTop: nativeSearch
+            ? topBarInset + 8
+            : Platform.OS === "ios" && !inTab
+              ? 16
+              : insets.top + 8,
+        },
+      ]}
     >
-      <View
-        style={[styles.top, { marginLeft: 16 + gutters.left, marginRight: 16 + gutters.right }]}
-      >
-        <GlassIconButton
-          testID="search-sheet-close"
-          accessibilityLabel={t`Close`}
-          ios="xmark"
-          android="close"
-          size={44}
-          color={tokens.foreground}
-          fallbackStyle={{ backgroundColor: tokens.muted }}
-          onPress={() => {
-            cancelOpen();
-            router.back();
-          }}
-        />
-        <View style={styles.fieldPill}>
-          <NativeSymbol
-            ios="magnifyingglass"
-            android="search"
-            size={17}
-            color={tokens.mutedForeground}
-          />
-          <TextInput
-            ref={field}
-            testID="search-sheet-field"
-            accessibilityLabel={t`Search`}
-            autoFocus
-            value={query}
-            onChangeText={setQuery}
-            placeholder={t`Search`}
-            placeholderTextColor={tokens.mutedForeground}
-            autoCorrect={false}
-            autoCapitalize="none"
-            returnKeyType="search"
-            keyboardAppearance={appearance}
-            clearButtonMode="while-editing"
-            style={styles.field}
-          />
-          {Platform.OS === "android" && query ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t`Clear`}
-              hitSlop={8}
+      {nativeSearch ? null : (
+        <View
+          style={[styles.top, { marginLeft: 16 + gutters.left, marginRight: 16 + gutters.right }]}
+        >
+          {inTab ? null : (
+            <GlassIconButton
+              testID="search-sheet-close"
+              accessibilityLabel={t`Close`}
+              ios="xmark"
+              android="close"
+              size={44}
+              color={tokens.foreground}
+              fallbackStyle={{ backgroundColor: tokens.muted }}
               onPress={() => {
-                setQuery("");
-                field.current?.focus();
+                cancelOpen();
+                router.back();
               }}
-              style={({ pressed }) => [styles.clear, pressed && styles.pressed]}
-            >
-              <NativeSymbol
-                ios="xmark.circle.fill"
-                android="close-circle"
-                size={20}
-                color={tokens.mutedForeground}
-              />
-            </Pressable>
-          ) : null}
+            />
+          )}
+          <View style={styles.fieldPill}>
+            <NativeSymbol
+              ios="magnifyingglass"
+              android="search"
+              size={17}
+              color={tokens.mutedForeground}
+            />
+            <TextInput
+              ref={field}
+              testID="search-sheet-field"
+              accessibilityLabel={t`Search`}
+              autoFocus
+              value={query}
+              onChangeText={setQuery}
+              placeholder={t`Search`}
+              placeholderTextColor={tokens.mutedForeground}
+              autoCorrect={false}
+              autoCapitalize="none"
+              returnKeyType="search"
+              keyboardAppearance={appearance}
+              clearButtonMode="while-editing"
+              style={styles.field}
+            />
+            {Platform.OS === "android" && query ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t`Clear`}
+                hitSlop={8}
+                onPress={() => {
+                  setQuery("");
+                  field.current?.focus();
+                }}
+                style={({ pressed }) => [styles.clear, pressed && styles.pressed]}
+              >
+                <NativeSymbol
+                  ios="xmark.circle.fill"
+                  android="close-circle"
+                  size={20}
+                  color={tokens.mutedForeground}
+                />
+              </Pressable>
+            ) : null}
+          </View>
         </View>
-      </View>
+      )}
       <FlatList
         data={rows}
         keyExtractor={(row) => row.key}
         automaticallyAdjustKeyboardInsets={!rootAvoidsKeyboard}
+        contentInsetAdjustmentBehavior="never"
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
@@ -300,8 +325,9 @@ export default function SearchSheet() {
                 </Text>
                 <Text style={styles.time}>{item.label}</Text>
               </View>
-              {/* Two lines, so the matched words fit after the text before them. */}
-              <Text numberOfLines={2} style={styles.preview}>
+              {/* A chat's preview is one line, as in Chats; a match gets two, so the matched words
+                  fit after the text before them. */}
+              <Text numberOfLines={item.chat ? 1 : 2} style={styles.preview}>
                 {item.preview}
               </Text>
             </View>

@@ -6,7 +6,7 @@ import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import SearchSheet from "../../app/search";
+import SearchSheet from "../../components/screens/search-screen";
 import { selectSpace } from "../api/api-server";
 import type { InboxSpace } from "../inbox/inbox-spaces";
 import type * as Search from "./search";
@@ -58,6 +58,8 @@ const message = {
   messageId: "message-a",
 };
 const navigation = {
+  // The sheet sets no header search bar; the search tab on iOS 26 does.
+  setOptions: () => undefined,
   addListener: (_event: string, listener: typeof state.transitionStart) => {
     state.transitionStart = listener;
     return () => {
@@ -65,6 +67,7 @@ const navigation = {
     };
   },
 };
+vi.mock("../layout/floating-header", () => ({ useTopBarInset: () => 0 }));
 vi.mock("expo-router", () => ({
   useRouter: () => state,
   useNavigation: () => navigation,

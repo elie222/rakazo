@@ -83,7 +83,7 @@ describe("settings sheet header", () => {
     close?.onPress();
 
     expect(sheet.goBack).not.toHaveBeenCalled();
-    expect(sheet.dispatch).toHaveBeenCalledWith({ type: "REPLACE", payload: { name: "index" } });
+    expect(sheet.dispatch).toHaveBeenCalledWith({ type: "REPLACE", payload: { name: "(tabs)" } });
   });
 
   it("shows an Android back arrow from the inbox that dismisses through the parent", () => {
@@ -115,7 +115,7 @@ describe("settings sheet header", () => {
       expect(back.props.displayMode).toBe("minimal");
       back.props.onPress();
       expect(sheet.goBack).not.toHaveBeenCalled();
-      expect(sheet.dispatch).toHaveBeenCalledWith({ type: "REPLACE", payload: { name: "index" } });
+      expect(sheet.dispatch).toHaveBeenCalledWith({ type: "REPLACE", payload: { name: "(tabs)" } });
     },
   );
 

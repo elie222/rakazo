@@ -1,6 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import { useSyncExternalStore } from "react";
-import { Pressable, StyleSheet, Text } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import { useThemedStyles } from "../../lib/native/native";
 import { iosAtLeast } from "../../lib/native/native-controls";
@@ -22,8 +22,14 @@ import { NativeSymbol } from "../native/native-symbol";
  */
 export function VoicePlayerBar({
   style,
+  inTabBar,
 }: {
   style?: { marginTop?: number; marginBottom?: number; marginHorizontal?: number };
+  /**
+   * Inside the tab bar's accessory, which is glass already: no glass of its own. "inline" is the
+   * accessory beside a minimized tab bar, with room for the controls only.
+   */
+  inTabBar?: "regular" | "inline";
 }) {
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
@@ -34,12 +40,16 @@ export function VoicePlayerBar({
   const speakerColor = playback.speaker?.color ?? tokens.foreground;
   const paused = playback.status === "paused";
 
-  return (
-    <GlassSurface style={[styles.bar, style]} fallbackStyle={styles.barFallback}>
+  const content = (
+    <>
       <NativeSymbol ios="waveform" android="pulse-outline" size={16} color={speakerColor} />
-      <Text numberOfLines={1} style={[styles.name, { color: speakerColor }]}>
-        {playback.speaker?.name || t`Bot`}
-      </Text>
+      {inTabBar === "inline" ? (
+        <View style={styles.spacer} />
+      ) : (
+        <Text numberOfLines={1} style={[styles.name, { color: speakerColor }]}>
+          {playback.speaker?.name || t`Bot`}
+        </Text>
+      )}
       {paused ? (
         <VoiceControlButton
           accessibilityLabel={t`Play`}
@@ -61,6 +71,12 @@ export function VoicePlayerBar({
         ios="stop.fill"
         android="stop"
       />
+    </>
+  );
+  if (inTabBar) return <View style={styles.inTabBar}>{content}</View>;
+  return (
+    <GlassSurface style={[styles.bar, style]} fallbackStyle={styles.barFallback}>
+      {content}
     </GlassSurface>
   );
 }
@@ -113,6 +129,14 @@ function createStyles() {
       borderColor: tokens.glassStroke,
       backgroundColor: tokens.glassFill,
     },
+    inTabBar: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      paddingHorizontal: 16,
+    },
+    spacer: { flex: 1 },
     name: { flexGrow: 1, flexShrink: 1, fontSize: 13, fontWeight: "600" },
     button: {
       width: 34,
