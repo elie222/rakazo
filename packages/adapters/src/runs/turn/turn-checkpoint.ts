@@ -23,6 +23,7 @@ export interface ComputerModeCheckpoint {
 /** Internal, versioned transcript; never a client event payload. */
 export interface TurnCheckpoint {
   version: 1;
+  historyFormat?: number;
   /** Credential-free role state; absent on legacy checkpoints. */
   computerMode?: ComputerModeCheckpoint;
   provider: string;

@@ -6,6 +6,12 @@ import {
   serializeTurnCheckpoint,
   unresolvedTurnCheckpointCalls,
 } from "../../runs/turn/turn-checkpoint.js";
+import {
+  historyImageSeenNote,
+  historyImageSeenStamp,
+  isHistoryImageSeenNote,
+} from "../context/history-replay.prompt.js";
+import { HISTORY_FORMAT_VERSION } from "./pi-runtime-history.js";
 import { computerSelection } from "./tools/pi-runtime-computer-mode.js";
 
 export const ANSWERED_ON_RESUME = new Set(["ask_user", "request_takeover"]);
@@ -82,6 +88,7 @@ export function buildTurnCheckpoint(input: {
   const toolCallCount = input.toolCallCount + (answeredOnResume ? 1 : 0);
   return {
     version: 1 as const,
+    historyFormat: HISTORY_FORMAT_VERSION,
     ...(input.computerMode
       ? {
           computerMode: {
@@ -129,4 +136,33 @@ export function serializeCapturedTurnCheckpoint(
     ...checkpoint,
     messages: [...checkpoint.messages, ...siblings],
   });
+}
+
+const IMAGE_SEEN_HISTORY_FORMAT = 4;
+
+/** Upgrade replayed history without changing the prompt or messages added during this turn. */
+export function upgradeCheckpointHistory(checkpoint: TurnCheckpoint): TurnCheckpoint {
+  if ((checkpoint.historyFormat ?? 0) >= IMAGE_SEEN_HISTORY_FORMAT) return checkpoint;
+  const messages = checkpoint.messages.map((message) => {
+    const tagged = message as Message & { rakazoHistory?: boolean; rakazoCreatedAt?: string };
+    if (message.role !== "user" || !tagged.rakazoHistory || !Array.isArray(message.content))
+      return message;
+    if (!message.content.some((part) => part.type === "image")) return message;
+    if (message.content.some((part) => part.type === "text" && isHistoryImageSeenNote(part.text)))
+      return message;
+    const timestamp = message.timestamp;
+    const createdAt =
+      tagged.rakazoCreatedAt ??
+      (Number.isFinite(timestamp) && !Number.isNaN(new Date(timestamp).getTime()) && timestamp !== 0
+        ? new Date(timestamp).toISOString()
+        : undefined);
+    const note = historyImageSeenNote(historyImageSeenStamp(createdAt));
+    const [first, ...rest] = message.content;
+    const content =
+      first?.type === "text"
+        ? [{ ...first, text: first.text.trim() ? `${note}\n${first.text}` : note }, ...rest]
+        : [{ type: "text" as const, text: note }, ...message.content];
+    return { ...message, content };
+  });
+  return { ...checkpoint, messages };
 }

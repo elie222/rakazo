@@ -208,7 +208,10 @@ describe("Pi history replay", () => {
       ],
     });
     expect(messages[0]!.content).toEqual([
-      { type: "text", text: "[User]: [image: a.png]" },
+      {
+        type: "text",
+        text: "[image from an earlier message]\n[User]: [image: a.png]",
+      },
       { type: "image", data: Buffer.from([1, 2]).toString("base64"), mimeType: "image/png" },
     ]);
     expect(messages[1]!.content).toBe("[Anya]: [image: b.png]");
@@ -735,5 +738,74 @@ describe("replaying an earlier reply's tool steps", () => {
     const messages = toHistory([{ ...toolReply, speaker: "Anya" }], "", undefined, OFFERED);
     expect(messages).toHaveLength(1);
     expect(messages[0]).toMatchObject({ role: "user" });
+  });
+});
+
+describe("history image earlier-message notes", () => {
+  const image = { name: "shot.png", mimeType: "image/png" as const, data: new Uint8Array([1, 2]) };
+  const imagePart = {
+    type: "image" as const,
+    data: Buffer.from([1, 2]).toString("base64"),
+    mimeType: "image/png",
+  };
+
+  it("labels an image-only history message as an image from an earlier turn", () => {
+    const [message] = toHistory(
+      [
+        {
+          id: "m1",
+          role: "user",
+          content: "",
+          createdAt: "2026-11-19T02:31:00.000Z",
+          images: [image],
+        },
+      ],
+      "Next question.",
+    );
+    expect(message?.content).toEqual([
+      { type: "text", text: "[2026-11-19 02:31, image from an earlier message]" },
+      imagePart,
+    ]);
+  });
+
+  it("prepends an earlier-message note to a captioned history image", () => {
+    const [message] = toHistory(
+      [
+        {
+          id: "m1",
+          role: "user",
+          content: "look at this",
+          createdAt: "2026-11-19T02:31:00.000Z",
+          images: [image],
+        },
+      ],
+      "Next question.",
+    );
+    expect(message?.content).toEqual([
+      {
+        type: "text",
+        text: "[2026-11-19 02:31, image from an earlier message]\nlook at this",
+      },
+      imagePart,
+    ]);
+  });
+
+  it("still marks a history image when the turn has no timestamp", () => {
+    const [message] = toHistory(
+      [{ id: "m1", role: "user", content: "", images: [image] }],
+      "Next question.",
+    );
+    expect(message?.content).toEqual([
+      { type: "text", text: "[image from an earlier message]" },
+      imagePart,
+    ]);
+  });
+
+  it("leaves text-only history unchanged", () => {
+    const [message] = toHistory(
+      [{ id: "m1", role: "user", content: "hello", createdAt: "2026-11-19T02:31:00.000Z" }],
+      "Next question.",
+    );
+    expect(message?.content).toBe("hello");
   });
 });

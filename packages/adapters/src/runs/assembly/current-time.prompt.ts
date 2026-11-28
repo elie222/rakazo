@@ -1,3 +1,5 @@
+import { utcMinuteStamp } from "./utc-minute.js";
+
 /**
  * Models have no clock. Without an explicit anchor they infer "now" from training data
  * or from timestamps that happen to appear in the conversation, and then reason about
@@ -42,7 +44,7 @@ function previousMessageNote(now: Date, sentAt: Date, timeZone?: string | null) 
   const hours = Math.round(gap / HOUR_MS);
   const when =
     (timeZone && localDateTime(sentAt, timeZone)) ??
-    `${weekdayIn(sentAt, "UTC")}, ${sentAt.toISOString().slice(0, 16).replace("T", " ")} (UTC)`;
+    `${weekdayIn(sentAt, "UTC")}, ${utcMinuteStamp(sentAt)} (UTC)`;
   const ago =
     hours < 48 ? `${hours} hour${hours === 1 ? "" : "s"}` : `${Math.round(hours / 24)} days`;
   return `The previous message in this chat was sent ${when}, ${ago} earlier. Time passing is not an error in what you said earlier.`;

@@ -4,6 +4,8 @@ import { MeetingTurnSchema } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { JsonColumnMismatchError, readJsonColumn, reportJsonColumnOnce } from "@rakazo/db";
 
+import { utcMinuteStamp } from "../runs/assembly/utc-minute.js";
+
 export const MEETING_TRANSCRIPT_STORAGE_PREFIX = "meeting-transcript:";
 
 export function meetingTranscriptStorageKey(id: string) {
@@ -22,7 +24,7 @@ export function meetingTranscriptArtifact(
   turns: MeetingTurn[],
 ) {
   const text = meetingTranscriptText(turns);
-  const time = (row.closedAt ?? row.createdAt).toISOString().slice(0, 16).replace("T", " ");
+  const time = utcMinuteStamp(row.closedAt ?? row.createdAt);
   return {
     spaceId: row.spaceId,
     userId: row.userId,

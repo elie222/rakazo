@@ -10,6 +10,8 @@ import {
 import { USE_TOOL } from "../../tools/builtin.tool-definition.js";
 import {
   CONVERSATION_START,
+  historyImageSeenNote,
+  historyImageSeenStamp,
   imageNotKeptNote,
   REPLAYED_SCREENSHOT_LEAD,
   toolNotAvailableNote,
@@ -410,10 +412,14 @@ export function toHistory(
           : m.content;
     // Pictures ride on the human's turn only, never on a bot's.
     const images = m.role === "assistant" ? [] : toPiImages(m.images);
+    // A previous run may have used a model that never received the image, so
+    // this note only says the picture is from an earlier message.
+    const earlier = images.length ? historyImageSeenNote(historyImageSeenStamp(m.createdAt)) : "";
+    const labelled = earlier ? (text.trim() ? `${earlier}\n${text}` : earlier) : text;
     return [
       {
         role: "user" as const,
-        content: images.length ? [{ type: "text" as const, text }, ...images] : text,
+        content: images.length ? [{ type: "text" as const, text: labelled }, ...images] : labelled,
         ...common,
       },
     ];
