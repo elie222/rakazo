@@ -36,12 +36,13 @@ export async function sendAsUser(
 ) {
   const target = await resolveThreadTarget(deps.prisma, actor, input);
   const releaseTakeover = takeoverReleaser(deps, actor, target);
-  if (target.kind === "bot") {
-    await assertTeachingSendAllowed(deps.prisma, actor.spaceId, target.botId);
-  }
   // Strict card answers replay any saved receipt before checking model setup so a retry
   // after a lost HTTP response still returns its receipt if model lookup is unavailable.
+  // Check teaching before receipt replay so a teaching session blocks strict answer replays.
   if (input.answersQuestion) {
+    if (target.kind === "bot") {
+      await assertTeachingSendAllowed(deps.prisma, actor.spaceId, target.botId);
+    }
     const replayed = await replayExistingSend(
       deps,
       target.threadId,
@@ -61,6 +62,9 @@ export async function sendAsUser(
     !(await botsRunOwnModels(deps, actor, sendTargetBotIds(target, input, replied)));
   if (noModel && (input.answersQuestion || !isStopMessage(input))) {
     throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
+  }
+  if (target.kind === "bot") {
+    await assertTeachingSendAllowed(deps.prisma, actor.spaceId, target.botId);
   }
   const confirmingImages = input.imageHandling === "confirm" && Boolean(input.artifactIds?.length);
   // Reuse the funding modelSetup resolved; a send never asks billing twice.
