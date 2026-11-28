@@ -78,8 +78,9 @@ export function modelImageLimitError(limit: number): string {
   return MODEL_IMAGE_LIMIT_ERROR.replace("{limit}", String(limit));
 }
 
-const MODEL_IMAGE_LIMIT =
-  /^This model's image limit is (\d+)\. Send fewer images or choose another model\.$/;
+const MODEL_IMAGE_LIMIT = new RegExp(
+  `^${MODEL_IMAGE_LIMIT_ERROR.replace(/[.*+?^$()|[\]\\]/g, "\\$&").replace("{limit}", "(\\d+)")}$`,
+);
 
 /** Recognize the send rejection across RPC errors and persisted outbox messages. */
 export function isModelRequiredSendError(error: unknown): boolean {
