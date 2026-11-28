@@ -46,9 +46,8 @@ export function AttachmentFile({
         <NativeSymbol ios="doc.text" android="document-text-outline" size={18} color={color} />
       </View>
       <View style={styles.body}>
-        <Text numberOfLines={1} style={{ ...styles.name, color }}>
-          {name}
-        </Text>
+        {/* The whole name wraps, so files with long, similar names stay tellable apart. */}
+        <Text style={{ ...styles.name, color }}>{name}</Text>
         {size ? <Text style={{ ...styles.size, color: secondaryColor }}>{size}</Text> : null}
       </View>
     </Pressable>
