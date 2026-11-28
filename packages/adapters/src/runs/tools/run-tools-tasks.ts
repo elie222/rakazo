@@ -23,6 +23,7 @@ import {
   updateTicket,
 } from "../../tasks/ticket-tools.js";
 import { cardName } from "../../tools/fleet-tools.js";
+import { fitRoutineList, readRoutine } from "../../tools/routine-list-view.js";
 import type { ScheduleToolDeps } from "../../tools/schedule-tools.js";
 import {
   cancelScheduleFromTool,
@@ -234,13 +235,24 @@ export const taskTools: ToolHandlers = {
   },
   async schedule_list(ctx, call) {
     const { deps, run } = ctx;
-    const target = await routinesTarget(ctx, call.name, call.args);
+    const { args } = call;
+    const target = await routinesTarget(ctx, call.name, args);
     if ("error" in target) return target;
-    return listSchedulesFromTool(deps, {
+    const routineId = isScheduleValueProvided(args.routineId) ? String(args.routineId).trim() : "";
+    const offsetName = routineId ? "promptOffset" : "routineOffset";
+    const offset = isScheduleValueProvided(args[offsetName]) ? Number(args[offsetName]) : 0;
+    if (!Number.isInteger(offset) || offset < 0)
+      return { error: `${offsetName} must be a whole number of 0 or more.` };
+    const listed = await listSchedulesFromTool(deps, {
       spaceId: run.spaceId,
       botId: target.botId,
       ...(target.groupThreadId ? { groupThreadId: target.groupThreadId } : {}),
+      ...(routineId ? { routineId } : {}),
     });
+    if (routineId) return readRoutine(listed, offset);
+    if (offset > 0 && offset >= listed.routines.length)
+      return { error: "routineOffset is past the end of the list." };
+    return fitRoutineList(listed, offset);
   },
   async schedule_cancel(ctx, call) {
     const { deps, run } = ctx;

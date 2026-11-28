@@ -1,5 +1,6 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
+import { summarizeRoutineList } from "../tools/routine-list-view.js";
 import { listSchedulesFromTool } from "../tools/schedule-tools.js";
 import { listAgentSkillRecords } from "../tools/skill-tools.js";
 import { listScratchpadItems } from "./scratchpad-tools.js";
@@ -19,7 +20,7 @@ type TaskCatalogInput = {
 };
 
 export async function taskCatalogFromTool(deps: TaskCatalogToolDeps, input: TaskCatalogInput) {
-  const [tasks, schedules, taughtSkills, skills] = await Promise.all([
+  const [tasks, listed, taughtSkills, skills] = await Promise.all([
     listScratchpadItems(deps, {
       spaceId: input.spaceId,
       botId: input.botId,
@@ -45,6 +46,7 @@ export async function taskCatalogFromTool(deps: TaskCatalogToolDeps, input: Task
     }),
   ]);
 
+  const schedules = summarizeRoutineList(listed);
   const seenTools = new Set<string>();
   const exposedTools = input.tools.flatMap((tool) => {
     if (seenTools.has(tool.name)) return [];
@@ -67,8 +69,10 @@ export async function taskCatalogFromTool(deps: TaskCatalogToolDeps, input: Task
       notes: task.notes,
       source: "scratchpad",
     })),
-    routines: schedules.routines,
+    // Ahead of the routines, so a result clipped for length still says the list continues.
     ...(schedules.note ? { routinesNote: schedules.note } : {}),
+    ...("nextRoutineOffset" in schedules ? { nextRoutineOffset: schedules.nextRoutineOffset } : {}),
+    routines: schedules.routines,
     taughtSkills: taughtSkills.map((skill) => ({
       id: skill.id,
       name: skill.name,

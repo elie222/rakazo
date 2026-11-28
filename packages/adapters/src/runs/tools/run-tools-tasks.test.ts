@@ -130,6 +130,15 @@ describe("routine tools in a group run", () => {
     expect(catalog.routinesNote).toBe(note);
   });
 
+  it("reads one of the bot's routines by id, and not another bot's", async () => {
+    const { ctx, call } = groupRun();
+    const read = (routineId: string) =>
+      taskTools.schedule_list!(ctx, call("schedule_list", { routineId, promptOffset: null }));
+    const one = (await read("routine-web")) as { routines: { routineId: string }[] };
+    expect(one.routines.map((row) => row.routineId)).toEqual(["routine-web"]);
+    await expect(read("routine-peer")).resolves.toEqual({ error: "Schedule not found." });
+  });
+
   it("refuses to change a listed routine from another chat, saying where it is", async () => {
     const { ctx, call, deleteMany } = groupRun();
     const error = {

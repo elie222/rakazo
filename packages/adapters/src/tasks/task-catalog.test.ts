@@ -105,8 +105,14 @@ describe("task catalog", () => {
 
   it("lists a group run's routines from every chat and marks the ones posting there", async () => {
     const findMany = vi.fn(async (_args: Record<string, unknown>) => [
-      { id: "r-dm", name: "Daily check", crons: ["0 8 * * *"], threadId: "dm-thread" },
-      { id: "r-group", name: "Digest", crons: ["0 9 * * *"], threadId: "group-thread" },
+      { id: "r-dm", name: "Daily check", prompt: "p", crons: ["0 8 * * *"], threadId: "dm-thread" },
+      {
+        id: "r-group",
+        name: "Digest",
+        prompt: "p",
+        crons: ["0 9 * * *"],
+        threadId: "group-thread",
+      },
     ]);
     const prisma = {
       scratchpadItem: { findMany: vi.fn(async () => []) },
