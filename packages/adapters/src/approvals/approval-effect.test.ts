@@ -364,6 +364,38 @@ describe("resolveDuplicateEffectGate", () => {
     });
   });
 
+  it("reports a stored policy refusal instead of claiming the user denied the action", () => {
+    const ruleError =
+      "send_email is blocked in this space by the saved rule \"send_email\". Don't try it another way; tell the user it's blocked.";
+    expect(
+      resolveDuplicateEffectGate(
+        { status: "denied", result: { refused: "rule", error: ruleError } },
+        "send_email",
+      ),
+    ).toEqual({ action: "return", result: { error: ruleError } });
+    expect(
+      resolveDuplicateEffectGate({ status: "denied", result: { refused: "rule" } }, "send_email"),
+    ).toEqual({
+      action: "return",
+      result: {
+        error:
+          "send_email is blocked in this space. Don't try it another way; tell the user it's blocked.",
+      },
+    });
+    expect(
+      resolveDuplicateEffectGate(
+        { status: "denied", result: { refused: "never_asks" } },
+        "respond_agent_connection",
+      ),
+    ).toEqual({
+      action: "return",
+      result: {
+        error:
+          "respond_agent_connection needs the owner's approval because it could have been asked for by someone else, and this space never asks. Don't retry; tell the user.",
+      },
+    });
+  });
+
   it("returns paused for intended effects instead of executing", () => {
     expect(resolveDuplicateEffectGate({ status: "intended" }, "archive_bot")).toEqual({
       action: "paused",

@@ -12,7 +12,13 @@ import type { ActionApprovalRule } from "@rakazo/core";
 import { inboundRoutineBlock } from "@rakazo/core";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { PrismaClient } from "@rakazo/db";
-import { createPendingSteeringRun, sendUserMessage } from "@rakazo/db";
+import {
+  APPROVAL_EXPIRED_RESULT,
+  createPendingSteeringRun,
+  runCodeKind,
+  runSecretKind,
+  sendUserMessage,
+} from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DENIED_ACTION_ERROR, isApprovalPausedResult } from "../../approvals/approval-effect.js";
 import { fakeSpendingPrisma } from "../../billing/fake-spending.js";
@@ -76,6 +82,7 @@ type Effect = {
   reviewDecision?: string;
   runId?: string;
   spaceId?: string;
+  createdAt?: Date;
 };
 
 function fixture({
@@ -6227,5 +6234,590 @@ describe("Auto Review of actions on the bot's own computer after outside content
       ownComputerAction: true,
     });
     expect(isApprovalPausedResult(f.results[4])).toBe(true);
+  });
+});
+
+describe("closing denied approved effects", () => {
+  it("marks an approved effect denied with its policy reason so retries neither reload it nor claim the user denied it", async () => {
+    const args = { to: "alice@example.test", subject: "Hello", body: "Hi" };
+    const key = approvalEffectKey("run-1", "send_email", args);
+    const rules: ActionApprovalRule[] = [
+      { effect: "deny", matchKind: "tool", matchValue: "send_email" },
+    ];
+    const f = fixture({
+      name: "send_email",
+      rules,
+    });
+    f.effects.push({
+      id: "effect-approved-blocked",
+      runId: "run-1",
+      spaceId: "space-1",
+      kind: "send_email",
+      request: args,
+      idempotencyKey: key,
+      status: "approved",
+    });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+
+    expect(f.results[0]).toMatchObject({ error: expect.stringContaining("blocked in this space") });
+    expect(f.effects[0]).toMatchObject({
+      id: "effect-approved-blocked",
+      status: "denied",
+      result: {
+        refused: "rule",
+        error: expect.stringContaining("blocked in this space"),
+      },
+    });
+    expect(f.execute).not.toHaveBeenCalled();
+
+    // Even if the deny rule is later removed, a subsequent attempt sees no approved effect left
+    // to replay and reports the policy block rather than claiming the user denied the action.
+    rules.length = 0;
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+    expect(f.effects.filter((row) => row.status === "approved")).toEqual([]);
+    expect(f.results).toHaveLength(2);
+    expect(f.results[1]).toMatchObject({ error: expect.stringContaining("blocked in this space") });
+    expect(String((f.results[1] as { error?: string })?.error)).not.toContain("user denied");
+    expect(f.execute).not.toHaveBeenCalled();
+  });
+
+  it("reconciles a denied approved read-only tool effect on retry even after the deny rule is removed", async () => {
+    const args = { query: "weather today" };
+    const key = approvalEffectKey("run-1", "web_search", args);
+    const rules: ActionApprovalRule[] = [
+      { effect: "deny", matchKind: "tool", matchValue: "web_search" },
+    ];
+    const f = fixture({
+      name: "web_search",
+      builtin: true,
+      rules,
+    });
+    f.web.searchHits = [{ title: "Sunny", url: "https://example.test", snippet: "" }];
+    f.effects.push({
+      id: "effect-readonly-approved-blocked",
+      runId: "run-1",
+      spaceId: "space-1",
+      kind: "web_search",
+      request: args,
+      idempotencyKey: key,
+      status: "approved",
+    });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+    expect(f.results).toHaveLength(1);
+    expect(f.results[0]).toMatchObject({ error: expect.stringContaining("blocked in this space") });
+    expect(f.effects[0]).toMatchObject({
+      status: "denied",
+      result: { refused: "rule", error: expect.stringContaining("blocked in this space") },
+    });
+
+    // After the deny rule is removed, retrying the same call (including a second identical call
+    // in the same attempt) still hits the stored refusal instead of running web_search.
+    rules.length = 0;
+    f.setCalls([
+      { args, executionId: "call-1" },
+      { args, executionId: "call-2" },
+    ]);
+    await f.run();
+    expect(f.results).toHaveLength(3);
+    for (const replay of [f.results[1], f.results[2]]) {
+      expect(replay).toMatchObject({ error: expect.stringContaining("blocked in this space") });
+      expect(String((replay as { error?: string })?.error)).not.toContain("user denied");
+      expect(replay).not.toHaveProperty("results");
+    }
+    expect(f.effects).toHaveLength(1);
+  });
+
+  it("reconciles a denied nonzero occurrence on subsequent identical read-only calls after the deny rule is removed", async () => {
+    const args = { query: "weather today" };
+    const baseKey = approvalEffectKey("run-1", "web_search", args);
+    const secondKey = toolEffectIdempotencyKey("run-1", "web_search", args, 1);
+    const rules: ActionApprovalRule[] = [
+      { effect: "deny", matchKind: "tool", matchValue: "web_search" },
+    ];
+    const f = fixture({
+      name: "web_search",
+      builtin: true,
+      rules,
+    });
+    f.web.searchHits = [{ title: "Sunny", url: "https://example.test", snippet: "" }];
+    f.effects.push(
+      {
+        id: "effect-readonly-first-completed",
+        runId: "run-1",
+        spaceId: "space-1",
+        kind: "web_search",
+        request: args,
+        idempotencyKey: baseKey,
+        status: "completed",
+        result: { results: f.web.searchHits },
+      },
+      {
+        id: "effect-readonly-second-approved-blocked",
+        runId: "run-1",
+        spaceId: "space-1",
+        kind: "web_search",
+        request: args,
+        idempotencyKey: secondKey,
+        status: "approved",
+      },
+    );
+    f.setCalls([{ args, executionId: "call-blocked" }]);
+    await f.run();
+    expect(f.results).toHaveLength(1);
+    expect(f.results[0]).toMatchObject({ error: expect.stringContaining("blocked in this space") });
+    expect(f.effects[1]).toMatchObject({
+      status: "denied",
+      result: { refused: "rule", error: expect.stringContaining("blocked in this space") },
+    });
+
+    // After the deny rule is removed, repeated identical calls (across occurrences 0, 1, and 2)
+    // still hit the stored refusal instead of missing the denied nonzero occurrence and running.
+    rules.length = 0;
+    f.setCalls([
+      { args, executionId: "call-1" },
+      { args, executionId: "call-2" },
+      { args, executionId: "call-3" },
+    ]);
+    await f.run();
+    expect(f.results).toHaveLength(4);
+    for (const replay of [f.results[1], f.results[2], f.results[3]]) {
+      expect(replay).toMatchObject({ error: expect.stringContaining("blocked in this space") });
+      expect(String((replay as { error?: string })?.error)).not.toContain("user denied");
+      expect(replay).not.toHaveProperty("results");
+    }
+    expect(f.effects).toHaveLength(2);
+  });
+
+  it("keeps completed web_search URL trust intact after its approval rule is removed", async () => {
+    const args = { query: "weather today" };
+    const hitUrl = "https://forecast.example.test/today";
+    const key = approvalEffectKey("run-1", "web_search", args);
+    const f = fixture({
+      name: "web_search",
+      builtin: true,
+    });
+    f.web.searchHits = [{ title: "Forecast", url: hitUrl, snippet: "Clear" }];
+    f.effects.push({
+      id: "effect-readonly-completed-search",
+      runId: "run-1",
+      spaceId: "space-1",
+      kind: "web_search",
+      request: args,
+      idempotencyKey: key,
+      status: "completed",
+      result: { results: f.web.searchHits },
+    });
+    f.setCalls([
+      { name: "web_search", args, executionId: "call-1" },
+      { name: "web_fetch", args: { url: hitUrl }, executionId: "call-2" },
+    ]);
+    await f.run();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.results).toHaveLength(2);
+    expect(f.fetchedUrls).toEqual([hitUrl]);
+  });
+
+  it("reconciles a policy-denied web_fetch in Auto mode without calling Auto Review after the deny rule is removed", async () => {
+    reviewMock.mockClear();
+    reviewMock.mockResolvedValue({ decision: "pass", reason: "Allowed", model: "mock" });
+    const args = { url: "https://new-site.example.test/page" };
+    const key = approvalEffectKey("run-1", "web_fetch", args);
+    const rules: ActionApprovalRule[] = [
+      { effect: "deny", matchKind: "tool", matchValue: "web_fetch" },
+    ];
+    const f = fixture({
+      name: "web_fetch",
+      builtin: true,
+      autoReview: true,
+      rules,
+    });
+    f.effects.push({
+      id: "effect-fetch-approved-blocked",
+      runId: "run-1",
+      spaceId: "space-1",
+      kind: "web_fetch",
+      request: args,
+      idempotencyKey: key,
+      status: "approved",
+    });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+    expect(f.effects[0]).toMatchObject({
+      status: "denied",
+      result: { refused: "rule", error: expect.stringContaining("blocked in this space") },
+    });
+
+    rules.length = 0;
+    f.setCalls([
+      { args, executionId: "call-1" },
+      { args, executionId: "call-2" },
+    ]);
+    await f.run();
+    expect(reviewMock).not.toHaveBeenCalled();
+    expect(f.results).toHaveLength(3);
+    for (const replay of [f.results[1], f.results[2]]) {
+      expect(replay).toMatchObject({ error: expect.stringContaining("blocked in this space") });
+      expect(String((replay as { error?: string })?.error)).not.toContain("user denied");
+    }
+    expect(f.effects).toHaveLength(1);
+    expect(f.fetchedUrls).toEqual([]);
+  });
+
+  it("does not keep site trust from a policy-denied approved effect for later or parallel calls in the same attempt", async () => {
+    reviewMock.mockClear();
+    reviewMock.mockResolvedValue({ decision: "ask", reason: "Check site", model: "mock" });
+    const blockedUrl = "https://blocked-site.example.test/pay";
+    const secondUrl = "https://blocked-site.example.test/other";
+    const key = approvalEffectKey("run-1", "paid_request", { url: blockedUrl });
+    const f = fixture({
+      name: "paid_request",
+      builtin: true,
+      autoReview: true,
+      parallelCalls: true,
+      rules: [{ effect: "deny", matchKind: "tool", matchValue: "paid_request" }],
+    });
+    f.effects.push({
+      id: "effect-paid-approved-blocked",
+      runId: "run-1",
+      spaceId: "space-1",
+      kind: "paid_request",
+      request: { url: blockedUrl },
+      idempotencyKey: key,
+      status: "approved",
+    });
+    f.setCalls([
+      { name: "paid_request", args: { url: blockedUrl }, executionId: "call-1" },
+      { name: "web_fetch", args: { url: secondUrl }, executionId: "call-2" },
+    ]);
+    await f.run();
+
+    expect(f.effects[0]).toMatchObject({
+      status: "denied",
+      result: { refused: "rule", error: expect.stringContaining("blocked in this space") },
+    });
+    expect(f.results[0]).toMatchObject({ error: expect.stringContaining("blocked in this space") });
+    expect(reviewMock).toHaveBeenCalledTimes(1);
+    expect(f.pauseRunForInput).toHaveBeenCalledTimes(1);
+    expect(f.fetchedUrls).toEqual([]);
+  });
+
+  it("drops a pending run secret when closing a policy-denied approved request_secret effect", async () => {
+    const args = { connectionId: "conn-1" };
+    const key = approvalEffectKey("run-1", "request_secret", args);
+    const rules: ActionApprovalRule[] = [
+      { effect: "deny", matchKind: "tool", matchValue: "request_secret" },
+    ];
+    const f = fixture({
+      name: "request_secret",
+      builtin: true,
+      rules,
+    });
+    const effectCreatedAt = new Date("2026-11-24T12:00:00Z");
+    const storedSecrets = [
+      {
+        id: "sec-pending",
+        userId: f.storedRun.userId,
+        spaceId: f.storedRun.spaceId,
+        kind: runSecretKind("run-1"),
+        ciphertext: "pending-answer",
+        createdAt: new Date("2026-11-24T12:00:05Z"),
+      },
+    ];
+    Object.assign(f.prisma.connection, {
+      findFirst: vi.fn(async () => null),
+    });
+    Object.assign(f.prisma.secret, {
+      findFirst: vi.fn(
+        async ({ where }: { where: { userId?: string; spaceId?: string; kind?: string } }) =>
+          storedSecrets.find(
+            (row) =>
+              (where.userId === undefined || row.userId === where.userId) &&
+              (where.spaceId === undefined || row.spaceId === where.spaceId) &&
+              (where.kind === undefined || row.kind === where.kind),
+          ) ?? null,
+      ),
+      deleteMany: vi.fn(
+        async ({
+          where,
+        }: {
+          where: { userId?: string; spaceId?: string; kind?: string; createdAt?: { gte?: Date } };
+        }) => {
+          const before = storedSecrets.length;
+          for (let i = storedSecrets.length - 1; i >= 0; i -= 1) {
+            const row = storedSecrets[i]!;
+            if (
+              (where.userId === undefined || row.userId === where.userId) &&
+              (where.spaceId === undefined || row.spaceId === where.spaceId) &&
+              (where.kind === undefined || row.kind === where.kind) &&
+              (where.createdAt?.gte === undefined || row.createdAt >= where.createdAt.gte)
+            ) {
+              storedSecrets.splice(i, 1);
+            }
+          }
+          return { count: before - storedSecrets.length };
+        },
+      ),
+    });
+    f.effects.push({
+      id: "effect-secret-approved-blocked",
+      runId: "run-1",
+      spaceId: f.storedRun.spaceId,
+      kind: "request_secret",
+      request: args,
+      idempotencyKey: key,
+      status: "approved",
+      createdAt: effectCreatedAt,
+    });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+
+    expect(f.effects[0]).toMatchObject({
+      status: "denied",
+      result: { refused: "rule", error: expect.stringContaining("blocked in this space") },
+    });
+    expect(storedSecrets).toEqual([]);
+
+    // Removing the rule and calling request_secret for another connection cannot consume the
+    // deleted answer and pauses for a new secret card instead.
+    rules.length = 0;
+    f.setCalls([{ args: { connectionId: "conn-2" }, executionId: "call-2" }]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+  });
+
+  it("keeps an earlier run code when closing a later action-approved request_secret effect", async () => {
+    const args = { oneTimeCode: { origin: "https://site-b.example.test" } };
+    const key = approvalEffectKey("run-1", "request_secret", args);
+    const rules: ActionApprovalRule[] = [
+      { effect: "deny", matchKind: "tool", matchValue: "request_secret" },
+    ];
+    const f = fixture({
+      name: "request_secret",
+      builtin: true,
+      rules,
+    });
+    const storedSecrets = [
+      {
+        id: "sec-earlier-code",
+        userId: f.storedRun.userId,
+        spaceId: f.storedRun.spaceId,
+        kind: runCodeKind("run-1"),
+        ciphertext: "earlier-code",
+        createdAt: new Date("2026-11-24T11:55:00Z"),
+      },
+    ];
+    Object.assign(f.prisma.secret, {
+      deleteMany: vi.fn(
+        async ({
+          where,
+        }: {
+          where: { userId?: string; spaceId?: string; kind?: string; createdAt?: { gte?: Date } };
+        }) => {
+          const before = storedSecrets.length;
+          for (let i = storedSecrets.length - 1; i >= 0; i -= 1) {
+            const row = storedSecrets[i]!;
+            if (
+              (where.userId === undefined || row.userId === where.userId) &&
+              (where.spaceId === undefined || row.spaceId === where.spaceId) &&
+              (where.kind === undefined || row.kind === where.kind) &&
+              (where.createdAt?.gte === undefined || row.createdAt >= where.createdAt.gte)
+            ) {
+              storedSecrets.splice(i, 1);
+            }
+          }
+          return { count: before - storedSecrets.length };
+        },
+      ),
+    });
+    f.effects.push({
+      id: "effect-code-form-approved",
+      runId: "run-1",
+      spaceId: f.storedRun.spaceId,
+      kind: "request_secret",
+      request: args,
+      idempotencyKey: key,
+      status: "approved",
+      createdAt: new Date("2026-11-24T12:00:00Z"),
+    });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+
+    expect(f.effects[0]).toMatchObject({
+      status: "denied",
+      result: { refused: "rule", error: expect.stringContaining("blocked in this space") },
+    });
+    expect(storedSecrets).toHaveLength(1);
+    expect(storedSecrets[0]?.id).toBe("sec-earlier-code");
+  });
+
+  it("does not let a denied request_secret consume a newer run secret after the deny rule is removed", async () => {
+    const args = { connectionId: "conn-1" };
+    const key = approvalEffectKey("run-1", "request_secret", args);
+    const f = fixture({
+      name: "request_secret",
+      builtin: true,
+    });
+    const storedSecrets = [
+      {
+        id: "sec-newer",
+        userId: f.storedRun.userId,
+        spaceId: f.storedRun.spaceId,
+        kind: runSecretKind("run-1"),
+        ciphertext: "newer-card-answer",
+        createdAt: new Date("2026-11-24T12:10:00Z"),
+      },
+    ];
+    Object.assign(f.prisma.secret, {
+      findFirst: vi.fn(
+        async ({ where }: { where: { userId?: string; spaceId?: string; kind?: string } }) =>
+          storedSecrets.find(
+            (row) =>
+              (where.userId === undefined || row.userId === where.userId) &&
+              (where.spaceId === undefined || row.spaceId === where.spaceId) &&
+              (where.kind === undefined || row.kind === where.kind),
+          ) ?? null,
+      ),
+      delete: vi.fn(async ({ where }: { where: { id: string } }) => {
+        const index = storedSecrets.findIndex((row) => row.id === where.id);
+        if (index >= 0) storedSecrets.splice(index, 1);
+      }),
+    });
+    f.effects.push({
+      id: "effect-secret-denied",
+      runId: "run-1",
+      spaceId: f.storedRun.spaceId,
+      kind: "request_secret",
+      request: args,
+      idempotencyKey: key,
+      status: "denied",
+      result: { refused: "rule", error: "request_secret is blocked in this space." },
+      createdAt: new Date("2026-11-24T12:00:00Z"),
+    });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+
+    expect(f.results).toHaveLength(1);
+    expect(f.results[0]).toMatchObject({ error: "request_secret is blocked in this space." });
+    expect(storedSecrets).toHaveLength(1);
+    expect(storedSecrets[0]?.id).toBe("sec-newer");
+  });
+
+  it("refuses repeated user-denied read-only calls in the same attempt after the approval rule is removed", async () => {
+    const args = { query: "weather today" };
+    const key = approvalEffectKey("run-1", "web_search", args);
+    const f = fixture({
+      name: "web_search",
+      builtin: true,
+    });
+    f.web.searchHits = [{ title: "Sunny", url: "https://example.test", snippet: "" }];
+    f.effects.push({
+      id: "effect-readonly-user-denied",
+      runId: "run-1",
+      spaceId: "space-1",
+      kind: "web_search",
+      request: args,
+      idempotencyKey: key,
+      status: "denied",
+    });
+    f.setCalls([
+      { args, executionId: "call-1" },
+      { args, executionId: "call-2" },
+    ]);
+    await f.run();
+
+    expect(f.results).toHaveLength(2);
+    expect(f.results[0]).toEqual({ error: DENIED_ACTION_ERROR });
+    expect(f.results[1]).toEqual({ error: DENIED_ACTION_ERROR });
+    expect(f.results[1]).not.toHaveProperty("results");
+  });
+
+  it("loads denied effect keys at most once per attempt across repeated read-only calls", async () => {
+    const f = fixture({
+      name: "web_search",
+      builtin: true,
+    });
+    f.web.searchHits = [{ title: "Sunny", url: "https://example.test", snippet: "" }];
+    const findMany = f.prisma.externalEffect.findMany as ReturnType<typeof vi.fn>;
+    findMany.mockClear();
+    f.setCalls([
+      { args: { query: "first" }, executionId: "call-1" },
+      { args: { query: "second" }, executionId: "call-2" },
+      { args: { query: "third" }, executionId: "call-3" },
+    ]);
+    await f.run();
+
+    expect(f.results).toHaveLength(3);
+    const deniedLookups = findMany.mock.calls.filter(
+      ([query]) =>
+        (query as { where?: { status?: unknown } } | undefined)?.where?.status === "denied",
+    );
+    expect(deniedLookups).toHaveLength(1);
+  });
+
+  it("lets a read-only call run when its earlier approval expired and the call is now allowed", async () => {
+    const args = { query: "weather today" };
+    const key = approvalEffectKey("run-1", "web_search", args);
+    const f = fixture({
+      name: "web_search",
+      builtin: true,
+    });
+    f.web.searchHits = [{ title: "Sunny", url: "https://example.test", snippet: "" }];
+    f.effects.push({
+      id: "effect-readonly-expired",
+      runId: "run-1",
+      spaceId: "space-1",
+      kind: "web_search",
+      request: args,
+      idempotencyKey: key,
+      status: "denied",
+      result: APPROVAL_EXPIRED_RESULT,
+    });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+
+    expect(f.results).toHaveLength(1);
+    expect(f.results[0]).toMatchObject({ results: [{ title: "Sunny" }] });
+  });
+
+  it("runs an allowed web_fetch to a new site under a fresh occurrence when its earlier approval expired", async () => {
+    const args = { url: "https://fresh.example.test/page" };
+    const expiredKey = approvalEffectKey("run-1", "web_fetch", args);
+    const f = fixture({
+      name: "web_fetch",
+      builtin: true,
+      skipApprovals: true,
+    });
+    f.web.fetchResult = {
+      ...f.web.fetchResult,
+      url: args.url,
+      title: "Fresh",
+      text: "Hello from fresh",
+    };
+    f.effects.push({
+      id: "effect-fetch-expired",
+      runId: "run-1",
+      spaceId: "space-1",
+      kind: "web_fetch",
+      request: args,
+      idempotencyKey: expiredKey,
+      status: "denied",
+      result: APPROVAL_EXPIRED_RESULT,
+    });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+
+    expect(f.results).toHaveLength(1);
+    expect(f.results[0]).toMatchObject({ title: "Fresh", text: "Hello from fresh" });
+    expect(f.effects[0]).toMatchObject({
+      id: "effect-fetch-expired",
+      status: "denied",
+      result: APPROVAL_EXPIRED_RESULT,
+    });
+    expect(f.effects).toHaveLength(2);
+    expect(f.effects[1]).toMatchObject({ status: "completed" });
+    expect(f.effects[1]?.idempotencyKey).not.toBe(expiredKey);
   });
 });

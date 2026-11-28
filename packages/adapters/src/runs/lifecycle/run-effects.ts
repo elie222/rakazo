@@ -5,7 +5,15 @@ import {
   stableJsonValue,
 } from "@rakazo/core/node/approval-effect-key";
 import type { Prisma } from "@rakazo/db";
-import { assertRunCanWriteHistory, RUN_TURN_CHECKPOINT_KIND } from "@rakazo/db";
+import {
+  assertRunCanWriteHistory,
+  RUN_TURN_CHECKPOINT_KIND,
+  readJsonColumn,
+  runCodeKind,
+  runLoginKind,
+  runSecretKind,
+} from "@rakazo/db";
+import { z } from "zod";
 import {
   boundDirectApprovalDetails,
   catalogApprovalConnectorId,
@@ -18,14 +26,15 @@ import {
   completeExternalEffect,
   parseCatalogApprovalTarget,
 } from "../../approvals/approval-effect.js";
+import { resolveRequestSecretDestination } from "../../secrets/bot-secrets.js";
 import { USE_TOOL } from "../../tools/builtin.tool-definition.js";
 import { uniquifyInstalledToolName } from "../../tools/lazy-tool-catalog.js";
 import { APPROVAL_CONTINUATION_LEAD } from "../assembly/approval-continuation.prompt.js";
 import { runLeaseFor } from "../assembly/run-messages.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 
-/** Effects that got past the approval gate: approved, allowed by a rule or review, or run. */
-export const PASSED_EFFECT_STATUSES = ["approved", "executing", "uncertain", "completed"];
+/** Effects that passed the approval gate and started or finished running. Pending approvals stay out until their replay passes current policy. */
+export const PASSED_EFFECT_STATUSES = ["executing", "uncertain", "completed"];
 
 export const APPROVED_EFFECT_REPLAY_ORDER = [{ createdAt: "asc" as const }, { id: "asc" as const }];
 
@@ -335,4 +344,92 @@ export function uncertainEffectError(toolName: string): Error {
   return new Error(
     `tool ${toolName} has an earlier execution with an uncertain outcome; it may already have completed, so verify the destination before retrying`,
   );
+}
+
+const RequestSecretPayloadSchema = z.record(z.string(), z.unknown());
+
+const SavedCredentialResultSchema = z.object({
+  credentialSaved: z
+    .object({
+      name: z.string().min(1),
+      auth: z.object({ type: z.string() }),
+    })
+    .optional(),
+});
+
+function pendingRequestSecretKind(
+  runId: string,
+  effect: { id: string; request: unknown; result: unknown },
+): string | undefined {
+  if (effect.request == null) return undefined;
+  const request = readJsonColumn(
+    RequestSecretPayloadSchema,
+    effect.request,
+    { table: "external_effects", column: "request", id: effect.id },
+    "reject",
+  );
+  const resolved = resolveRequestSecretDestination(request);
+  if (resolved.oneTimeCodeOrigin) return runCodeKind(runId);
+  if (resolved.destination) {
+    if (effect.result == null) return undefined;
+    const saved = readJsonColumn(
+      SavedCredentialResultSchema,
+      effect.result,
+      { table: "external_effects", column: "result", id: effect.id },
+      "reject",
+    );
+    return saved.credentialSaved?.auth.type === "login"
+      ? runLoginKind(runId, saved.credentialSaved.name)
+      : undefined;
+  }
+  return resolved.connectionId ? runSecretKind(runId) : undefined;
+}
+
+/**
+ * Close an approved effect refused by the gate before its handler runs (e.g. a deny rule or
+ * Never ask enabled after approval), so a later attempt does not reload it into approvedReplays.
+ * For request_secret, also drop any pending answer stored for that card in the same transaction.
+ */
+export async function denyApprovedEffect(
+  deps: ExecutorDeps,
+  run: { id: string; spaceId: string; userId: string },
+  idempotencyKey: string,
+  refused: string,
+  error?: string,
+): Promise<boolean> {
+  return underRunLease(deps, run.id, async (tx) => {
+    if (!tx.externalEffect?.findUnique) return false;
+    const existing = await tx.externalEffect.findUnique({
+      where: { idempotencyKey },
+      select: {
+        id: true,
+        runId: true,
+        kind: true,
+        request: true,
+        result: true,
+        status: true,
+        createdAt: true,
+      },
+    });
+    if (!existing || existing.runId !== run.id || existing.status !== "approved") return false;
+    const secretKind =
+      existing.kind === "request_secret" ? pendingRequestSecretKind(run.id, existing) : undefined;
+    const createdAt = existing.createdAt;
+    const updated = await tx.externalEffect.updateMany({
+      where: { id: existing.id, status: "approved" },
+      data: { status: "denied", result: error ? { refused, error } : { refused } },
+    });
+    if (updated && updated.count !== 1) return false;
+    if (secretKind && tx.secret?.deleteMany) {
+      await tx.secret.deleteMany({
+        where: {
+          userId: run.userId,
+          spaceId: run.spaceId,
+          kind: secretKind,
+          ...(createdAt instanceof Date ? { createdAt: { gte: createdAt } } : {}),
+        },
+      });
+    }
+    return true;
+  });
 }

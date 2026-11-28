@@ -23,7 +23,7 @@ import {
 } from "@rakazo/core";
 import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
-import { runSecretKind } from "@rakazo/db";
+import { APPROVAL_EXPIRED_RESULT, runSecretKind } from "@rakazo/db";
 import type { ApprovalCardOptions } from "../../approvals/approval-ask.js";
 import {
   approvalActionName,
@@ -33,6 +33,7 @@ import {
 import {
   boundDirectApprovalDetails,
   DENIED_ACTION_ERROR,
+  policyRefusalMessage,
   resolveDuplicateEffectGate,
   settleUncertainEffect,
   uncertainEffectResult,
@@ -67,6 +68,7 @@ import {
   CATALOG_APPROVAL_TOOL,
   claimEffect,
   completeEffect,
+  denyApprovedEffect,
   recordEffect,
   uncertainEffectError,
 } from "../lifecycle/run-effects.js";
@@ -397,16 +399,17 @@ export async function gateToolCall(
         purchase: paying,
       });
   if (plan === "deny") {
-    await auditToolCall(ctx, name, "denied", {
-      reason: approvalResolved.decision === "deny" ? "rule" : "never_asks",
-    });
+    const reason = approvalResolved.decision === "deny" ? "rule" : "never_asks";
+    const message = policyRefusalMessage(reason, name, blockingRuleSuffix(approvalResolved));
+    if (approvedEffectKey) {
+      const closed = await denyApprovedEffect(deps, run, approvedEffectKey, reason, message);
+      if (closed && ctx.state.effects.deniedKeys) {
+        (await ctx.state.effects.deniedKeys).set(approvedEffectKey, false);
+      }
+    }
+    await auditToolCall(ctx, name, "denied", { reason });
     return {
-      result: refusal(
-        "approval_denied",
-        approvalResolved.decision === "deny"
-          ? `${name} is blocked in this space${blockingRuleSuffix(approvalResolved)}. Don't try it another way; tell the user it's blocked.`
-          : `${name} needs the owner's approval because it could have been asked for by someone else, and this space never asks. Don't retry; tell the user.`,
-      ),
+      result: refusal("approval_denied", message),
     };
   }
   // A pay click counts against the user's spending limit, unless it pays with a wallet purchase,
@@ -465,18 +468,43 @@ export async function gateToolCall(
       : toolEffectIdempotencyKey(runId, replayEffectToolName, args, occurrence));
   // Connector read-only hints must not bypass approval, review, or replay decisions.
   // A fetch to a new site is gated like any action, so it needs an effect to approve.
-  const applied =
+  // Any read-only tool with a saved denied effect reconciles its refusal before asking or running
+  // Auto Review, even after the deny rule is removed or the occurrence advances.
+  const baseEffectKey = approvalEffectKey(runId, replayEffectToolName, args);
+  const readOnlyEligible =
     READ_ONLY_AGENT_TOOLS.has(name) &&
     plan === "allow" &&
     siteGate !== "new" &&
     nextApprovedTool !== name &&
-    !approvedEffectKey
+    !approvedEffectKey;
+  const readOnlyDeniedKeys =
+    READ_ONLY_AGENT_TOOLS.has(name) && nextApprovedTool !== name && !approvedEffectKey
+      ? await loadDeniedEffectKeys(ctx)
+      : undefined;
+  const readOnlyDeniedKey = readOnlyDeniedKeys
+    ? findDeniedReadOnlyEffectKey(readOnlyDeniedKeys, effectKey, baseEffectKey)
+    : undefined;
+  let recordEffectKey = readOnlyDeniedKey ?? effectKey;
+  if (
+    readOnlyDeniedKeys &&
+    !readOnlyDeniedKey &&
+    !readOnlyEligible &&
+    plan === "allow" &&
+    readOnlyDeniedKeys.get(recordEffectKey) === true
+  ) {
+    do {
+      const nextOcc = nextMutatingEffectOccurrence(ctx, replayEffectToolName, args, executionId);
+      recordEffectKey = toolEffectIdempotencyKey(runId, replayEffectToolName, args, nextOcc);
+    } while (readOnlyDeniedKeys.get(recordEffectKey) === true);
+  }
+  const applied =
+    readOnlyEligible && !readOnlyDeniedKey
       ? undefined
       : await recordEffect(
           deps,
           run,
           replayEffectToolName,
-          effectKey,
+          recordEffectKey,
           effectRequest,
           executionId,
           ctx.state.effects.consumedIds,
@@ -521,6 +549,9 @@ export async function gateToolCall(
       where: { id: applied.effect.id, status: "intended" },
       data: { status: "denied", result: { refused: "repeat" } },
     });
+    if (ctx.state.effects.deniedKeys) {
+      (await ctx.state.effects.deniedKeys).set(recordEffectKey, false);
+    }
     return { result: refusal("action_denied_repeat", DENIED_ACTION_ERROR) };
   }
 
@@ -548,7 +579,15 @@ export async function gateToolCall(
     passedByReview = judged.decision === "allow";
   };
 
-  if (applied && plan === "judge" && (injectedReview || checker)) {
+  const duplicateGate = applied?.duplicate
+    ? resolveDuplicateEffectGate(applied.effect, name)
+    : undefined;
+  if (
+    applied &&
+    (!duplicateGate || duplicateGate.action === "paused") &&
+    plan === "judge" &&
+    (injectedReview || checker)
+  ) {
     if (!applied.duplicate) {
       await runAutoReview();
     } else {
@@ -566,7 +605,10 @@ export async function gateToolCall(
         await runAutoReview();
       }
     }
-  } else if (applied?.duplicate && plan === "ask") {
+  } else if (
+    applied?.duplicate &&
+    (plan === "ask" || (plan === "judge" && duplicateGate?.action === "execute"))
+  ) {
     gateDecision = "ask";
   }
   if (context.signal.aborted) return { result: pauseForApproval(ctx) };
@@ -578,7 +620,7 @@ export async function gateToolCall(
     executionId,
     observer,
     connectorCall,
-    effectKey,
+    effectKey: recordEffectKey,
     applied,
     nextApprovedTool,
     bypassApproval: gateDecision === "allow" && gated,
@@ -597,10 +639,9 @@ export async function gateToolCall(
       !ctx.thread.groupId,
   };
 
-  if (applied?.duplicate) {
-    const gate = resolveDuplicateEffectGate(applied.effect, name);
-    if (gate.action === "return") {
-      if (name === "request_secret") {
+  if (applied?.duplicate && duplicateGate) {
+    if (duplicateGate.action === "return") {
+      if (name === "request_secret" && applied.effect.status === "completed") {
         const replacementSecret = await deps.prisma.secret.findFirst({
           where: {
             spaceId: run.spaceId,
@@ -609,7 +650,7 @@ export async function gateToolCall(
           },
           select: { id: true, createdAt: true },
         });
-        if (!replacementSecret) return { result: gate.result, replayed: true };
+        if (!replacementSecret) return { result: duplicateGate.result, replayed: true };
         // Crash between persist and delete leaves the same OTP row. Do not
         // resubmit it to the connector; only newer rows are replacements.
         const effectUpdatedAt = applied.effect.updatedAt;
@@ -623,13 +664,13 @@ export async function gateToolCall(
           await deps.prisma.secret.delete({
             where: { id: replacementSecret.id },
           });
-          return { result: gate.result, replayed: true };
+          return { result: duplicateGate.result, replayed: true };
         }
       } else {
-        return { result: gate.result, replayed: true };
+        return { result: duplicateGate.result, replayed: true };
       }
     }
-    if (gate.action === "paused") {
+    if (duplicateGate.action === "paused") {
       if (name === "request_secret") {
         const current = await deps.prisma.run.findUnique({
           where: { id: runId },
@@ -653,12 +694,12 @@ export async function gateToolCall(
         }
         return { result: await requestApproval(ctx, call, card) };
       }
-    } else if (gate.action === "uncertain") {
+    } else if (duplicateGate.action === "uncertain") {
       return {
-        result: await settleToolUncertainty(ctx, call, applied.effect.id, gate.toolName),
+        result: await settleToolUncertainty(ctx, call, applied.effect.id, duplicateGate.toolName),
         replayed: true,
       };
-    } else if (gate.action === "execute") {
+    } else if (duplicateGate.action === "execute") {
       const early = await call.claimOrReturn("approved");
       if (early !== undefined) return { result: early, replayed: true };
     }
@@ -681,6 +722,65 @@ export async function gateToolCall(
     for (const trust of connectorTrusts) trusted.add(trust);
   }
   return { call };
+}
+
+function isExpiredDeniedResult(id: string, result: unknown): boolean {
+  const gate = resolveDuplicateEffectGate({ id, status: "denied", result }, "");
+  return gate.action === "return" && gate.result === APPROVAL_EXPIRED_RESULT;
+}
+
+function findDeniedReadOnlyEffectKey(
+  keys: ReadonlyMap<string, boolean>,
+  effectKey: string,
+  baseEffectKey: string,
+): string | undefined {
+  if (keys.get(effectKey) === false) return effectKey;
+  let bestKey: string | undefined;
+  let bestOccurrence = -1;
+  const occurrencePrefix = `${baseEffectKey}:`;
+  for (const [key, expired] of keys) {
+    if (expired) continue;
+    if (key === baseEffectKey) {
+      if (bestOccurrence < 0) {
+        bestKey = key;
+        bestOccurrence = 0;
+      }
+      continue;
+    }
+    if (!key.startsWith(occurrencePrefix)) continue;
+    const suffix = key.slice(occurrencePrefix.length);
+    if (!/^\d+$/.test(suffix)) continue;
+    const occurrence = Number(suffix);
+    if (occurrence > bestOccurrence) {
+      bestKey = key;
+      bestOccurrence = occurrence;
+    }
+  }
+  return bestKey;
+}
+
+function loadDeniedEffectKeys(ctx: RunContext): Promise<Map<string, boolean>> {
+  const cached = ctx.state.effects.deniedKeys;
+  if (cached) return cached;
+  const pending = ctx.deps.prisma.externalEffect?.findMany
+    ? ctx.deps.prisma.externalEffect
+        .findMany({
+          where: { runId: ctx.runId, status: "denied" },
+          select: { id: true, idempotencyKey: true, result: true },
+        })
+        .then(
+          (rows) =>
+            new Map(
+              rows.map((row) => [row.idempotencyKey, isExpiredDeniedResult(row.id, row.result)]),
+            ),
+        )
+        .catch((error) => {
+          ctx.state.effects.deniedKeys = undefined;
+          throw error;
+        })
+    : Promise.resolve(new Map<string, boolean>());
+  ctx.state.effects.deniedKeys = pending;
+  return pending;
 }
 
 function blockingRuleSuffix(resolved: ReturnType<typeof resolveActionApprovalForTools>): string {

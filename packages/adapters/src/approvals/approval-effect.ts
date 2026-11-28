@@ -2,7 +2,8 @@ import type { AgentToolExecutionResult } from "@rakazo/adapter-kit";
 import { ModelOutputError } from "@rakazo/adapter-kit";
 import { FLEET_WRITE_TOOL_NAMES } from "@rakazo/contracts";
 import { APPROVED_ACTION_NOT_RUN_ERROR } from "@rakazo/core";
-import { APPROVAL_EXPIRED_RESULT } from "@rakazo/db";
+import { APPROVAL_EXPIRED_RESULT, readJsonColumn } from "@rakazo/db";
+import { z } from "zod";
 import { argumentGiven } from "../bots/update-bot-patch.js";
 
 export type ApprovalPausedToolResult = AgentToolExecutionResult & { terminate: true };
@@ -430,27 +431,65 @@ export type ExternalEffectStore = {
   };
 };
 
-function isExpiredResult(result: unknown): boolean {
-  return (
-    typeof result === "object" && result !== null && "expired" in result && result.expired === true
-  );
+const DeniedEffectResultSchema = z
+  .union([
+    z.object({ expired: z.literal(true) }),
+    z.object({ refused: z.enum(["rule", "never_asks"]), error: z.string().optional() }),
+    z.object({ refused: z.string() }),
+  ])
+  .nullable();
+
+export function policyRefusalMessage(
+  reason: "rule" | "never_asks",
+  toolName: string,
+  ruleSuffix = "",
+): string {
+  return reason === "rule"
+    ? `${toolName} is blocked in this space${ruleSuffix}. Don't try it another way; tell the user it's blocked.`
+    : `${toolName} needs the owner's approval because it could have been asked for by someone else, and this space never asks. Don't retry; tell the user.`;
+}
+
+function policyRefusalResult(
+  result: { refused: "rule" | "never_asks"; error?: string },
+  toolName: string,
+): { error: string } {
+  if (typeof result.error === "string" && result.error.trim()) return { error: result.error };
+  return { error: policyRefusalMessage(result.refused, toolName) };
 }
 
 export function resolveDuplicateEffectGate(
-  effect: { status: string; result?: unknown },
+  effect: { id?: string; status: string; result?: unknown },
   toolName: string,
 ): DuplicateEffectGate {
   if (effect.status === "completed") {
     return { action: "return", result: effect.result ?? { duplicate: true } };
   }
   if (effect.status === "denied") {
-    return {
-      action: "return",
-      // An expired card says nobody answered rather than that someone said no.
-      result: isExpiredResult(effect.result)
-        ? APPROVAL_EXPIRED_RESULT
-        : { error: DENIED_ACTION_ERROR },
-    };
+    if (effect.result == null) {
+      return { action: "return", result: { error: DENIED_ACTION_ERROR } };
+    }
+    const parsed = readJsonColumn(
+      DeniedEffectResultSchema,
+      effect.result,
+      { table: "external_effects", column: "result", id: effect.id ?? "unknown" },
+      { fallback: null },
+    );
+    if (parsed && "expired" in parsed) {
+      return { action: "return", result: APPROVAL_EXPIRED_RESULT };
+    }
+    if (parsed && (parsed.refused === "rule" || parsed.refused === "never_asks")) {
+      return {
+        action: "return",
+        result: policyRefusalResult(
+          {
+            refused: parsed.refused,
+            error: "error" in parsed ? parsed.error : undefined,
+          },
+          toolName,
+        ),
+      };
+    }
+    return { action: "return", result: { error: DENIED_ACTION_ERROR } };
   }
   if (effect.status === "executing") {
     return { action: "uncertain", toolName };
