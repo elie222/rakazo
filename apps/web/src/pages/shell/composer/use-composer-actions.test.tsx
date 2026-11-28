@@ -689,7 +689,7 @@ it("shows a text send at once and keeps it when the follow-up refresh fails", as
     sent = latest.sendMessage("hello there", [], "nonce-1");
   });
   expect(latest.pendingSends).toEqual([
-    { threadKey: "bot-1", clientNonce: "nonce-1", text: "hello there", afterSeq: 0 },
+    { threadKey: "bot-1", clientNonce: "nonce-1", text: "hello there", afterSeq: -1 },
   ]);
   expect(latest.transcriptProps.transcript?.messages.map((message) => message.id)).toEqual([
     "pending:nonce-1",
@@ -704,7 +704,7 @@ it("shows a text send at once and keeps it when the follow-up refresh fails", as
       threadKey: "bot-1",
       clientNonce: "nonce-1",
       text: "hello there",
-      afterSeq: 0,
+      afterSeq: -1,
       acceptedSeq: 7,
     },
   ]);
