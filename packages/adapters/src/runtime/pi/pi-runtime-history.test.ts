@@ -210,7 +210,7 @@ describe("Pi history replay", () => {
     expect(messages[0]!.content).toEqual([
       {
         type: "text",
-        text: "[image from an earlier message; already seen]\n[User]: [image: a.png]",
+        text: "[image from an earlier message]\n[User]: [image: a.png]",
       },
       { type: "image", data: Buffer.from([1, 2]).toString("base64"), mimeType: "image/png" },
     ]);
@@ -741,7 +741,7 @@ describe("replaying an earlier reply's tool steps", () => {
   });
 });
 
-describe("history image seen markers", () => {
+describe("history image earlier-message notes", () => {
   const image = { name: "shot.png", mimeType: "image/png" as const, data: new Uint8Array([1, 2]) };
   const imagePart = {
     type: "image" as const,
@@ -749,7 +749,7 @@ describe("history image seen markers", () => {
     mimeType: "image/png",
   };
 
-  it("labels an image-only history message with its timestamp and a seen-marker", () => {
+  it("labels an image-only history message as an image from an earlier turn", () => {
     const [message] = toHistory(
       [
         {
@@ -763,12 +763,12 @@ describe("history image seen markers", () => {
       "Next question.",
     );
     expect(message?.content).toEqual([
-      { type: "text", text: "[2026-11-19 02:31, image from an earlier message; already seen]" },
+      { type: "text", text: "[2026-11-19 02:31, image from an earlier message]" },
       imagePart,
     ]);
   });
 
-  it("prepends a seen-marker to a captioned history image", () => {
+  it("prepends an earlier-message note to a captioned history image", () => {
     const [message] = toHistory(
       [
         {
@@ -784,7 +784,7 @@ describe("history image seen markers", () => {
     expect(message?.content).toEqual([
       {
         type: "text",
-        text: "[2026-11-19 02:31, image from an earlier message; already seen]\nlook at this",
+        text: "[2026-11-19 02:31, image from an earlier message]\nlook at this",
       },
       imagePart,
     ]);
@@ -796,7 +796,7 @@ describe("history image seen markers", () => {
       "Next question.",
     );
     expect(message?.content).toEqual([
-      { type: "text", text: "[image from an earlier message; already seen]" },
+      { type: "text", text: "[image from an earlier message]" },
       imagePart,
     ]);
   });

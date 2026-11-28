@@ -33,7 +33,7 @@ describe("checkpoint history upgrade", () => {
       content: [
         {
           type: "text",
-          text: "[2026-11-19 02:31, image from an earlier message; already seen]\nEarlier",
+          text: "[2026-11-19 02:31, image from an earlier message]\nEarlier",
         },
         image,
       ],
@@ -55,7 +55,7 @@ describe("checkpoint history upgrade", () => {
     });
     expect(upgraded.messages[0]).toEqual(marked);
     expect(upgraded.messages[1]).toMatchObject({
-      content: [{ type: "text", text: "[image from an earlier message; already seen]" }, image],
+      content: [{ type: "text", text: "[image from an earlier message]" }, image],
     });
     expect(upgradeCheckpointHistory(upgraded).messages).toEqual(upgraded.messages);
   });

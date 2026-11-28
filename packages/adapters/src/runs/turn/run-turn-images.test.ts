@@ -226,7 +226,7 @@ it("drops an oversized unreadable image on the current turn and marks it unavail
   expect(hydrated[0]?.content).toBe("[image: corrupt.png (unavailable)]");
 });
 
-it("marks re-hydrated history images as already seen when they are replayed", async () => {
+it("labels re-hydrated history images as coming from an earlier message", async () => {
   const data = new Uint8Array([1, 2]);
   const deps = {
     prisma: {
@@ -278,12 +278,12 @@ it("marks re-hydrated history images as already seen when they are replayed", as
     [
       {
         type: "text",
-        text: "[2026-11-19 02:10, image from an earlier message; already seen]\nlook at this",
+        text: "[2026-11-19 02:10, image from an earlier message]\nlook at this",
       },
       { type: "image", data: Buffer.from(data).toString("base64"), mimeType: "image/png" },
     ],
     [
-      { type: "text", text: "[2026-11-19 02:31, image from an earlier message; already seen]" },
+      { type: "text", text: "[2026-11-19 02:31, image from an earlier message]" },
       { type: "image", data: Buffer.from(data).toString("base64"), mimeType: "image/png" },
     ],
   ]);

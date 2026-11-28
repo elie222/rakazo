@@ -140,7 +140,7 @@ describe("Pi runtime attachments", () => {
         content: [
           {
             type: "text",
-            text: "[image from an earlier message; already seen]\n[image: ticket.png]",
+            text: "[image from an earlier message]\n[image: ticket.png]",
           },
           {
             type: "image",

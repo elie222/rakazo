@@ -35,11 +35,11 @@ describe("history replay notes", () => {
     expect(historyImageSeenStamp("not a date")).toBeUndefined();
     expect(historyImageSeenStamp(undefined)).toBeUndefined();
     expect(historyImageSeenNote("2026-11-19 02:31")).toMatchInlineSnapshot(
-      `"[2026-11-19 02:31, image from an earlier message; already seen]"`,
+      `"[2026-11-19 02:31, image from an earlier message]"`,
     );
-    expect(historyImageSeenNote()).toMatchInlineSnapshot(
-      `"[image from an earlier message; already seen]"`,
-    );
+    expect(historyImageSeenNote()).toMatchInlineSnapshot(`"[image from an earlier message]"`);
+    expect(historyImageSeenNote("2026-11-19 02:31")).not.toContain("already seen");
+    expect(historyImageSeenNote()).not.toContain("already seen");
     expect(isHistoryImageSeenNote(historyImageSeenNote())).toBe(true);
     expect(isHistoryImageSeenNote(`${historyImageSeenNote("2026-11-19 02:31")}\nEarlier`)).toBe(
       true,

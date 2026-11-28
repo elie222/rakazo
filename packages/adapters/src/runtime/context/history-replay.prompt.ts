@@ -23,14 +23,18 @@ export function historyImageSeenStamp(createdAt: string | undefined): string | u
   return utcMinuteStamp(new Date(created));
 }
 
-const HISTORY_IMAGE_SEEN = "image from an earlier message; already seen";
+const HISTORY_IMAGE_EARLIER = "image from an earlier message";
 
-/** Marks a user-message image that is being sent again from an earlier turn. */
+/**
+ * Labels a user-message image replayed from an earlier turn.
+ * Does not claim a model already inspected it: image parts are attached for the
+ * current model, which may be the first one that can see them.
+ */
 export function historyImageSeenNote(stamp?: string): string {
-  return stamp ? `[${stamp}, ${HISTORY_IMAGE_SEEN}]` : `[${HISTORY_IMAGE_SEEN}]`;
+  return stamp ? `[${stamp}, ${HISTORY_IMAGE_EARLIER}]` : `[${HISTORY_IMAGE_EARLIER}]`;
 }
 
-/** True when text already starts with a history image seen-marker, with or without a stamp. */
+/** True when text already starts with the earlier-message image note, with or without a stamp. */
 export function isHistoryImageSeenNote(text: string): boolean {
   const first = text.split("\n", 1)[0] ?? "";
   if (first === historyImageSeenNote()) return true;

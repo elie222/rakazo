@@ -412,8 +412,10 @@ export function toHistory(
           : m.content;
     // Pictures ride on the human's turn only, never on a bot's.
     const images = m.role === "assistant" ? [] : toPiImages(m.images);
-    const seen = images.length ? historyImageSeenNote(historyImageSeenStamp(m.createdAt)) : "";
-    const labelled = seen ? (text.trim() ? `${seen}\n${text}` : seen) : text;
+    // A previous run may have used a model that never received the image, so
+    // this note only says the picture is from an earlier message.
+    const earlier = images.length ? historyImageSeenNote(historyImageSeenStamp(m.createdAt)) : "";
+    const labelled = earlier ? (text.trim() ? `${earlier}\n${text}` : earlier) : text;
     return [
       {
         role: "user" as const,
