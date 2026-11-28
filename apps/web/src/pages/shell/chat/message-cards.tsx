@@ -346,10 +346,12 @@ type McpApprovalState = "pending" | "connecting" | "connected" | "dismissed";
 export function McpApprovalCard({
   botId,
   threadId,
+  messageId,
   block,
 }: {
   botId: string | undefined;
   threadId: string | undefined;
+  messageId?: string;
   block: Extract<MessageBlock, { kind: "mcp_approval" }>;
 }) {
   const { t } = useLingui();
@@ -385,7 +387,7 @@ export function McpApprovalCard({
           return;
         }
       }
-      await rpc.mcp.assignments.approve({ botId, serverId, threadId });
+      await rpc.mcp.assignments.approve({ botId, serverId, threadId, messageId });
       setLocalStatus("connected");
     } catch (err) {
       setError(errorDetails(err, t`Could not approve this server`));
@@ -401,7 +403,7 @@ export function McpApprovalCard({
     setError(null);
     try {
       if (botId) {
-        await rpc.mcp.assignments.dismiss({ botId, serverId, threadId });
+        await rpc.mcp.assignments.dismiss({ botId, serverId, threadId, messageId });
       }
       setLocalStatus("dismissed");
     } catch (err) {

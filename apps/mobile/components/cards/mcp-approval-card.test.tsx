@@ -71,7 +71,11 @@ afterEach(async () => {
 const button = (label: string) =>
   [...container.querySelectorAll("button")].find((item) => item.textContent === label);
 const render = () =>
-  act(async () => root.render(<McpApprovalCard botId="bot-1" threadId="thread-1" block={block} />));
+  act(async () =>
+    root.render(
+      <McpApprovalCard botId="bot-1" threadId="thread-1" messageId="message-1" block={block} />,
+    ),
+  );
 
 it("approves once on a double tap, holds both buttons, then shows it connected", async () => {
   await render();
@@ -81,7 +85,7 @@ it("approves once on a double tap, holds both buttons, then shows it connected",
   });
   expect(rpc).toHaveBeenCalledExactlyOnceWith(
     "mcp/assignments/approve",
-    { botId: "bot-1", serverId: "server-1", threadId: "thread-1" },
+    { botId: "bot-1", serverId: "server-1", threadId: "thread-1", messageId: "message-1" },
     { requestContext: expect.objectContaining({ apiBase: "http://api.test" }) },
   );
   expect(button("Not now")!.disabled).toBe(true);

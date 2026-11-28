@@ -9,7 +9,7 @@ import {
 } from "./mcp-reconnect-card.js";
 
 type Stored = { blocks: MessageBlock[]; clientNonce: string };
-const stored = vi.hoisted(() => [] as { blocks: unknown; clientNonce: string }[]);
+const stored = vi.hoisted(() => [] as { blocks: unknown; clientNonce: string; runId?: string }[]);
 vi.mock("@rakazo/db", async (original) => ({
   ...(await original<typeof db>()),
   createThreadMessageInTransaction: vi.fn(async (_tx, input) => {
@@ -27,9 +27,19 @@ const server = {
   endpoint: "https://mcp.example.test/mcp",
 };
 
-function fixture(run: { threadId: string; spaceId: string } | null = defaultRun) {
+function fixture(
+  run: { threadId: string; spaceId: string } | null = defaultRun,
+  askers: Record<string, string> = {},
+) {
+  const askedBy = (runId: string) => askers[runId] ?? "member";
   const tx = {
     $executeRaw: vi.fn(),
+    run: {
+      findMany: vi.fn(
+        async ({ where }: { where: { id: { in: string[] }; userId: { not: string } } }) =>
+          where.id.in.filter((id) => askedBy(id) !== where.userId.not).map((id) => ({ id })),
+      ),
+    },
     message: {
       findMany: vi.fn(async () => stored),
       findFirst: vi.fn(
@@ -40,7 +50,11 @@ function fixture(run: { threadId: string; spaceId: string } | null = defaultRun)
   };
   const deps = {
     prisma: {
-      run: { findUnique: vi.fn(async () => run) },
+      run: {
+        findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
+          run ? { ...run, userId: askedBy(where.id) } : null,
+        ),
+      },
       $transaction: vi.fn(async (fn) => fn(tx)),
     },
     events: { notify: vi.fn() },
@@ -99,6 +113,13 @@ describe("MCP reconnect card", () => {
     expect(await f.post("run-2")).toBe(false);
     expect(stored).toHaveLength(1);
     expect(f.deps.events.notify).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks a member whose teammate's card for the server is still open", async () => {
+    const f = fixture(defaultRun, { "run-2": "teammate" });
+    await f.post("run-1");
+    expect(await f.post("run-2")).toBe(true);
+    expect(stored).toHaveLength(2);
   });
 
   it("does not ask again after Not now", async () => {

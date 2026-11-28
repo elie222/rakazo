@@ -54,6 +54,14 @@ const McpOAuthBeginSchema = z.discriminatedUnion("status", [
   z.object({ status: z.enum(["already_connected", "authorization_not_requested"]) }),
 ]);
 
+/** A decision on a chat's MCP card; `messageId` names the card when it came from one. */
+const McpCardDecisionInput = z.object({
+  botId: Id,
+  serverId: Id,
+  threadId: Id.optional(),
+  messageId: Id.optional(),
+});
+
 /** Which agents can use an MCP server: all of them, or only `botIds`. */
 const McpServerAccessInput = z.object({
   allBots: z.boolean(),
@@ -184,12 +192,8 @@ export const integrationsRpc = {
     assignments: {
       list: oc.input(botId).output(z.array(BotMcpServerSchema)),
       all: oc.output(z.array(BotMcpServerSchema)),
-      approve: oc
-        .input(z.object({ botId: Id, serverId: Id, threadId: Id.optional() }))
-        .output(BotMcpServerSchema),
-      dismiss: oc
-        .input(z.object({ botId: Id, serverId: Id, threadId: Id.optional() }))
-        .output(z.object({ ok: z.literal(true) })),
+      approve: oc.input(McpCardDecisionInput).output(BotMcpServerSchema),
+      dismiss: oc.input(McpCardDecisionInput).output(z.object({ ok: z.literal(true) })),
       replace: oc
         .input(
           z.object({

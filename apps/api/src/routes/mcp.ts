@@ -63,7 +63,7 @@ export function mcpRoutes(ctx: RouterContext) {
   /** Gives the bot the server, closing any card that asked for it. */
   async function approveMcpAssignment(
     actor: Actor,
-    input: { botId: string; serverId: string; threadId?: string },
+    input: { botId: string; serverId: string; threadId?: string; messageId?: string },
   ) {
     const row = await resolveMcpApprovalCards(
       onboardingDeps,
@@ -73,6 +73,7 @@ export function mcpRoutes(ctx: RouterContext) {
         serverId: input.serverId,
         status: "connected",
         threadId: input.threadId,
+        messageId: input.messageId,
       },
       async (tx, decision) => {
         if (!decision.assign) throw new IsolationError();
@@ -726,6 +727,7 @@ export function mcpRoutes(ctx: RouterContext) {
             serverId: input.serverId,
             status: "dismissed",
             threadId: input.threadId,
+            messageId: input.messageId,
           });
           return { ok: true as const };
         }),

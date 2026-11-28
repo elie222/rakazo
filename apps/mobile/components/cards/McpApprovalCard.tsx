@@ -32,12 +32,14 @@ const styles = StyleSheet.create({
 export function McpApprovalCard({
   botId,
   threadId,
+  messageId,
   block,
   accessibilityActions,
   onAccessibilityAction,
 }: {
   botId: string;
   threadId?: string;
+  messageId?: string;
   block: Extract<MessageBlock, { kind: "mcp_approval" }>;
   accessibilityActions?: ViewProps["accessibilityActions"];
   onAccessibilityAction?: ViewProps["onAccessibilityAction"];
@@ -48,7 +50,7 @@ export function McpApprovalCard({
   const [localStatus, setLocalStatus] = useState<"pending" | "connected" | "dismissed">("pending");
   const answer = useSave({
     save: async (action: "approve" | "dismiss", send) => {
-      const input = { botId, serverId: block.serverId, threadId };
+      const input = { botId, serverId: block.serverId, threadId, messageId };
       if (action === "approve") await send("mcp/assignments/approve", input);
       else await send("mcp/assignments/dismiss", input);
     },
