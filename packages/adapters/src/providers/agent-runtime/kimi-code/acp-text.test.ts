@@ -27,7 +27,35 @@ function chunk(sessionId: string) {
   });
 }
 
+function sessionInfo(sessionId: string) {
+  return encode({
+    method: "session/update",
+    params: {
+      sessionId,
+      update: { sessionUpdate: "session_info_update", title: "private metadata" },
+    },
+  });
+}
+
 describe("Kimi Code ACP single text turn", () => {
+  it("ignores same-session title metadata without exposing it as text", () => {
+    const turn = promptTurn();
+    expect(turn.receive(sessionInfo("a"))).toEqual({});
+    expect(turn.receive(chunk("a"))).toEqual({ text: "hi" });
+    expect(turn.receive(encode({ id: 3, result: { stopReason: "end_turn" } }))).toEqual({
+      done: true,
+    });
+    expect(() => promptTurn().receive(sessionInfo("other"))).toThrow("ACP turn rejected");
+  });
+
+  it("refuses a clean stop reason without answer chunks, as observed after provider quota refusal", () => {
+    const turn = promptTurn();
+    expect(turn.receive(sessionInfo("a"))).toEqual({});
+    expect(() => turn.receive(encode({ id: 3, result: { stopReason: "end_turn" } }))).toThrow(
+      "ACP turn rejected",
+    );
+  });
+
   it("accepts same-session text followed by a successful terminal message", () => {
     const turn = promptTurn();
     expect(turn.receive(chunk("a"))).toEqual({ text: "hi" });

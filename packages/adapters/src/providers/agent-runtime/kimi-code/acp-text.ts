@@ -66,6 +66,8 @@ export function createTextTurn(input: { cwd: string; prompt: string }) {
             case "available_commands_update":
             case "current_mode_update":
             case "config_option_update":
+            // Kimi Code also sends session title metadata ahead of the first text chunk.
+            case "session_info_update":
               return {};
             default:
               return fail();
