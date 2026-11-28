@@ -1,4 +1,30 @@
 /**
+ * Stateful streaming scanner that tracks active match prefixes across chunks without rescanning
+ * buffered text on every delta.
+ */
+export type SecretMatcherStream = {
+  /**
+   * Feeds `chunk` starting at stream offset `basePos`, reports match ranges `[start, end)` via
+   * `onMatch` whose union covers every occurrence ending in `chunk` (implementations may omit
+   * contained matches or emit redundant overlapping ranges), and returns the longest active prefix
+   * length still pending at the end of `chunk` (always strictly less than the longest pattern
+   * length).
+   *
+   * When an unindexed matcher promotes to an indexed automaton mid-stream, `readTail` supplies
+   * the retained suffix immediately preceding `basePos` without flattening buffered chunks on
+   * ordinary deltas.
+   */
+  feed(
+    chunk: string,
+    basePos: number,
+    onMatch: (start: number, end: number) => void,
+    readTail?: (length: number) => string,
+  ): number;
+  /** Resets incremental match state to the initial root state. */
+  reset(): void;
+};
+
+/**
  * Finds many values in a text in one pass (Aho–Corasick over UTF-16 code units, as `indexOf`
  * matches), so the cost grows with the text and the matches rather than with values × text.
  */
@@ -9,9 +35,25 @@ export type SecretMatcher = {
   ranges(text: string): Array<[number, number]>;
   /** Whether any value occurs in `text`. */
   test(text: string): boolean;
+  /** Creates stateful incremental scanning state for streaming redaction across chunks. */
+  createStream(): SecretMatcherStream;
 };
 
 const ROOT = 0;
+
+let indexedMatcherBuilds = 0;
+
+/** Total one-pass matchers built in this process; used by tests to verify matcher promotion. */
+export function indexedMatcherBuildCount(): number {
+  return indexedMatcherBuilds;
+}
+
+const noopMatch = () => undefined;
+
+const EMPTY_STREAM: SecretMatcherStream = {
+  feed: () => 0,
+  reset: () => undefined,
+};
 
 /**
  * The most states the one-pass matcher builds. Its states grow with the values' combined length,
@@ -38,17 +80,51 @@ export function createSecretMatcher(values: readonly string[]): SecretMatcher {
   const budget = present.reduce((total, value) => total + value.length, 0) * BUILD_COST;
   let scanned = 0;
   let indexed: SecretMatcher | undefined;
-  const pick = (text: string) => {
+  let indexable = true;
+  const ensureIndexed = (textLength: number): SecretMatcher | undefined => {
     if (indexed) return indexed;
-    scanned += text.length * present.length;
-    if (scanned <= budget) return scanning;
-    indexed = createIndexedMatcher(present);
+    if (!indexable) return undefined;
+    scanned += textLength * present.length;
+    if (scanned <= budget) return undefined;
+    const built = buildIndexedMatcher(present, MAX_SECRET_MATCHER_STATES);
+    if (built) indexed = built;
+    else indexable = false;
     return indexed;
   };
+  const pick = (text: string) => ensureIndexed(text.length) ?? scanning;
   return {
     empty: false,
     ranges: (text) => pick(text).ranges(text),
     test: (text) => pick(text).test(text),
+    createStream() {
+      if (indexed) return indexed.createStream();
+      let active = scanning.createStream();
+      let activeIndexed = false;
+      let pending = 0;
+      return {
+        feed(chunk, basePos, onMatch, readTail) {
+          if (!activeIndexed) {
+            const promoted = ensureIndexed(chunk.length);
+            if (promoted && (pending === 0 || readTail !== undefined)) {
+              active = promoted.createStream();
+              activeIndexed = true;
+              if (pending > 0 && readTail) {
+                const replay = readTail(pending);
+                if (replay.length > 0) {
+                  active.feed(replay, basePos - replay.length, noopMatch);
+                }
+              }
+            }
+          }
+          pending = active.feed(chunk, basePos, onMatch);
+          return pending;
+        },
+        reset() {
+          active.reset();
+          pending = 0;
+        },
+      };
+    },
   };
 }
 
@@ -57,6 +133,14 @@ export function createIndexedMatcher(
   values: readonly string[],
   maxStates = MAX_SECRET_MATCHER_STATES,
 ): SecretMatcher {
+  return buildIndexedMatcher(values, maxStates) ?? scanningMatcher(values);
+}
+
+/** Builds the one-pass Aho-Corasick matcher, or `undefined` when it would exceed `maxStates`. */
+function buildIndexedMatcher(
+  values: readonly string[],
+  maxStates: number,
+): SecretMatcher | undefined {
   // Each state's children, keyed by state and code unit in one map.
   const children = new Map<number, number>();
   const key = (state: number, code: number) => state * 0x10000 + code;
@@ -70,7 +154,7 @@ export function createIndexedMatcher(
       const edge = key(state, value.charCodeAt(index));
       let child = children.get(edge);
       if (child === undefined) {
-        if (depth.length >= maxStates) return scanningMatcher(values);
+        if (depth.length >= maxStates) return undefined;
         child = depth.length;
         depth.push(index + 1);
         longest.push(0);
@@ -82,6 +166,8 @@ export function createIndexedMatcher(
   }
 
   const fail = new Int32Array(depth.length);
+  // Longest suffix of each state that is a proper prefix of some pattern (i.e. has a trie child).
+  const pendingDepth = new Int32Array(depth.length);
   // Breadth first, so a state's fallback is settled before its children need it.
   const byState = new Map<number, Array<[number, number]>>();
   for (const [edge, child] of children) {
@@ -100,10 +186,12 @@ export function createIndexedMatcher(
         fail[child] = children.get(key(fallback, code)) ?? ROOT;
       }
       if (longest[child] === 0) longest[child] = longest[fail[child]!]!;
+      pendingDepth[child] = byState.has(child) ? depth[child]! : pendingDepth[fail[child]!]!;
       queue.push(child);
     }
   }
   const empty = depth.length === 1;
+  if (!empty) indexedMatcherBuilds += 1;
 
   /** Calls `found(end, length)` with the longest value ending at each offset that ends one. */
   const scan = (text: string, found: (end: number, length: number) => boolean | undefined) => {
@@ -156,12 +244,36 @@ export function createIndexedMatcher(
       });
       return found;
     },
+    createStream() {
+      if (empty) return EMPTY_STREAM;
+      let state = ROOT;
+      return {
+        feed(chunk, basePos, onMatch) {
+          for (let index = 0; index < chunk.length; index += 1) {
+            const code = chunk.charCodeAt(index);
+            let child = children.get(key(state, code));
+            while (child === undefined && state !== ROOT) {
+              state = fail[state]!;
+              child = children.get(key(state, code));
+            }
+            state = child ?? ROOT;
+            const length = longest[state]!;
+            if (length > 0) onMatch(basePos + index + 1 - length, basePos + index + 1);
+          }
+          return pendingDepth[state]!;
+        },
+        reset() {
+          state = ROOT;
+        },
+      };
+    },
   };
 }
 
 /** Scans for each value in turn: memory stays at the text's length, time grows with values × text. */
 function scanningMatcher(values: readonly string[]): SecretMatcher {
   const present = values.filter(Boolean);
+  const createStream = createScanningStreamFactory(present);
   return {
     empty: present.length === 0,
     ranges(text) {
@@ -195,5 +307,182 @@ function scanningMatcher(values: readonly string[]): SecretMatcher {
     test(text) {
       return present.some((value) => text.includes(value));
     },
+    createStream,
+  };
+}
+
+let kmpTableBuilds = 0;
+
+/** Total KMP prefix tables built in this process; used by tests to verify table reuse across streams. */
+export function kmpTableBuildCount(): number {
+  return kmpTableBuilds;
+}
+
+function streamPrefixTable(pattern: string): Int32Array {
+  kmpTableBuilds += 1;
+  const fail = new Int32Array(pattern.length);
+  for (let index = 1, matched = 0; index < pattern.length; index += 1) {
+    const code = pattern.charCodeAt(index);
+    while (matched > 0 && pattern.charCodeAt(matched) !== code) matched = fail[matched - 1]!;
+    if (pattern.charCodeAt(matched) === code) matched += 1;
+    fail[index] = matched;
+  }
+  return fail;
+}
+
+function createScanningStreamFactory(present: readonly string[]): () => SecretMatcherStream {
+  const count = present.length;
+  const firstCodes = new Uint16Array(count);
+  for (let j = 0; j < count; j += 1) firstCodes[j] = present[j]!.charCodeAt(0);
+  // Lazily built KMP prefix tables shared across every stream created from this matcher.
+  const sharedFails: Array<Int32Array | undefined> = new Array(count);
+  const failFor = (index: number): Int32Array => {
+    let table = sharedFails[index];
+    if (!table) {
+      table = streamPrefixTable(present[index]!);
+      sharedFails[index] = table;
+    }
+    return table;
+  };
+  return () => {
+    if (count === 0) return EMPTY_STREAM;
+    const matched = new Int32Array(count);
+    let pending = 0;
+
+    return {
+      feed(chunk, basePos, onMatch) {
+        if (chunk.length === 0) return pending;
+        // 128-bit ASCII presence bitset lets idle patterns skip non-matching chunks in O(1).
+        let a0 = 0;
+        let a1 = 0;
+        let a2 = 0;
+        let a3 = 0;
+        for (let i = 0; i < chunk.length; i += 1) {
+          const c = chunk.charCodeAt(i);
+          if (c < 128) {
+            if (c < 64) {
+              if (c < 32) a0 |= 1 << c;
+              else a1 |= 1 << (c - 32);
+            } else if (c < 96) {
+              a2 |= 1 << (c - 64);
+            } else {
+              a3 |= 1 << (c - 96);
+            }
+          }
+        }
+        let maxPending = 0;
+        // All cross-chunk matches ending in this chunk span basePos, so their union is one interval.
+        let crossStart = -1;
+        let crossEnd = -1;
+        // Count in-chunk match starts/ends by offset so overlapping patterns never allocate or sort
+        // per-hit ranges, while preserving separate ranges for matches that only touch.
+        let starts: Int32Array | undefined;
+        let ends: Int32Array | undefined;
+        const recordRange = (rangeStart: number, rangeEnd: number) => {
+          if (rangeStart < basePos) {
+            if (crossStart === -1 || rangeStart < crossStart) crossStart = rangeStart;
+            if (rangeEnd > crossEnd) crossEnd = rangeEnd;
+            return;
+          }
+          starts ??= new Int32Array(chunk.length + 1);
+          ends ??= new Int32Array(chunk.length + 1);
+          const localStart = rangeStart - basePos;
+          const localEnd = rangeEnd - basePos;
+          starts[localStart] = starts[localStart]! + 1;
+          ends[localEnd] = ends[localEnd]! + 1;
+        };
+        for (let j = 0; j < count; j += 1) {
+          let m = matched[j]!;
+          const first = firstCodes[j]!;
+          if (m === 0 && first < 128) {
+            const inChunk =
+              first < 64
+                ? first < 32
+                  ? (a0 & (1 << first)) !== 0
+                  : (a1 & (1 << (first - 32))) !== 0
+                : first < 96
+                  ? (a2 & (1 << (first - 64))) !== 0
+                  : (a3 & (1 << (first - 96))) !== 0;
+            if (!inChunk) continue;
+          }
+          const value = present[j]!;
+          const length = value.length;
+          let fail = sharedFails[j];
+          let patternStart = -1;
+          let patternEnd = -1;
+          for (let i = 0; i < chunk.length; i += 1) {
+            const code = chunk.charCodeAt(i);
+            let matchStart = -1;
+            let matchEnd = -1;
+            if (m === 0) {
+              if (code === first) {
+                if (length === 1) {
+                  matchStart = basePos + i;
+                  matchEnd = basePos + i + 1;
+                } else {
+                  m = 1;
+                }
+              }
+            } else if (m === 1 && !fail) {
+              if (code === value.charCodeAt(1)) {
+                if (length === 2) {
+                  matchStart = basePos + i - 1;
+                  matchEnd = basePos + i + 1;
+                  m = first === code ? 1 : 0;
+                } else {
+                  m = 2;
+                }
+              } else {
+                m = code === first ? 1 : 0;
+              }
+            } else {
+              if (!fail) fail = failFor(j);
+              while (m > 0 && value.charCodeAt(m) !== code) m = fail[m - 1]!;
+              if (value.charCodeAt(m) === code) m += 1;
+              if (m === length) {
+                matchStart = basePos + i + 1 - length;
+                matchEnd = basePos + i + 1;
+                m = fail[length - 1]!;
+              }
+            }
+            if (matchStart !== -1) {
+              if (patternStart === -1) {
+                patternStart = matchStart;
+                patternEnd = matchEnd;
+              } else if (matchStart < patternEnd) {
+                if (matchEnd > patternEnd) patternEnd = matchEnd;
+              } else {
+                recordRange(patternStart, patternEnd);
+                patternStart = matchStart;
+                patternEnd = matchEnd;
+              }
+            }
+          }
+          if (patternStart !== -1) recordRange(patternStart, patternEnd);
+          matched[j] = m;
+          if (m > maxPending) maxPending = m;
+        }
+        if (crossStart !== -1) onMatch(crossStart, crossEnd);
+        if (starts && ends) {
+          let open = 0;
+          let start = 0;
+          for (let offset = 0; offset <= chunk.length; offset += 1) {
+            const ending = ends[offset]!;
+            const starting = starts[offset]!;
+            if (ending === 0 && starting === 0) continue;
+            open -= ending;
+            if (ending > 0 && open === 0) onMatch(basePos + start, basePos + offset);
+            if (starting > 0 && open === 0) start = offset;
+            open += starting;
+          }
+        }
+        pending = maxPending;
+        return maxPending;
+      },
+      reset() {
+        matched.fill(0);
+        pending = 0;
+      },
+    };
   };
 }

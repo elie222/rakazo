@@ -1110,13 +1110,17 @@ describe("createStreamingRedactor", () => {
   });
 
   it("does not emit a high surrogate when the secret hold window would split an emoji pair", () => {
-    const redactor = createStreamingRedactor(["abcdefghij"]); // length 10
     const high = "\uD83D";
     const low = "\uDE00";
-    // The hold-window cut lands between high and low; the pair must stay buffered together.
+    // The active-prefix hold cut lands between high and low; the pair must stay buffered together.
+    const redactor = createStreamingRedactor([`${low}abcdefghij`]);
     expect(redactor.push(`x${high}${low}abcdefgh`)).toBe("x");
-    expect(redactor.push("ij done")).toBe("😀[redacted]");
-    expect(redactor.finish()).toBe(" done");
+    expect(redactor.push("XX")).toBe("😀abcdefghXX");
+    expect(redactor.finish()).toBe("");
+    // When the secret completes after the held high surrogate, the orphaned high surrogate is replaced.
+    const completing = createStreamingRedactor([`${low}abcdefghij`]);
+    expect(completing.push(`x${high}${low}abcdefgh`)).toBe("x");
+    expect(completing.push("ij done") + completing.finish()).toBe("\uFFFD[redacted] done");
   });
 
   it("replaces an orphaned high surrogate at end of stream", () => {

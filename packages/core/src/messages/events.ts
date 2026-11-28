@@ -13,6 +13,13 @@ import { payloadAuthor } from "./message-replies.js";
 import { isFeedbackReceiptMessage } from "./message-text.js";
 import type { SecretMatcher } from "./secret-matcher.js";
 import { createSecretMatcher } from "./secret-matcher.js";
+import { protectedValues, REDACTED_MARKER, sanitizeUtf16ForJson } from "./streaming-redactor.js";
+
+export {
+  createStreamingRedactor,
+  REDACTED_MARKER,
+  sanitizeUtf16ForJson,
+} from "./streaming-redactor.js";
 
 export function projectMessages(
   events: Array<{
@@ -664,31 +671,6 @@ export function subagentBlockFromPayload(
   );
 }
 
-/** What redaction writes in place of a secret. */
-export const REDACTED_MARKER = "[redacted]";
-
-/** Shorter lines, or lines with spaces such as a key's BEGIN header, also appear in ordinary text. */
-const MIN_SECRET_LINE_LENGTH = 16;
-
-/**
- * The values to hide for `secrets`: each value, and each long unspaced line of a multi-line value
- * such as a private key's body, since output that prints only some lines or joins them with
- * spaces (an unquoted `echo $KEY`) never contains the whole value.
- */
-function protectedValues(secrets: Iterable<string>): string[] {
-  const values = new Set<string>();
-  for (const secret of secrets) {
-    if (!secret) continue;
-    values.add(secret);
-    if (!/[\r\n]/.test(secret)) continue;
-    for (const line of secret.split(/\r\n?|\n/)) {
-      const trimmed = line.trim();
-      if (trimmed.length >= MIN_SECRET_LINE_LENGTH && !/\s/.test(trimmed)) values.add(trimmed);
-    }
-  }
-  return [...values];
-}
-
 /** The matcher for `secrets` and the values it was built from, for each array asked about. */
 const matchers = new WeakMap<object, { from: string[]; matcher: SecretMatcher }>();
 
@@ -773,29 +755,6 @@ export function containsSecret(value: unknown, secrets: string[]): boolean {
   return false;
 }
 
-/** UTF-16 high surrogates (0xD800–0xDBFF) must be paired with a low surrogate for valid JSON. */
-const HIGH_SURROGATE_START = 0xd800;
-const HIGH_SURROGATE_END = 0xdbff;
-
-function isHighSurrogate(code: number): boolean {
-  return code >= HIGH_SURROGATE_START && code <= HIGH_SURROGATE_END;
-}
-
-function endsWithHighSurrogate(value: string): boolean {
-  return value.length > 0 && isHighSurrogate(value.charCodeAt(value.length - 1));
-}
-
-/**
- * Replace unpaired UTF-16 surrogates and NUL characters, which Postgres rejects
- * in json and text columns (command output and binary-ish tool results carry both).
- */
-export function sanitizeUtf16ForJson(value: string): string {
-  return value.replace(UNSAFE_UTF16, "\uFFFD");
-}
-
-/** NUL, a high surrogate with no low after it, or a low surrogate with no high before it. */
-const UNSAFE_UTF16 = /\0|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
-
 /** Deep-sanitize string leaves and keys so event payloads always persist in Postgres. */
 export function sanitizeJsonValue<T>(value: T): T {
   if (typeof value === "string") return sanitizeUtf16ForJson(value) as T;
@@ -820,61 +779,6 @@ export function sanitizeJsonValue<T>(value: T): T {
     return out as T;
   }
   return value;
-}
-
-export function createStreamingRedactor(secrets: string[]) {
-  const values = protectedValues(secrets);
-  const matcher = createSecretMatcher(values);
-  // A loop, not a spread: a Vault of many-line values can pass more lengths than a call takes.
-  const maxLength = values.reduce((longest, value) => Math.max(longest, value.length), 0);
-  let buffer = "";
-  let covered = 0;
-
-  const drain = (final: boolean) => {
-    let output: string;
-    if (values.length === 0) {
-      output = buffer;
-      buffer = "";
-    } else {
-      // A match a later chunk completes starts in the last maxLength - 1 units, so text before
-      // that is final. A stretch reaching past it is shown now and its rest kept as `covered`: a
-      // later match starting inside it extends the same placeholder, so nothing is held for long.
-      const cut = final ? buffer.length : Math.max(0, buffer.length - maxLength + 1);
-      let offset = covered;
-      output = "";
-      for (const [start, end] of matcher.ranges(buffer)) {
-        if (start >= cut) break;
-        if (start >= offset) output += `${buffer.slice(offset, start)}${REDACTED_MARKER}`;
-        offset = Math.max(offset, end);
-      }
-      output += buffer.slice(Math.min(offset, cut), cut);
-      covered = Math.max(0, offset - cut);
-      buffer = buffer.slice(cut);
-    }
-    // No-secret path emits the whole buffer; hold a trailing high until the next chunk.
-    if (!final && endsWithHighSurrogate(output)) {
-      buffer = output.slice(-1) + buffer;
-      output = output.slice(0, -1);
-    }
-    return sanitizeUtf16ForJson(output);
-  };
-
-  return {
-    push(chunk: string) {
-      buffer += chunk;
-      return drain(false);
-    },
-    finish() {
-      return drain(true);
-    },
-    /**
-     * Drops what is held back without showing it, but keeps matching against it, so a value
-     * split between the dropped text and the next chunk is still hidden.
-     */
-    skip() {
-      covered = buffer.length;
-    },
-  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
