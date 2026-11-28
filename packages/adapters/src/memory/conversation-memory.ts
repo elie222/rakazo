@@ -4,7 +4,7 @@ import type {
   SemanticMemoryConversationTurn,
   SemanticMemoryProvider,
 } from "@rakazo/adapter-kit";
-import { memoryRetainTurnJob, memoryRetainTurnRecoveryJobKey } from "@rakazo/adapter-kit";
+import { memoryRetainTurnJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -15,7 +15,7 @@ import {
   partialReplyClientNonce,
   storedMessageBlocks,
 } from "@rakazo/db";
-import { bestEffort, getLogger } from "@rakazo/logging";
+import { getLogger } from "@rakazo/logging";
 import { messageBlocksText } from "../runs/assembly/run-replies.prompt.js";
 import {
   isUserProgressClientNonce,
@@ -359,12 +359,8 @@ export async function retainRunConversation(
     context,
   );
   if (!result.ok && result.accountRefused) {
-    // Nothing was stored and no retry can store it, so the job ends here with nothing to clean up.
+    // No retry can store it. The recovery job stays: an earlier attempt may still have stored it.
     warnMemoryAccountRefused("retain", result.error);
-    await bestEffort(
-      "cancel memory.retain-turn recovery",
-      deps.jobs.cancel(memoryRetainTurnRecoveryJobKey(runId)),
-    );
     return done;
   }
   // Retrying is safe: the provider makes a repeated turn a no-op.

@@ -652,8 +652,13 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     const operations: PendingOperation[] = [{ bank: own!, operationId: first.value }];
     for (const bank of extra) {
       const written = await write(bank);
-      // The own bank stored the turn, so a refusal here still leaves something to clean up.
-      if (!written.ok) return { ok: false, error: written.error };
+      if (!written.ok) {
+        return {
+          ok: false,
+          error: written.error,
+          ...(written.accountRefused ? { accountRefused: true as const } : {}),
+        };
+      }
       operations.push({ bank, operationId: written.value, team: true });
     }
     return { ok: true, value: { pending: JSON.stringify(operations) } };
