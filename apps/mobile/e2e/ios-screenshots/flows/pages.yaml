@@ -52,7 +52,7 @@ name: Pages
     timeout: 10000
 - takeScreenshot: 04-page-review-sections
 - tapOn: "Launch dashboard"
-- openLink: "rakazo:///pages?botId=${RAKAZO_SCREENSHOT_BOT_ID}"
+- openLink: "rakazo:///bot-pages?botId=${RAKAZO_SCREENSHOT_BOT_ID}"
 - extendedWaitUntil:
     visible: "Launch dashboard"
     timeout: 20000

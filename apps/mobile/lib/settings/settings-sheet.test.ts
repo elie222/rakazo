@@ -60,7 +60,7 @@ describe("settings sheet", () => {
     settingsSheetCloser(sheet)();
 
     expect(sheet.goBack).not.toHaveBeenCalled();
-    expect(sheet.dispatch).toHaveBeenCalledWith({ type: "REPLACE", payload: { name: "index" } });
+    expect(sheet.dispatch).toHaveBeenCalledWith({ type: "REPLACE", payload: { name: "(tabs)" } });
   });
 });
 

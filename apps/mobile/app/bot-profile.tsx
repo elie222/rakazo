@@ -48,6 +48,12 @@ function BotProfileScreen() {
     computerRead.isFetchedAfterMount && !computerRead.isError ? computerRead.data : null;
   const name = displayName(bot?.name ?? nameParam, t`Bot`);
   const { routines } = useBotRoutines(botId);
+  const activeRoutines = routines?.filter((routine) => routine.active).length ?? 0;
+  const routineSummary = !routines?.length
+    ? undefined
+    : activeRoutines > 0
+      ? t`${ph({ count: activeRoutines })} on`
+      : t`${ph({ count: routines.length })} paused`;
   const actions = useBotProfileActions(botId, name);
   // The chat list's Silence notifications saves the same setting.
   const notify = useNotifyOnFinish(botId, bot?.notifyOnFinish ?? true, (error) =>
@@ -118,15 +124,16 @@ function BotProfileScreen() {
           chevron="right"
           title={t`Routines`}
           leading={
-            <NativeSymbol ios="clock" android="time-outline" color={tokens.mutedForeground} />
+            <NativeSymbol
+              ios="clock.arrow.circlepath"
+              android="time-outline"
+              color={tokens.mutedForeground}
+            />
           }
-          // Counts the routines that are switched on; nothing until the first read lands.
-          value={
-            routines
-              ? t`${ph({ count: routines.filter((routine) => routine.active).length })} on`
-              : undefined
-          }
-          onPress={() => router.push({ pathname: "/routines", params: { botId, name } })}
+          // The routines switched on, or the paused ones when none are; nothing without routines
+          // or until the first read lands.
+          value={routineSummary}
+          onPress={() => router.push({ pathname: "/bot-routines", params: { botId, name } })}
         />
         <SettingsRow
           key="pages"
@@ -135,12 +142,12 @@ function BotProfileScreen() {
           title={t`Pages`}
           leading={
             <NativeSymbol
-              ios="doc.richtext"
+              ios="doc.text"
               android="document-text-outline"
               color={tokens.mutedForeground}
             />
           }
-          onPress={() => router.push({ pathname: "/pages", params: { botId } })}
+          onPress={() => router.push({ pathname: "/bot-pages", params: { botId } })}
         />
         <SettingsRow
           key="artifacts"

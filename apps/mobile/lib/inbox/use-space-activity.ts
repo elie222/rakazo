@@ -6,15 +6,16 @@ import { fetchSpaceActivity } from "./activity";
 
 export type SpaceActivityStatus = "loading" | "loaded" | "failed";
 
-/** The Space's running and recent work, read while the activity view is on and in sight. */
+/** The Space's running and recent work, read while the inbox is in sight. */
 export function useSpaceActivity({
   hasSession,
-  activityMode,
+  enabled,
   inSight,
   spaceActionRef,
 }: {
   hasSession: boolean;
-  activityMode: boolean;
+  /** Off for views that never show activity, such as the share picker. */
+  enabled: boolean;
   inSight: boolean;
   spaceActionRef: RefObject<{ busy: boolean; recoveryId: string | null }>;
 }) {
@@ -32,7 +33,7 @@ export function useSpaceActivity({
 
   const loadActivity = useCallback(async () => {
     if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
-    if (!hasSession || !activityMode) {
+    if (!hasSession || !enabled) {
       activityRequestId.current += 1;
       clearActivity();
       return;
@@ -48,9 +49,9 @@ export function useSpaceActivity({
       if (requestId !== activityRequestId.current) return;
       setActivityStatus("failed");
     }
-  }, [activityMode, clearActivity, hasSession]);
+  }, [enabled, clearActivity, hasSession]);
 
-  const shown = hasSession && activityMode && inSight;
+  const shown = hasSession && enabled && inSight;
   useEffect(() => {
     if (shown) void loadActivity();
   }, [shown, loadActivity]);
@@ -60,7 +61,7 @@ export function useSpaceActivity({
     () => () => {
       activityRequestId.current += 1;
     },
-    [activityMode, hasSession],
+    [enabled, hasSession],
   );
 
   return { activity, activityStatus, clearActivity, activityRequestId, loadActivity };

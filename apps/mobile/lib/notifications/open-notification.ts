@@ -16,7 +16,7 @@ type NotificationNavigation = Pick<
 >;
 
 // Screens a notification may replace. Settings is closed for a notification either way.
-const replaceableScreens = new Set(["index", "thread", "group-thread", "(settings)"]);
+const replaceableScreens = new Set(["(tabs)", "thread", "group-thread", "(settings)"]);
 
 function findChatStack(root: NavigationState | undefined): NavigationState | undefined {
   let state: NavigationState | PartialState<NavigationState> | undefined = root;
@@ -45,7 +45,7 @@ function openNotificationThread(navigation: NotificationNavigation, target: Noti
   const chat = stack.routes.findLast(
     (route) => route.name === name && threadRouteId(route.name, { ...route.params }) === id,
   );
-  const inbox = stack.routes.find((route) => route.name === "index") ?? { name: "index" };
+  const inbox = stack.routes.find((route) => route.name === "(tabs)") ?? { name: "(tabs)" };
   // Keep the open chat's route key so a new delivery keeps the mounted screen and scroll.
   navigation.dispatch({
     ...CommonActions.reset({

@@ -7,23 +7,19 @@ import type { CreateAction } from "./create-chooser";
 import { createMenuItems } from "./create-chooser";
 
 /**
- * Liquid Glass home header: activity and search together on the right, and create on its own
- * glass after them. Account and integrations sit in the bottom toolbar (`InboxToolbar`).
+ * Liquid Glass home header: account on the left and create on the right. Chats, Activity, Pages,
+ * Routines and Search are tabs in the native tab bar.
  */
 export function useInboxHeader({
   nativeHeader,
   ready,
   hasSession,
-  activityMode,
-  toggleActivityMode,
   runCreateAction,
   headerTitle,
 }: {
   nativeHeader: boolean;
   ready: boolean;
   hasSession: boolean;
-  activityMode: boolean;
-  toggleActivityMode: () => void;
   runCreateAction: (action: CreateAction) => void;
   headerTitle?: () => ReactNode;
 }) {
@@ -40,30 +36,21 @@ export function useInboxHeader({
       headerStyle: { backgroundColor: "transparent" },
       title: "",
       headerTitle,
+      unstable_headerLeftItems: () => [
+        {
+          type: "button" as const,
+          label: t`Account`,
+          accessibilityLabel: t`Account`,
+          icon: { type: "sfSymbol" as const, name: "person.crop.circle" },
+          onPress: () => router.push("/account"),
+        },
+      ],
       unstable_headerRightItems: () => [
-        {
-          type: "button" as const,
-          label: t`Activity`,
-          accessibilityLabel: t`Activity`,
-          icon: { type: "sfSymbol" as const, name: activityMode ? "bell.fill" : "bell" },
-          selected: activityMode,
-          onPress: toggleActivityMode,
-        },
-        {
-          type: "button" as const,
-          label: t`Search`,
-          accessibilityLabel: t`Search`,
-          identifier: "home-search-button",
-          icon: { type: "sfSymbol" as const, name: "magnifyingglass" },
-          onPress: () => router.push("/search"),
-        },
         {
           type: "menu" as const,
           label: t`Create`,
           accessibilityLabel: t`Create`,
           icon: { type: "sfSymbol" as const, name: "plus" },
-          // Creating is a different kind of action from the ways of looking at chats beside it.
-          sharesBackground: false,
           menu: {
             items: createMenuItems.map(({ id, label, sfSymbol }) => ({
               type: "action" as const,
@@ -80,8 +67,6 @@ export function useInboxHeader({
     navigation,
     ready,
     hasSession,
-    activityMode,
-    toggleActivityMode,
     runCreateAction,
     headerTitle,
     router,

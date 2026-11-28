@@ -41,7 +41,7 @@ function rootWithChatStack(routes: NavigationState["routes"]): NavigationState {
     index: routes.length - 1,
     routeKeySeq: routes.length,
     routeNames: [
-      "index",
+      "(tabs)",
       "thread",
       "group-thread",
       "(settings)",
@@ -98,7 +98,7 @@ beforeEach(() => {
 describe("opening a notification tap", () => {
   it("opens a different chat with the list as its back route", async () => {
     vi.mocked(loadSessionToken).mockResolvedValue("token");
-    const inbox = { name: "index", key: "inbox" };
+    const inbox = { name: "(tabs)", key: "inbox" };
     navigation.getRootState.mockReturnValue(
       rootWithChatStack([inbox, { name: "thread", key: "prior-chat", params: { botId: "bot-2" } }]),
     );
@@ -117,7 +117,7 @@ describe("opening a notification tap", () => {
 
   it("returns to the chat list after opening a notification from settings", async () => {
     vi.mocked(loadSessionToken).mockResolvedValue("token");
-    const inbox = { name: "index", key: "inbox" };
+    const inbox = { name: "(tabs)", key: "inbox" };
     navigation.getRootState.mockReturnValue(
       rootWithChatStack([
         inbox,
@@ -147,7 +147,7 @@ describe("opening a notification tap", () => {
       vi.mocked(loadSessionToken).mockResolvedValue("token");
       navigation.getRootState.mockReturnValue(
         rootWithChatStack([
-          { name: "index", key: "inbox" },
+          { name: "(tabs)", key: "inbox" },
           { name: "thread", key: "prior-chat", params: { botId: "bot-2" } },
           screen,
         ]),
@@ -168,7 +168,7 @@ describe("opening a notification tap", () => {
     vi.mocked(loadSessionToken).mockResolvedValue("token");
     navigation.getRootState.mockReturnValue(
       rootWithChatStack([
-        { name: "index", key: "inbox" },
+        { name: "(tabs)", key: "inbox" },
         { name: "share", key: "share" },
       ]),
     );
@@ -188,7 +188,7 @@ describe("opening a notification tap", () => {
 
   it("keeps the open chat screen for a new delivery and makes Back return to the list", async () => {
     vi.mocked(loadSessionToken).mockResolvedValue("token");
-    const inbox = { name: "index", key: "inbox" };
+    const inbox = { name: "(tabs)", key: "inbox" };
     navigation.getRootState.mockReturnValue(
       rootWithChatStack([
         inbox,
@@ -225,7 +225,7 @@ describe("opening a notification tap", () => {
     expect(navigation.dispatch).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
         target: "app-stack",
-        payload: expect.objectContaining({ index: 1, routes: [{ name: "index" }, group] }),
+        payload: expect.objectContaining({ index: 1, routes: [{ name: "(tabs)" }, group] }),
       }),
     );
   });

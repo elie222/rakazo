@@ -21,6 +21,14 @@ vi.mock("react-native", () => ({
 }));
 vi.mock("../../lib/native/native", () => ({ useThemedStyles: () => ({}) }));
 vi.mock("../../lib/inbox/activity", () => ({ formatActivityRelativeTime: () => "" }));
+// Which waiting runs the chats confirm are still stopped on an open question.
+const openRuns = vi.hoisted(() => ({ ids: new Set<string>(["ask"]) }));
+vi.mock("../../lib/inbox/open-decisions", () => ({
+  useOpenDecisions: (runs: { runId: string }[]) =>
+    runs
+      .filter((run) => openRuns.ids.has(run.runId))
+      .map((run) => ({ run, messageId: "m", text: "q" })),
+}));
 vi.mock("@rakazo/i18n/activity", () => ({
   activityPreview: () => "",
   runStatusLabel: (status: string) => status,
@@ -71,6 +79,29 @@ it("opens Needs attention and folds Working and Unread until the user opens them
   expect(markup).toContain("Marketing");
   expect(markup).not.toContain("Research");
   expect(markup).toContain("Writer");
+});
+
+it("leaves out a run still marked waiting once its chat has moved past the question", () => {
+  openRuns.ids = new Set();
+  const markup = renderToStaticMarkup(
+    createElement(ActivitySection, {
+      activity: {
+        active: [
+          { runId: "stale", botId: "web", botName: "Web", status: "waiting_input" },
+        ] as never,
+        recent: [],
+      },
+      status: "loaded",
+      bots: [{ id: "web", name: "Web", status: "waiting_input" }] as never,
+      groups: [],
+      toggledSections: new Set<string>(),
+      onToggleSection: () => undefined,
+      openChat: () => undefined,
+    }),
+  );
+  openRuns.ids = new Set(["ask"]);
+  expect(markup).not.toContain("Needs attention");
+  expect(markup).not.toContain("Web");
 });
 
 it("offers the inbox swipe actions on activity rows and leaves out archived chats", () => {
