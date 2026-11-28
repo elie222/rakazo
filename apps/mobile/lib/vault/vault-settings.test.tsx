@@ -34,6 +34,7 @@ const state = vi.hoisted(() => ({
   actionSheet: vi.fn(),
   confirmIdentity: vi.fn(async () => true),
   spaceId: undefined as string | undefined,
+  item: undefined as string | undefined,
   focused: true,
   credentials: [] as Credential[],
   spaces: [] as { id: string }[],
@@ -78,7 +79,7 @@ vi.mock("expo-router", () => {
     // Focus effects run while `state.focused` holds and clean up once a render clears it.
     useFocusEffect: (effect: () => undefined | (() => void)) =>
       useEffect(() => (state.focused ? effect() : undefined), [effect, state.focused]),
-    useLocalSearchParams: () => ({ spaceId: state.spaceId }),
+    useLocalSearchParams: () => ({ spaceId: state.spaceId, item: state.item }),
     useNavigation: () => navigation,
   };
 });
@@ -409,6 +410,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   queryClient.clear();
   state.spaceId = undefined;
+  state.item = undefined;
   state.ios26 = false;
   state.focused = true;
   state.alert.mockReset();
@@ -465,6 +467,14 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+});
+
+it("opens at the item a message named, in the Space's vault it was named from", async () => {
+  state.spaceId = "space-1";
+  state.item = "netbird-key";
+  await render();
+  expect(state.rpc).toHaveBeenCalledWith("vault/list", { scope: "space" }, expect.anything());
+  expect(dialog().getAttribute("aria-label")).toBe("Detail netbird-key");
 });
 
 it("lists the account vault with each item's title and subtitle", async () => {

@@ -8,6 +8,7 @@ import {
   MarkdownLinkPromptProvider,
   MermaidDiagramContext,
   RemoteImagesContext,
+  VaultVariablesContext,
 } from "@rakazo/chat-ui/native";
 import { analyticsScreen } from "@rakazo/core";
 import {
@@ -114,6 +115,7 @@ import {
   useTrustedLinkSites,
 } from "../lib/settings/trusted-link-sites";
 import { startUnsentSends } from "../lib/thread/send/unsent-sends";
+import { useChatVaultVariables } from "../lib/vault/chat-vault-variables";
 import { InboxPane } from "./index";
 
 // Before anything renders: text grows with the iOS text size only up to a fixed maximum.
@@ -253,6 +255,7 @@ function ChatContentProviders({
     (pageId: string) => router.push({ pathname: "/page", params: { pageId } }),
     [router],
   );
+  const vaultVariables = useChatVaultVariables();
   useEffect(() => {
     void loadTrustedLinkSites().catch(() => undefined);
   }, [endpoint, session]);
@@ -272,7 +275,11 @@ function ChatContentProviders({
         <LinkFaviconsContext.Provider value={linkFavicons}>
           <MermaidDiagramContext.Provider value={MermaidDiagram}>
             <CodeCopyButtonContext.Provider value={CodeCopyButton}>
-              <OpenPageContext.Provider value={openPage}>{children}</OpenPageContext.Provider>
+              <OpenPageContext.Provider value={openPage}>
+                <VaultVariablesContext.Provider value={vaultVariables}>
+                  {children}
+                </VaultVariablesContext.Provider>
+              </OpenPageContext.Provider>
             </CodeCopyButtonContext.Provider>
           </MermaidDiagramContext.Provider>
         </LinkFaviconsContext.Provider>

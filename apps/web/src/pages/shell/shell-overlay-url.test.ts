@@ -53,6 +53,20 @@ describe("withShellOverlay", () => {
     expect(write("?m=msg_1", { kind: "integrations" })).toBe("?m=msg_1&integrations");
   });
 
+  it("keeps the Vault item settings open at, and drops it with the settings", () => {
+    const vaultAt = {
+      kind: "settings",
+      section: "vault",
+      spaceId: null,
+      item: "deploy-key",
+    } as const;
+    expect(write("?m=msg_1", vaultAt)).toBe("?m=msg_1&settings=vault&item=deploy-key");
+    expect(read("?settings=vault&item=deploy-key")).toEqual(vaultAt);
+    expect(write("?settings=vault&item=deploy-key", { kind: "integrations" })).toBe(
+      "?integrations",
+    );
+  });
+
   it("replaces the open overlay instead of stacking another", () => {
     expect(write("?integrations&routine=r_1", { kind: "mcp" })).toBe("?routine=r_1&mcp");
     expect(write("", { kind: "mcp", serverId: "srv_1" })).toBe("?mcp=srv_1");

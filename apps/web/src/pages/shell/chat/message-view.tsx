@@ -642,7 +642,9 @@ export const MessageView = memo(function MessageView({
                   )}
                   dir="auto"
                 >
-                  <LinkifiedText onOpenPage={openPage}>{block.text}</LinkifiedText>
+                  <LinkifiedText onOpenPage={openPage} fromOtherPerson={Boolean(author)}>
+                    {block.text}
+                  </LinkifiedText>
                 </div>
                 {i === hoverAnchorIndex ? hoverActions : null}
               </div>

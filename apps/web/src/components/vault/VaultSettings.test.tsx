@@ -129,11 +129,11 @@ let container: HTMLDivElement;
 let root: Root;
 let queryClient: QueryClient;
 
-async function render(scope: SettingsScope = "account") {
+async function render(scope: SettingsScope = "account", initialItem?: string) {
   await act(async () => {
     root.render(
       <QueryClientProvider client={queryClient}>
-        <VaultSettings scope={scope} />
+        <VaultSettings scope={scope} initialItem={initialItem} />
       </QueryClientProvider>,
     );
   });
@@ -236,6 +236,17 @@ afterEach(async () => {
   container.remove();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+describe("opening at an item", () => {
+  it("opens the item a message named, and goes back to the list from it", async () => {
+    await render("space", "deploy-token");
+    expect(vault.list).toHaveBeenCalledWith({ scope: "space" }, expect.anything());
+    expect(detail()?.textContent).toContain("$DEPLOY_TOKEN");
+    await click("settings-back");
+    expect(detail()).toBeNull();
+    expect(rowNamed("deploy-token")).not.toBeNull();
+  });
 });
 
 describe("an item's uses", () => {

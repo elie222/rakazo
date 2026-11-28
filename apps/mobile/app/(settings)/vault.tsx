@@ -81,13 +81,20 @@ type Editing = { kind: VaultKind; item?: VaultItem; revealed?: VaultRevealed };
  * never in this screen's state.
  */
 export default function Vault() {
-  const { spaceId } = useLocalSearchParams<{ spaceId?: string }>();
+  const { spaceId, item } = useLocalSearchParams<{ spaceId?: string; item?: string }>();
   // Everything the screen holds belongs to one vault, so another vault starts it over: nothing
   // read, saved or failed for the first is ever shown as the second's.
-  return <VaultItems key={spaceId ?? ""} spaceId={spaceId} />;
+  return <VaultItems key={spaceId ?? ""} spaceId={spaceId} initialItem={item} />;
 }
 
-function VaultItems({ spaceId }: { spaceId: string | undefined }) {
+function VaultItems({
+  spaceId,
+  initialItem,
+}: {
+  spaceId: string | undefined;
+  /** The item to open with, such as one a message names. */
+  initialItem: string | undefined;
+}) {
   const navigation = useNavigation();
   const target = useMemo(() => settingsTarget(spaceId), [spaceId]);
   const rpc = useMemo(() => settingsRpc(target), [target]);
@@ -121,7 +128,7 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
   const listed = items !== null && !loadError;
   const [filter, setFilter] = useState<VaultKind | "all">("all");
   const [query, setQuery] = useState("");
-  const [opened, setOpened] = useState<string | null>(null);
+  const [opened, setOpened] = useState<string | null>(initialItem ?? null);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [uses, setUses] = useState<{ key: string; list: VaultUse[] } | null>(null);
   // A saved item to open once the editor has gone, so two sheets are never up at once.

@@ -10,6 +10,7 @@ import { useNativeLinkConfirm } from "./native/links";
 import type { MentionLink } from "./native/native-markdown";
 import { NativeMarkdown } from "./native/native-markdown";
 import { layout, markdownStyles } from "./native/styles";
+import { useVaultVariableMarkdown, useVaultVariables } from "./vault-variables";
 
 const markdownParser = createMarkdownIt();
 // Every code block needs a fence, four spaces or a tab; every bot row asks, so most skip the parse.
@@ -39,6 +40,11 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   colorScheme?: ResolvedAppearance;
 }) {
   const openLink = useNativeLinkConfirm();
+  const markdown = useVaultVariableMarkdown(
+    children,
+    useVaultVariables(children)?.names,
+    streaming,
+  );
   const fenceStyles = useMemo(() => markdownStyles(palette), [palette]);
   const diagramSurface = useMemo(
     () => ({ streaming, palette, colorScheme }),
@@ -49,7 +55,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
       <LinkFaviconsPausedContext.Provider value={streaming}>
         <DiagramSurfaceContext.Provider value={diagramSurface}>
           <NativeMarkdown
-            markdown={children}
+            markdown={markdown}
             streaming={streaming}
             palette={palette}
             colorScheme={colorScheme}
@@ -80,3 +86,5 @@ export { LinkifiedText } from "./native/linkified-text";
 export { useNativeLinkConfirm } from "./native/links";
 export type { MentionLink } from "./native/native-markdown";
 export { MarkdownLongPressContext } from "./native/sideways-scroll";
+export type { VaultVariables } from "./vault-variables";
+export { VaultVariablesContext } from "./vault-variables";

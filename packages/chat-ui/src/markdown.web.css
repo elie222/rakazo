@@ -429,3 +429,41 @@ a.rk-chat-link:hover .rk-chat-link-label {
   outline-offset: 2px;
   border-radius: 2px;
 }
+
+/* A Vault variable named in a message: monospaced, underlined in the text's own colour. */
+.rk-chat-vault-variable {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  font-weight: 500;
+  text-align: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2.5px;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  cursor: pointer;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.rk-chat-vault-variable:hover {
+  text-decoration-color: currentColor;
+}
+
+/* A secret in someone else's Vault reads quieter: fainter, with a dotted line. */
+.rk-chat-vault-variable[data-access="none"] {
+  color: color-mix(in srgb, currentColor 65%, transparent);
+  font-weight: inherit;
+  text-decoration-style: dotted;
+}
+
+.rk-chat-vault-variable:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}

@@ -13,12 +13,11 @@ import { useParams } from "react-router-dom";
 import { CallCard } from "../components/call/CallCard";
 import { IncomingCall } from "../components/call/IncomingCall";
 import { ComputerUpdateProgress } from "../components/computers/ComputerUpdateProgress";
-import { PageLoading } from "../components/PageLoading";
 import { PageViewHost } from "../components/pages/PageViewHost";
 import { authClient } from "../lib/auth/auth";
 import { toolActivityPreference } from "../lib/chat/tool-activity-preference";
 import { composerEnterToSendPreference } from "../lib/composer/composer-enter-to-send-pref";
-import { PagesProvider, usePagesForChat } from "../lib/pages/pages";
+import { usePagesForChat } from "../lib/pages/pages";
 import { desktopBridge } from "../lib/platform/desktop";
 import { usePreloadRecoveryState } from "../lib/platform/preload-recovery";
 import { botsSidebarDensityPreference } from "../lib/preferences/bots-sidebar-density-pref";
@@ -26,8 +25,6 @@ import { chatPreferencesQuery, useChatPreferences } from "../lib/preferences/cha
 import { queryClient, spaceQueries } from "../lib/query/query";
 import type { RpcClient } from "../lib/query/rpc";
 import { createSpaceRpc, selectedSpaceId } from "../lib/query/rpc";
-import { SpaceRpcProvider } from "../lib/query/space-rpc";
-import { InboundOriginProvider } from "../lib/routines/inbound-url";
 import type { CreateBotDialogInput } from "./shell/bots/create-bot-dialog";
 import { useTeaching } from "./shell/bots/use-teaching";
 import { ChatColumn } from "./shell/chat/chat-column";
@@ -53,6 +50,7 @@ import { KeyboardShortcutsDialog } from "./shell/keyboard-shortcuts-dialog";
 import { rightPanelStorageKey } from "./shell/right-panel-state";
 import { ShellDialogs, useShellDialogs } from "./shell/shell-dialogs";
 import { AppOverlays, SettingsOverlays } from "./shell/shell-overlays";
+import { ShellProviders } from "./shell/shell-providers";
 import { isApplePlatform } from "./shell/shell-shortcuts";
 import { ShellSidePanel } from "./shell/side-panel";
 import { ArchivedChats } from "./shell/sidebar/archived-chats";
@@ -980,14 +978,14 @@ function SpaceShell({ sidebarScrollRef }: { sidebarScrollRef: Ref<HTMLDivElement
 
   // Render nothing until the first bot list lands so the chat chrome does not flash a bot-less state.
   return (
-    <SpaceRpcProvider spaceId={shellSpaceId}>
-      {initialBotsLoaded || initialLoadFailed ? (
-        <InboundOriginProvider value={bootstrapMe?.inboundOrigin}>
-          <PagesProvider value={pages}>{shell}</PagesProvider>
-        </InboundOriginProvider>
-      ) : (
-        <PageLoading />
-      )}
-    </SpaceRpcProvider>
+    <ShellProviders
+      spaceId={shellSpaceId}
+      ready={initialBotsLoaded || initialLoadFailed}
+      inboundOrigin={bootstrapMe?.inboundOrigin}
+      pages={pages}
+      openSettings={openSettings}
+    >
+      {shell}
+    </ShellProviders>
   );
 }

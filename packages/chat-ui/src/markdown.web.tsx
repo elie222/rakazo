@@ -15,8 +15,6 @@ import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
-import remarkParse from "remark-parse";
-import { unified } from "unified";
 import type { HastNode } from "./table-utils";
 import "./markdown.web.css";
 import "./markdown-table.css";
@@ -35,7 +33,7 @@ import {
   useCopyText,
 } from "@rakazo/ui-web";
 import { CheckIcon, CopyIcon, GlobeIcon, ImageIcon } from "./icons";
-import type { ChatMarkdownProps } from "./markdown";
+import type { ChatMarkdownProps, SplitSource } from "./markdown";
 import {
   closeUnterminatedFence,
   inlineMarkdownImageSrc,
@@ -54,6 +52,7 @@ import {
   remoteImageRenders,
   remoteMarkdownImage,
   sanitizeMarkdownUrl,
+  splitSource,
   useLinkFavicon,
 } from "./markdown";
 import { useMarkdownCopy } from "./markdown-copy";
@@ -62,6 +61,14 @@ import { MarkdownTable, MarkdownTableSourceContext } from "./markdown-table";
 import { isMermaidFence, mermaidSvgImage } from "./mermaid";
 import { useMermaidSvg } from "./mermaid.web";
 import { PAGE_ICON } from "./page-icon";
+import type { VaultVariableLink } from "./vault-variables";
+import {
+  markdownVaultVariable,
+  useVaultVariables,
+  VaultVariablesContext,
+  vaultVariableParts,
+  withVaultVariables,
+} from "./vault-variables";
 
 function preserveSkippedTableText() {
   return (tree: HastNode) => {
@@ -566,6 +573,8 @@ function MarkdownAnchor({
   const loadRemote = useContext(RemoteImagesContext);
   const { renderMention, onOpenPage: openPage } = useContext(InlineChipsContext);
   const href = typeof props.href === "string" ? props.href : "";
+  const variable = markdownVaultVariable(href);
+  if (variable) return <VaultVariableChip variable={variable}>{props.children}</VaultVariableChip>;
   const pageId = markdownPageId(href);
   if (pageId) {
     return (
@@ -622,6 +631,33 @@ function PageChip({
     </button>
   ) : (
     <span>{children}</span>
+  );
+}
+
+/** A `$NAME` that opens the viewer's Vault at it, or says they can't open that secret. */
+function VaultVariableChip({
+  variable,
+  children,
+}: {
+  variable: VaultVariableLink;
+  /** The link's own wording, which a bot may have written instead of `$NAME`. */
+  children?: React.ReactNode;
+}) {
+  const vault = useContext(VaultVariablesContext);
+  const text = `$${variable.name}`;
+  // A link written into a reply opens only a variable the viewer has.
+  if (!vault || (!variable.denied && !vault.names?.has(variable.name)))
+    return <span>{children ?? text}</span>;
+  return (
+    <button
+      type="button"
+      className="rk-chat-vault-variable"
+      data-access={variable.denied ? "none" : "own"}
+      aria-label={variable.denied ? undefined : vault.openLabel(text)}
+      onClick={() => (variable.denied ? vault.denied() : vault.open(variable.name))}
+    >
+      {children ?? text}
+    </button>
   );
 }
 
@@ -714,16 +750,26 @@ class PlainTextOnFailure extends Component<{ text: string; children: ReactNode }
 export function LinkifiedText({
   children,
   onOpenPage,
+  fromOtherPerson = false,
 }: {
   children: string;
   onOpenPage?: (pageId: string) => void;
+  /** Written by another person, whose saved placeholders name their own Vault. */
+  fromOtherPerson?: boolean;
 }) {
   const { request, dialog } = useExternalLinkConfirm();
+  const vault = useVaultVariables(children, fromOtherPerson);
   return (
     <ConfirmLinkContext.Provider value={request}>
       {plainTextLinkParts(children).map((part, index) =>
         part.type === "text" ? (
-          part.value
+          vault?.names ? (
+            vaultVariableParts(part.value, vault.names, fromOtherPerson).map((run, at) =>
+              typeof run === "string" ? run : <VaultVariableChip key={at} variable={run} />,
+            )
+          ) : (
+            part.value
+          )
         ) : part.type === "page" ? (
           <PageChip key={index} pageId={part.pageId} openPage={onOpenPage}>
             {part.value}
@@ -748,7 +794,10 @@ const rehypePlugins = [preserveSkippedTableText];
 
 // MarkdownImage decides what an image source may do, so it receives the source as written.
 function urlTransform(url: string, key: string) {
-  return key === "src" || markdownMentionId(url) || markdownPageId(url)
+  return key === "src" ||
+    markdownMentionId(url) ||
+    markdownPageId(url) ||
+    markdownVaultVariable(url)
     ? url
     : (sanitizeMarkdownUrl(url, true) ?? "");
 }
@@ -791,12 +840,19 @@ function renderFinishedMarkdown(source: string) {
 }
 
 const MarkdownBlock = memo(function MarkdownBlock({
-  source,
+  source: written,
   streaming,
+  variables,
 }: {
   source: string;
   streaming: boolean;
+  /** The viewer's Vault variables, drawn as links; a block that stays the same is not redone. */
+  variables: ReadonlySet<string> | undefined;
 }) {
+  const source = useMemo(
+    () => (variables ? withVaultVariables(written, variables) : written),
+    [written, variables],
+  );
   const parsed = streaming ? closeUnterminatedFence(source) : source;
   return (
     <StreamingSourceContext.Provider value={streaming ? source : undefined}>
@@ -807,55 +863,6 @@ const MarkdownBlock = memo(function MarkdownBlock({
   );
 });
 
-// A block is keyed by its kind and how many of that kind precede it, as react-markdown keys
-// elements, so a table keeps its sort, page and dialog when text before it changes.
-type SourceBlock = { start: number; source: string; type: string; key: string };
-type SplitSource = { text: string; blocks: SourceBlock[] };
-
-const blockParser = unified().use(remarkParse).use(remarkGfm);
-// Link and footnote definitions apply to the whole document, so such text is never split.
-const definition = /\]:/;
-
-/**
- * Top-level blocks of streamed text. Appended text can still change the last block, or join the
- * one before it (a list continued after a blank line), so only those two are parsed again.
- */
-function splitSource(text: string, previous: SplitSource | undefined): SplitSource {
-  const whole = { text, blocks: [{ start: 0, source: text, type: "root", key: "root-0" }] };
-  if (definition.test(text)) return whole;
-  const kept = previous && text.startsWith(previous.text) ? previous.blocks.slice(0, -2) : [];
-  const from = previous?.blocks[kept.length]?.start ?? 0;
-  const tail = text.slice(from);
-  let parsed: { start: number; type: string }[];
-  try {
-    parsed = blockParser.parse(tail).children.map((child, index) => ({
-      start: index === 0 ? 0 : tail.lastIndexOf("\n", (child.position?.start.offset ?? 1) - 1) + 1,
-      type: child.type,
-    }));
-  } catch {
-    return whole;
-  }
-  if (parsed.length === 0) parsed = [{ start: 0, type: "root" }];
-  const counts = new Map<string, number>();
-  for (const block of kept) counts.set(block.type, (counts.get(block.type) ?? 0) + 1);
-  return {
-    text,
-    blocks: [
-      ...kept,
-      ...parsed.map(({ start, type }, index) => {
-        const count = counts.get(type) ?? 0;
-        counts.set(type, count + 1);
-        return {
-          start: from + start,
-          source: tail.slice(start, parsed[index + 1]?.start ?? tail.length),
-          type,
-          key: `${type}-${count}`,
-        };
-      }),
-    ],
-  };
-}
-
 export const ChatMarkdown = memo(function ChatMarkdown({
   children,
   streaming = false,
@@ -863,6 +870,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   onOpenPage,
 }: ChatMarkdownProps) {
   const { request, dialog } = useExternalLinkConfirm();
+  const variables = useVaultVariables(children)?.names;
   // A streamed reply stays split once it finishes, so its blocks are not drawn again.
   const [split, setSplit] = useState(streaming);
   if (streaming && !split) setSplit(true);
@@ -890,11 +898,12 @@ export const ChatMarkdown = memo(function ChatMarkdown({
                     <MarkdownBlock
                       source={block.source}
                       streaming={streaming && index === blocks.length - 1}
+                      variables={variables}
                     />
                   </Fragment>
                 ))
               ) : (
-                <MarkdownBlock source={children} streaming={streaming} />
+                <MarkdownBlock source={children} streaming={streaming} variables={variables} />
               )}
             </PlainTextOnFailure>
           </LinkFaviconsPausedContext.Provider>
@@ -916,3 +925,5 @@ export {
 export type { MarkdownCopy } from "./markdown-copy";
 export { defaultMarkdownCopy, MarkdownCopyProvider } from "./markdown-copy";
 export { MarkdownLinkPromptProvider } from "./markdown-link-prompt";
+export type { VaultVariables } from "./vault-variables";
+export { VaultVariablesContext } from "./vault-variables";

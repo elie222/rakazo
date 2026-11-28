@@ -58,9 +58,13 @@ function escapeRegExp(value: string): string {
 
 const mentionParser = unified().use(remarkParse).use(remarkGfm);
 
-type MentionTrees = Map<string, ReturnType<typeof mentionParser.parse> | null>;
+export type MentionTrees = Map<string, ReturnType<typeof mentionParser.parse> | null>;
 
-function rewriteOutsideCode(
+/**
+ * Markdown with `rewrite` applied to its text outside code and links. With `skipLinks`, images,
+ * link definitions and raw HTML are left alone too, and mention links are never rewritten.
+ */
+export function rewriteOutsideCode(
   text: string,
   rewrite: (part: string) => string,
   trees: MentionTrees,
@@ -78,7 +82,9 @@ function rewriteOutsideCode(
         node.type === "code" ||
         node.type === "inlineCode" ||
         (skipLinks &&
-          ["link", "image", "linkReference", "imageReference", "definition"].includes(node.type))
+          ["link", "image", "linkReference", "imageReference", "definition", "html"].includes(
+            node.type,
+          ))
       ) {
         const start = node.position?.start.offset;
         const end = node.position?.end.offset;
@@ -104,6 +110,55 @@ function rewriteOutsideCode(
     return text;
   }
 }
+
+// A block is keyed by its kind and how many of that kind precede it, as react-markdown keys
+// elements, so a table keeps its sort, page and dialog when text before it changes.
+export type SourceBlock = { start: number; source: string; type: string; key: string };
+export type SplitSource = { text: string; blocks: SourceBlock[] };
+
+// Link and footnote definitions apply to the whole document, so such text is never split.
+const definition = /\]:/;
+
+/**
+ * Top-level blocks of streamed text. Appended text can still change the last block, or join the
+ * one before it (a list continued after a blank line), so only those two are parsed again.
+ */
+export function splitSource(text: string, previous: SplitSource | undefined): SplitSource {
+  const whole = { text, blocks: [{ start: 0, source: text, type: "root", key: "root-0" }] };
+  if (definition.test(text)) return whole;
+  const kept = previous && text.startsWith(previous.text) ? previous.blocks.slice(0, -2) : [];
+  const from = previous?.blocks[kept.length]?.start ?? 0;
+  const tail = text.slice(from);
+  let parsed: { start: number; type: string }[];
+  try {
+    parsed = mentionParser.parse(tail).children.map((child, index) => ({
+      start: index === 0 ? 0 : tail.lastIndexOf("\n", (child.position?.start.offset ?? 1) - 1) + 1,
+      type: child.type,
+    }));
+  } catch {
+    return whole;
+  }
+  if (parsed.length === 0) parsed = [{ start: 0, type: "root" }];
+  const counts = new Map<string, number>();
+  for (const block of kept) counts.set(block.type, (counts.get(block.type) ?? 0) + 1);
+  return {
+    text,
+    blocks: [
+      ...kept,
+      ...parsed.map(({ start, type }, index) => {
+        const count = counts.get(type) ?? 0;
+        counts.set(type, count + 1);
+        return {
+          start: from + start,
+          source: tail.slice(start, parsed[index + 1]?.start ?? tail.length),
+          type,
+          key: `${type}-${count}`,
+        };
+      }),
+    ],
+  };
+}
+
 const MODEL_MENTION_LINK = /\[([^\]\n]*)\]\(\s*<?rakazo-mention:[^)\n]*\)/gi;
 const OPENS_WITH_BLOCK = /^\s*(#|>|\||```|~~~|[-*+]\s|\d+[.)]\s)/;
 

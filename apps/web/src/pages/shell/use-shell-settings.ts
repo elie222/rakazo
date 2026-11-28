@@ -35,8 +35,12 @@ export function useShellSettings({
     if (settingsSpaceGone) setOverlay(null);
   }, [settingsSpaceGone]);
 
-  function openSettings(section: SettingsSection = "general", spaceId: string | null = null) {
-    setOverlay({ kind: "settings", section, spaceId });
+  function openSettings(
+    section: SettingsSection = "general",
+    spaceId: string | null = null,
+    item?: string,
+  ) {
+    setOverlay({ kind: "settings", section, spaceId, ...(item ? { item } : {}) });
   }
   // Space-scoped sections bind their own rpc client to this space, so another
   // space's settings open in place without switching the app or reloading.

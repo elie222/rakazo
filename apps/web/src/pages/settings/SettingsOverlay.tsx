@@ -63,6 +63,7 @@ export function SettingsOverlay({
   email,
   name,
   section: requestedSection,
+  vaultItem,
   onSectionChange,
   onNameSaved,
   timezone,
@@ -98,6 +99,8 @@ export function SettingsOverlay({
   email?: string | null;
   name: string;
   section: SettingsSection;
+  /** The Vault item the Vault or Space section opens at. */
+  vaultItem?: string;
   onSectionChange: (section: SettingsSection) => void;
   onNameSaved?: () => Promise<void>;
   timezone: string | null;
@@ -442,6 +445,7 @@ export function SettingsOverlay({
                       onLeft={(activeSpaceId) => onLeftSpace?.(space.id, activeSpaceId)}
                       onClose={requestClose}
                       onBusyChange={setVoiceBusy}
+                      vaultItem={vaultItem}
                     />
                   ) : null}
                   {section === "organization" ? (
@@ -452,7 +456,9 @@ export function SettingsOverlay({
                     />
                   ) : null}
                   {section === "confirmations" ? <ApprovalRulesSettings scope="account" /> : null}
-                  {section === "vault" ? <VaultSettings scope="account" /> : null}
+                  {section === "vault" ? (
+                    <VaultSettings key={vaultItem} scope="account" initialItem={vaultItem} />
+                  ) : null}
                   {section === "messaging" && messagingEnabled ? <MessagingSettingsPanel /> : null}
                   {section === "wallet" && paymentWalletProvider ? (
                     <PaymentWalletSettingsPanel provider={paymentWalletProvider} />
