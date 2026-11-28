@@ -1,9 +1,11 @@
 import type { ComposerMentionBinding } from "@rakazo/core";
-import { createKeyedListeners, validateComposerMentionBindings } from "@rakazo/core";
+import { createKeyedListeners, newClientId, validateComposerMentionBindings } from "@rakazo/core";
+import { clearStoredFailedSends, hasStoredFailedSends } from "./pending-send";
 
 export const COMPOSER_DRAFT_STORAGE_PREFIX = "rakazo.composerDraft.";
 const COMPOSER_BINDINGS_STORAGE_PREFIX = "rakazo.composerBindings.";
 const COMPOSER_NONCE_STORAGE_PREFIX = "rakazo.composerNonce.";
+const COMPOSER_VERSION_STORAGE_PREFIX = "rakazo.composerVersion.";
 const LEGACY_COMPOSER_SEND_STORAGE_PREFIX = "rakazo.composerSend.";
 
 // Older releases saved full send payloads. Remove them on upgrade, including chats
@@ -18,9 +20,28 @@ try {
 }
 
 /** `appended`: words added from outside the composer while this send was in flight. */
-type ComposerDraftSubmission = { text: string; bindingRecord: string | null; appended?: string };
+type ComposerDraftSubmission = {
+  text: string;
+  bindingRecord: string | null;
+  revision: number;
+  version: string | null;
+  appended?: string;
+};
+export type ComposerDraftSnapshot = {
+  text: string;
+  bindingRecord: string | null;
+  revision: number;
+  version: string | null;
+  persisted: boolean;
+  submission?: ComposerDraftSubmission;
+};
+const draftRevisions = new Map<string, number>();
 const pendingSubmissions = new Map<string, ComposerDraftSubmission>();
-const acceptedListeners = new Map<string, Set<(text: string) => void>>();
+const failedSubmissions = new Map<string, ComposerDraftSubmission>();
+const acceptedListeners = new Map<
+  string,
+  Set<(text: string, bindingRecord: string | null) => void>
+>();
 const replacedDrafts = createKeyedListeners<string>();
 
 /** The composer showing a chat follows its saved draft when something else rewrites it. */
@@ -30,28 +51,47 @@ function savedDraftOf(submission: ComposerDraftSubmission): string {
   return submission.appended ? `${submission.text} ${submission.appended}` : submission.text;
 }
 
+function sameSubmittedDraft(
+  threadKey: string,
+  expected: {
+    text: string;
+    bindingRecord: string | null;
+    revision: number;
+    version: string | null;
+  },
+): boolean {
+  return (
+    (draftRevisions.get(threadKey) ?? 0) === expected.revision &&
+    readDraftVersion(threadKey) === expected.version &&
+    readComposerDraft(threadKey) === expected.text &&
+    readCanonicalBindingRecord(threadKey, expected.text) === expected.bindingRecord
+  );
+}
+
 /**
  * Adds words to a chat's saved draft from outside its composer, such as a dictation that
  * finished after the chat was left. A composer showing that chat shows them. A send still in
- * flight from that draft keeps its settlement: once accepted, only the added words remain.
+ * flight (or a failed one whose saved draft stayed untouched) keeps its settlement: once
+ * accepted or dismissed, only the added words remain.
  */
 export function appendComposerDraftText(threadKey: string, text: string): void {
   const saved = readComposerDraft(threadKey);
   const next = saved ? `${saved} ${text}` : text;
   const pending = pendingSubmissions.get(threadKey);
-  // Only a draft still holding the in-flight text and its mention bindings belongs to that
-  // send; another tab can rebind the same text to another mention.
-  const inFlight =
-    pending &&
-    savedDraftOf(pending) === saved &&
-    readBindingRecord(threadKey) === pending.bindingRecord
-      ? pending
+  const tracked = pending ?? failedSubmissions.get(threadKey);
+  // Only a draft still holding the in-flight or failed text and its mention bindings belongs to
+  // that send; another tab can rebind the same text to another mention or rewrite it.
+  const matching =
+    tracked && sameSubmittedDraft(threadKey, { ...tracked, text: savedDraftOf(tracked) })
+      ? tracked
       : null;
   writeComposerDraft(threadKey, next, undefined, readComposerDraftBindings(threadKey));
-  if (inFlight) {
-    inFlight.appended = inFlight.appended ? `${inFlight.appended} ${text}` : text;
-    inFlight.bindingRecord = readBindingRecord(threadKey);
-    pendingSubmissions.set(threadKey, inFlight);
+  if (matching) {
+    matching.appended = matching.appended ? `${matching.appended} ${text}` : text;
+    matching.bindingRecord = readCanonicalBindingRecord(threadKey, next);
+    matching.revision = draftRevisions.get(threadKey) ?? 0;
+    matching.version = readDraftVersion(threadKey);
+    (pending ? pendingSubmissions : failedSubmissions).set(threadKey, matching);
   }
   replacedDrafts.emit(threadKey, next);
 }
@@ -73,7 +113,12 @@ export function beginComposerDraftSubmission(
   writeComposerDraft(threadKey, text);
   // The send that begins now carries its own nonce; a stored one is consumed.
   writeComposerRetryNonce(threadKey, null);
-  const submission = { text, bindingRecord: readBindingRecord(threadKey) };
+  const submission = {
+    text,
+    bindingRecord: readCanonicalBindingRecord(threadKey, text),
+    revision: draftRevisions.get(threadKey) ?? 0,
+    version: readDraftVersion(threadKey),
+  };
   pendingSubmissions.set(threadKey, submission);
   return submission;
 }
@@ -82,39 +127,126 @@ export function settleComposerDraftSubmission(
   threadKey: string,
   submission: ComposerDraftSubmission,
   accepted: boolean,
-): void {
-  if (pendingSubmissions.get(threadKey) !== submission) return;
+): boolean {
+  if (pendingSubmissions.get(threadKey) !== submission) return false;
   pendingSubmissions.delete(threadKey);
-  if (
-    !accepted ||
-    readComposerDraft(threadKey) !== savedDraftOf(submission) ||
-    readBindingRecord(threadKey) !== submission.bindingRecord
-  )
-    return;
+  if (!sameSubmittedDraft(threadKey, { ...submission, text: savedDraftOf(submission) })) {
+    return false;
+  }
+  if (!accepted) {
+    failedSubmissions.set(threadKey, submission);
+    return false;
+  }
   if (submission.appended) {
     writeComposerDraft(threadKey, submission.appended);
     replacedDrafts.emit(threadKey, submission.appended);
-    return;
+    return true;
   }
   writeComposerDraft(threadKey, "");
-  for (const listener of acceptedListeners.get(threadKey) ?? []) listener(submission.text);
+  for (const listener of acceptedListeners.get(threadKey) ?? [])
+    listener(submission.text, submission.bindingRecord);
+  return true;
+}
+
+/** Captures the chat's current saved draft state directly from storage. */
+export function captureCurrentComposerDraftSnapshot(
+  threadKey: string,
+  text: string,
+): ComposerDraftSnapshot {
+  const persisted = text.length > 0 && readComposerDraft(threadKey) === text;
+  return {
+    text,
+    bindingRecord: persisted ? readCanonicalBindingRecord(threadKey, text) : null,
+    revision: draftRevisions.get(threadKey) ?? 0,
+    version: readDraftVersion(threadKey),
+    persisted,
+  };
+}
+
+/**
+ * Captures the active in-flight submission's raw draft and mention bindings, or falls back to
+ * the caller's text with stored bindings when called outside `Composer`.
+ */
+export function captureComposerDraftSnapshot(
+  threadKey: string,
+  fallbackText: string,
+): ComposerDraftSnapshot {
+  const pending = pendingSubmissions.get(threadKey);
+  if (pending) {
+    return {
+      text: pending.text,
+      bindingRecord: pending.bindingRecord,
+      revision: pending.revision,
+      version: pending.version,
+      persisted: pending.text.length > 0 && readComposerDraft(threadKey) === pending.text,
+      submission: pending,
+    };
+  }
+  return captureCurrentComposerDraftSnapshot(threadKey, fallbackText);
+}
+
+/** True when the chat's saved draft still holds this exact captured write, unchanged in any tab. */
+export function matchesComposerDraftSnapshot(
+  threadKey: string,
+  snapshot: ComposerDraftSnapshot,
+): boolean {
+  return sameSubmittedDraft(threadKey, snapshot);
+}
+
+/**
+ * True when the saved draft changed (in this tab or another) after this send began.
+ * Handles both persisted drafts and sends without storage (e.g., private mode or direct tests).
+ */
+export function hasComposerDraftChangedSince(
+  threadKey: string,
+  snapshot: ComposerDraftSnapshot,
+): boolean {
+  if (snapshot.persisted) return !sameSubmittedDraft(threadKey, snapshot);
+  return (
+    (draftRevisions.get(threadKey) ?? 0) !== snapshot.revision ||
+    readDraftVersion(threadKey) !== snapshot.version ||
+    readComposerDraft(threadKey) !== ""
+  );
+}
+
+/**
+ * Clears the saved draft and notifies any mounted composer when the chat still holds the exact
+ * raw text, mention bindings, and write version that were submitted, leaving newer edits intact.
+ */
+export function clearAcceptedComposerDraft(
+  threadKey: string,
+  snapshot: ComposerDraftSnapshot,
+): void {
+  const appended = snapshot.submission?.appended;
+  if (appended && snapshot.submission) {
+    if (
+      sameSubmittedDraft(threadKey, {
+        ...snapshot.submission,
+        text: savedDraftOf(snapshot.submission),
+      })
+    ) {
+      writeComposerDraft(threadKey, appended);
+      replacedDrafts.emit(threadKey, appended);
+    }
+    return;
+  }
+  if (!snapshot.text || !sameSubmittedDraft(threadKey, snapshot)) return;
+  writeComposerDraft(threadKey, "");
+  for (const listener of acceptedListeners.get(threadKey) ?? [])
+    listener(snapshot.text, snapshot.bindingRecord);
 }
 
 /**
  * Keeps a failed send's nonce beside the saved draft only while that draft is
- * still the one it sent, mentions included, so a retry cannot reuse it for a
- * different payload.
+ * still the exact write it sent, mentions included, so a retry cannot reuse it
+ * for a different payload.
  */
 export function keepComposerRetryNonce(
   threadKey: string,
   submission: ComposerDraftSubmission,
   nonce: string,
 ): void {
-  if (
-    readComposerDraft(threadKey) === submission.text &&
-    readBindingRecord(threadKey) === submission.bindingRecord
-  )
-    writeComposerRetryNonce(threadKey, nonce);
+  if (sameSubmittedDraft(threadKey, submission)) writeComposerRetryNonce(threadKey, nonce);
 }
 
 let sendingWork = false;
@@ -129,9 +261,9 @@ export function setComposerUnsavedWork(work: { sending: boolean; attachments: bo
   attachmentWork = work.attachments;
 }
 
-/** A send waiting for its answer, or attachments that only exist in memory. */
+/** A send waiting for its answer, or attachments / failed sends that only exist in memory. */
 export function composerHoldsUnsavedWork(): boolean {
-  return composerHoldsWorkInFlight() || attachmentWork;
+  return composerHoldsWorkInFlight() || attachmentWork || hasStoredFailedSends();
 }
 
 /** A send waiting for its answer. Unlike picked attachments, it finishes on its own. */
@@ -155,8 +287,10 @@ export function hasUnsentComposerDraft(storage: Storage | null = null): boolean 
   return false;
 }
 
-/** Signing out leaves no saved draft, its mentions or its retry nonce for whoever uses this browser next. */
+/** Signing out leaves no saved draft, its mentions, its failed rows or its retry nonce for whoever uses this browser next. */
 export function clearComposerDrafts(): void {
+  failedSubmissions.clear();
+  clearStoredFailedSends();
   try {
     const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
     for (const key of keys) {
@@ -164,6 +298,7 @@ export function clearComposerDrafts(): void {
         key?.startsWith(COMPOSER_DRAFT_STORAGE_PREFIX) ||
         key?.startsWith(COMPOSER_BINDINGS_STORAGE_PREFIX) ||
         key?.startsWith(COMPOSER_NONCE_STORAGE_PREFIX) ||
+        key?.startsWith(COMPOSER_VERSION_STORAGE_PREFIX) ||
         key?.startsWith(LEGACY_COMPOSER_SEND_STORAGE_PREFIX)
       )
         localStorage.removeItem(key);
@@ -175,7 +310,7 @@ export function clearComposerDrafts(): void {
 
 export function subscribeComposerDraftAccepted(
   threadKey: string,
-  listener: (text: string) => void,
+  listener: (text: string, bindingRecord: string | null) => void,
 ): () => void {
   let listeners = acceptedListeners.get(threadKey);
   if (!listeners) {
@@ -211,6 +346,19 @@ function composerNonceStorageKey(threadKey: string): string {
   return `${COMPOSER_NONCE_STORAGE_PREFIX}${threadKey}`;
 }
 
+function composerVersionStorageKey(threadKey: string): string {
+  return `${COMPOSER_VERSION_STORAGE_PREFIX}${threadKey}`;
+}
+
+function readDraftVersion(threadKey: string, storage = getLocalStorage()): string | null {
+  if (!storage || !threadKey) return null;
+  try {
+    return storage.getItem(composerVersionStorageKey(threadKey));
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The nonce of a send that ended without its answer, kept beside a draft the
  * user has not touched, so an unchanged retry is recognized as the same
@@ -243,9 +391,46 @@ export function writeComposerRetryNonce(
   }
 }
 
+export function composerDraftBindingRecord(
+  text: string,
+  bindings: readonly ComposerMentionBinding[],
+): string | null {
+  const canonical = text ? validateComposerMentionBindings(text, bindings) : [];
+  return canonical.length ? JSON.stringify({ version: 1, text, bindings: canonical }) : null;
+}
+
+/** True when a composer's live text and bindings match an accepted draft notification. */
+export function matchesAcceptedComposerDraft(
+  current: { text: string; bindings: readonly ComposerMentionBinding[] },
+  acceptedText: string,
+  acceptedBindingRecord: string | null,
+): boolean {
+  return (
+    current.text === acceptedText &&
+    composerDraftBindingRecord(current.text, current.bindings) === acceptedBindingRecord
+  );
+}
+
 function readBindingRecord(threadKey: string, storage = getLocalStorage()): string | null {
   try {
     return storage?.getItem(composerDraftBindingsKey(threadKey)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function readCanonicalBindingRecord(
+  threadKey: string,
+  text: string,
+  storage = getLocalStorage(),
+): string | null {
+  if (!storage || !threadKey || !text) return null;
+  const raw = readBindingRecord(threadKey, storage);
+  if (!raw) return null;
+  try {
+    const record = JSON.parse(raw);
+    if (record?.version !== 1 || record.text !== text) return null;
+    return composerDraftBindingRecord(text, record.bindings);
   } catch {
     return null;
   }
@@ -297,6 +482,8 @@ export function writeComposerDraft(
   bindings?: readonly ComposerMentionBinding[],
 ): void {
   pendingSubmissions.delete(threadKey);
+  failedSubmissions.delete(threadKey);
+  if (threadKey) draftRevisions.set(threadKey, (draftRevisions.get(threadKey) ?? 0) + 1);
   if (!storage || !threadKey) return;
   try {
     // Plain-text callers preserve bindings only when they are resubmitting the
@@ -306,13 +493,16 @@ export function writeComposerDraft(
       storage.removeItem(composerDraftBindingsKey(threadKey));
       storage.removeItem(composerNonceStorageKey(threadKey));
     }
-    if (draft.length === 0) storage.removeItem(composerDraftStorageKey(threadKey));
-    else storage.setItem(composerDraftStorageKey(threadKey), draft);
-    if (bindings?.length && draft) {
-      storage.setItem(
-        composerDraftBindingsKey(threadKey),
-        JSON.stringify({ version: 1, text: draft, bindings }),
-      );
+    if (draft.length === 0) {
+      storage.removeItem(composerDraftStorageKey(threadKey));
+      storage.removeItem(composerVersionStorageKey(threadKey));
+    } else {
+      storage.setItem(composerDraftStorageKey(threadKey), draft);
+      storage.setItem(composerVersionStorageKey(threadKey), newClientId());
+    }
+    const record = bindings ? composerDraftBindingRecord(draft, bindings) : null;
+    if (record) {
+      storage.setItem(composerDraftBindingsKey(threadKey), record);
     }
   } catch {
     // Quota or private-mode failures: the draft still lives in memory.

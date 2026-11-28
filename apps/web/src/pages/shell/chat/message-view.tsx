@@ -13,7 +13,7 @@ import { consecutiveImageRun } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
 import { isPeerReceiptBlocks, isToolActivityBlock, otherAuthor } from "@rakazo/core";
 import { BotAvatar, cn, resolvePersonaColorDef } from "@rakazo/ui-web";
-import { UserRound } from "lucide-react";
+import { AlertCircle, UserRound, X } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
 import { CollaborationMarker } from "../../../components/ai/CollaborationMarker";
 import { BuiCard } from "../../../components/ai/primitives";
@@ -92,6 +92,10 @@ export const MessageView = memo(function MessageView({
   onReleaseComputer,
   onOpenImportSetup,
   onOpenAgentImport,
+  failedSendError,
+  retryingSend,
+  onRetrySend,
+  onDismissSend,
   rpc,
   showToolActivity,
   onReply,
@@ -149,6 +153,11 @@ export const MessageView = memo(function MessageView({
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
   /** Opens the agent import, for the option a first bot's opening question offers. */
   onOpenAgentImport?: () => void;
+  /** Present on an unsent optimistic user message kept in chat after the composer was edited. */
+  failedSendError?: string;
+  retryingSend?: boolean;
+  onRetrySend?: () => void;
+  onDismissSend?: () => void;
   rpc: ReturnType<typeof createSpaceRpc>;
   showToolActivity: boolean;
   onReply: (message: ThreadMessage) => void;
@@ -629,7 +638,10 @@ export const MessageView = memo(function MessageView({
             return (
               <div
                 key={i}
-                className="relative flex w-fit max-w-full justify-end [@media(hover:none)]:w-full [@media(hover:none)]:flex-wrap"
+                className={cn(
+                  "relative flex w-fit max-w-full justify-end [@media(hover:none)]:w-full [@media(hover:none)]:flex-wrap",
+                  failedSendError && "flex-col items-end",
+                )}
               >
                 <div
                   data-testid="message-user-bubble"
@@ -639,11 +651,43 @@ export const MessageView = memo(function MessageView({
                     author
                       ? "bg-muted text-foreground/90"
                       : "bg-chat-user text-chat-user-foreground",
+                    failedSendError && "opacity-80",
                   )}
                   dir="auto"
                 >
                   <LinkifiedText onOpenPage={openPage}>{block.text}</LinkifiedText>
                 </div>
+                {failedSendError ? (
+                  <div
+                    data-testid="failed-send-actions"
+                    className="mt-1 flex items-center justify-end gap-2 text-label text-destructive"
+                  >
+                    <span className="inline-flex items-center gap-1" title={failedSendError}>
+                      <AlertCircle size={13} aria-hidden="true" />
+                      {t`Not sent`}
+                    </span>
+                    {onRetrySend ? (
+                      <button
+                        type="button"
+                        disabled={retryingSend}
+                        onClick={onRetrySend}
+                        className="font-medium underline underline-offset-2 hover:text-foreground disabled:opacity-50"
+                      >
+                        {t`Retry`}
+                      </button>
+                    ) : null}
+                    {onDismissSend ? (
+                      <button
+                        type="button"
+                        aria-label={t`Dismiss`}
+                        onClick={onDismissSend}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        <X size={13} strokeWidth={2} />
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
                 {i === hoverAnchorIndex ? hoverActions : null}
               </div>
             );

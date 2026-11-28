@@ -21,28 +21,30 @@ import {
   applyThreadSendReceipt,
   attachmentsForThread,
   canRetryRun,
-  foldPeerReplies,
   inferAttachmentMimeType,
   isImageInputConfirmation,
   newClientId,
   resolveComposerSendPlan,
 } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readSeenRunErrorIds, rememberSeenRunErrorId } from "../../../lib/chat/run-error-storage";
-import { setComposerUnsavedWork } from "../../../lib/composer/composer-draft";
+import {
+  captureComposerDraftSnapshot,
+  clearAcceptedComposerDraft,
+  composerDraftKey,
+  hasComposerDraftChangedSince,
+  setComposerUnsavedWork,
+} from "../../../lib/composer/composer-draft";
 import { scheduleFocusPrompt } from "../../../lib/composer/focus-prompt";
 import {
   readFileAsBase64,
   revokePendingAttachmentPreviews,
   usePendingAttachmentPreviewCleanup,
 } from "../../../lib/composer/pending-attachments";
-import type { PendingSend } from "../../../lib/composer/pending-send";
-import {
-  newestMessageSeq,
-  withoutDeliveredSends,
-  withPendingSends,
-} from "../../../lib/composer/pending-send";
+import type { PendingRetryPayload, PendingSend } from "../../../lib/composer/pending-send";
+import * as pendingSend from "../../../lib/composer/pending-send";
 import { canPrepareImage, prepareImage } from "../../../lib/composer/prepare-image";
 import type { PageSession } from "../../../lib/pages/pages";
 import { requestBrowserNotificationPermission } from "../../../lib/platform/browser-notifications";
@@ -84,6 +86,7 @@ export function useComposerActions({
   commitComputer,
   clearReadBoundary,
   flushPendingBrowserNotifications,
+  recordingSkill = false,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   /** The chat's open page, whose card a message sent from it replies to. */
@@ -106,14 +109,34 @@ export function useComposerActions({
   commitComputer: (next: ComputerStatus | null) => void;
   clearReadBoundary: () => void;
   flushPendingBrowserNotifications: () => void;
+  /** True while teaching a skill, which disables sending and retrying failed messages. */
+  recordingSkill?: boolean;
 }) {
   const { t, i18n } = useLingui();
+  const recordingSkillRef = useRef(recordingSkill);
+  recordingSkillRef.current = recordingSkill;
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   usePendingAttachmentPreviewCleanup(pendingAttachments);
   const [replyTarget, setReplyTarget] = useState<ThreadMessage | null>(null);
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const [pendingSends, setPendingSends] = useState<PendingSend[]>([]);
+  const [sendFailure, setSendFailure] = useState<{
+    message: string;
+    imageConfirmation: boolean;
+    clientNonce?: string;
+  } | null>(null);
+  const clearSendFailureForNonce = useCallback((clientNonce: string) => {
+    setSendFailure((current) => (current?.clientNonce === clientNonce ? null : current));
+  }, []);
+  const clearSubmittedDraft = useCallback((retry: PendingRetryPayload) => {
+    if (!retry.submittedDraft) return;
+    const draftKey = retry.groupTarget
+      ? composerDraftKey({ groupId: retry.groupTarget })
+      : retry.botTarget
+        ? composerDraftKey({ botId: retry.botTarget })
+        : null;
+    if (draftKey) clearAcceptedComposerDraft(draftKey, retry.submittedDraft);
+  }, []);
   const activeThreadKey = inGroup ? groupId : activeId;
   // Reselecting the same chat starts a new selection.
   const chatSelection = useRef({ threadKey: activeThreadKey, inGroup });
@@ -122,35 +145,60 @@ export function useComposerActions({
     chatSelection.current.inGroup !== inGroup
   )
     chatSelection.current = { threadKey: activeThreadKey, inGroup };
-  const activeMessages = activeSnapshot?.messages;
-  // A send stays shown until the chat holds its stored message, whichever update brings it;
-  // a seq that lands after its message arrived is checked against the messages already here.
-  useEffect(() => {
-    if (activeMessages)
-      setPendingSends((current) => withoutDeliveredSends(current, activeMessages, activeThreadKey));
-  }, [activeMessages, activeThreadKey, pendingSends]);
-  // The open chat's transcript with its unconfirmed text sends shown last, or null with none.
-  const meId = bootstrapMe?.userId;
-  const pendingTranscript = useMemo(() => {
-    if (!pendingSends.length || !activeSnapshot) return null;
-    const { messages, threadId } = activeSnapshot;
-    const shown = withPendingSends(messages, pendingSends, activeThreadKey, threadId, meId);
-    return shown === messages ? null : foldPeerReplies(shown, { includePeerReceipts: true });
-  }, [activeSnapshot, activeThreadKey, meId, pendingSends]);
+  const {
+    failedSendScopeRef,
+    storeSourceRef,
+    pendingSends,
+    setPendingSends,
+    pendingSendsRef,
+    pendingRetryPayloads,
+    pendingTranscript,
+    failedPendingSends,
+    hasFailedSends,
+    hasFailedSend,
+    restorePendingSend,
+    discardPendingSend,
+    clearThreadPendingSends,
+  } = pendingSend.usePendingSendStore({
+    userId: bootstrapMe?.userId,
+    spaceId: bootstrapMe?.spaceId,
+    activeThreadKey,
+    activeSnapshot,
+    onRemoteAccepted: (threadKey, isGroup, clientNonce) => {
+      clearSendFailureForNonce(clientNonce);
+      if (isGroup && activeGroupId.current === threadKey) {
+        bestEffort("refresh group thread after retry", refreshGroupThreadRef.current(threadKey));
+      } else if (!isGroup && activeBotId.current === threadKey) {
+        bestEffort("refresh thread after retry", refreshThreadRef.current(threadKey));
+      }
+    },
+    onDiscardPayload: (clientNonce, retry) => {
+      clearSendFailureForNonce(clientNonce);
+      if (retry) clearSubmittedDraft(retry);
+    },
+  });
   const [sentCount, setSentCount] = useState(0);
+  // Failed text sends live only in memory like pending attachments, so defer automatic updates.
   useEffect(() => {
-    setComposerUnsavedWork({ sending, attachments: pendingAttachments.length > 0 });
+    setComposerUnsavedWork({
+      sending,
+      attachments: pendingAttachments.length > 0 || hasFailedSends,
+    });
     return () => setComposerUnsavedWork({ sending: false, attachments: false });
-  }, [sending, pendingAttachments.length]);
+  }, [sending, pendingAttachments.length, hasFailedSends]);
   const sendingRef = useRef(false);
-  const [sendFailure, setSendFailure] = useState<{
-    message: string;
-    imageConfirmation: boolean;
-  } | null>(null);
-  // Counts real composer edits so a late rejection cannot confirm a newer draft.
-  const draftEdits = useRef(0);
+  // Counts real composer edits per chat so a late rejection cannot confirm or clobber a newer draft.
+  const draftEditsByThread = useRef(new Map<string, number>());
+  const draftEditsFor = (threadKey: string | undefined) =>
+    threadKey ? (draftEditsByThread.current.get(threadKey) ?? 0) : 0;
   const clearImageConfirmation = useCallback(() => {
-    draftEdits.current += 1;
+    const threadKey = activeGroupId.current ?? activeBotId.current;
+    if (threadKey) {
+      draftEditsByThread.current.set(
+        threadKey,
+        (draftEditsByThread.current.get(threadKey) ?? 0) + 1,
+      );
+    }
     setSendFailure((current) => (current?.imageConfirmation ? null : current));
   }, []);
   const imageConfirmation = sendFailure?.imageConfirmation === true;
@@ -392,15 +440,19 @@ export function useComposerActions({
     revokePendingAttachmentPreviews([attachment]);
     setPendingAttachments((current) => current.filter((item) => item.id !== attachment.id));
   }, []);
-  /** A deleted chat's files can never be sent: drop them and release their previews. */
-  const discardThreadAttachments = useCallback((threadKey: string) => {
-    setPendingAttachments((current) => {
-      const discarded = attachmentsForThread(current, threadKey);
-      if (!discarded.length) return current;
-      revokePendingAttachmentPreviews(discarded);
-      return current.filter((attachment) => !discarded.includes(attachment));
-    });
-  }, []);
+  /** A deleted chat's files and failed sends can never be sent: drop them and release previews. */
+  const discardThreadAttachments = useCallback(
+    (threadKey: string) => {
+      setPendingAttachments((current) => {
+        const discarded = attachmentsForThread(current, threadKey);
+        if (!discarded.length) return current;
+        revokePendingAttachmentPreviews(discarded);
+        return current.filter((attachment) => !discarded.includes(attachment));
+      });
+      clearThreadPendingSends(threadKey);
+    },
+    [clearThreadPendingSends],
+  );
   const sendMessage = useCallback(
     async (
       draft: string,
@@ -413,12 +465,12 @@ export function useComposerActions({
       if ((!initialBotTarget && !initialGroupTarget) || sending) return false;
       const selectionAtSend = chatSelection.current;
       const originStillOpen = () => chatSelection.current === selectionAtSend;
-      const editsAtSend = draftEdits.current;
       // The reply this send carries, read from the ref so a callback that outlived
       // a re-pick of the same message still carries the armed one; a reply picked
       // after this point is for the next message.
       const { target: replyAtSend, quote: replyQuoteAtSend } = armedReply.current;
       const originThreadKey = initialGroupTarget ?? initialBotTarget;
+      const editsAtSend = draftEditsFor(originThreadKey);
       const attachments = attachmentsForThread(pendingAttachments, originThreadKey);
       const plan = resolveComposerSendPlan({
         text: draft,
@@ -451,6 +503,22 @@ export function useComposerActions({
       clearReadBoundary();
       setSentCount((count) => count + 1);
       // Plain text shows in the chat at once; the stored message replaces it when it arrives.
+      const scopeAtSend = failedSendScopeRef.current;
+      const writeToken = originThreadKey
+        ? pendingSend.captureFailedSendWriteToken(scopeAtSend, originThreadKey)
+        : null;
+      const originDraftKey =
+        !reroutedToGroup && groupTarget
+          ? composerDraftKey({ groupId: groupTarget })
+          : !reroutedToGroup && botTarget
+            ? composerDraftKey({ botId: botTarget })
+            : null;
+      const submittedDraft = originDraftKey
+        ? captureComposerDraftSnapshot(originDraftKey, draft)
+        : null;
+      let optimisticAdded = false;
+      let optimisticSend: PendingSend | null = null;
+      let retryPayload: PendingRetryPayload | null = null;
       if (
         plan.shouldSend &&
         !reroutedToGroup &&
@@ -458,28 +526,41 @@ export function useComposerActions({
         trimmed &&
         messageTextFits(trimmed)
       ) {
-        const send = {
+        optimisticAdded = true;
+        retryPayload = {
+          groupTarget,
+          botTarget,
+          mentions: plan.mentionPayload,
+          routineIds: plan.shouldRunRoutines ? plan.routineIds : undefined,
+          fromPage: !reroutedToGroup && replyToMessageId ? true : undefined,
+          replyTarget: replyAtSend,
+          replyQuote: replyQuoteAtSend,
+          submittedDraft,
+        };
+        pendingRetryPayloads.current!.set(clientNonce, retryPayload);
+        optimisticSend = {
           threadKey: originThreadKey!,
           clientNonce,
           text: trimmed,
-          afterSeq: newestMessageSeq(activeSnapshot?.messages ?? []),
+          afterSeq: pendingSend.newestMessageSeq(activeSnapshot?.messages ?? []),
           replyToMessageId: replyToMessageId ?? replyAtSend?.id,
           replyQuote: replyToMessageId ? undefined : (replyQuoteAtSend ?? undefined),
         };
+        const send = optimisticSend;
         setPendingSends((current) => [
           ...current.filter((pending) => pending.clientNonce !== clientNonce),
           send,
         ]);
       }
       // Without a seq the stored message cannot be told apart, so the refresh shows it instead.
-      const settlePendingSend = (acceptedSeq?: number) =>
+      const settlePendingSend = (acceptedSeq?: number) => {
+        pendingRetryPayloads.current!.delete(clientNonce);
+        const scope = scopeAtSend ?? failedSendScopeRef.current;
+        if (scope) pendingSend.deleteStoredFailedSend(scope, clientNonce);
         setPendingSends((current) =>
-          acceptedSeq === undefined
-            ? current.filter((pending) => pending.clientNonce !== clientNonce)
-            : current.map((pending) =>
-                pending.clientNonce === clientNonce ? { ...pending, acceptedSeq } : pending,
-              ),
+          pendingSend.applyAcceptedPendingSend(current, clientNonce, acceptedSeq),
         );
+      };
       const dropDelayedSetup = () => {
         // Only after successful engagement so a failed upload/send keeps the setup card.
         if (initialBotTarget && focusPromptBotIdRef.current === initialBotTarget) {
@@ -613,14 +694,46 @@ export function useComposerActions({
         else if (botTarget) void refreshThreadRef.current(botTarget).catch(() => undefined);
         return true;
       } catch (error) {
-        settlePendingSend();
         const isConfirmation = isImageInputConfirmation(error);
-        // Offer the file resend only for the unchanged draft this send carried.
-        const confirmation = isConfirmation && draftEdits.current === editsAtSend;
+        const editedSinceSend =
+          draftEditsFor(originThreadKey) !== editsAtSend ||
+          (originDraftKey !== null &&
+            submittedDraft !== null &&
+            hasComposerDraftChangedSince(originDraftKey, submittedDraft));
+        // Offer the file resend only for the unchanged draft in the still-open origin chat.
+        const confirmation = isConfirmation && !editedSinceSend && originStillOpen();
         const failure = {
           message: errorText(error, t`Failed to send message`),
           imageConfirmation: confirmation,
+          clientNonce,
         };
+        const scope = scopeAtSend ?? failedSendScopeRef.current;
+        const writeValid = !writeToken || pendingSend.isFailedSendWriteValid(writeToken, scope);
+        if (
+          writeValid &&
+          optimisticAdded &&
+          editedSinceSend &&
+          !isConfirmation &&
+          optimisticSend &&
+          retryPayload
+        ) {
+          // The user already edited the composer, so Composer keeps their newer draft;
+          // retain the failed row in chat (and across space switches) to retry or dismiss.
+          const failedSend: PendingSend = { ...optimisticSend, error: failure.message };
+          if (scope)
+            pendingSend.saveStoredFailedSend(
+              scope,
+              failedSend,
+              retryPayload,
+              writeToken ?? undefined,
+            );
+          setPendingSends((current) =>
+            current.map((pending) => (pending.clientNonce === clientNonce ? failedSend : pending)),
+          );
+        } else {
+          settlePendingSend();
+        }
+        if (!writeValid) return isConfirmation ? false : accepted;
         if (reroutedToGroup && originStillOpen()) {
           setSendFailure(failure);
         } else if (groupTarget && activeGroupId.current === groupTarget) {
@@ -646,6 +759,120 @@ export function useComposerActions({
       i18n.locale,
     ],
   );
+  const retryPendingSend = useCallback(
+    async (clientNonce: string) => {
+      const entry = pendingSendsRef.current.find((pending) => pending.clientNonce === clientNonce);
+      const retry = pendingRetryPayloads.current!.get(clientNonce);
+      if (!entry || !retry || sendingRef.current || recordingSkillRef.current) return false;
+      const { groupTarget, botTarget, mentions, routineIds, fromPage } = retry;
+      if (!groupTarget && !botTarget) return false;
+      const scopeAtRetry = failedSendScopeRef.current;
+      const writeToken = pendingSend.captureFailedSendWriteToken(scopeAtRetry, entry.threadKey);
+      sendingRef.current = true;
+      setSending(true);
+      clearSendFailureForNonce(clientNonce);
+      clearReadBoundary();
+      setPendingSends((current) =>
+        current.map((pending) =>
+          pending.clientNonce === clientNonce ? { ...pending, error: undefined } : pending,
+        ),
+      );
+      try {
+        const payload = {
+          ...(groupTarget ? { groupId: groupTarget } : { botId: botTarget! }),
+          clientNonce,
+          imageHandling: "confirm" as const,
+          text: entry.text,
+          mentions: mentions.length ? mentions : undefined,
+          replyToMessageId: entry.replyToMessageId,
+          replyQuote: entry.replyQuote,
+          fromPage: fromPage ? true : undefined,
+        } as const;
+        const sent = routineIds?.length
+          ? (await rpc.threads.sendWithRoutines({ ...payload, routineIds })).send
+          : await rpc.threads.send(payload);
+        pendingRetryPayloads.current!.delete(clientNonce);
+        const scope = scopeAtRetry ?? failedSendScopeRef.current;
+        if (scope) {
+          pendingSend.deleteStoredFailedSend(scope, clientNonce, {
+            threadKey: entry.threadKey,
+            isGroup: Boolean(groupTarget),
+            acceptedSeq: sent?.seq,
+            source: storeSourceRef.current,
+          });
+        }
+        setPendingSends((current) =>
+          pendingSend.applyAcceptedPendingSend(current, clientNonce, sent?.seq),
+        );
+        if (sent && botTarget && activeBotId.current === botTarget) {
+          updateSnapshot((current) =>
+            applyThreadSendReceipt(
+              current,
+              {
+                botId: botTarget,
+                runId: sent.runId,
+                taskId: sent.taskId,
+              },
+              terminalRunReceipts.current,
+            ),
+          );
+        }
+        if (botTarget && focusPromptBotIdRef.current === botTarget) {
+          cancelFocusPrompt();
+        }
+        clearSentReply(retry.replyTarget, retry.replyQuote);
+        clearSubmittedDraft(retry);
+        bestEffort("refresh bots after retry", refreshBots());
+        // Refresh only if the retried chat is still active so an out-of-band retry cannot
+        // bump the shared refresh counter and discard a newly opened chat's load.
+        if (groupTarget && activeGroupId.current === groupTarget) {
+          bestEffort(
+            "refresh group thread after retry",
+            refreshGroupThreadRef.current(groupTarget),
+          );
+        } else if (botTarget && activeBotId.current === botTarget) {
+          bestEffort("refresh thread after retry", refreshThreadRef.current(botTarget));
+        }
+        return true;
+      } catch (error) {
+        const scope = scopeAtRetry ?? failedSendScopeRef.current;
+        const message = errorText(error, t`Failed to send message`);
+        const failedSend: PendingSend = { ...entry, error: message };
+        const updated = scope
+          ? pendingSend.updateStoredFailedSend(scope, failedSend, retry, writeToken)
+          : pendingSend.isFailedSendWriteValid(writeToken, scope) &&
+            pendingRetryPayloads.current!.has(clientNonce);
+        if (!updated) {
+          pendingRetryPayloads.current!.delete(clientNonce);
+          setPendingSends((current) =>
+            current.filter(
+              (pending) => pending.clientNonce !== clientNonce || pending.acceptedSeq !== undefined,
+            ),
+          );
+          return false;
+        }
+        setPendingSends((current) =>
+          current.map((pending) => (pending.clientNonce === clientNonce ? failedSend : pending)),
+        );
+        if (
+          (groupTarget && activeGroupId.current === groupTarget) ||
+          (botTarget && activeBotId.current === botTarget)
+        ) {
+          setSendFailure((current) =>
+            current === null || current.clientNonce === clientNonce
+              ? { message, imageConfirmation: false, clientNonce }
+              : current,
+          );
+        }
+        return false;
+      } finally {
+        sendingRef.current = false;
+        setSending(false);
+      }
+    },
+    [clearSendFailureForNonce, clearSentReply, clearSubmittedDraft, refreshBots, t],
+  );
+
   const stopRun = useCallback(async () => {
     if (sending) return;
     sendingRef.current = true;
@@ -735,11 +962,23 @@ export function useComposerActions({
     clearReply,
     sending,
     pendingSends,
+    hasFailedSend,
+    restorePendingSend,
+    discardPendingSend,
+    retryPendingSend,
     sentCount,
     /** Laid over the transcript's own props: scroll on send, and the sends not stored yet. */
     transcriptProps: {
       followRequest: sentCount,
       ...(pendingTranscript ? { transcript: pendingTranscript } : {}),
+      ...(failedPendingSends
+        ? {
+            failedPendingSends,
+            retryingPendingSend: sending || recordingSkill,
+            onRetryPendingSend: retryPendingSend,
+            onDismissPendingSend: discardPendingSend,
+          }
+        : {}),
     },
     sendMessage,
     stopRun,

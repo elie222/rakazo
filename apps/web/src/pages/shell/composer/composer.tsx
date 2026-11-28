@@ -10,13 +10,12 @@ import {
   newClientId,
   replyAttachment,
   resolveComposerMentionEdit,
-  resolveMentionPickerKey,
   serializeComposerPrompt,
   updateComposerMentionBindings,
 } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { Box, Plus } from "lucide-react";
-import type { ClipboardEvent, ComponentProps, ReactNode, RefObject } from "react";
+import type { ComponentProps, ReactNode, RefObject } from "react";
 import {
   memo,
   useEffect,
@@ -26,40 +25,28 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { createPortal } from "react-dom";
 import { useCallSession } from "../../../lib/calls/call-session";
 import { attachmentPickerAccept } from "../../../lib/composer/attachment-picker-accept";
-import {
-  appendComposerDraftText,
-  beginComposerDraftSubmission,
-  keepComposerRetryNonce,
-  readComposerDraft,
-  readComposerDraftBindings,
-  readComposerRetryNonce,
-  replaceComposerDraft,
-  settleComposerDraftSubmission,
-  subscribeComposerDraftAccepted,
-  subscribeComposerDraftReplaced,
-  subscribeComposerOffer,
-  writeComposerDraft,
-  writeComposerRetryNonce,
-} from "../../../lib/composer/composer-draft";
-import { isFilePaste } from "../../../lib/composer/pending-attachments";
+import type { ComposerDraftSnapshot } from "../../../lib/composer/composer-draft";
+import * as composerDraft from "../../../lib/composer/composer-draft";
 import type { ArtifactTarget } from "../../../lib/pages/artifact-open";
 import { usePageSession } from "../../../lib/pages/pages";
-import { hasOpenDialog } from "../../../lib/platform/has-open-dialog";
-import { useEventListener } from "../../../lib/use-event-listener";
 import { ComposerReplyPreview } from "../chat/chat-context";
 import type { PendingAttachment } from "../chat/chat-shared";
 import { previewMessageText } from "../chat/chat-shared";
-import { isApplePlatform, isEditableTarget, primaryModifier } from "../shell-shortcuts";
 import { ComposerError } from "./composer-error";
 import { ComposerChip, ComposerMentionHighlights } from "./composer-mentions";
 import {
   ComposerActions,
+  ComposerDockHost,
+  handleComposerKeyDown,
+  handleComposerPaste,
   MentionPicker,
+  noComposerDock,
   PendingAttachmentChips,
   SlashPicker,
+  useComposerOffers,
+  useDictationShortcut,
 } from "./composer-parts";
 import { recordMessageSent } from "./github-star-prompt";
 import { HoldToTalkStrip, useHoldToTalk } from "./hold-to-talk";
@@ -81,6 +68,8 @@ const ComposerBody = memo(function Composer({
   sendError,
   imageConfirmation,
   onDraftEdited,
+  hasFailedSend,
+  onFailedSendRestored,
   onOpenModels,
   onOpenConnections,
   onOpenBilling,
@@ -119,6 +108,8 @@ const ComposerBody = memo(function Composer({
   sendError: string | null;
   imageConfirmation?: boolean;
   onDraftEdited?: () => void;
+  hasFailedSend?: (clientNonce: string) => boolean;
+  onFailedSendRestored?: (clientNonce: string) => void;
   onOpenModels: () => void;
   onOpenConnections: () => void;
   onOpenBilling: () => void;
@@ -162,8 +153,8 @@ const ComposerBody = memo(function Composer({
 }) {
   const { t } = useLingui();
   const [composition, setComposition] = useState(() => ({
-    text: readComposerDraft(draftKey),
-    bindings: readComposerDraftBindings(draftKey),
+    text: composerDraft.readComposerDraft(draftKey),
+    bindings: composerDraft.readComposerDraftBindings(draftKey),
   }));
   const [imeComposing, setImeComposing] = useState(false);
   const [largePaste, setLargePaste] = useState<{
@@ -187,18 +178,29 @@ const ComposerBody = memo(function Composer({
       ...editSelections.current,
     ].slice(0, 3);
   }
+  const lastPersisted = useRef<{ key: string; snapshot: ComposerDraftSnapshot } | null>(null);
+  function rememberPersisted(text: string, snapshot?: ComposerDraftSnapshot) {
+    lastPersisted.current = {
+      key: draftKey,
+      snapshot: snapshot ?? composerDraft.captureCurrentComposerDraftSnapshot(draftKey, text),
+    };
+  }
+  if (lastPersisted.current?.key !== draftKey) rememberPersisted(composition.text);
   function commitComposition(next: typeof composition, persist = true) {
     setLargePaste(null);
     compositionRef.current = next;
     setComposition(next);
     editSelections.current = [];
-    if (persist) writeComposerDraft(draftKey, next.text, undefined, next.bindings);
+    if (persist) {
+      composerDraft.writeComposerDraft(draftKey, next.text, undefined, next.bindings);
+      rememberPersisted(next.text);
+    }
   }
   /** False when the words went to this chat's saved draft because it is no longer shown. */
   function appendDictation(text: string): boolean {
     if (!mountedRef.current || draftKeyRef.current !== draftKey) {
       // The chat changed while the words were transcribed; they wait in its draft for review.
-      appendComposerDraftText(draftKey, text);
+      composerDraft.appendComposerDraftText(draftKey, text);
       return false;
     }
     const current = compositionRef.current.text;
@@ -252,6 +254,47 @@ const ComposerBody = memo(function Composer({
     transcribe: dictationTranscribe,
     disabled: disabled || onCall || !phoneCallsEnabled,
     onText: (text) => {
+      const activeSend = inFlightSend.current;
+      const priorDictation = inFlightDictation.current;
+      const untouchedBeforeDictation =
+        activeSend !== null &&
+        (editRevision.current === activeSend.revision ||
+          (priorDictation?.snapshot === activeSend.snapshot &&
+            priorDictation.revision === editRevision.current));
+      const baseline =
+        lastPersisted.current?.key === draftKey
+          ? lastPersisted.current.snapshot
+          : (activeSend?.snapshot ?? null);
+      if (
+        mountedRef.current &&
+        draftKeyRef.current === draftKey &&
+        baseline &&
+        composerDraft.hasComposerDraftChangedSince(draftKey, baseline)
+      ) {
+        // Another tab edited this chat's draft: keep spoken words locally for review without
+        // writing to storage or queueing an automatic send, even if our send already settled.
+        const current = compositionRef.current.text;
+        setLargePaste(null);
+        onDraftEdited?.();
+        editRevision.current += 1;
+        retryNonce.current = null;
+        inFlightDictation.current =
+          activeSend && untouchedBeforeDictation
+            ? {
+                snapshot: activeSend.snapshot,
+                revision: editRevision.current,
+                dictatedSnapshot: null,
+              }
+            : null;
+        commitComposition(
+          {
+            text: current ? `${current} ${text}` : text,
+            bindings: compositionRef.current.bindings,
+          },
+          false,
+        );
+        return;
+      }
       // Dictation rides the typed-message path: the words land in the draft and
       // the normal send carries them, with its nonce, edit guards and recovery.
       // Words added to a draft, a skill or attachments wait for the user to review
@@ -260,10 +303,26 @@ const ComposerBody = memo(function Composer({
         compositionRef.current.text.trim().length > 0 ||
         selectedSkill !== null ||
         pendingAttachments.length > 0;
-      if (!appendDictation(text) || reviewFirst) return;
+      if (!appendDictation(text)) return;
+      if (reviewFirst) {
+        if (activeSend && untouchedBeforeDictation) {
+          inFlightDictation.current = {
+            snapshot: activeSend.snapshot,
+            revision: editRevision.current,
+            dictatedSnapshot: composerDraft.captureComposerDraftSnapshot(
+              draftKey,
+              compositionRef.current.text,
+            ),
+          };
+        }
+        return;
+      }
       const clientNonce = newClientId();
       retryNonce.current = clientNonce;
-      queuedDictation.current = editRevision.current;
+      queuedDictation.current = {
+        revision: editRevision.current,
+        snapshot: composerDraft.captureComposerDraftSnapshot(draftKey, compositionRef.current.text),
+      };
       setDictationSendDue(editRevision.current);
     },
   });
@@ -271,9 +330,14 @@ const ComposerBody = memo(function Composer({
   const editRevision = useRef(0);
   useEffect(
     () =>
-      subscribeComposerDraftAccepted(draftKey, (text) => {
-        if (compositionRef.current.text === text)
-          commitComposition({ text: "", bindings: [] }, false);
+      composerDraft.subscribeComposerDraftAccepted(draftKey, (text, bindingRecord) => {
+        rememberPersisted("");
+        if (
+          !composerDraft.matchesAcceptedComposerDraft(compositionRef.current, text, bindingRecord)
+        )
+          return;
+        retryNonce.current = null;
+        commitComposition({ text: "", bindings: [] }, false);
         setMentionQuery(null);
         setSlashQuery(null);
       }),
@@ -282,7 +346,10 @@ const ComposerBody = memo(function Composer({
   // A draft rewritten from elsewhere (late dictation or a left chat's recovered send) shows
   // here, so the next edit keeps it.
   useEffect(
-    () => subscribeComposerDraftReplaced(draftKey, (text) => showReplacedDraft.current(text)),
+    () =>
+      composerDraft.subscribeComposerDraftReplaced(draftKey, (text) =>
+        showReplacedDraft.current(text),
+      ),
     [draftKey],
   );
   // Read through a ref: the subscription outlives the render whose pickers state it would see.
@@ -290,21 +357,22 @@ const ComposerBody = memo(function Composer({
   showReplacedDraft.current = (text) => {
     // An edit like typing: a send still in flight must not restore its older text over it.
     markEdited();
-    const bindings = readComposerDraftBindings(draftKey);
+    const bindings = composerDraft.readComposerDraftBindings(draftKey);
+    rememberPersisted(text);
     commitComposition({ text, bindings }, false);
     // The pickers follow the new text, as after an edit, with the caret at its end.
     updatePickers(text, text.length, text.length, bindings);
   };
   // An open page rewrites what this chat sends (pageReply), so it is part of the payload.
   const pageSession = usePageSession();
-  const dock = pageSession?.dock ?? noDock;
+  const dock = pageSession?.dock ?? noComposerDock;
   const openPageId = useSyncExternalStore(dock.subscribe, () => dock.get().page?.id ?? null);
   // A draft reloaded without edits may still belong to a send whose answer never
   // came; its nonce is stored beside it. Anything that would change the next
   // payload (attachments, an armed reply, an open page) disqualifies the stored nonce.
   const [storedRetryNonce] = useState(() =>
     pendingAttachments.length === 0 && !replyTarget && openPageId === null
-      ? readComposerRetryNonce(draftKey)
+      ? composerDraft.readComposerRetryNonce(draftKey)
       : null,
   );
   const retryNonce = useRef(storedRetryNonce);
@@ -328,16 +396,29 @@ const ComposerBody = memo(function Composer({
   // send waits one render for the state appendDictation just queued.
   // The due send holds the edit revision the dictation left.
   const [dictationSendDue, setDictationSendDue] = useState<number | null>(null);
-  // The same due revision for send(), which reads it after its own await.
-  const queuedDictation = useRef<number | null>(null);
+  // The same due revision and snapshot for send(), which reads them after its own await.
+  const queuedDictation = useRef<{ revision: number; snapshot: ComposerDraftSnapshot } | null>(
+    null,
+  );
+  const inFlightSend = useRef<{ snapshot: ComposerDraftSnapshot; revision: number } | null>(null);
+  const inFlightDictation = useRef<{
+    snapshot: ComposerDraftSnapshot;
+    revision: number;
+    dictatedSnapshot: ComposerDraftSnapshot | null;
+  } | null>(null);
   // A dictation that finishes while an earlier send is in flight waits for it;
   // any edit in the meantime cancels the automatic send. It runs after the
   // reply effect above, so a reply armed in the same commit counts as an edit.
   useEffect(() => {
     if (dictationSendDue === null || sending) return;
+    const queued = queuedDictation.current;
     setDictationSendDue(null);
     queuedDictation.current = null;
-    if (editRevision.current === dictationSendDue) void send();
+    if (
+      editRevision.current === dictationSendDue &&
+      (!queued || !composerDraft.hasComposerDraftChangedSince(draftKey, queued.snapshot))
+    )
+      void send();
   }, [dictationSendDue, sending]);
   const {
     textareaRef,
@@ -349,27 +430,10 @@ const ComposerBody = memo(function Composer({
     composerFieldRef,
     expanded,
   } = useComposerLayout(draft, selectedSkill !== null);
-  // Cmd/Ctrl+D in the message field dictates hands-free, like a keyboard press on the mic button,
-  // and sends once pressed again. The field hides while recording, so the key is heard window-wide.
-  const dictateKey = useRef({ talk, available: false });
-  dictateKey.current = {
+  useDictationShortcut({
     talk,
     available: Boolean(phoneCallsEnabled) && !disabled && !onCall && draft.trim().length === 0,
-  };
-  useEventListener(window, "keydown", (event) => {
-    if (event.repeat || event.altKey || event.shiftKey || event.key?.toLowerCase() !== "d") return;
-    if (!primaryModifier(event, isApplePlatform())) return;
-    const { talk, available } = dictateKey.current;
-    if (talk.recording) {
-      // Pressed while typing elsewhere, it belongs to that field rather than this recording.
-      if (!talk.recording.locked || talk.transcribing) return;
-      if (isEditableTarget(event.target) || hasOpenDialog(document)) return;
-      event.preventDefault();
-      talk.submit();
-    } else if (available && document.activeElement === textareaRef.current) {
-      event.preventDefault();
-      talk.startHandsFree();
-    }
+    textareaRef,
   });
   useLayoutEffect(() => {
     if (pendingCaret.current === null) return;
@@ -379,28 +443,18 @@ const ComposerBody = memo(function Composer({
     textareaRef.current?.setSelectionRange(selection.start, selection.end);
     textareaRef.current?.focus();
   });
-  // A reply button on the open page adds its text here for the user to send, about that page
-  // rather than a message picked before it.
-  const clearReply = useRef(onClearReply);
-  clearReply.current = onClearReply;
-  const appendOffered = useRef((_text: string) => {});
-  appendOffered.current = (text: string) => {
-    clearReply.current?.();
-    const current = compositionRef.current.text;
-    editSelections.current = [{ start: current.length, end: current.length }];
-    const next = current.trim() ? `${current.trimEnd()} ${text}` : text;
-    updateDraft(next);
-    pendingCaret.current = { start: next.length, end: next.length };
-  };
-  useEffect(
-    () => pageSession?.subscribeReply((text) => appendOffered.current(text)),
-    [pageSession],
-  );
-  // An app card in this chat offers its text the same way.
-  useEffect(
-    () => subscribeComposerOffer(draftKey, (text) => appendOffered.current(text)),
-    [draftKey],
-  );
+  useComposerOffers({
+    draftKey,
+    pageSession,
+    onClearReply,
+    onOffer: (text) => {
+      const current = compositionRef.current.text;
+      editSelections.current = [{ start: current.length, end: current.length }];
+      const next = current.trim() ? `${current.trimEnd()} ${text}` : text;
+      updateDraft(next);
+      pendingCaret.current = { start: next.length, end: next.length };
+    },
+  });
   const [replyAnnouncement, setReplyAnnouncement] = useState("");
   // What the live region currently holds — a send disarming the reply clears
   // "reply" text, while an explicit cancel must keep "Reply cancelled".
@@ -421,7 +475,7 @@ const ComposerBody = memo(function Composer({
     onDraftEdited?.();
     editRevision.current += 1;
     retryNonce.current = null;
-    writeComposerRetryNonce(draftKey, null);
+    composerDraft.writeComposerRetryNonce(draftKey, null);
   }
 
   const draftKeyRef = useRef(draftKey);
@@ -487,13 +541,18 @@ const ComposerBody = memo(function Composer({
       retryNonce.current ??
       // A chat reopened before its unsettled send failed has not edited since
       // mount, so the nonce stored beside the saved draft is still this draft's.
-      (revision === 0 && nonceRecoverable ? readComposerRetryNonce(draftKey) : null) ??
+      (revision === 0 && nonceRecoverable
+        ? composerDraft.readComposerRetryNonce(draftKey)
+        : null) ??
       newClientId();
     retryNonce.current = null;
     const submitted = compositionRef.current;
     const text = serializeComposerPrompt(submitted.text, selectedSkill);
     const mentions = composerMentionsForPrompt(submitted.text, selectedSkill, submitted.bindings);
-    const submission = beginComposerDraftSubmission(draftKey, draft);
+    const submission = composerDraft.beginComposerDraftSubmission(draftKey, submitted.text);
+    const submittedSnapshot = composerDraft.captureComposerDraftSnapshot(draftKey, submitted.text);
+    inFlightSend.current = { snapshot: submittedSnapshot, revision };
+    rememberPersisted(submitted.text, submittedSnapshot);
     commitComposition({ text: "", bindings: [] }, false);
     setMentionQuery(null);
     setMentionHighlightKey(null);
@@ -504,23 +563,37 @@ const ComposerBody = memo(function Composer({
         (await (imageHandling
           ? onSend(text, mentions, clientNonce, imageHandling)
           : onSend(text, mentions, clientNonce))) !== false;
-      settleComposerDraftSubmission(draftKey, submission, accepted);
+      if (composerDraft.settleComposerDraftSubmission(draftKey, submission, accepted)) {
+        rememberPersisted(composerDraft.readComposerDraft(draftKey));
+      }
       if (accepted) {
+        if (inFlightDictation.current?.snapshot === submittedSnapshot) {
+          inFlightDictation.current = null;
+        }
         recordMessageSent();
         return;
       }
     } catch {
-      settleComposerDraftSubmission(draftKey, submission, false);
+      if (inFlightDictation.current?.snapshot === submittedSnapshot) {
+        inFlightDictation.current = null;
+      }
+      composerDraft.settleComposerDraftSubmission(draftKey, submission, false);
       // A rejected callback leaves acceptance unknown; do not restore a possible
       // send. The saved draft still holds the words; only a recoverable plain
       // text send keeps its nonce with them, so the retry is not mistaken for
       // a reply-linked or otherwise different message.
-      if (nonceRecoverable) keepComposerRetryNonce(draftKey, submission, clientNonce);
+      if (nonceRecoverable) composerDraft.keepComposerRetryNonce(draftKey, submission, clientNonce);
       return;
+    } finally {
+      if (inFlightSend.current?.snapshot === submittedSnapshot) inFlightSend.current = null;
     }
     // A dictation queued behind this send, and no other edit since, joins the failed
     // words instead of going out alone; the send's error stays.
-    if (queuedDictation.current === revision + 1 && editRevision.current === revision + 1) {
+    if (
+      queuedDictation.current?.revision === revision + 1 &&
+      editRevision.current === revision + 1
+    ) {
+      const queuedSnapshot = queuedDictation.current.snapshot;
       queuedDictation.current = null;
       setDictationSendDue(null);
       retryNonce.current = null;
@@ -528,48 +601,49 @@ const ComposerBody = memo(function Composer({
       const words = queued.text;
       const restored = { text: `${submitted.text} ${words}`, bindings: submitted.bindings };
       if (mountedRef.current && draftKeyRef.current === draftKey) {
+        if (composerDraft.hasComposerDraftChangedSince(draftKey, queuedSnapshot)) return;
+        onFailedSendRestored?.(clientNonce);
         commitComposition(restored);
         setSelectedSkill(selectedSkill);
         return;
       }
-      // Once the chat was left, a composer reopened for it owns the saved draft; only a draft
-      // still holding just these words, mentions included, is this send's to restore, and the
-      // reopened field follows it. The same spelling bound to a mention there is a newer edit.
-      if (
-        readComposerDraft(draftKey) === words &&
-        JSON.stringify(readComposerDraftBindings(draftKey)) === JSON.stringify(queued.bindings)
-      )
-        replaceComposerDraft(draftKey, restored.text, restored.bindings);
+      // Restore only when storage still holds this exact queued dictation write.
+      if (composerDraft.matchesComposerDraftSnapshot(draftKey, queuedSnapshot)) {
+        onFailedSendRestored?.(clientNonce);
+        composerDraft.replaceComposerDraft(draftKey, restored.text, restored.bindings);
+      }
       return;
     }
-    // Restore only an untouched draft, retaining its nonce for an unchanged retry.
-    // This composer still carries the reply and attachments the send carried, so
-    // the in-memory nonce is safe here; the stored one is only for plain text.
+    // Restore only an untouched draft; after a remote edit with a retained failed row, the row owns retry.
+    const dictatedDuringSend =
+      inFlightDictation.current?.snapshot === submittedSnapshot ? inFlightDictation.current : null;
+    if (dictatedDuringSend) inFlightDictation.current = null;
+    const keptFailedRow = hasFailedSend
+      ? hasFailedSend(clientNonce)
+      : pendingAttachments.length === 0 &&
+        composerDraft.hasComposerDraftChangedSince(draftKey, submittedSnapshot);
+    if (keptFailedRow) return;
+    if (dictatedDuringSend && dictatedDuringSend.revision === editRevision.current) {
+      if (!mountedRef.current || draftKeyRef.current !== draftKey) return;
+      const words = compositionRef.current.text;
+      const persist =
+        dictatedDuringSend.dictatedSnapshot !== null &&
+        !composerDraft.hasComposerDraftChangedSince(draftKey, dictatedDuringSend.dictatedSnapshot);
+      commitComposition(
+        {
+          text: submitted.text && words ? `${submitted.text} ${words}` : submitted.text || words,
+          bindings: submitted.bindings,
+        },
+        persist,
+      );
+      setSelectedSkill(selectedSkill);
+      return;
+    }
     if (editRevision.current !== revision) return;
     retryNonce.current = clientNonce;
-    if (nonceRecoverable) keepComposerRetryNonce(draftKey, submission, clientNonce);
+    if (nonceRecoverable) composerDraft.keepComposerRetryNonce(draftKey, submission, clientNonce);
     commitComposition(submitted, false);
     setSelectedSkill(selectedSkill);
-  }
-
-  function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
-    const clipboardData = event.clipboardData;
-    if (disabled || !clipboardData) return;
-    const text = clipboardData.getData("text/plain");
-    const files = isFilePaste(clipboardData);
-    if (!files && text.length <= LARGE_PASTE_THRESHOLD) return;
-    event.preventDefault();
-    if (files) pickAttachments(clipboardData.files);
-    if (!text) return;
-    const textarea = event.currentTarget;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const before = compositionRef.current;
-    rememberSelection(textarea);
-    const caret = start + text.length;
-    updateDraft(`${before.text.slice(0, start)}${text}${before.text.slice(end)}`, caret);
-    pendingCaret.current = { start: caret, end: caret };
-    if (!files) setLargePaste({ text, before, start, end });
   }
 
   function attachLargePaste() {
@@ -822,78 +896,47 @@ const ComposerBody = memo(function Composer({
                   mentionBindings,
                 );
               }}
-              onPaste={handlePaste}
-              onKeyDown={(event) => {
-                rememberSelection(event.currentTarget);
-                if (event.key === "Backspace" && draft.length === 0 && selectedSkill !== null) {
-                  event.preventDefault();
-                  removeSkill();
-                  return;
-                }
-                const action = resolveMentionPickerKey({
-                  key: event.key,
-                  shiftKey: event.shiftKey,
-                  ctrlKey: event.ctrlKey,
-                  metaKey: event.metaKey,
-                  altKey: event.altKey,
+              onPaste={(event) =>
+                handleComposerPaste(event, {
+                  disabled,
+                  threshold: LARGE_PASTE_THRESHOLD,
+                  current: compositionRef.current,
+                  pickAttachments,
+                  rememberSelection,
+                  updateDraft,
+                  setPendingCaret: (caret) => {
+                    pendingCaret.current = { start: caret, end: caret };
+                  },
+                  setLargePaste,
+                })
+              }
+              onKeyDown={(event) =>
+                handleComposerKeyDown(event, {
+                  rememberSelection,
+                  draftLength: draft.length,
+                  hasSkill: selectedSkill !== null,
+                  removeSkill,
                   enterToSend,
-                  isComposing: event.nativeEvent.isComposing || event.keyCode === 229,
-                  optionCount: mentionPickerOpen ? mentionOptions.length : slashOptionKeys.length,
-                  highlightedIndex: mentionPickerOpen ? activeMentionIndex : activeSlashIndex,
-                });
-                // An open slash menu only sends once closed, so Ctrl/Cmd+Enter picks the row too.
-                if (showSlashPicker && action.type !== "none") {
-                  event.preventDefault();
-                  if (action.type === "complete" || action.type === "send")
-                    pickSlashOption(activeSlashIndex);
-                  else if (action.type === "move")
-                    setSlashHighlightKey(slashOptionKeys[action.index] ?? null);
-                  else {
-                    completedSelection.current = event.currentTarget.selectionStart;
-                    setSlashQuery(null);
-                  }
-                  return;
-                }
-                if (action.type === "complete") {
-                  const mention = mentionOptions[action.index];
-                  if (!mention) return;
-                  event.preventDefault();
-                  insertMention(mention);
-                  return;
-                }
-                if (action.type === "move") {
-                  event.preventDefault();
-                  setMentionHighlightKey(mentionChipKey(mentionOptions[action.index]!));
-                  return;
-                }
-                if (action.type === "dismiss") {
-                  event.preventDefault();
-                  completedSelection.current = event.currentTarget.selectionStart;
-                  setMentionQuery(null);
-                  setMentionHighlightKey(null);
-                  return;
-                }
-                if (action.type === "send") {
-                  event.preventDefault();
-                  void send();
-                  return;
-                }
-                if (
-                  event.key !== "Escape" ||
-                  event.repeat ||
-                  event.nativeEvent.isComposing ||
-                  event.keyCode === 229 ||
-                  event.shiftKey ||
-                  event.ctrlKey ||
-                  event.metaKey ||
-                  event.altKey
-                )
-                  return;
-                if (running && !sending && !talk.recording?.locked) {
-                  event.preventDefault();
-                  void onStop();
-                }
-              }}
+                  mentionPickerOpen,
+                  mentionOptions,
+                  activeMentionIndex,
+                  slashOptionKeys,
+                  activeSlashIndex,
+                  showSlashPicker,
+                  pickSlashOption,
+                  setSlashHighlightKey,
+                  setCompletedSelection: (caret) => {
+                    completedSelection.current = caret;
+                  },
+                  setSlashQuery,
+                  insertMention,
+                  setMentionHighlightKey,
+                  setMentionQuery,
+                  onSend: () => void send(),
+                  canStop: running && !sending && !talk.recording?.locked,
+                  onStop: () => void onStop(),
+                })
+              }
               disabled={disabled}
               placeholder={
                 showComposerPlaceholder
@@ -945,34 +988,12 @@ const ComposerBody = memo(function Composer({
   );
 });
 
-const noDockState = { node: null, page: null };
-const noDock = { subscribe: () => () => {}, get: () => noDockState };
-
 /**
  * The chat's composer, floated over the open page while one is open. It stays one mount: its
  * element moves between the chat and the page, so a draft's chips, focus and dictation carry over.
  */
 export function Composer(props: Omit<ComponentProps<typeof ComposerBody>, "docked">) {
-  const dock = usePageSession()?.dock ?? noDock;
-  const { node: dockNode } = useSyncExternalStore(dock.subscribe, dock.get);
-  const [host] = useState(() => {
-    const element = document.createElement("div");
-    element.style.display = "contents";
-    return element;
-  });
-  const slot = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const target = dockNode ?? slot.current;
-    if (!target || host.parentNode === target) return;
-    const focused = host.contains(document.activeElement) ? document.activeElement : null;
-    target.append(host);
-    if (focused instanceof HTMLElement) focused.focus({ preventScroll: true });
-  }, [dockNode, host]);
-  useEffect(() => () => host.remove(), [host]);
   return (
-    <>
-      <div ref={slot} className="contents" />
-      {createPortal(<ComposerBody {...props} docked={dockNode !== null} />, host)}
-    </>
+    <ComposerDockHost>{(docked) => <ComposerBody {...props} docked={docked} />}</ComposerDockHost>
   );
 }

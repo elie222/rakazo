@@ -53,6 +53,7 @@ import {
   transcriptIsNearEnd,
   transcriptMovedDown,
 } from "../../../lib/chat/transcript-scroll";
+import { pendingSendNonce } from "../../../lib/composer/pending-send";
 import type { ArtifactTarget } from "../../../lib/pages/artifact-open";
 import { projectPageCards } from "../../../lib/pages/page-cards";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
@@ -120,6 +121,10 @@ export const Transcript = memo(function Transcript({
   onReleaseComputer,
   onOpenImportSetup,
   onOpenAgentImport,
+  failedPendingSends,
+  retryingPendingSend,
+  onRetryPendingSend,
+  onDismissPendingSend,
   rpc,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
@@ -180,6 +185,10 @@ export const Transcript = memo(function Transcript({
   ) => Promise<void>;
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
   onOpenAgentImport?: () => void;
+  failedPendingSends?: ReadonlyMap<string, string>;
+  retryingPendingSend?: boolean;
+  onRetryPendingSend?: (clientNonce: string) => void;
+  onDismissPendingSend?: (clientNonce: string) => void;
   rpc: ReturnType<typeof createSpaceRpc>;
 }) {
   const { t } = useLingui();
@@ -727,6 +736,8 @@ export const Transcript = memo(function Transcript({
             const message = item.message;
             const peerReceipt = isPeerReceiptBlocks(message.blocks);
             const messageReactions = reactionView.reactions.get(message.id);
+            const failedNonce = failedPendingSends ? pendingSendNonce(message) : null;
+            const failedSendError = failedNonce ? failedPendingSends?.get(failedNonce) : undefined;
             return (
               <Fragment key={message.id}>
                 {separatorIds.has(message.id) ? (
@@ -813,6 +824,18 @@ export const Transcript = memo(function Transcript({
                         onReleaseComputer={onReleaseComputer}
                         onOpenImportSetup={onOpenImportSetup}
                         onOpenAgentImport={onOpenAgentImport}
+                        failedSendError={failedSendError}
+                        retryingSend={failedSendError ? retryingPendingSend : undefined}
+                        onRetrySend={
+                          failedNonce && failedSendError && onRetryPendingSend
+                            ? () => onRetryPendingSend(failedNonce)
+                            : undefined
+                        }
+                        onDismissSend={
+                          failedNonce && failedSendError && onDismissPendingSend
+                            ? () => onDismissPendingSend(failedNonce)
+                            : undefined
+                        }
                         rpc={rpc}
                         showToolActivity={showToolActivity}
                         onReply={onReply}
