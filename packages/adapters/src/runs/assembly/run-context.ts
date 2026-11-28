@@ -72,7 +72,6 @@ export interface RunLeaseState {
   valid: boolean;
   /** The run reached a final state; the heartbeat stops renewing. */
   completed: boolean;
-  lastCheckAt: number;
   /** A takeover keeps the computer lease past this attempt. */
   retainComputer: boolean;
   /** When the heartbeat last renewed both leases, so a failover is waited out only while they hold. */

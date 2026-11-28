@@ -264,6 +264,7 @@ export async function prepareRunComputer(
             runFence: hold.fence,
           },
           context.signal,
+          deps.realtime,
         );
         context.screenLeaseId = screenLeaseIdForRun(hold.computerLease, runId, hold.fence);
       }
