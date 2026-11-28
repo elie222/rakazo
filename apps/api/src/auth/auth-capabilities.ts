@@ -23,9 +23,7 @@ export function mountAuthCapabilities(
   },
 ) {
   app.get("/api/auth/capabilities", (c) => {
-    const registrationOpen = env.desktopStackToken
-      ? auth.registrationOpen(c.req.raw.headers)
-      : undefined;
+    const registrationOpen = auth.registrationOpen(c.req.raw.headers);
     return c.json({
       sso: env.oidc
         ? { name: env.oidc.name, availability: auth.ssoAvailability() ?? "checking" }
@@ -36,7 +34,8 @@ export function mountAuthCapabilities(
       resetUrl:
         env.passwordAuth !== false && email ? new URL("/reset-password", env.webOrigin).href : null,
       emailCode: auth.emailCodeSignIn,
-      registrationOpen,
+      // Desktop admission can vary by request. Other deployments only need to signal closure.
+      registrationOpen: env.desktopStackToken || !registrationOpen ? registrationOpen : undefined,
       billing: Boolean(billing),
       passkeyRpId: auth.passkeyRpId,
       nativePasskeys: nativePasskeys(env, auth.passkeyRpId),

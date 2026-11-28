@@ -2,7 +2,7 @@
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { authClient } from "../../lib/auth/auth";
 import type { AuthCapabilities } from "../../lib/auth/auth-capabilities";
@@ -113,7 +113,8 @@ async function render(mode: "in" | "up" | "forgot" = "in", entry = "/") {
   );
 }
 function LocationProbe() {
-  return <span data-testid="location">{useLocation().pathname}</span>;
+  const { pathname, search } = useLocation();
+  return <span data-testid="location">{pathname + search}</span>;
 }
 async function enter(input: Element | null, value: string) {
   await act(async () => {
@@ -149,6 +150,27 @@ it.each(["in", "up"] as const)("offers SSO and hides credentials on %s", async (
   const sso = host.querySelector("button")!;
   expect(sso.dataset.variant).toBe("outline");
   expect(sso.className).toContain("w-full");
+});
+it("redirects a direct signup visit to sign-in with its return destination when closed", async () => {
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue({
+    ...capabilities,
+    passwordAuth: true,
+    registrationOpen: false,
+  });
+  await act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={["/sign-up/email?next=%2Fredeem%2Fexample"]}>
+        <LocationProbe />
+        <Routes>
+          <Route path="/sign-up/email" element={<AuthPage mode="up" />} />
+          <Route path="/sign-in" element={<AuthPage mode="in" />} />
+        </Routes>
+      </MemoryRouter>,
+    ),
+  );
+  expect(host.querySelector('[data-testid="location"]')?.textContent).toBe(
+    "/sign-in?next=%2Fredeem%2Fexample",
+  );
 });
 it("retries failed capabilities without exposing a password form", async () => {
   vi.mocked(fetchAuthCapabilities)

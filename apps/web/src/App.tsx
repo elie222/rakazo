@@ -22,6 +22,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { MarkdownLinkPrompt } from "./components/messages/markdown-link-prompt";
 import { PageLoading } from "./components/PageLoading";
 import { authClient } from "./lib/auth/auth";
+import { fetchAuthCapabilities } from "./lib/auth/auth-capabilities";
 import { hasSignedInBefore, rememberSignedIn } from "./lib/auth/returning-user";
 import {
   holdAnonymousGate,
@@ -227,10 +228,7 @@ function SessionApp() {
               <Route
                 path="/"
                 element={
-                  <Navigate
-                    to={user ? "/app" : hasSignedInBefore() ? "/sign-in" : "/sign-up"}
-                    replace
-                  />
+                  user ? <Navigate to="/app" replace /> : <DefaultAuthRedirect next={next} />
                 }
               />
               {["/sign-in", "/sign-in/email"].map((path) => (
@@ -374,10 +372,7 @@ function SessionApp() {
                   user ? (
                     <RedeemPage key={pathname} />
                   ) : (
-                    <Navigate
-                      to={`${hasSignedInBefore() ? "/sign-in" : "/sign-up"}?next=${encodeURIComponent(pathname)}`}
-                      replace
-                    />
+                    <DefaultAuthRedirect next={pathname} keepNextWhenOpen />
                   )
                 }
               />
@@ -422,6 +417,39 @@ function SessionApp() {
       </MarkdownLinkPrompt>
     </QueryUserProvider>
   );
+}
+
+function DefaultAuthRedirect({
+  next,
+  keepNextWhenOpen = false,
+}: {
+  next: string | null;
+  keepNextWhenOpen?: boolean;
+}) {
+  const returning = hasSignedInBefore();
+  const [registrationClosed, setRegistrationClosed] = useState<boolean>();
+  useEffect(() => {
+    if (returning) return;
+    let active = true;
+    void fetchAuthCapabilities().then(
+      (capabilities) => {
+        if (active) setRegistrationClosed(capabilities.registrationOpen === false);
+      },
+      () => {
+        // Keep the usual destination so the auth page can retry its capabilities lookup.
+        if (active) setRegistrationClosed(false);
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [returning]);
+
+  if (!returning && registrationClosed === undefined) return <PageLoading />;
+  const path = returning || registrationClosed ? "/sign-in" : "/sign-up";
+  const query =
+    next && (keepNextWhenOpen || registrationClosed) ? `?next=${encodeURIComponent(next)}` : "";
+  return <Navigate to={path + query} replace />;
 }
 
 /**
