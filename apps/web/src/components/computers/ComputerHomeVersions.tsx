@@ -27,71 +27,97 @@ export function ComputerHomeVersions({ botId }: { botId: string }) {
     onSaved: () => setOpen(false),
   });
 
-  if (listing.isError)
+  const announcement = (
+    <span role="alert" className="sr-only">
+      {listing.isError && !listing.isFetching ? <Trans>Could not load</Trans> : null}
+    </span>
+  );
+
+  // A Retry restarts the read and clears its error until it answers; keep the row up meanwhile.
+  const failed = listing.isError || (!listing.data && listing.errorUpdateCount > 0);
+  if (failed)
     return (
-      <div className="flex min-h-12 items-center justify-between gap-3 text-body text-foreground">
-        <Trans>Computer files</Trans>
-        <span className="text-body-sm text-destructive">
-          <Trans>Could not load</Trans>
-        </span>
-      </div>
+      <>
+        {announcement}
+        <div className="flex min-h-12 items-center justify-between gap-3 text-body text-foreground">
+          <Trans>Computer files</Trans>
+          <div className="flex items-center gap-3">
+            <span className="text-body-sm text-destructive" aria-hidden="true">
+              <Trans>Could not load</Trans>
+            </span>
+            <Button
+              variant="secondary"
+              size="sm"
+              aria-disabled={listing.isFetching}
+              onClick={() => {
+                if (!listing.isFetching) void listing.refetch();
+              }}
+            >
+              <Trans>Retry</Trans>
+            </Button>
+          </div>
+        </div>
+      </>
     );
-  if (!versions.length) return null;
+  if (!versions.length) return <>{announcement}</>;
   const selected = chosen && versions.some((v) => v.key === chosen) ? chosen : versions[0]!.key;
   const error = restore.error ? errorText(restore.error, t`Could not restore files`) : null;
 
   return (
-    <div className="flex min-h-12 items-center justify-between gap-3 text-body text-foreground">
-      <span id={labelId}>
-        <Trans>Computer files</Trans>
-      </span>
-      <Button
-        variant="outline"
-        size="sm"
-        aria-describedby={labelId}
-        onClick={() => {
-          restore.reset();
-          setChosen(null);
-          setOpen(true);
-        }}
-      >
-        <Trans>Restore earlier version</Trans>
-      </Button>
-      <ConfirmDialog
-        open={open}
-        onCancel={() => setOpen(false)}
-        busy={restore.pending}
-        variant="default"
-        title={<Trans>Restore earlier version</Trans>}
-        description={
-          <Trans>
-            The computer gets the files from the chosen time when it next starts. Its current files
-            stay restorable.
-          </Trans>
-        }
-        error={error}
-        confirmLabel={restore.pending ? <Trans>Restoring…</Trans> : <Trans>Restore</Trans>}
-        onConfirm={() => restore.run(selected)}
-      >
-        <div className="max-h-72 overflow-y-auto">
-          <RadioGroup
-            aria-label={t`Saved at`}
-            value={selected}
-            onValueChange={(value) => setChosen(String(value))}
-          >
-            {versions.map((version) => (
-              // biome-ignore lint/a11y/noLabelWithoutControl: the wrapped RadioGroupItem is the control.
-              <label
-                key={version.key}
-                className="flex cursor-pointer items-center gap-3 rounded-lg px-1 py-1.5 text-body text-foreground"
-              >
-                <RadioGroupItem value={version.key} />
-                {version.label}
-              </label>
-            ))}
-          </RadioGroup>
-        </div>
-      </ConfirmDialog>
-    </div>
+    <>
+      {announcement}
+      <div className="flex min-h-12 items-center justify-between gap-3 text-body text-foreground">
+        <span id={labelId}>
+          <Trans>Computer files</Trans>
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          aria-describedby={labelId}
+          onClick={() => {
+            restore.reset();
+            setChosen(null);
+            setOpen(true);
+          }}
+        >
+          <Trans>Restore earlier version</Trans>
+        </Button>
+        <ConfirmDialog
+          open={open}
+          onCancel={() => setOpen(false)}
+          busy={restore.pending}
+          variant="default"
+          title={<Trans>Restore earlier version</Trans>}
+          description={
+            <Trans>
+              The computer gets the files from the chosen time when it next starts. Its current
+              files stay restorable.
+            </Trans>
+          }
+          error={error}
+          confirmLabel={restore.pending ? <Trans>Restoring…</Trans> : <Trans>Restore</Trans>}
+          onConfirm={() => restore.run(selected)}
+        >
+          <div className="max-h-72 overflow-y-auto">
+            <RadioGroup
+              aria-label={t`Saved at`}
+              value={selected}
+              onValueChange={(value) => setChosen(String(value))}
+            >
+              {versions.map((version) => (
+                // biome-ignore lint/a11y/noLabelWithoutControl: the wrapped RadioGroupItem is the control.
+                <label
+                  key={version.key}
+                  className="flex cursor-pointer items-center gap-3 rounded-lg px-1 py-1.5 text-body text-foreground"
+                >
+                  <RadioGroupItem value={version.key} />
+                  {version.label}
+                </label>
+              ))}
+            </RadioGroup>
+          </div>
+        </ConfirmDialog>
+      </div>
+    </>
   );
 }
