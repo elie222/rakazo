@@ -39,6 +39,18 @@ body,
     env(safe-area-inset-left);
 }
 
+/* Dragging a bot in the sidebar (pages/shell/sidebar/use-roster-pointer-drag.ts): the cursor
+   says whether the bot can go where it is held, and text stays unselected meanwhile. */
+:root[data-roster-drag],
+:root[data-roster-drag] * {
+  cursor: grabbing;
+  user-select: none;
+}
+:root[data-roster-drag="refused"],
+:root[data-roster-drag="refused"] * {
+  cursor: not-allowed;
+}
+
 /* Switching spaces in place (pages/shell/space-switch.ts): the sidebar holds still while the
    conversation crossfades, instead of the whole screen redrawing. */
 .rk-space-switching [data-space-switch="sidebar"] {
