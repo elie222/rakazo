@@ -272,8 +272,13 @@ export class DockerSandboxProvider implements SandboxProvider {
     context: AdapterContext,
   ): AsyncIterable<ProcessEvent> {
     const timeoutMs = boundedSandboxCommandTimeoutMs(request.timeoutMs);
+    const streamAbort = new AbortController();
     // The supervisor enforces timeoutMs; this only ends a command it never answers for.
-    const streamSignal = AbortSignal.any([context.signal, AbortSignal.timeout(timeoutMs + 15_000)]);
+    const streamSignal = AbortSignal.any([
+      context.signal,
+      AbortSignal.timeout(timeoutMs + 15_000),
+      streamAbort.signal,
+    ]);
     const res = await fetch(this.url(`/computers/${computer.id}/exec`), {
       method: "POST",
       headers: { ...this.headers(context, computer.botId), "content-type": "application/json" },
@@ -302,7 +307,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       // The command may keep running after the first bytes (device-code logins).
       // Don't apply the short JSON body timeout.
       try {
-        yield* readNdjsonProcessEvents(res, streamSignal);
+        yield* readNdjsonProcessEvents(res, streamSignal, () => streamAbort.abort());
       } catch (error) {
         throw this.unansweredCommand(computer, error, context.signal);
       }
@@ -571,7 +576,7 @@ export class DockerSandboxProvider implements SandboxProvider {
     const maxBytes = options?.maxBytes;
     const res = await fetch(
       this.url(
-        `/computers/${computer.id}/files?path=${encodeURIComponent(path)}&mode=read${maxBytes === undefined ? "" : `&maxBytes=${maxBytes}`}`,
+        `/computers/${computer.id}/files?path=${encodeURIComponent(path)}&mode=read${maxBytes === undefined ? "" : `&maxBytes=${maxBytes}&overflow=marker`}`,
       ),
       { headers: this.headers(context, computer.botId), signal: context.signal },
     );
@@ -581,11 +586,12 @@ export class DockerSandboxProvider implements SandboxProvider {
         throw new SandboxFileTooLargeError(maxBytes);
       throw new Error(`sandbox file read failed: ${res.status} ${detail}`.trim());
     }
-    const body = await readSandboxJson<{ content: string }>(
+    const body = await readSandboxJson<{ content: string; tooLarge?: boolean }>(
       res,
       context.signal,
       encodedFileResponseLimit(maxBytes),
     );
+    if (body.tooLarge && maxBytes !== undefined) throw new SandboxFileTooLargeError(maxBytes);
     return Uint8Array.from(Buffer.from(body.content, "base64"));
   }
 
@@ -757,6 +763,7 @@ export class DockerSandboxProvider implements SandboxProvider {
 async function* readNdjsonProcessEvents(
   res: Response,
   signal: AbortSignal,
+  abortStream?: () => void,
 ): AsyncIterable<ProcessEvent> {
   const reader = res.body?.getReader();
   if (!reader) {
@@ -768,6 +775,7 @@ async function* readNdjsonProcessEvents(
   let buffer = "";
   let bytes = 0;
   let sawExit = false;
+  let abortedEarly = false;
   try {
     while (!sawExit) {
       if (signal.aborted) throw signal.reason ?? new Error("command aborted");
@@ -775,6 +783,7 @@ async function* readNdjsonProcessEvents(
       if (done) break;
       bytes += value.byteLength;
       if (bytes > MAX_SANDBOX_SUCCESS_RESPONSE_BYTES) {
+        abortedEarly = true;
         yield { type: "stderr", data: "exec failed: response too large\n" };
         yield { type: "exit", code: 1 };
         return;
@@ -799,6 +808,7 @@ async function* readNdjsonProcessEvents(
   } finally {
     void reader.cancel().catch(() => undefined);
     reader.releaseLock();
+    if (abortedEarly || !sawExit) abortStream?.();
   }
 }
 

@@ -1,7 +1,9 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { deferred } from "@rakazo/core/test-async";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { automated } from "../../messaging/automated-messages.prompt.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "../../runtime/pi/pi-runtime-limits.js";
+import { secretPrefixSuffixLength, secretSuffixPrefixLength } from "./agent-environment.js";
 import {
   deliverFinishedShells,
   formatFinishedShellCommand,
@@ -330,6 +332,747 @@ describe("observeShellCommand", () => {
     expect(joined).toBe("pre [redacted] post");
     expect(joined).not.toContain("SECRET123");
     expect(seen.every((line) => !line.includes("SECRET123"))).toBe(true);
+  });
+
+  it("bounds oversized output to head and tail while redacting secrets across boundaries", async () => {
+    const secretA = "HEAD_CUT_SECRET_VALUE";
+    const secretB = "TAIL_CUT_SECRET_VALUE";
+    const secretSpan = "BOUNDARY_SECRET_999";
+    const observed = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: `HEADER\n${"a".repeat(63_990)}${secretA}` };
+        for (let i = 0; i < 40; i += 1) {
+          yield { type: "stdout" as const, data: `middle-${i}-${"m".repeat(10_000)}\n` };
+        }
+        yield {
+          type: "stdout" as const,
+          data: `${secretB}${"z".repeat(63_990)}TAIL_END\nBOUNDARY_`,
+        };
+        yield { type: "stderr" as const, data: "SECRET_999 stderr-end\n" };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      { secrets: [secretA, secretB, secretSpan] },
+    );
+
+    expect(observed.completion).toBeUndefined();
+    expect(observed.result.stdout).toContain("HEADER\n");
+    expect(observed.result.stdout).toContain("TAIL_END\n");
+    expect(observed.result.stdout).toContain("characters omitted");
+    expect(observed.result.stdout.length).toBeLessThan(200_000);
+    const joined = `${observed.result.stdout}${observed.result.stderr}`;
+    expect(joined).not.toContain(secretA);
+    expect(joined).not.toContain(secretB);
+    expect(joined).not.toContain(secretSpan);
+    expect(joined).not.toContain("BOUNDARY_");
+    expect(observed.result.stderr).toContain("stderr-end\n");
+  });
+
+  it("redacts overlapping secrets across compaction boundaries and detects sign-in prompts after compaction", async () => {
+    vi.useFakeTimers();
+    try {
+      const first = "OVERLAP_ONE_TWO";
+      const second = "TWO_THREE_FOUR";
+      const exitGate = deferred();
+      const observedPromise = observeShellCommand(
+        (async function* () {
+          yield { type: "stdout" as const, data: `HEAD\n${"x".repeat(165_000)}${first}` };
+          yield {
+            type: "stdout" as const,
+            data: `_THREE_FOUR\n${SIGN_IN}`,
+          };
+          await exitGate.promise;
+          yield { type: "exit" as const, code: 0 };
+        })(),
+        {
+          secrets: [first, second],
+          idleMs: 1_000,
+          quietMs: 10_000,
+        },
+      );
+
+      let settled = false;
+      void observedPromise.then(() => {
+        settled = true;
+      });
+      // Must take the short idleMs path (1_000 ms) well before quietMs (10_000 ms) even after compaction.
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(settled).toBe(true);
+      const observed = await observedPromise;
+      expect(isRunningShellCommand(observed.result)).toBe(true);
+      expect(observed.result.stdout).not.toContain(first);
+      expect(observed.result.stdout).not.toContain(second);
+      expect(observed.result.stdout).not.toContain("_THREE_FOUR");
+      exitGate.resolve();
+      const final = await observed.completion;
+      expect(final?.stdout).not.toContain(first);
+      expect(final?.stdout).not.toContain(second);
+      expect(final?.stdout).not.toContain("_THREE_FOUR");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("redacts overlapping secrets registered after first compaction covers the retained head", async () => {
+    const shortInterior = "HEAD_ALPHA_BETA";
+    const longerInterior = "ALPHA_BETA_GAMMA";
+    const boundarySecret = "BOUNDARY_CUT_SECRET";
+    const boundaryPrefixOverlap = "PRE_BOUNDARY_CUT";
+    const secrets = [shortInterior, boundarySecret];
+    const chunkGate = deferred();
+    // Place boundarySecret across the 64_000-character head boundary so headRedactedSuffix is non-zero.
+    const lead = `BEGIN_${shortInterior}_GAMMA\n`;
+    const padToBoundary = "p".repeat(64_000 - lead.length - "PRE_BOUNDARY_".length);
+    const bigChunk = `${lead}${padToBoundary}PRE_${boundarySecret}${"x".repeat(110_000)}`;
+    const observed = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: bigChunk };
+        await chunkGate.promise;
+        yield { type: "stdout" as const, data: "DONE\n" };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets,
+        onOutput: () => {
+          if (!secrets.includes(longerInterior)) {
+            secrets.push(longerInterior, boundaryPrefixOverlap);
+            chunkGate.resolve();
+          }
+        },
+      },
+    );
+
+    expect(observed.result.stdout).not.toContain("ALPHA_BETA");
+    expect(observed.result.stdout).not.toContain("GAMMA");
+    expect(observed.result.stdout).not.toContain("PRE_BOUNDARY");
+    expect(observed.result.stdout).not.toContain("BOUNDARY_");
+    expect(observed.result.stdout).toContain("BEGIN_[redacted]\n");
+    expect(observed.result.stdout).toContain("DONE\n");
+  });
+
+  it("masks fragments at both compaction cuts for secrets registered after compaction", async () => {
+    const headCutSecret = "LATE_HEAD_CUT_TOKEN_99";
+    const tailCutSecret = "LATE_TAIL_CUT_TOKEN_88";
+    const secrets: string[] = [];
+    const chunkGate = deferred();
+    // Place headCutSecret across index 64_000 and tailCutSecret across tailStart (length - 64_000).
+    const totalLength = 170_000;
+    const headCutPos = 64_000 - "LATE_HEAD_".length;
+    const tailCutPos = totalLength - 64_000 - "LATE_TAIL_".length;
+    const bigChunk =
+      "h".repeat(headCutPos) +
+      headCutSecret +
+      "m".repeat(tailCutPos - headCutPos - headCutSecret.length) +
+      tailCutSecret +
+      "t".repeat(totalLength - tailCutPos - tailCutSecret.length);
+    expect(bigChunk.length).toBe(totalLength);
+
+    const observed = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: bigChunk };
+        await chunkGate.promise;
+        yield { type: "stdout" as const, data: "\nDONE\n" };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets,
+        onOutput: () => {
+          if (secrets.length === 0) {
+            secrets.push(headCutSecret, tailCutSecret);
+            chunkGate.resolve();
+          }
+        },
+      },
+    );
+
+    expect(observed.result.stdout).not.toContain("LATE_HEAD_");
+    expect(observed.result.stdout).not.toContain("CUT_TOKEN_88");
+    expect(observed.result.stdout).not.toContain(headCutSecret);
+    expect(observed.result.stdout).not.toContain(tailCutSecret);
+    expect(observed.result.stdout).toContain("[redacted]\n[...");
+    expect(observed.result.stdout).toContain("omitted ...]\n[redacted]");
+    expect(observed.result.stdout).toContain("\nDONE\n");
+  });
+
+  it("matches late-registered secret cut fragments in linear time for long adversarial secrets", () => {
+    expect(secretPrefixSuffixLength("xxabab", "ababa")).toBe(4);
+    expect(secretSuffixPrefixLength("babaxx", "ababa")).toBe(4);
+    expect(secretPrefixSuffixLength("abc", "abcd")).toBe(3);
+    expect(secretSuffixPrefixLength("bcd", "abcd")).toBe(3);
+    expect(secretPrefixSuffixLength("abcd", "abcd")).toBe(0);
+    expect(secretSuffixPrefixLength("abcd", "abcd")).toBe(0);
+
+    expectLinearTime(() => {
+      const size = 65_536;
+      const prefixSecret = `${"a".repeat(size)}b`;
+      const prefixText = `${"a".repeat(size)}c`;
+      expect(secretPrefixSuffixLength(prefixText, prefixSecret)).toBe(0);
+
+      const suffixSecret = `b${"a".repeat(size)}`;
+      const suffixText = `c${"a".repeat(size)}`;
+      expect(secretSuffixPrefixLength(suffixText, suffixSecret)).toBe(0);
+
+      // Short live output against many large secrets bounds table work by text length.
+      const largeSecrets = Array.from({ length: 1_000 }, (_, i) => `${"z".repeat(8_192)}-${i}`);
+      for (const secret of largeSecrets) {
+        expect(secretPrefixSuffixLength("ok\n", secret)).toBe(0);
+        expect(secretSuffixPrefixLength("ok\n", secret)).toBe(0);
+      }
+    });
+  });
+
+  it("redacts long secrets split across stdout and compacted stderr without leaking fragments", async () => {
+    const headPart = "SPLIT_STDOUT_HEAD_";
+    const stderrBody = `SPLIT_STDERR_${"S".repeat(70_000)}_END`;
+    const secret = `${headPart}${stderrBody}`;
+
+    // Registered before compaction: stderr head preserves the full overlap margin so exact matching runs.
+    const preRegistered = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: `out:\n${headPart}` };
+        yield { type: "stderr" as const, data: stderrBody };
+        yield { type: "stderr" as const, data: `\n${"n".repeat(400_000)}\nTAIL_OK\n` };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      { secrets: [secret] },
+    );
+
+    expect(preRegistered.result.stdout).not.toContain(headPart);
+    expect(preRegistered.result.stderr).not.toContain("SPLIT_STDERR_");
+    expect(preRegistered.result.stderr).not.toContain("_END");
+    expect(preRegistered.result.stdout).toContain("[redacted]");
+    expect(preRegistered.result.stderr).toContain("TAIL_OK");
+
+    // Registered after stderr already compacted: cross-stream cut check masks both retained fragments.
+    const lateSecrets: string[] = [];
+    const gate = deferred();
+    const lateRegistered = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: `out:\n${headPart}` };
+        yield { type: "stderr" as const, data: stderrBody };
+        yield { type: "stderr" as const, data: `\n${"n".repeat(250_000)}\nTAIL_OK\n` };
+        await gate.promise;
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets: lateSecrets,
+        onOutput: (snapshot) => {
+          if (lateSecrets.length === 0 && snapshot.stderr.includes("characters omitted")) {
+            lateSecrets.push(secret);
+            gate.resolve();
+          }
+        },
+      },
+    );
+
+    expect(lateRegistered.result.stdout).not.toContain(headPart);
+    expect(lateRegistered.result.stderr).not.toContain("SPLIT_STDERR_");
+    expect(lateRegistered.result.stdout).toContain("[redacted]");
+    expect(lateRegistered.result.stderr).toContain("[redacted]");
+    expect(lateRegistered.result.stderr).toContain("TAIL_OK");
+
+    // Repeated text: longest overlap ("ABAB") fails while shorter valid border ("AB") matches.
+    const repeatedSecret = `ABAB${"R".repeat(70_000)}END`;
+    const repeatedSecrets: string[] = [];
+    const repeatedGate = deferred();
+    const repeatedObserved = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: "out:ABAB" };
+        yield { type: "stderr" as const, data: `AB${"R".repeat(70_000)}END` };
+        yield { type: "stderr" as const, data: `\n${"n".repeat(250_000)}\nTAIL_REP\n` };
+        await repeatedGate.promise;
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets: repeatedSecrets,
+        onOutput: (snapshot) => {
+          if (repeatedSecrets.length === 0 && snapshot.stderr.includes("characters omitted")) {
+            repeatedSecrets.push(repeatedSecret);
+            repeatedGate.resolve();
+          }
+        },
+      },
+    );
+    expect(repeatedObserved.result.stdout).toBe("out:AB[redacted]");
+    expect(repeatedObserved.result.stderr).not.toContain("RRRRRR");
+    expect(repeatedObserved.result.stderr).toContain("TAIL_REP");
+
+    // Both streams compacted with repeated middle text: second occurrence aligns with stderr head.
+    const midBlock = `M${"m".repeat(63_999)}`;
+    const headBlock = `Z${"z".repeat(63_999)}`;
+    const bothSecret = `P${midBlock}Y${midBlock}${headBlock}Q`;
+    const bothSecrets: string[] = [];
+    const bothGate = deferred();
+    const bothObserved = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: `${"a".repeat(200_000)}${midBlock}` };
+        yield { type: "stderr" as const, data: `${headBlock}Q\n${"b".repeat(200_000)}\nBOTH_OK\n` };
+        await bothGate.promise;
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets: bothSecrets,
+        onOutput: (snapshot) => {
+          if (
+            bothSecrets.length === 0 &&
+            snapshot.stdout.includes("characters omitted") &&
+            snapshot.stderr.includes("characters omitted")
+          ) {
+            bothSecrets.push(bothSecret);
+            bothGate.resolve();
+          }
+        },
+      },
+    );
+    expect(bothObserved.result.stdout).not.toContain("mmmmmm");
+    expect(bothObserved.result.stderr).not.toContain("zzzzzz");
+    expect(bothObserved.result.stderr).toContain("BOTH_OK");
+
+    // Overlapping spanning secret must not leak its outer prefix when another secret masks the inner cut.
+    const innerSecret = `INNER_${"K".repeat(70_000)}_END`;
+    const outerSecret = "OUTER_LEAK_INNER_KKKK";
+    const overlapSecrets = [outerSecret];
+    const overlapGate = deferred();
+    const overlapObserved = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: "ok:OUTER_LEAK_INNER_" };
+        yield {
+          type: "stderr" as const,
+          data: `${"K".repeat(70_000)}_END\n${"n".repeat(250_000)}\nOVERLAP_OK\n`,
+        };
+        await overlapGate.promise;
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets: overlapSecrets,
+        onOutput: (snapshot) => {
+          if (overlapSecrets.length === 1 && snapshot.stderr.includes("characters omitted")) {
+            overlapSecrets.push(innerSecret);
+            overlapGate.resolve();
+          }
+        },
+      },
+    );
+    expect(overlapObserved.result.stdout).toBe("ok:[redacted]");
+    expect(overlapObserved.result.stdout).not.toContain("OUTER_LEAK_");
+    expect(overlapObserved.result.stderr).not.toContain("KKKKKK");
+    expect(overlapObserved.result.stderr).toContain("OVERLAP_OK");
+
+    // Live snapshots withhold a partial stderr continuation of a late-registered secret that
+    // started before stdout's retained tail cut (before the final chunk completes the secret).
+    const livePrefix = "LIVE_COMPACTED_PREFIX_";
+    const liveMiddle = "L".repeat(64_000);
+    const liveStderrPart1 = "PARTIAL_STDERR_FRAG_";
+    const liveStderrPart2 = "FINAL_SECRET_SUFFIX";
+    const liveSecret = `${livePrefix}${liveMiddle}${liveStderrPart1}${liveStderrPart2}`;
+    const liveSecrets: string[] = [];
+    const registerGate = deferred();
+    const finalChunkGate = deferred();
+    const liveSnapshots: Array<{ stdout: string; stderr: string }> = [];
+    const liveObserved = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: `${"o".repeat(200_000)}${livePrefix}${liveMiddle}` };
+        await registerGate.promise;
+        yield { type: "stderr" as const, data: liveStderrPart1 };
+        await finalChunkGate.promise;
+        yield { type: "stderr" as const, data: `${liveStderrPart2}\nLIVE_DONE\n` };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets: liveSecrets,
+        onOutput: (snapshot) => {
+          if (liveSecrets.length === 0 && snapshot.stdout.includes("characters omitted")) {
+            liveSecrets.push(liveSecret);
+            registerGate.resolve();
+            return;
+          }
+          if (liveSecrets.length === 1) {
+            liveSnapshots.push(snapshot);
+            finalChunkGate.resolve();
+          }
+        },
+      },
+    );
+    expect(liveSnapshots.length).toBeGreaterThan(0);
+    for (const snap of liveSnapshots) {
+      expect(snap.stdout).not.toContain("LLLLLL");
+      expect(snap.stderr).not.toContain(liveStderrPart1);
+    }
+    expect(liveObserved.result.stdout).not.toContain("LLLLLL");
+    expect(liveObserved.result.stderr).not.toContain(liveStderrPart1);
+    expect(liveObserved.result.stderr).not.toContain(liveStderrPart2);
+    expect(liveObserved.result.stderr).toContain("LIVE_DONE");
+
+    // Repeated long spanning secret over a compacted boundary stays linear via KMP.
+    // Neither stream holds 120,000 consecutive 'q's on its own (each has 119,999), so same-stream
+    // redaction stays instant while the stdout/stderr boundary forms 239,998 consecutive 'q's.
+    // Late secret (209,999 chars) exceeds retained stderr head (64,000 + 119,999 = 183,999), so
+    // the compacted cut activates collectSpanningMatches on the 120,000-char secret in a single
+    // snapshot and expands stdoutTrailing from 10,000 to 119,999 (redacting every 'q').
+    const repeatedBoundarySecret = "q".repeat(120_000);
+    const lateLongSecret = `${"q".repeat(129_999)}${"R".repeat(80_000)}`;
+    await expectLinearTime(async () => {
+      const linearGate = deferred();
+      const linearSecrets = [repeatedBoundarySecret];
+      const linearObserved = await observeShellCommand(
+        (async function* () {
+          yield { type: "stdout" as const, data: `OUTER_TAG:${"q".repeat(119_999)}` };
+          yield {
+            type: "stderr" as const,
+            data: `${"q".repeat(119_999)}${"R".repeat(80_000)}\n${"x".repeat(250_000)}\nLIN_OK\n`,
+          };
+          await linearGate.promise;
+          yield { type: "exit" as const, code: 0 };
+        })(),
+        {
+          secrets: linearSecrets,
+          onOutput: (snapshot) => {
+            if (linearSecrets.length === 1 && snapshot.stderr.includes("characters omitted")) {
+              linearSecrets.push(lateLongSecret);
+              linearGate.resolve();
+            }
+          },
+        },
+      );
+      expect(linearObserved.result.stdout).toBe("OUTER_TAG:[redacted]");
+      expect(linearObserved.result.stderr).toContain("LIN_OK");
+    });
+  });
+
+  it("keeps compacted live boundary redaction independent of secret registration order", async () => {
+    const cutTail = "CUT_TAIL_MARKER_";
+    const cutSecret = `CUT_HEAD_${cutTail}`;
+    const tailFiller = "m".repeat(63_972);
+    const outsidePrefix = "OUT_PRE_";
+    const outsideStderrPart1 = "OUT_STDERR_P1_";
+    const outsideStderrPart2 = "OUT_STDERR_P2";
+    const outsideSecret = `${outsidePrefix}${outsideStderrPart1}${outsideStderrPart2}`;
+    const overlappingPrefixSecret = `AD_${cutTail}${tailFiller}${outsidePrefix}NEVER_EMITTED`;
+    for (const orderedSecrets of [
+      [cutSecret, outsideSecret, overlappingPrefixSecret],
+      [cutSecret, overlappingPrefixSecret, outsideSecret],
+    ]) {
+      const orderSecrets: string[] = [];
+      const orderRegisterGate = deferred();
+      const orderPart2Gate = deferred();
+      const orderExitGate = deferred();
+      const orderLiveSnapshots: Array<{ stdout: string; stderr: string }> = [];
+      let stage = 0;
+      const orderObserved = await observeShellCommand(
+        (async function* () {
+          yield {
+            type: "stdout" as const,
+            data: `${"p".repeat(160_000)}CUT_HEAD_${cutTail}${tailFiller}${outsidePrefix}`,
+          };
+          await orderRegisterGate.promise;
+          yield { type: "stderr" as const, data: outsideStderrPart1 };
+          await orderPart2Gate.promise;
+          yield { type: "stderr" as const, data: `${outsideStderrPart2}\nORDER_DONE\n` };
+          await orderExitGate.promise;
+          yield { type: "exit" as const, code: 0 };
+        })(),
+        {
+          secrets: orderSecrets,
+          onOutput: (snapshot) => {
+            if (stage === 0 && snapshot.stdout.includes("characters omitted")) {
+              stage = 1;
+              orderSecrets.push(...orderedSecrets);
+              orderRegisterGate.resolve();
+              return;
+            }
+            if (stage === 1) {
+              stage = 2;
+              orderLiveSnapshots.push(snapshot);
+              orderPart2Gate.resolve();
+              return;
+            }
+            if (stage === 2) {
+              stage = 3;
+              orderLiveSnapshots.push(snapshot);
+              orderExitGate.resolve();
+            }
+          },
+        },
+      );
+      expect(orderLiveSnapshots).toHaveLength(2);
+      for (const snap of orderLiveSnapshots) {
+        expect(snap.stderr).not.toContain(outsideStderrPart1);
+        expect(snap.stderr).not.toContain(outsideStderrPart2);
+      }
+      expect(orderObserved.result.stderr).not.toContain(outsideStderrPart1);
+      expect(orderObserved.result.stderr).not.toContain(outsideStderrPart2);
+      expect(orderObserved.result.stderr).toContain("ORDER_DONE");
+    }
+  });
+
+  it("withholds shorter self-overlapping secret continuations on compacted live snapshots", async () => {
+    const cutTail = "CUT_TAIL_MARKER_";
+    const cutSecret = `CUT_HEAD_${cutTail}`;
+    const tailFiller = "m".repeat(63_974);
+    // Secret starts with self-overlapping "ABAB"; stdout ends with "ABABAB", so the longest prefix
+    // match is "ABAB" (4 chars) while the shorter match "AB" (2 chars) continues into stderr.
+    const selfOverlapPart1 = "AB_SELF_OVERLAP_P1_";
+    const selfOverlapPart2 = "SELF_OVERLAP_P2";
+    const selfOverlapSecret = `AB${selfOverlapPart1}${selfOverlapPart2}`;
+    const maskWidenerSecret = `AD_${cutTail}${tailFiller}ABABABNEVER_EMITTED`;
+    const secrets: string[] = [];
+    const registerGate = deferred();
+    const part2Gate = deferred();
+    const liveSnapshots: Array<{ stdout: string; stderr: string }> = [];
+    let stage = 0;
+    const observed = await observeShellCommand(
+      (async function* () {
+        yield {
+          type: "stdout" as const,
+          data: `${"p".repeat(160_000)}CUT_HEAD_${cutTail}${tailFiller}ABABAB`,
+        };
+        await registerGate.promise;
+        yield { type: "stderr" as const, data: selfOverlapPart1 };
+        await part2Gate.promise;
+        yield { type: "stderr" as const, data: `${selfOverlapPart2}\nSELF_OVERLAP_OK\n` };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets,
+        onOutput: (snapshot) => {
+          if (stage === 0 && snapshot.stdout.includes("characters omitted")) {
+            stage = 1;
+            secrets.push(cutSecret, maskWidenerSecret, selfOverlapSecret);
+            registerGate.resolve();
+            return;
+          }
+          if (stage === 1) {
+            stage = 2;
+            liveSnapshots.push(snapshot);
+            part2Gate.resolve();
+          }
+        },
+      },
+    );
+    expect(liveSnapshots).toHaveLength(1);
+    expect(liveSnapshots[0]!.stderr).not.toContain(selfOverlapPart1);
+    expect(observed.result.stderr).not.toContain(selfOverlapPart1);
+    expect(observed.result.stderr).not.toContain(selfOverlapPart2);
+    expect(observed.result.stderr).toContain("SELF_OVERLAP_OK");
+  });
+
+  it("uses the expanded cut mask when a same-stream secret reaches the stdout/stderr boundary", async () => {
+    const cutTail = "CUT_TAIL_MARKER_";
+    const cutSecret = `CUT_HEAD_${cutTail}`;
+    const tailFiller = "b".repeat(63_970);
+    const crossPrefix = "CROSS_PRE_";
+    const crossStderr = "CROSS_STDERR_SECRET";
+    const crossSecret = `${crossPrefix}${crossStderr}`;
+    // Overlaps cutTail inside stdoutTail and runs to the end of stdoutTail, so maskSegment expands
+    // stdout's leading cut mask all the way across crossPrefix.
+    const sameStreamBridgeSecret = `MARKER_${tailFiller}${crossPrefix}`;
+    const secrets: string[] = [];
+    const registerGate = deferred();
+    const observed = await observeShellCommand(
+      (async function* () {
+        yield {
+          type: "stdout" as const,
+          data: `${"p".repeat(160_000)}CUT_HEAD_${cutTail}${tailFiller}${crossPrefix}`,
+        };
+        await registerGate.promise;
+        yield { type: "stderr" as const, data: `${crossStderr}\nBRIDGE_DONE\n` };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets,
+        onOutput: (snapshot) => {
+          if (secrets.length === 0 && snapshot.stdout.includes("characters omitted")) {
+            secrets.push(cutSecret, sameStreamBridgeSecret, crossSecret);
+            registerGate.resolve();
+          }
+        },
+      },
+    );
+    expect(observed.result.stdout).not.toContain(crossPrefix);
+    expect(observed.result.stderr).not.toContain(crossStderr);
+    expect(observed.result.stderr).toContain("BRIDGE_DONE");
+  });
+
+  it("throttles live onOutput snapshots when onOutputIntervalMs is set", async () => {
+    const gate = deferred();
+    const seen: string[] = [];
+    const observed = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: "first\n" };
+        for (let i = 0; i < 20; i += 1) {
+          yield { type: "stdout" as const, data: `line-${i}\n` };
+        }
+        await gate.promise;
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets: [],
+        idleMs: 20,
+        quietMs: 20,
+        onOutputIntervalMs: 500,
+        onOutput: (snapshot) => seen.push(snapshot.stdout),
+      },
+    );
+
+    // Only the leading-edge snapshot fires synchronously; rapid subsequent chunks coalesce.
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBe("first\n");
+    expect(observed.result.stdout).toContain("line-19\n");
+    gate.resolve();
+    const final = await observed.completion;
+    expect(final?.stdout).toContain("line-19\n");
+  });
+
+  it("redacts overlapping secret chains extending past the compaction cut margin and late-added secrets across compactions", async () => {
+    // Chain of 4 overlapping 20-char secrets (total span 50 chars > 19-char margin on either side of cut).
+    const chain = [
+      "CHAIN_A01_OVERLAP_11",
+      "OVERLAP_11_CHAIN_B02",
+      "CHAIN_B02_OVERLAP_22",
+      "OVERLAP_22_CHAIN_C03",
+    ];
+    const chainText = "CHAIN_A01_OVERLAP_11_CHAIN_B02_OVERLAP_22_CHAIN_C03";
+    // Overlap margin is 19, so keepHead = 64_019 and keepTail = 64_019.
+    // Place chainText so its right end crosses headEnd (64_019) while its left end is 35 chars before headEnd.
+    const headLead = "h".repeat(64_019 - 35);
+    const middlePad = "m".repeat(50_000);
+    // Place chainText again so its left end sits before tailStart while its right end extends 35 chars past tailStart.
+    const tailPad = "t".repeat(64_019 - 35);
+    const chunk1 = `${headLead}${chainText}${middlePad}${chainText}${tailPad}`;
+
+    // Also trigger a second compaction with a chain straddling the drop cut, plus a mid-stream secret addition.
+    const lateSecret = "LATE_SECOND_COMPACT_SECRET_999";
+    const secrets = [...chain];
+    const gate = deferred();
+    let addedLate = false;
+    const observed = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: chunk1 };
+        await gate.promise;
+        // Second compaction keeps the last `64_000 + (lateSecret.length - 1)` chars; size
+        // `secondTail` so `drop` lands mid-way through `lateSecret` and leaves its second half at
+        // the start of the retained tail (which leaks if `SecretsCutSnapshot` stays stale).
+        const keepTailAfterLate = 64_000 + lateSecret.length - 1;
+        const lateRetainedHalf = Math.floor(lateSecret.length / 2);
+        const endMarker = "FINAL_OK\n";
+        const secondLead = "s".repeat(40_000);
+        const secondTail = "z".repeat(keepTailAfterLate - lateRetainedHalf - endMarker.length);
+        yield {
+          type: "stdout" as const,
+          data: `${secondLead}${chainText}${lateSecret}${secondTail}${endMarker}`,
+        };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets,
+        onOutput: (snapshot) => {
+          if (!addedLate && snapshot.stdout.includes("characters omitted")) {
+            addedLate = true;
+            secrets.push(lateSecret);
+            gate.resolve();
+          }
+        },
+      },
+    );
+
+    expect(observed.result.stdout).toContain("characters omitted");
+    expect(observed.result.stdout).toContain(`omitted ...]\n[redacted]${"z".repeat(32)}`);
+    expect(observed.result.stdout).toContain("FINAL_OK\n");
+    for (const part of [
+      "CHAIN_A01",
+      "OVERLAP_11",
+      "CHAIN_B02",
+      "OVERLAP_22",
+      "CHAIN_C03",
+      lateSecret,
+      lateSecret.slice(0, Math.floor(lateSecret.length / 2)),
+      lateSecret.slice(Math.floor(lateSecret.length / 2)),
+    ]) {
+      expect(observed.result.stdout).not.toContain(part);
+    }
+
+    // Touching secret right at the cut boundary (no overlap across cut) keeps surrounding text intact,
+    // while a secret starting just before the cut and ending just after is masked completely.
+    const touchLeft = "TOUCH_LEFT_PART_1111";
+    const touchRight = "TOUCH_RIGHT_PART_222";
+    const exactMargin = touchLeft.length - 1; // 19
+    const keepHead = 64_000 + exactMargin;
+    const keepTail = 64_000 + exactMargin;
+    const touchChunk =
+      `${"a".repeat(keepHead - touchLeft.length)}${touchLeft}${touchRight}` +
+      `${"b".repeat(40_000)}` +
+      `${touchLeft}${touchRight}${"c".repeat(keepTail - touchRight.length)}`;
+    const touchObserved = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: touchChunk };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      { secrets: [touchLeft, touchRight] },
+    );
+    expect(touchObserved.result.stdout).not.toContain(touchLeft);
+    expect(touchObserved.result.stdout).not.toContain(touchRight);
+    expect(touchObserved.result.stdout).toContain(`${"a".repeat(32)}[redacted]\n[...`);
+    expect(touchObserved.result.stdout).toContain(`omitted ...]\n[redacted]${"c".repeat(32)}`);
+
+    // Leading redacted prefix from an earlier cut bridges a touching chain across a subsequent drop cut.
+    // First cut lands 10 chars inside `bridgeUnit`, giving `tailRedactedPrefix = 10` followed by
+    // 2,000 touching `bridgeUnit` copies (`40_000` chars). Second chunk length (`34_010`) places
+    // `drop` exactly between copy #1700 and copy #1701 so only prior-prefix expansion collapses the
+    // remaining 300 touching copies into one leading `[redacted]` marker instead of 300 separate ones.
+    const bridgeUnit = "BRIDGE_UNIT_01234567"; // length 20
+    const bridgeKeepTail = 64_000 + bridgeUnit.length - 1;
+    const bridgeHalf = 10;
+    const bridgeRun = bridgeUnit.repeat(2_000); // 40_000 chars of touching secrets
+    const bridgeTailPad = "q".repeat(bridgeKeepTail - bridgeHalf - bridgeRun.length);
+    const bridgeDrop = bridgeHalf + 1_700 * bridgeUnit.length; // 34_010 (> 32_000 compact step)
+    const bridgeEnd = "BRIDGE_END\n";
+    const bridgeObserved = await observeShellCommand(
+      (async function* () {
+        yield {
+          type: "stdout" as const,
+          data: `${"p".repeat(160_000)}${bridgeUnit}${bridgeRun}${bridgeTailPad}`,
+        };
+        yield {
+          type: "stdout" as const,
+          data: `${"r".repeat(bridgeDrop - bridgeEnd.length)}${bridgeEnd}`,
+        };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      { secrets: [bridgeUnit] },
+    );
+    expect(bridgeObserved.result.stdout).not.toContain(bridgeUnit);
+    expect(bridgeObserved.result.stdout).toContain(`omitted ...]\n[redacted]${"q".repeat(32)}`);
+    expect(bridgeObserved.result.stdout).not.toContain("[redacted][redacted]");
+    expect(bridgeObserved.result.stdout).toContain(bridgeEnd);
+  });
+
+  it("compacts multi-megabyte shell output in linear time with thousands of secret forms", async () => {
+    const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+    const secrets = Array.from({ length: 3_000 }, (_, index) => {
+      const prefix =
+        alphabet[index % alphabet.length]! +
+        alphabet[(index * 7) % alphabet.length]! +
+        alphabet[(index * 13) % alphabet.length]!;
+      return `${prefix}-shell-vault-form-${index}-secretval`;
+    });
+    const chunk = `${"abcdefghijklmnopqrstuvwxyz0123456789".repeat(455)}end\n`; // ~16 KiB
+    const secretMarker = secrets[1_234]!;
+    await expectLinearTime(async () => {
+      const observed = await observeShellCommand(
+        (async function* () {
+          for (let index = 0; index < 3_072; index += 1) {
+            yield {
+              type: "stdout" as const,
+              data: index === 3_071 ? `${chunk}${secretMarker}\nTAIL_DONE\n` : chunk,
+            };
+          }
+          yield { type: "exit" as const, code: 0 };
+        })(),
+        { secrets },
+      );
+      expect(observed.result.stdout).toContain("characters omitted");
+      expect(observed.result.stdout).toContain("TAIL_DONE\n");
+      expect(observed.result.stdout).not.toContain(secretMarker);
+    });
   });
 });
 

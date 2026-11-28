@@ -126,4 +126,177 @@ describe("shell Activity events", () => {
       notice: expect.stringContaining("Call browser_snapshot to open it"),
     });
   });
+
+  it("keeps the screen-opening notice when the display diagnostic was compacted out of large output", async () => {
+    async function* stream(): AsyncGenerator<ProcessEvent> {
+      yield { type: "stderr", data: "h".repeat(70_000) };
+      yield { type: "stderr", data: "\nError: Can't op" };
+      yield { type: "stderr", data: "en display: :0\n" };
+      yield { type: "stderr", data: "t".repeat(120_000) };
+      yield { type: "exit", code: 1 };
+    }
+    const { ctx, call } = setup(stream());
+    const result = (await shell(ctx, call)) as { code: number; stderr: string; notice?: string };
+    expect(result.code).toBe(1);
+    expect(result.stderr).not.toContain("Can't open display");
+    expect(result.notice).toContain("Call browser_snapshot to open it");
+  });
+
+  it("does not latch the screen-opening notice across a chunk boundary inside displayName", async () => {
+    async function* splitWordStream(): AsyncGenerator<ProcessEvent> {
+      yield { type: "stderr", data: "Unable to open display" };
+      yield { type: "stderr", data: "Name: missing\n" };
+      yield { type: "exit", code: 1 };
+    }
+    const splitWord = setup(splitWordStream());
+    const splitResult = (await shell(splitWord.ctx, splitWord.call)) as {
+      code: number;
+      notice?: string;
+    };
+    expect(splitResult.code).toBe(1);
+    expect(splitResult.notice).toBeUndefined();
+
+    async function* eofStream(): AsyncGenerator<ProcessEvent> {
+      yield { type: "stderr", data: "Unable to open display" };
+      yield { type: "exit", code: 1 };
+    }
+    const eof = setup(eofStream());
+    await expect(shell(eof.ctx, eof.call)).resolves.toMatchObject({
+      code: 1,
+      notice: expect.stringContaining("Call browser_snapshot to open it"),
+    });
+
+    // Compaction inserting the omission marker between `display` and `Name` must not trigger the notice.
+    const prefix = "Unable to open display";
+    const padBefore = `${"x".repeat(64_000 - prefix.length - 1)} `;
+    async function* compactedSplitWordStream(): AsyncGenerator<ProcessEvent> {
+      yield { type: "stderr", data: `${padBefore}${prefix}Name\n` };
+      yield { type: "stderr", data: "y".repeat(200_000) };
+      yield { type: "exit", code: 1 };
+    }
+    const compacted = setup(compactedSplitWordStream());
+    compacted.ctx.secrets = [];
+    const compactedResult = (await shell(compacted.ctx, compacted.call)) as {
+      code: number;
+      stderr: string;
+      notice?: string;
+    };
+    expect(compactedResult.code).toBe(1);
+    expect(compactedResult.stderr).toContain("Unable to open display\n[...");
+    expect(compactedResult.notice).toBeUndefined();
+
+    // Overlap slicing dropping a leading word character (`xCannot open display:`) must not trigger on exit.
+    async function* leftBoundaryStream(): AsyncGenerator<ProcessEvent> {
+      yield { type: "stderr", data: `xCannot open display:${" ".repeat(44)}` };
+      yield { type: "exit", code: 1 };
+    }
+    const leftBoundary = setup(leftBoundaryStream());
+    const leftResult = (await shell(leftBoundary.ctx, leftBoundary.call)) as {
+      code: number;
+      notice?: string;
+    };
+    expect(leftResult.code).toBe(1);
+    expect(leftResult.notice).toBeUndefined();
+  });
+
+  it("serializes live running writes so slow appends never pile up concurrently", async () => {
+    const chunkGate = deferred();
+    const slowWrite = deferred();
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const events: Recorded[] = [];
+    let callIndex = 0;
+    async function* stream(): AsyncGenerator<ProcessEvent> {
+      yield { type: "stdout", data: "chunk-1\n" };
+      await chunkGate.promise;
+      yield { type: "stdout", data: "chunk-2\n" };
+      yield { type: "stdout", data: "chunk-3\n" };
+      yield { type: "exit", code: 0 };
+    }
+    const { ctx, call } = setup(stream());
+    ctx.deps.events.append = (async ({ payload }: { payload: Recorded }) => {
+      callIndex += 1;
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      try {
+        // Hold the first live output write open while time advances and more chunks arrive.
+        if (callIndex === 2) await slowWrite.promise;
+        events.push({
+          status: payload.status,
+          exitCode: payload.exitCode,
+          output: payload.output,
+        });
+      } finally {
+        inFlight -= 1;
+      }
+    }) as unknown as RunContext["deps"]["events"]["append"];
+
+    const running = shell(ctx, call);
+    await vi.waitFor(() => expect(callIndex).toBe(2));
+    // Advance well past the publish interval while the first live write is still in flight.
+    await vi.advanceTimersByTimeAsync(5_000);
+    chunkGate.resolve();
+    await vi.advanceTimersByTimeAsync(5_000);
+    // No second concurrent write should have started while write #2 is still in flight.
+    expect(maxInFlight).toBe(1);
+    expect(callIndex).toBe(2);
+
+    slowWrite.resolve();
+    await expect(running).resolves.toMatchObject({ code: 0 });
+    expect(maxInFlight).toBe(1);
+    expect(events.at(-1)).toEqual({
+      status: "done",
+      exitCode: 0,
+      output: "chunk-1\nchunk-2\nchunk-3\n",
+    });
+  });
+
+  it("cancels a queued stale snapshot when later clipped output returns to the last sent tail", async () => {
+    const gate = deferred();
+    const secondFillerGate = deferred();
+    const exitGate = deferred();
+    const slowWrite = deferred();
+    const events: Recorded[] = [];
+    let callIndex = 0;
+    const filler = "a".repeat(16_000);
+    async function* stream(): AsyncGenerator<ProcessEvent> {
+      yield { type: "stdout", data: filler };
+      await gate.promise;
+      yield { type: "stdout", data: "B" };
+      await secondFillerGate.promise;
+      yield { type: "stdout", data: filler };
+      await exitGate.promise;
+      yield { type: "exit", code: 0 };
+    }
+    const { ctx, call } = setup(stream());
+    ctx.deps.events.append = (async ({ payload }: { payload: Recorded }) => {
+      callIndex += 1;
+      if (callIndex === 2) await slowWrite.promise;
+      events.push({
+        status: payload.status,
+        exitCode: payload.exitCode,
+        output: payload.output,
+      });
+    }) as unknown as RunContext["deps"]["events"]["append"];
+
+    const running = shell(ctx, call);
+    await vi.waitFor(() => expect(callIndex).toBe(2));
+    gate.resolve();
+    // Queue the "B" snapshot while write #2 is still in flight.
+    await vi.advanceTimersByTimeAsync(1_100);
+    secondFillerGate.resolve();
+    // Deliver the second filler so clipped output returns to lastSentOutput before write #2 settles.
+    await vi.advanceTimersByTimeAsync(1_100);
+    slowWrite.resolve();
+    // Hold exit open and advance timers to confirm no stale "B" running write fires while still running.
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(callIndex).toBe(2);
+    expect(events.some((event) => event.status === "running" && event.output.endsWith("B"))).toBe(
+      false,
+    );
+
+    exitGate.resolve();
+    await expect(running).resolves.toMatchObject({ code: 0 });
+    expect(events.at(-1)?.status).toBe("done");
+  });
 });

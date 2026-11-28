@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
-import { getLogger } from "@rakazo/logging";
+import { getLogContext, getLogger } from "@rakazo/logging";
 import { requestLogging } from "@rakazo/logging/hono";
 import type Docker from "dockerode";
 import type { Context } from "hono";
@@ -57,6 +57,7 @@ import { computerEgressMode, computerEgressReport, ensureComputerEgress } from "
 import {
   applyContainerActions,
   observeContainer,
+  readContainerFile,
   runContainerCommand,
   writeContainerFile,
 } from "./exec.js";
@@ -80,7 +81,7 @@ import {
   removeUnusedComputerNetwork,
 } from "./networks.js";
 import { publishedScreenUrl } from "./readiness.js";
-import { logRequestFailure } from "./request-failures.js";
+import { logRequestFailure, logStreamFailure } from "./request-failures.js";
 import { limitSupervisorRequestBody, supervisorFileWriteSchema } from "./request-limits.js";
 import {
   computerScreenBoots,
@@ -442,14 +443,32 @@ app.post("/computers/:id/exec", async (c) => {
     logRequestFailure(error);
     return c.json({ stdout: "", stderr: message, code: 1 }, 200);
   }
+  const requestLogContext = getLogContext();
   const encoder = new TextEncoder();
+  const abort = new AbortController();
+  const requestSignal = c.req.raw.signal;
+  const onRequestAbort = () =>
+    abort.abort(requestSignal.reason ?? new Error("client disconnected"));
+  if (requestSignal.aborted) onRequestAbort();
+  else requestSignal.addEventListener("abort", onRequestAbort, { once: true });
   let stopKeepAlive = () => {};
+  let pauseDockerStream: (() => void) | undefined;
+  let resumeDockerStream: (() => void) | undefined;
+  let paused = false;
   const stream = new ReadableStream({
-    // A caller that stops reading may leave a stuck command running; its keep-alive ends now.
+    pull() {
+      if (paused) {
+        paused = false;
+        resumeDockerStream?.();
+      }
+    },
+    // A caller that stops reading tears down the exec stream so runaway output cannot build up.
     cancel() {
       stopKeepAlive();
+      abort.abort(new Error("stream cancelled"));
     },
-    async start(controller) {
+    // Keep start() synchronous so Web Streams can invoke pull() for backpressure while exec runs.
+    start(controller) {
       let closed = false;
       const send = (event: {
         type: "stdout" | "stderr" | "exit";
@@ -459,62 +478,72 @@ app.post("/computers/:id/exec", async (c) => {
         if (closed) return;
         try {
           controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+          if ((controller.desiredSize ?? 0) <= 0 && !paused && pauseDockerStream) {
+            paused = true;
+            pauseDockerStream();
+          }
         } catch {
           closed = true;
+          abort.abort(new Error("stream closed"));
         }
       };
       // A silent command sends nothing for minutes, and the caller's HTTP client drops a
       // response that stays quiet for 5 minutes. Readers skip blank lines.
       const keepAlive = setInterval(() => {
+        if (closed || (controller.desiredSize ?? 0) <= 0) return;
         try {
           controller.enqueue(encoder.encode("\n"));
         } catch {
           stopKeepAlive();
+          abort.abort(new Error("stream closed"));
         }
       }, EXEC_KEEP_ALIVE_MS);
       stopKeepAlive = () => {
         closed = true;
         clearInterval(keepAlive);
       };
-      try {
-        let streamedStderr = "";
-        const result = await runContainerCommand(
-          container,
-          body.argv.length ? body.argv : ["/bin/echo", "ready"],
-          {
-            workingDir: body.cwd ?? "/home/rakazo",
-            env: [
-              ...computerCommandEnv(layout),
-              ...Object.entries(body.env ?? {}).map(([k, v]) => `${k}=${v}`),
-            ],
-            timeoutMs,
-            onOutput: (chunk) => {
-              if (!chunk.data) return;
-              if (chunk.stream === "stderr") streamedStderr += chunk.data;
-              send({ type: chunk.stream, data: chunk.data });
-            },
-          },
-        );
-        const timeoutNote = `command timed out after ${timeoutMs} ms\n`;
-        if (result.stderr.startsWith(streamedStderr)) {
-          const extra = result.stderr.slice(streamedStderr.length);
-          if (extra) send({ type: "stderr", data: extra });
-        } else if (result.stderr.endsWith(timeoutNote) && !streamedStderr.endsWith(timeoutNote)) {
-          send({ type: "stderr", data: timeoutNote });
-        }
-        send({ type: "exit", code: result.code });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        send({ type: "stderr", data: message });
-        send({ type: "exit", code: 1 });
-      } finally {
-        stopKeepAlive();
+      void (async () => {
         try {
-          controller.close();
-        } catch {
-          // The client already went away.
+          const result = await runContainerCommand(
+            container,
+            body.argv.length ? body.argv : ["/bin/echo", "ready"],
+            {
+              workingDir: body.cwd ?? "/home/rakazo",
+              env: [
+                ...computerCommandEnv(layout),
+                ...Object.entries(body.env ?? {}).map(([k, v]) => `${k}=${v}`),
+              ],
+              timeoutMs,
+              signal: abort.signal,
+              onStream: ({ pause, resume }) => {
+                pauseDockerStream = pause;
+                resumeDockerStream = resume;
+                if (paused) pause();
+              },
+              onOutput: (chunk) => {
+                if (!chunk.data) return;
+                send({ type: chunk.stream, data: chunk.data });
+              },
+            },
+          );
+          send({ type: "exit", code: result.code });
+        } catch (error) {
+          if (!abort.signal.aborted) {
+            const message = error instanceof Error ? error.message : String(error);
+            logStreamFailure(requestLogContext, "/computers/:id/exec", c.req.method, error);
+            send({ type: "stderr", data: message });
+            send({ type: "exit", code: 1 });
+          }
+        } finally {
+          requestSignal.removeEventListener("abort", onRequestAbort);
+          stopKeepAlive();
+          try {
+            controller.close();
+          } catch {
+            // The client already went away.
+          }
         }
-      }
+      })();
     },
   });
   return new Response(stream, {
@@ -829,26 +858,31 @@ app.get("/computers/:id/files", async (c) => {
       if (maxBytes !== undefined && (!Number.isSafeInteger(maxBytes) || maxBytes < 0)) {
         return c.json({ error: "invalid maxBytes" }, 400);
       }
-      const script = [
-        "import base64, sys",
-        "target, limit = sys.argv[1], int(sys.argv[2])",
-        "with open(target, 'rb') as source:",
-        "  content = source.read() if limit < 0 else source.read(limit + 1)",
-        "if limit >= 0 and len(content) > limit: sys.exit(42)",
-        "sys.stdout.write(base64.b64encode(content).decode())",
-      ].join("\n");
-      const result = await runContainerCommand(container, [
-        "python3",
-        "-c",
-        script,
-        target,
-        String(maxBytes ?? -1),
-      ]);
-      if (result.code === 42) {
+      const requestLogContext = getLogContext();
+      const outcome = await readContainerFile(container, target, {
+        maxBytes,
+        signal: c.req.raw.signal,
+        signalMidStreamOverflow: c.req.query("overflow") === "marker",
+        onStreamError: (error) =>
+          logStreamFailure(requestLogContext, "/computers/:id/files", c.req.method, error),
+      });
+      if (outcome.kind === "too_large") {
         return c.json({ error: `computer file exceeds ${maxBytes} bytes` }, 413);
       }
-      if (result.code !== 0) return c.json({ error: result.stderr || "file not found" }, 404);
-      return c.json({ content: result.stdout.trim() });
+      if (outcome.kind === "error") {
+        return c.json({ error: outcome.stderr || "file not found" }, 404);
+      }
+      if (c.req.method === "HEAD") {
+        await outcome.body.cancel();
+        return new Response(null, {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(outcome.body, {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     }
     const script = [
       "import json, os, stat, sys",

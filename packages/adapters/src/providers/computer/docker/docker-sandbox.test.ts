@@ -577,6 +577,44 @@ describe("Docker sandbox", () => {
     await expect(events[Symbol.asyncIterator]().next()).rejects.toThrow("stopped");
   });
 
+  it("aborts the request and cancels the body when a streamed exec response exceeds the byte cap", async () => {
+    const cancel = vi.fn();
+    let requestSignal: AbortSignal | undefined;
+    const chunk = new Uint8Array(Math.floor(MAX_SANDBOX_SUCCESS_RESPONSE_BYTES / 2) + 16);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        requestSignal = init?.signal ?? undefined;
+        let sent = 0;
+        return new Response(
+          new ReadableStream({
+            pull(controller) {
+              sent += 1;
+              controller.enqueue(chunk);
+              if (sent >= 3) controller.close();
+            },
+            cancel,
+          }),
+          { headers: { "content-type": "application/x-ndjson" } },
+        );
+      }),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    const events: ProcessEvent[] = [];
+    for await (const event of provider.execute(
+      { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+      { argv: ["yes"] },
+      context,
+    )) {
+      events.push(event);
+    }
+
+    expect(events).toContainEqual({ type: "stderr", data: "exec failed: response too large\n" });
+    expect(events.at(-1)).toEqual({ type: "exit", code: 1 });
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(requestSignal?.aborted).toBe(true);
+  });
+
   it("rejects a declared oversized success response without buffering it", async () => {
     const cancel = vi.fn();
     vi.stubGlobal(
@@ -773,6 +811,44 @@ describe("Docker sandbox", () => {
         { maxBytes },
       ),
     ).resolves.toEqual(new Uint8Array());
+  });
+
+  it("maps a mid-stream tooLarge file response to SandboxFileTooLargeError", async () => {
+    const encoder = new TextEncoder();
+    const part1 = Buffer.from("hello ").toString("base64");
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(encoder.encode(`{"content":"${part1}`));
+              controller.enqueue(encoder.encode('","tooLarge":true}'));
+              controller.close();
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    const error = await provider
+      .readFile(
+        { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+        "grow.bin",
+        context,
+        { maxBytes: 6 },
+      )
+      .then(
+        () => undefined,
+        (failure: unknown) => failure,
+      );
+    expect(error).toBeInstanceOf(SandboxFileTooLargeError);
+    expect((error as SandboxFileTooLargeError).maxBytes).toBe(6);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://supervisor.test/computers/computer/files?path=grow.bin&mode=read&maxBytes=6&overflow=marker",
+      expect.any(Object),
+    );
   });
 
   it("releases this bot's screen assignment through the supervisor", async () => {

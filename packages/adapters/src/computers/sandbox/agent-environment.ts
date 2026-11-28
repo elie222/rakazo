@@ -5,9 +5,9 @@ export function redactShellStreams(
   secrets: string[],
   options?: { withholdPartial?: boolean },
 ): { stdout: string; stderr: string } {
+  let stdout = redactSecrets(snapshot.stdout, secrets);
+  let stderr = redactSecrets(snapshot.stderr, secrets);
   const values = secrets.filter((secret) => secret.length > 0);
-  let stdout = redactSecrets(snapshot.stdout, values);
-  let stderr = redactSecrets(snapshot.stderr, values);
   for (let pass = 0; pass < values.length; pass++) {
     let changed = false;
     for (const secret of values) {
@@ -52,23 +52,85 @@ function redactSpanningSecret(
   };
 }
 
-/** Longest suffix of `text` that is a proper prefix of `secret`. */
-function secretPrefixSuffixLength(text: string, secret: string): number {
-  const max = Math.min(secret.length - 1, text.length);
-  const regionStart = text.length - max;
-  for (let index = regionStart; index < text.length; index++) {
-    if (text.charCodeAt(index) !== secret.charCodeAt(0)) continue;
-    const size = text.length - index;
-    let matches = true;
-    for (let offset = 1; offset < size; offset++) {
-      if (text.charCodeAt(index + offset) !== secret.charCodeAt(offset)) {
-        matches = false;
-        break;
-      }
-    }
-    if (matches) return size;
+/** Computes the KMP prefix function for `pattern.slice(0, length)`. */
+export function kmpPrefixTable(pattern: string, length = pattern.length): Int32Array {
+  const lps = new Int32Array(length);
+  for (let i = 1, j = 0; i < length; i += 1) {
+    const ch = pattern.charCodeAt(i);
+    while (j > 0 && pattern.charCodeAt(j) !== ch) j = lps[j - 1]!;
+    if (pattern.charCodeAt(j) === ch) j += 1;
+    lps[i] = j;
   }
-  return 0;
+  return lps;
+}
+
+/** Computes the KMP prefix function for the reversed suffix of `pattern` of length `length`. */
+export function kmpReversedPrefixTable(pattern: string, length = pattern.length): Int32Array {
+  const lps = new Int32Array(length);
+  const last = pattern.length - 1;
+  for (let i = 1, j = 0; i < length; i += 1) {
+    const ch = pattern.charCodeAt(last - i);
+    while (j > 0 && pattern.charCodeAt(last - j) !== ch) j = lps[j - 1]!;
+    if (pattern.charCodeAt(last - j) === ch) j += 1;
+    lps[i] = j;
+  }
+  return lps;
+}
+
+/**
+ * Longest suffix of `text` that is a proper prefix of `secret`, in O(min(text.length, secret.length)) time.
+ */
+export function secretPrefixSuffixLength(text: string, secret: string): number {
+  const maxLen = Math.min(text.length, secret.length - 1);
+  if (maxLen <= 0) return 0;
+  const firstChar = secret.charCodeAt(0);
+  const scanStart = text.length - maxLen;
+  let start = -1;
+  for (let i = scanStart; i < text.length; i += 1) {
+    if (text.charCodeAt(i) === firstChar) {
+      start = i;
+      break;
+    }
+  }
+  if (start < 0) return 0;
+  const patLen = text.length - start;
+  if (patLen === 1) return 1;
+  const lps = kmpPrefixTable(secret, patLen);
+  let matched = 0;
+  for (let i = start; i < text.length; i += 1) {
+    const ch = text.charCodeAt(i);
+    while (matched > 0 && secret.charCodeAt(matched) !== ch) matched = lps[matched - 1]!;
+    if (secret.charCodeAt(matched) === ch) matched += 1;
+  }
+  return matched;
+}
+
+/**
+ * Longest prefix of `text` that is a proper suffix of `secret`, in O(min(text.length, secret.length)) time.
+ */
+export function secretSuffixPrefixLength(text: string, secret: string): number {
+  const last = secret.length - 1;
+  const maxLen = Math.min(text.length, last);
+  if (maxLen <= 0) return 0;
+  const lastChar = secret.charCodeAt(last);
+  let end = -1;
+  for (let i = maxLen - 1; i >= 0; i -= 1) {
+    if (text.charCodeAt(i) === lastChar) {
+      end = i;
+      break;
+    }
+  }
+  if (end < 0) return 0;
+  const patLen = end + 1;
+  if (patLen === 1) return 1;
+  const lps = kmpReversedPrefixTable(secret, patLen);
+  let matched = 0;
+  for (let i = end; i >= 0; i -= 1) {
+    const ch = text.charCodeAt(i);
+    while (matched > 0 && secret.charCodeAt(last - matched) !== ch) matched = lps[matched - 1]!;
+    if (secret.charCodeAt(last - matched) === ch) matched += 1;
+  }
+  return matched;
 }
 
 /** How far `text` continues `secret` from `offset`, in UTF-16 code units. */

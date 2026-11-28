@@ -1,9 +1,9 @@
-import { Readable } from "node:stream";
+import { PassThrough, Readable } from "node:stream";
 import { createLogger, createTestSink, installLogger, runWithLogContext } from "@rakazo/logging";
 import type Docker from "dockerode";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { warnNearLimits } from "./computer-limits.js";
-import { runContainerCommand } from "./exec.js";
+import { readContainerFile, runContainerCommand } from "./exec.js";
 
 function computer(id: string, reading: object = {}) {
   return {
@@ -84,5 +84,68 @@ describe("computer limits", () => {
       "memory.current": 2_100_000_000,
       "memory.limit": limit,
     });
+  });
+
+  it("ignores caller cancellation and file-read size exits so a following failure still warns", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-sandbox-supervisor", sinks: [sink] }));
+    let step = 0;
+    const container = {
+      id: "cancel-then-fail",
+      exec: vi.fn(async () => {
+        step += 1;
+        if (step === 1) {
+          const stream = new PassThrough();
+          return {
+            start: async () => stream,
+            inspect: async () => ({ ExitCode: 137 }),
+          };
+        }
+        if (step === 2 || step === 3) {
+          return {
+            start: async () => Readable.from([]),
+            inspect: async () => ({ ExitCode: 42 }),
+          };
+        }
+        return {
+          start: async () => Readable.from([]),
+          inspect: async () => ({ ExitCode: 1 }),
+        };
+      }),
+      stats: vi.fn(async () => nearItsPidLimit),
+    } as unknown as Docker.Container;
+
+    const controller = new AbortController();
+    const cancelledRun = runContainerCommand(container, ["sleep", "60"], {
+      signal: controller.signal,
+    });
+    await vi.waitFor(() => expect(container.exec).toHaveBeenCalledTimes(1));
+    controller.abort(new Error("client disconnected"));
+    await expect(cancelledRun).rejects.toThrow("client disconnected");
+
+    expect(
+      await readContainerFile(container, "/home/rakazo/big.bin", {
+        maxBytes: 10,
+        signalMidStreamOverflow: true,
+      }),
+    ).toEqual({ kind: "too_large" });
+    expect(
+      await readContainerFile(container, "/home/rakazo/big.bin", {
+        maxBytes: 10,
+      }),
+    ).toEqual({ kind: "too_large" });
+    expect(container.stats).not.toHaveBeenCalled();
+
+    await runContainerCommand(container, ["false"]);
+    await vi.waitFor(() =>
+      expect(sink.events).toEqual([
+        expect.objectContaining({
+          level: "warn",
+          message: "computer.pids_near_limit",
+          "container.id": "cancel-then-fail",
+        }),
+      ]),
+    );
+    expect(container.stats).toHaveBeenCalledOnce();
   });
 });
