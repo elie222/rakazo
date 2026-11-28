@@ -1,7 +1,10 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
+import { APP_CONNECTION_FOLLOW_UP_NONCE_PREFIX } from "@rakazo/core";
+import { personalOrOrganizationItemIn } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "../../computers/computer-lifecycle.js";
+import { toHistory } from "../../runtime/pi/pi-runtime-history.js";
 import { createRunExecutor } from "./executor.js";
 
 vi.mock("../../computers/computer-lifecycle.js", async (importOriginal) => ({
@@ -58,6 +61,8 @@ function historyMessages(authors: boolean) {
 
 type RunOptions = {
   trigger?: string;
+  clientNonce?: string;
+  sourceMessageId?: string;
   taskPrompt?: string;
   taughtSkills?: Array<Record<string, unknown>>;
   /** The bot is linked to its creator's chat app and may talk to other people's agents. */
@@ -75,7 +80,8 @@ async function runInSpace(space: Space, options: RunOptions = {}) {
     userId: "user-b",
     status: "queued",
     trigger,
-    sourceMessageId: trigger === "user" ? "current" : null,
+    clientNonce: options.clientNonce ?? null,
+    sourceMessageId: options.sourceMessageId ?? (trigger === "user" ? "current" : null),
     leaseFence: 0,
   };
   let request: AgentRunRequest | undefined;
@@ -269,14 +275,33 @@ describe("message authors in the prompt", () => {
       content: "Find us a restaurant",
     });
   });
+
+  it("replays the user's request when the new prompt is an app connection notice", async () => {
+    const { request } = await runInSpace("legacy", {
+      trigger: "follow_up",
+      clientNonce: `${APP_CONNECTION_FOLLOW_UP_NONCE_PREFIX}app-card`,
+      sourceMessageId: "current",
+      taskPrompt: "The requested app is connected.",
+    });
+
+    expect(toHistory(request.history, request.prompt, request.sourceMessageId)).toContainEqual(
+      expect.objectContaining({
+        role: "user",
+        rakazoMessageId: "current",
+        content: "Book the table",
+      }),
+    );
+  });
 });
 
 describe("skills in a shared space", () => {
-  it("lists only the run user's own agent skills", async () => {
+  it("lists the personal and organization skills available to the run user", async () => {
     const { agentSkillQuery } = await runInSpace({ members: 2, authors: true });
 
     expect(agentSkillQuery).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ userId: "user-b" }) }),
+      expect.objectContaining({
+        where: personalOrOrganizationItemIn({ userId: "user-b", spaceId: "space-1" }),
+      }),
     );
   });
 

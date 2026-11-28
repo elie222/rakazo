@@ -5,6 +5,7 @@ import {
   LoginFieldLabels,
   OneTimeCodeTarget,
 } from "../bots/bot-secrets.js";
+import { FEEDBACK_KINDS } from "../bots/builtin-tools.js";
 import { Id, ThinkingLevelSchema } from "../ids.js";
 import { AgentImportSetupItemSchema } from "../integrations/agent-import-setup.js";
 import { McpTransportSchema } from "../integrations/mcp.js";
@@ -198,6 +199,7 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     /** Inline app authorization card: logo, name, one-line
         description, and an Authorize button that flips to connected. */
     kind: z.literal("app_connect"),
+    organizationConnectionId: z.string().optional(),
     /** Absent on cards stored before connector ids; the server reads those as its default. */
     connectorId: z.string().optional(),
     provider: z.string(),
@@ -242,6 +244,12 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     durationSeconds: z.number().int().nonnegative().optional(),
   }),
   z.object({ kind: z.literal("meta"), text: z.string() }),
+  z.object({
+    kind: z.literal("feedback_receipt"),
+    reportId: Id,
+    reportKind: z.enum(FEEDBACK_KINDS),
+    description: z.string(),
+  }),
   /**
    * A routine was created, changed, switched on or off, or deleted. The name only, never the
    * prompt, and no `text` field on purpose: clients word the row, and the model never sees it.

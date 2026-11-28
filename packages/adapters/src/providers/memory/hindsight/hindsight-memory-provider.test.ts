@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { AdapterContext, SemanticMemoryConversationRequest } from "@rakazo/adapter-kit";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
-import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
+import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ResolveHostname } from "../../../network/network-address.js";
 import { MemoryProviderPrivateEndpointRequiredError } from "../serenity/serenity-memory-provider.js";
@@ -43,7 +43,7 @@ function hindsightFake(
     banks?: string[];
     /** "down" makes the server unreachable for that bank, like a request that timed out. */
     recall?: Record<string, object[] | number | "down">;
-    reflect?: Record<string, string>;
+    reflect?: Record<string, string | number>;
     documents?: Record<string, string[]>;
     operations?: string[];
     /** Banks whose writes answer 500. */
@@ -151,6 +151,7 @@ function hindsightFake(
     }
     if (method === "POST" && rest === "/reflect") {
       const text = options.reflect?.[bank];
+      if (typeof text === "number") return new Response("{}", { status: text });
       return text === undefined
         ? new Response("{}", { status: 404 })
         : Response.json({ text, based_on: null });
@@ -453,6 +454,20 @@ describe("Hindsight recall", () => {
     ).resolves.toMatchObject({ ok: true, value: [{ memory: "Shared fact" }] });
   });
 
+  it("hands a refused account back to the caller without logging it", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    try {
+      const fake = hindsightFake({ recall: { [OWN_BANK]: 402, [TEAM_BANK]: [] } });
+      await expect(
+        provider(fake.fetch).recall({ ...recall, scope: "shared" }, context),
+      ).resolves.toMatchObject({ ok: false, accountRefused: true });
+      expect(sink.events).toEqual([]);
+    } finally {
+      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+    }
+  });
+
   it("asks every bank for observations", async () => {
     const fake = hindsightFake({ recall: { [OWN_BANK]: [] } });
     await provider(fake.fetch).recall(
@@ -473,7 +488,7 @@ describe("Hindsight recall", () => {
     const fake = hindsightFake({ recall: { [OWN_BANK]: [] }, reflect: { [OWN_BANK]: "" } });
     const memory = provider(fake.fetch, { recallBudget: "high", recallFacts: true });
     await memory.recall({ ...recall, scope: "isolated" }, context);
-    await memory.reflect({ query: "Drinks?", botId: "bot-1" }, context);
+    await memory.reflect({ query: "Drinks?", botId: "bot-1", scope: "isolated" }, context);
     expect(fake.requests.map((request) => request.body)).toEqual([
       {
         query: "tea?",
@@ -1184,10 +1199,14 @@ describe("Hindsight conversations", () => {
 });
 
 describe("Hindsight reflect", () => {
-  it("reflects over the bot's own bank", async () => {
-    const fake = hindsightFake({ reflect: { [OWN_BANK]: "They prefer tea." } });
+  const request = { query: " Drinks? ", botId: "bot-1" };
+
+  it("reflects only over the bot's own bank in isolated scope", async () => {
+    const fake = hindsightFake({
+      reflect: { [OWN_BANK]: "They prefer tea.", [TEAM_BANK]: "The team prefers coffee." },
+    });
     await expect(
-      provider(fake.fetch).reflect({ query: " Drinks? ", botId: "bot-1" }, context),
+      provider(fake.fetch).reflect({ ...request, scope: "isolated" }, context),
     ).resolves.toEqual({ ok: true, value: "They prefer tea." });
     expect(fake.requests).toEqual([
       {
@@ -1202,8 +1221,74 @@ describe("Hindsight reflect", () => {
   it("answers empty for a bank nothing was written to", async () => {
     const fake = hindsightFake();
     await expect(
-      provider(fake.fetch).reflect({ query: "Drinks?", botId: "bot-1" }, context),
+      provider(fake.fetch).reflect({ ...request, scope: "isolated" }, context),
     ).resolves.toEqual({ ok: true, value: "" });
+  });
+
+  it("combines the own and Space bank answers in shared scope", async () => {
+    const fake = hindsightFake({
+      reflect: {
+        [OWN_BANK]: "They prefer tea.",
+        [TEAM_BANK]: "The team prefers coffee.",
+        "other-app": "They prefer juice.",
+      },
+    });
+    await expect(
+      provider(fake.fetch, { recallBanks: ["other-app"], recallBudget: "high" }).reflect(
+        { ...request, scope: "shared" },
+        context,
+      ),
+    ).resolves.toEqual({ ok: true, value: "They prefer tea.\n\nThe team prefers coffee." });
+    expect(fake.requests).toEqual(
+      [OWN_BANK, TEAM_BANK].map((bank) => ({
+        method: "POST",
+        bank,
+        rest: "/reflect",
+        body: { query: "Drinks?", budget: "high" },
+      })),
+    );
+  });
+
+  it.each([
+    { name: "only the Space bank answers", banks: { [TEAM_BANK]: "Coffee." }, value: "Coffee." },
+    {
+      name: "only the own bank answers",
+      banks: { [OWN_BANK]: "Tea.", [TEAM_BANK]: "" },
+      value: "Tea.",
+    },
+    { name: "both banks are empty", banks: { [OWN_BANK]: "", [TEAM_BANK]: "" }, value: "" },
+    {
+      name: "the own bank fails",
+      banks: { [OWN_BANK]: 500, [TEAM_BANK]: "Coffee." },
+      value: "Coffee.",
+    },
+  ])("returns the available shared answer when $name", async ({ banks, value }) => {
+    const fake = hindsightFake({ reflect: banks });
+    await expect(
+      provider(fake.fetch).reflect({ ...request, scope: "shared" }, context),
+    ).resolves.toEqual({ ok: true, value });
+  });
+
+  it("warns and keeps the own bank answer when the Space bank fails", async () => {
+    const fake = hindsightFake({ reflect: { [OWN_BANK]: "Tea.", [TEAM_BANK]: 500 } });
+    const sink = createTestSink();
+    const previousLogger = getLogger();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    try {
+      await expect(
+        provider(fake.fetch).reflect({ ...request, scope: "shared" }, context),
+      ).resolves.toEqual({ ok: true, value: "Tea." });
+      expect(sink.events).toMatchObject([{ level: "warn", bank: TEAM_BANK }]);
+    } finally {
+      installLogger(previousLogger);
+    }
+  });
+
+  it("returns the own bank failure when shared reflection has no answer", async () => {
+    const fake = hindsightFake({ reflect: { [OWN_BANK]: 500 } });
+    await expect(
+      provider(fake.fetch).reflect({ ...request, scope: "shared" }, context),
+    ).resolves.toEqual({ ok: false, error: "Hindsight request failed: 500" });
   });
 
   it("has no forget", () => {

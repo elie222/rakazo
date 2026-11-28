@@ -53,7 +53,7 @@ vi.mock("@lingui/react/macro", () => {
   };
 });
 vi.mock("@rakazo/ui-web", async (importOriginal) => {
-  const { buttonVariants, Disclosure, OptionSelect, Stepper, SwitchField, useCopyText } =
+  const { buttonVariants, Disclosure, OptionSelect, Stepper, Switch, useCopyText } =
     await importOriginal<typeof UiWeb>();
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
@@ -76,7 +76,7 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     OptionSelect,
     Stepper,
-    SwitchField,
+    Switch,
     useCopyText,
   };
 });

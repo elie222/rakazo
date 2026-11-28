@@ -62,6 +62,11 @@ describe("withPendingSends", () => {
     // The same words sent earlier are not this send.
     const earlier = [stored(1, "new words"), stored(2, "hello")];
     expect(withPendingSends(earlier, [pending], "bot1", "t1", "me")).toHaveLength(3);
+    // A new chat's first message is seq 0.
+    const first = { ...pending, afterSeq: newestMessageSeq([]) };
+    const firstArrived = [stored(0, "new words")];
+    expect(withPendingSends(firstArrived, [first], "bot1", "t1", "me")).toBe(firstArrived);
+    expect(withoutDeliveredSends([{ ...first, acceptedSeq: 0 }], [], "bot1")).toHaveLength(1);
   });
 
   it("shows every send of a quick run, each until its own stored message", () => {

@@ -57,7 +57,7 @@ function appBridge(caller: IpcCaller): RakazoDesktop {
   vm.runInNewContext(
     readFileSync(path.join(import.meta.dirname, "../../preload/preload.cjs"), "utf8"),
     {
-      process: { platform: "darwin" },
+      process: { platform: "darwin", argv: [] },
       window: { addEventListener: () => undefined },
       require: () => ({
         contextBridge: {
@@ -110,6 +110,7 @@ beforeEach(() => {
   desktop.mainWindow = null;
   desktop.replacedAppWindow = null;
   desktop.setupWindow = null;
+  desktop.pageAppWindow = null;
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -128,6 +129,15 @@ describe("sentFrom", () => {
     const { app, setup } = open();
     for (const [, event] of strangers(app)) expect(sentFrom("app", event)).toBe(false);
     for (const [, event] of strangers(setup)) expect(sentFrom("setup", event)).toBe(false);
+  });
+
+  it("accepts a page app's shell only, never its frame or another window", () => {
+    const shell = fakeWindow("rakazo-page-app://shell/page-app-shell.html");
+    desktop.pageAppWindow = shell.win;
+    expect(sentFrom("pageApp", shell.event)).toBe(true);
+    for (const [, event] of strangers(shell)) expect(sentFrom("pageApp", event)).toBe(false);
+    shell.frame.url = "rakazo-page-app://frame/1";
+    expect(sentFrom("pageApp", shell.event)).toBe(false);
   });
 
   it.each(["https://other.example.com/app/bot", "data:text/html,page", "file:///page", "invalid"])(
@@ -239,6 +249,7 @@ describe("handleIpc", () => {
       "desktop.setup.state",
     ]);
     expect(names.filter((name) => ipcChannels[name].refused === LIVE)).toEqual([
+      "desktop.appIcon.get",
       "desktop.update.check",
       "desktop.update.download",
       "desktop.update.install",

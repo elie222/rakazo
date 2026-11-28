@@ -148,6 +148,7 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
   const main =
     member &&
     (member.credential ||
+      member.organizationConnectionId ||
       (deps.billing?.modelCreditsEnabled &&
         (await hasHostedModelCredits(deps.prisma, actor, member.provider))))
       ? member

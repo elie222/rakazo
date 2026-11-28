@@ -9,6 +9,8 @@ export const ConnectionSchema = z.object({
   status: z.enum(["pending", "connected", "revoked", "error"]),
   capabilities: z.array(z.string()),
   createdAt: z.string(),
+  organization: z.boolean().optional(),
+  manageable: z.boolean().optional(),
 });
 export type Connection = z.infer<typeof ConnectionSchema>;
 
@@ -16,6 +18,7 @@ export const ConnectionCatalogItemSchema = z.object({
   connectorId: z.string(),
   slug: z.string(),
   name: z.string(),
+  description: z.string().optional(),
   logo: z.string().nullable(),
   connected: z.boolean(),
   noAuth: z.boolean(),

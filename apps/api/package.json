@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@hono/node-server": "2.1.6",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@orpc/server": "1.16.2",
     "@rakazo/adapter-kit": "workspace:*",
     "@rakazo/adapters": "workspace:*",
@@ -33,6 +34,7 @@
     "@rakazo/logging": "workspace:*",
     "@rakazo/memory": "workspace:*",
     "@rakazo/page-kit": "workspace:*",
+    "@rakazo/ui-tokens": "workspace:*",
     "fflate": "0.8.3",
     "hono": "4.13.17",
     "mermaid": "11.17.2",

@@ -345,6 +345,61 @@ describe("authenticated secret requests", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("sends to an HTTPS origin resolving privately only when the deployment allows private endpoints", async () => {
+    const { input, fetch } = await fixture();
+    input.remote.resolveHostname = async () => [{ address: "10.0.0.5", family: 4 }];
+    installAuditEventStore({
+      auditEvent: { createMany: async () => undefined },
+      space: { findUnique: async () => ({ organizationId: "org-1", name: "Home" }) },
+      member: { findUnique: async () => ({ role: "owner" }) },
+    } as never);
+    const send = (mcpAllowPrivateEndpoint: boolean) =>
+      secretTools.secret_request!(
+        {
+          deps: {
+            prisma: input.prisma,
+            secretStore,
+            secretHttp: input.remote,
+            mcpAllowPrivateEndpoint,
+          },
+          run: { ...scope, id: "run-1" },
+          runId: "run-1",
+          bot: { id: "bot-1", name: "Research bot" },
+          thread: { id: "thread-1" },
+          context: { signal: input.signal },
+          secrets: [] as string[],
+          state: {
+            vaultUses: new Set<string>(),
+            reply: { pendingProgress: "", redactor: { finish: () => "" } },
+          },
+        } as never,
+        {
+          name: "secret_request",
+          args: input.request,
+          finish: async (result: unknown) => result,
+        } as never,
+      );
+    expect(await send(false)).toEqual({
+      error: expect.stringContaining("private network address"),
+    });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(await send(true)).toEqual({ status: 200, body: { ok: true }, truncated: false });
+    const [, init] = fetch.mock.calls[0] as [string, RequestInit | undefined];
+    expect(new Headers(init?.headers).get("Authorization")).toBe(`Bearer ${secret}`);
+  });
+
+  it("refuses link-local and mixed public and private answers when private endpoints are allowed", async () => {
+    const { input, fetch } = await fixture();
+    for (const answers of [["169.254.169.254"], ["10.0.0.5", "203.0.113.10"]]) {
+      input.remote.resolveHostname = async () =>
+        answers.map((address) => ({ address, family: 4 as const }));
+      expect(await requestWithBotSecret({ ...input, allowPrivateEndpoint: true })).toHaveProperty(
+        "error",
+      );
+    }
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("never follows redirects, including same-origin redirects", async () => {
     const { input, fetch } = await fixture();
     fetch.mockResolvedValue(

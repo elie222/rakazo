@@ -9,9 +9,22 @@ import SkillScreen from "../../app/(settings)/skill";
 import { announceToScreenReader } from "../native/announce";
 import { queryClient } from "../query/query";
 
+vi.mock("../spaces/organizations", () => ({
+  useOrganizations: () => ({}),
+  activeOrganization: () => ({ role: mocks.organizationRole }),
+}));
+vi.mock("../../components/settings/settings-group", () => ({
+  SettingsGroup: ({ children }: { children: ReactNode }) => children,
+  SettingsSwitch: ({ value, onChange }: { value: boolean; onChange: (value: boolean) => void }) => (
+    <button type="button" onClick={() => onChange(!value)}>
+      Share with organization
+    </button>
+  ),
+}));
 vi.mock("../native/announce", () => ({ announceToScreenReader: vi.fn() }));
 
 const mocks = vi.hoisted(() => ({
+  organizationRole: "member",
   params: {} as { id?: string },
   options: {} as { title?: string; headerRight?: () => ReactNode },
   back: vi.fn(),
@@ -109,6 +122,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   queryClient.clear();
   mocks.params = {};
+  mocks.organizationRole = "member";
   mocks.options = {};
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -270,6 +284,23 @@ it("creates a new skill from the template and goes back", async () => {
     pinned,
   );
   expect(mocks.back).toHaveBeenCalled();
+});
+
+it("keeps the selected organization scope after management permission changes", async () => {
+  mocks.organizationRole = "admin";
+  mocks.rpc.mockResolvedValue(own);
+  await render();
+  await act(async () => button("Share with organization").click());
+
+  mocks.organizationRole = "member";
+  await render();
+  await pressSave();
+
+  expect(mocks.rpc).toHaveBeenCalledWith(
+    "agentSkills/create",
+    { content: expect.stringContaining("name: my-skill"), organization: true },
+    pinned,
+  );
 });
 
 it("reads the skill again on a later visit instead of showing the earlier copy", async () => {

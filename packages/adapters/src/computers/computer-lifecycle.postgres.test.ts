@@ -19,6 +19,7 @@ import {
   releaseComputerExecutionLease,
   renewComputerExecutionLease,
   replaceComputer,
+  waitForRunComputerLease,
 } from "./computer-lifecycle.js";
 import {
   performComputerUpdate,
@@ -1139,4 +1140,140 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
       fence: recovered!.fence + 1,
     });
   });
+
+  it("leaves a free computer to a person's waiting run before background work", async () => {
+    const { spaceId, botId, threadId, userId } = identity;
+    await prisma.run.updateMany({
+      where: { botId, status: "running" },
+      data: { status: "completed" },
+    });
+    await prisma.computerExecutionLease.updateMany({
+      where: { computerId, botId },
+      data: { expiresAt: new Date(0) },
+    });
+    const task = await prisma.task.create({
+      data: { spaceId, botId, threadId, userId, prompt: "fixture", status: "running" },
+    });
+    const working = (trigger: string, workerId: string) =>
+      prisma.run.create({
+        data: {
+          spaceId,
+          botId,
+          threadId,
+          userId,
+          taskId: task.id,
+          status: "running",
+          trigger,
+          leaseOwner: workerId,
+          leaseFence: 1,
+          leaseExpiresAt: new Date(Date.now() + 60_000),
+        },
+      });
+    const person = await working("user", "worker-person");
+    const routine = await working("routine", "worker-routine");
+    const personInput = {
+      computerId,
+      botId,
+      runId: person.id,
+      workerId: "worker-person",
+      runFence: 1,
+    };
+    const routineInput = { ...personInput, runId: routine.id, workerId: "worker-routine" };
+
+    const boot = await acquireComputerExecutionLease(prisma, {
+      computerId,
+      botId,
+      runId: "boot:x",
+    });
+    const stopWaiting = new AbortController();
+    const personWait = waitForRunComputerLease(prisma, personInput, stopWaiting.signal);
+    await vi.waitFor(async () => {
+      const row = await prisma.run.findUniqueOrThrow({ where: { id: person.id } });
+      expect(row.computerUseStartedAt).not.toBeNull();
+    });
+    stopWaiting.abort();
+    await expect(personWait).rejects.toThrow();
+    await releaseComputerExecutionLease(prisma, boot);
+
+    await expect(acquireComputerExecutionLease(prisma, routineInput)).rejects.toBeInstanceOf(
+      ComputerBusyError,
+    );
+    const personLease = await acquireComputerExecutionLease(prisma, personInput);
+    expect(personLease).toMatchObject({ runId: person.id });
+    await releaseComputerExecutionLease(prisma, personLease);
+    await prisma.run.update({ where: { id: person.id }, data: { status: "completed" } });
+    await expect(acquireComputerExecutionLease(prisma, routineInput)).resolves.toMatchObject({
+      runId: routine.id,
+    });
+  });
+
+  it.each(["saving", "stopping"] as const)(
+    "never leaves a computer suspending when another write lands while idle sleep is %s it",
+    async (phase) => {
+      await prisma.run.updateMany({
+        where: { botId: identity.botId, status: "running" },
+        data: { status: "completed" },
+      });
+      await prisma.computerExecutionLease.updateMany({
+        where: { computerId },
+        data: { expiresAt: new Date(0) },
+      });
+      const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-sleep-write-"));
+      const sandbox = new FakeSandboxProvider();
+      const deps = {
+        prisma,
+        sandbox,
+        home: new LocalAgentHomeStore(dataDir),
+        jobs: {
+          enqueue: vi.fn().mockResolvedValue(undefined),
+          cancel: vi.fn(),
+          cancelIn: vi.fn(),
+        } as unknown as JobPublisher,
+        events: { append: vi.fn() } as unknown as ThreadEvents,
+        dataDir,
+      };
+      const context = {
+        operationId: "run",
+        traceId: "run",
+        spaceId: identity.spaceId,
+        userId: identity.userId,
+        botId: identity.botId,
+        signal: new AbortController().signal,
+      } satisfies AdapterContext;
+      // A write that does not take the computer, as a person's control renewal does.
+      const unrelatedWrite = () =>
+        prisma.computer.updateMany({
+          where: { id: computerId },
+          data: { diskDismissedPercent: 90 },
+        });
+      try {
+        await prisma.computer.update({
+          where: { id: computerId },
+          data: { kind: "fake", state: "stopped", providerRef: null, restorePending: false },
+        });
+        await provisionComputer(deps, computerId, context);
+        if (phase === "saving") {
+          const exportWorkspace = sandbox.exportWorkspace.bind(sandbox);
+          vi.spyOn(sandbox, "exportWorkspace").mockImplementationOnce(async function* (ref, ctx) {
+            await unrelatedWrite();
+            yield* exportWorkspace(ref, ctx);
+          });
+        } else {
+          const stop = sandbox.stop.bind(sandbox);
+          vi.spyOn(sandbox, "stop").mockImplementationOnce(async (ref, ctx) => {
+            await unrelatedWrite();
+            await stop(ref, ctx);
+          });
+        }
+
+        await sleepComputerIfIdle(deps, computerId);
+
+        const { state } = await prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
+        expect(state).toBe(phase === "saving" ? "running" : "suspended");
+      } finally {
+        vi.restoreAllMocks();
+        await rm(dataDir, { recursive: true, force: true });
+      }
+    },
+  );
 });

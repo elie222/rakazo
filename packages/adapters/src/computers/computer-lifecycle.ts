@@ -4,6 +4,7 @@ import type {
   AgentHomeStore,
   ComputerRef,
   JobPublisher,
+  RealtimeFanout,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import {
@@ -23,11 +24,14 @@ import {
   ClientError,
   computerUsingRuns,
   isRetryableError,
+  PERSON_RUN_TRIGGERS,
   pollUntil,
+  WakeLatch,
 } from "@rakazo/core";
 import { parseScreenLeaseId, screenLeaseId } from "@rakazo/core/node/screen-lease";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
+  computerLeaseTopic,
   expireComputerExecutionLeases,
   isUniqueViolation,
   parseComputerMode,
@@ -957,6 +961,12 @@ export async function acquireDedicatedScreenLeaseFence(
         };
       }
 
+      // The row is another run's unexpired lease; only a computer's first lease needs the fence.
+      const held = await tx.computerExecutionLease.findUnique({
+        where: { computerId_botId: { computerId: input.computerId, botId: input.botId } },
+        select: { id: true },
+      });
+      if (held) throw new ComputerBusyError();
       const history = await tx.run.aggregate({
         where: { botId: input.botId },
         _max: { leaseFence: true },
@@ -989,18 +999,44 @@ export async function acquireDedicatedScreenLeaseFence(
 
 async function lockOwnedRun(
   tx: Prisma.TransactionClient,
-  input: { runId: string; botId: string; workerId: string; runFence: number },
+  input: { computerId: string; runId: string; botId: string; workerId: string; runFence: number },
 ): Promise<void> {
-  const currentRun = await tx.$queryRaw<Array<{ id: string }>>`
-    SELECT id FROM runs
+  const now = new Date();
+  const people = [...PERSON_RUN_TRIGGERS];
+  // Background work leaves a free computer to a person's run waiting for it, but keeps one it
+  // holds. A marked person run that the lease row names already had its turn.
+  const currentRun = await tx.$queryRaw<Array<{ yieldsToPerson?: boolean }>>`
+    SELECT (
+      trigger <> ALL(${people})
+      AND NOT EXISTS (
+        SELECT 1 FROM computer_execution_leases
+        WHERE "computerId" = ${input.computerId}
+          AND "botId" = ${input.botId}
+          AND "runId" = ${input.runId}
+          AND "expiresAt" > ${now})
+      AND EXISTS (
+        SELECT 1 FROM runs waiting
+        WHERE waiting."botId" = ${input.botId}
+          AND waiting.id <> ${input.runId}
+          AND waiting.status = 'running'
+          AND waiting.trigger = ANY(${people})
+          AND waiting."computerUseStartedAt" IS NOT NULL
+          AND waiting."leaseExpiresAt" > ${now}
+          AND NOT EXISTS (
+            SELECT 1 FROM computer_execution_leases
+            WHERE "computerId" = ${input.computerId}
+              AND "botId" = ${input.botId}
+              AND "runId" = waiting.id))
+    ) AS "yieldsToPerson"
+    FROM runs
     WHERE id = ${input.runId}
       AND "botId" = ${input.botId}
       AND status = 'running'
       AND "leaseOwner" = ${input.workerId}
       AND "leaseFence" = ${input.runFence}
-      AND "leaseExpiresAt" > ${new Date()}
+      AND "leaseExpiresAt" > ${now}
     FOR UPDATE SKIP LOCKED`;
-  if (currentRun.length !== 1) throw new ComputerBusyError();
+  if (currentRun.length !== 1 || currentRun[0]?.yieldsToPerson) throw new ComputerBusyError();
 }
 
 export async function acquireComputerExecutionLease(
@@ -1108,16 +1144,62 @@ async function validateAcquiredComputerLease(
   throw new ComputerBusyError();
 }
 
+/** Without a database-backed signal, the longest a waiting run goes between looks. */
+const UNSIGNALLED_COMPUTER_WAIT_MAX_MS = 5_000;
+/** The signal wakes a waiting run; this slow look is the backup, such as for an expired lease. */
+const SIGNALLED_COMPUTER_WAIT_MAX_MS = 30_000;
+
 /** Wait only for this bot's computer; model and connector work never acquires this lease. */
 export async function waitForRunComputerLease(
   prisma: PrismaClient,
   input: { computerId: string; botId: string; runId: string; workerId: string; runFence: number },
   signal: AbortSignal,
+  realtime?: RealtimeFanout,
 ): Promise<ComputerExecutionLease | null> {
+  const wake = new WakeLatch();
+  // A release wakes every waiter at once and only one can win, so the rest start their
+  // backoff over: the winner may yield the computer rather than take it.
+  let looksSinceWake = 0;
+  const unsubscribe = await realtime?.subscribe(computerLeaseTopic(input.computerId), () => {
+    looksSinceWake = 0;
+    wake.wake();
+  });
+  const maxWaitMs = realtime?.describe().capabilities.distributed
+    ? SIGNALLED_COMPUTER_WAIT_MAX_MS
+    : UNSIGNALLED_COMPUTER_WAIT_MAX_MS;
+  const nextWaitMs = () => Math.min(250 * 2 ** Math.min(looksSinceWake++, 7), maxWaitMs);
+  try {
+    return await waitForComputerLease(prisma, input, signal, { wake, nextWaitMs });
+  } finally {
+    if (unsubscribe) await bestEffort("stop watching computer lease", unsubscribe());
+  }
+}
+
+async function waitForComputerLease(
+  prisma: PrismaClient,
+  input: { computerId: string; botId: string; runId: string; workerId: string; runFence: number },
+  signal: AbortSignal,
+  options: { wake: WakeLatch; nextWaitMs: () => number },
+): Promise<ComputerExecutionLease | null> {
+  let marked = false;
   const outcome = await pollUntil(
     async () => {
       signal.throwIfAborted();
       try {
+        // A person's run marks its wait, which the bot's background runs yield to.
+        if (!marked) {
+          await prisma.run.updateMany({
+            where: {
+              id: input.runId,
+              trigger: { in: [...PERSON_RUN_TRIGGERS] },
+              status: "running",
+              leaseOwner: input.workerId,
+              leaseFence: input.runFence,
+            },
+            data: { computerUseStartedAt: new Date() },
+          });
+          marked = true;
+        }
         const bot = await prisma.bot.findUnique({
           where: { id: input.botId },
           select: { computerId: true, computerSwitching: true, archivedAt: true },
@@ -1133,9 +1215,10 @@ export async function waitForRunComputerLease(
       }
     },
     {
-      intervalMs: (attempt) => Math.min(250 * 2 ** Math.min(attempt - 1, 5), 5_000),
+      intervalMs: options.nextWaitMs,
       timeoutMs: Number.POSITIVE_INFINITY,
       signal,
+      wake: options.wake,
       waitingFor: "the bot's computer",
     },
   );

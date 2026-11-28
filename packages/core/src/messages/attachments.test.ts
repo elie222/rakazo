@@ -20,6 +20,18 @@ import {
 } from "./attachments.js";
 
 describe("attachment helpers", () => {
+  it("keeps the stored feedback receipt in both history formats", () => {
+    const receipt = {
+      kind: "feedback_receipt",
+      reportKind: "feedback",
+      reportId: "report-1",
+      description: "Please add a larger preview.\nThe current one is hard to read.",
+    } as const;
+    const text = blocksToAgentHistoryText([receipt]);
+    expect(JSON.parse(text)).toEqual({ ...receipt, status: "submitted" });
+    expect(blocksToAgentHistorySegments([receipt])).toEqual([{ text }]);
+  });
+
   it.each([
     ["xls", "application/vnd.ms-excel"],
     ["xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],

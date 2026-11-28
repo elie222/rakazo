@@ -12,10 +12,11 @@ import type {
 import { consecutiveImageRun } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
 import { isPeerReceiptBlocks, isToolActivityBlock, otherAuthor } from "@rakazo/core";
-import { BotAvatar, Button, cn, resolvePersonaColorDef } from "@rakazo/ui-web";
+import { BotAvatar, cn, resolvePersonaColorDef } from "@rakazo/ui-web";
 import { UserRound } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
 import { CollaborationMarker } from "../../../components/ai/CollaborationMarker";
+import { BuiCard } from "../../../components/ai/primitives";
 import { ComputerCard } from "../../../components/computers/ComputerCard";
 import { ArtifactFileCard } from "../../../components/messages/ArtifactFileCard";
 import { AskCard } from "../../../components/messages/AskCard";
@@ -203,7 +204,6 @@ export const MessageView = memo(function MessageView({
     },
     [mentions, onOpenBot, peerBot],
   );
-  const speak = () => onSpeak(message);
   const replyBotId = message.replyPreview?.botId ?? replyParent?.botId;
   const author = message.role === "user" ? otherAuthor(message.author, meId) : undefined;
   const replyAuthor = otherAuthor(message.replyPreview?.author ?? replyParent?.author, meId);
@@ -254,6 +254,8 @@ export const MessageView = memo(function MessageView({
   // Anchored below the speaker and reply line so the rail centers on the bubble itself.
   // A message with text and attachments anchors it on its first text bubble.
   const textAnchorIndex = message.blocks.findIndex((block) => block.kind === "text");
+  const canReadAloud =
+    textAnchorIndex !== -1 || message.blocks.some((block) => block.kind === "feedback_receipt");
   const hoverAnchorIndex =
     textAnchorIndex === -1
       ? message.blocks.findIndex((block) => block.kind === "ask")
@@ -268,6 +270,11 @@ export const MessageView = memo(function MessageView({
       onMarkUnread={onMarkUnread}
       markedUnread={markedUnread}
       onReact={onReact}
+      speech={
+        voiceReady && !isLive && canReadAloud && message.role !== "user"
+          ? { speaking, disabled: callHoldsSpeaker && !speaking, onSpeak: () => onSpeak(message) }
+          : undefined
+      }
     />
   );
   if (isNarration) {
@@ -328,19 +335,6 @@ export const MessageView = memo(function MessageView({
                 }
                 return null;
               })}
-              {!isLive && voiceReady && message.blocks.some((block) => block.kind === "text") ? (
-                <Button
-                  variant="text"
-                  size="xs"
-                  aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
-                  // Stopping the speech in progress stays available; a call blocks new reads.
-                  disabled={callHoldsSpeaker && !speaking}
-                  onClick={speak}
-                  className="font-normal"
-                >
-                  {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
-                </Button>
-              ) : null}
             </div>
           </div>
           {hoverActions}
@@ -543,6 +537,29 @@ export const MessageView = memo(function MessageView({
               </div>
             );
           }
+          if (block.kind === "feedback_receipt") {
+            return (
+              <BuiCard
+                key={i}
+                data-testid="feedback-receipt"
+                className="grid min-w-0 gap-1.5 px-4 py-3"
+              >
+                <div className="font-medium text-label">
+                  {block.reportKind === "bug" ? (
+                    <Trans>Bug report sent</Trans>
+                  ) : (
+                    <Trans>Feedback sent</Trans>
+                  )}
+                </div>
+                <p dir="auto" className="whitespace-pre-wrap wrap-anywhere text-body">
+                  {block.description}
+                </p>
+                <div className="wrap-anywhere text-caption text-muted-foreground">
+                  <Trans>Receipt {block.reportId}</Trans>
+                </div>
+              </BuiCard>
+            );
+          }
           if (block.kind === "import_setup") {
             return (
               <div key={i} className="flex justify-start">
@@ -647,19 +664,6 @@ export const MessageView = memo(function MessageView({
                       {block.text}
                     </ChatMarkdown>
                   </div>
-                  {voiceReady ? (
-                    <Button
-                      variant="text"
-                      size="xs"
-                      aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
-                      // Stopping the speech in progress stays available; a call blocks new reads.
-                      disabled={callHoldsSpeaker && !speaking}
-                      onClick={speak}
-                      className="mt-2 font-normal"
-                    >
-                      {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
-                    </Button>
-                  ) : null}
                 </div>
                 {i === hoverAnchorIndex ? hoverActions : null}
               </div>

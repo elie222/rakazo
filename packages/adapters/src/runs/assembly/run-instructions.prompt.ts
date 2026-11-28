@@ -154,7 +154,7 @@ export function dockerComputerToolInstruction(
     : builtinOffered(disabled, "shell");
   if (shellOffered) {
     parts.push(
-      "This computer is a Debian bookworm container running unprivileged with persistent home `/home/rakazo`. There is no sudo, cron, Docker daemon, or running systemd; system packages cannot be installed with `apt` at runtime, and `pip` is not installed, so `uv` is the way to add Python packages (`uv run --with <package>` runs a script with a library). Also installed: `git`, `ssh`, `curl`, `jq`, `unzip`, `rg`, `fd`, `file`, `sqlite3`, ImageMagick, and a graphical browser (Chromium by default).",
+      "This computer is a Debian trixie container running unprivileged with persistent home `/home/rakazo`. There is no sudo, cron, Docker daemon, or running systemd; system packages cannot be installed with `apt` at runtime, and `pip` is not installed, so `uv` is the way to add Python packages (`uv run --with <package>` runs a script with a library). Also installed: `git`, `ssh`, `curl`, `jq`, `unzip`, `rg`, `fd`, `file`, `sqlite3`, ImageMagick, and a graphical browser (Chromium by default).",
     );
   }
   if (shellOffered) {
@@ -333,6 +333,9 @@ function toolUsageLine(parts: {
     pageWorkClause(parts.pageBrowserAllowed, disabled),
     webLookupClause(disabled),
     ...secretGuidance(disabled),
+    builtinOffered(disabled, "ask_user")
+      ? "When you would end your reply asking the user to choose, call ask_user with the two to four best options instead of listing them in text."
+      : undefined,
     builtinOffered(disabled, "connect_app")
       ? "Use connect_app when an app needs connecting or the user asks to connect one, then wait for them."
       : undefined,
@@ -349,12 +352,12 @@ function toolUsageLine(parts: {
   return `${parts.computerInstruction} ${clauses.join(" ")}`;
 }
 
-/** Names the apps a run reaches through plugin tools, so it uses them before browsing. */
+/** Names connected plugins and points the run at each plugin's own tools, rather than a connector catalog or the browser. */
 export function connectedPluginsInstruction(
   plugins: readonly { displayName: string; connectorId: string; provider: string }[],
 ): string {
   return plugins.length > 0
-    ? `Connected plugins: ${plugins.map((row) => `${row.displayName} (${row.connectorId}:${row.provider})`).join(", ")}. Prefer those plugin tools over the computer browser or web search when reading app data (repos, releases, mail, calendar, and similar).`
+    ? `Connected plugins: ${plugins.map((row) => `${row.displayName} (${row.connectorId}:${row.provider})`).join(", ")}. Find and run their actions with each plugin's own tools; a connector search only covers the sources it lists. Prefer those plugin tools over the computer browser or web search when reading app data (repos, releases, mail, calendar, and similar).`
     : "No plugins are connected yet.";
 }
 
@@ -495,7 +498,7 @@ export function userTurnInstructions(parts: {
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "save_page",
-      'For a dashboard, report, tracker or comparison, build a page with save_page (call it with {"help": true} first for the kit guide). To change a page, pass its pageId with edits or new source instead of making a new page. In your reply, mention the page by its title; never paste its source.',
+      'For a dashboard, report, tracker or comparison, build a page with save_page (call it with {"help": true} first for the kit guide). To change a page, pass its pageId with edits or new source instead of making a new page. {"list": true} lists your pages with their pageIds. In your reply, mention the page by its title; never paste its source.',
     ),
     offeredBuiltinClause(
       parts.disabledBuiltinTools,

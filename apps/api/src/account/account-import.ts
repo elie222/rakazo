@@ -10,7 +10,6 @@ import type { AdapterContext } from "@rakazo/adapter-kit";
 import {
   carriedBotModelPin,
   carriedRoutineModelPin,
-  normalizeWorkspacePath,
   ObjectStorageUnavailableError,
   resolveBotWorkspacePath,
 } from "@rakazo/adapters";
@@ -45,11 +44,13 @@ import {
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import { pageViewerCode } from "@rakazo/page-kit/compile";
-import { checkPageSource } from "@rakazo/page-kit/validate";
+import { isPageIcon } from "@rakazo/page-kit/icon-names";
+import { checkPageSource, pageAbilities } from "@rakazo/page-kit/validate";
 import type { Hono } from "hono";
 import { cancelBody } from "../http/http-body.js";
 import type { SpaceDeletionDeps } from "../spaces/space-deletion.js";
 import { deleteSpaceWithContent } from "../spaces/space-deletion.js";
+import { isAccountHomePath } from "./account-home-path.js";
 import { inflateEntry, parseZipArchive, readExact, ZipFormatError } from "./account-zip-reader.js";
 
 export const ACCOUNT_IMPORT_LIMITS = {
@@ -103,18 +104,21 @@ export function parseEntryName(name: string, index: number): ArchiveEntry {
     if (name !== ACCOUNT_EXPORT_MANIFEST_PATH) throw unreadable();
     return { kind: "manifest" };
   }
-  if (/[\\\0]/.test(name)) throw invalidEntry();
+  if (name.includes("\0")) throw invalidEntry();
   const segments = name.split("/");
   if (segments.some((segment) => segment === "" || segment === "." || segment === ".."))
     throw invalidEntry();
   const [root, spaceId, section, id, ...rest] = segments;
-  if (root !== "spaces" || !spaceId) throw invalidEntry();
+  if (root !== "spaces" || !spaceId || [spaceId, id].some((part) => part?.includes("\\")))
+    throw invalidEntry();
   if (section === "records.jsonl" && id === undefined) return { kind: "records", spaceId };
   if (section === "executables.json" && id === undefined) return { kind: "executables", spaceId };
   if (section === "artifacts" && id && rest.length === 0)
     return { kind: "artifact", spaceId, artifactId: id };
-  if (section === "homes" && id && rest.length > 0)
-    return { kind: "home", spaceId, botId: id, path: normalizeWorkspacePath(rest.join("/")) };
+  if (section === "homes" && id) {
+    const path = rest.join("/");
+    if (isAccountHomePath(path)) return { kind: "home", spaceId, botId: id, path };
+  }
   throw invalidEntry();
 }
 
@@ -690,6 +694,8 @@ class AccountImporter implements ArchiveSink {
             botId: space.optional(record.botId),
             groupId: space.optional(record.groupId),
             title: record.title,
+            icon: isPageIcon(record.icon) ? record.icon : null,
+            iconColor: record.iconColor ?? null,
             pinnedAt: date(record.pinnedAt),
             currentVersion: record.currentVersion,
             createdAt: new Date(record.createdAt),
@@ -716,6 +722,7 @@ class AccountImporter implements ArchiveSink {
             title: record.title,
             source: record.source,
             code: check.ok ? check.code : pageViewerCode(record.source),
+            abilities: check.ok ? check.abilities : pageAbilities(record.source),
             createdAt: new Date(record.createdAt),
           },
         });
@@ -1032,14 +1039,9 @@ class AccountImporter implements ArchiveSink {
     }
     const executables = AccountExportExecutablesSchema.safeParse(parsed);
     if (!executables.success) throw unreadable();
-    for (const { botId, path: filePath } of executables.data) {
+    for (const { botId, path: relativePath } of executables.data) {
       const bot = space.bots.get(botId);
-      let relativePath: string;
-      try {
-        relativePath = normalizeWorkspacePath(filePath);
-      } catch {
-        throw invalidEntry();
-      }
+      if (!isAccountHomePath(relativePath)) throw invalidEntry();
       const staging = bot && space.homes.get(bot.homeKey);
       if (!bot || !staging || !space.receivedHomeFiles.has(`${botId}/${relativePath}`))
         throw invalidEntry();

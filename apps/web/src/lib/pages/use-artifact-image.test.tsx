@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { rpc } from "../query/rpc";
 import type { ArtifactTarget } from "./artifact-open";
-import { useArtifactImage } from "./use-artifact-image";
+import { useArtifactImage, useArtifactImageKeeper } from "./use-artifact-image";
 
 vi.mock("../query/rpc", () => ({ rpc: { artifacts: { get: vi.fn() } } }));
 
@@ -23,6 +23,7 @@ function Image({ target, enabled = true }: { target: ArtifactTarget; enabled?: b
 
 beforeEach(() => {
   vi.clearAllMocks();
+  createObjectURL.mockReturnValue("blob:photo");
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
   vi.mocked(rpc.artifacts.get).mockResolvedValue(artifact as never);
@@ -121,4 +122,76 @@ it("retries a failed download while its original consumer stays mounted", async 
   expect(rpc.artifacts.get).toHaveBeenCalledTimes(2);
   expect(container.querySelectorAll("img")).toHaveLength(1);
   expect(container.querySelector("img")?.getAttribute("src")).toBe("blob:photo");
+});
+
+const bot = { botId: "bot" };
+const pictures = ["a", "b", "c", "large"].map((artifactId) => ({ target: bot, artifactId }));
+
+function CachedImage({
+  selected,
+  available = pictures,
+}: {
+  selected: string;
+  available?: typeof pictures;
+}) {
+  const keeper = useArtifactImageKeeper(available, 6);
+  const src = useArtifactImage(bot, selected, true, keeper);
+  return src ? <img src={src} alt={selected} /> : null;
+}
+
+function answerSizes() {
+  vi.mocked(rpc.artifacts.get).mockImplementation(
+    async ({ artifactId }) =>
+      ({
+        contentBase64: btoa("\0".repeat(artifactId === "large" ? 10 : 3)),
+        mimeType: `image/${artifactId}`,
+      }) as never,
+  );
+  createObjectURL.mockImplementation((blob?: Blob) => `blob:${blob?.type}`);
+}
+
+async function show(selected: string) {
+  await act(async () => root.render(<CachedImage selected={selected} />));
+}
+
+it("evicts the least recently opened slide when the cache goes over its byte budget", async () => {
+  answerSizes();
+  await show("a");
+  await show("b");
+  await show("a");
+  await show("c");
+  expect(rpc.artifacts.get).toHaveBeenCalledTimes(3);
+  expect(revokeObjectURL).toHaveBeenCalledExactlyOnceWith("blob:image/b");
+});
+
+it("keeps an oversized slide until another slide loads", async () => {
+  answerSizes();
+  await show("large");
+  vi.mocked(rpc.artifacts.get).mockRejectedValueOnce(new Error("unavailable"));
+  await show("a");
+  expect(revokeObjectURL).not.toHaveBeenCalled();
+  await show("b");
+  expect(revokeObjectURL).toHaveBeenCalledExactlyOnceWith("blob:image/large");
+});
+
+it("does not cache a slide that finishes after the user has moved on", async () => {
+  answerSizes();
+  const pending = deferred<never>();
+  vi.mocked(rpc.artifacts.get).mockReturnValueOnce(pending.promise);
+  await show("a");
+  await show("b");
+  await act(async () => pending.resolve(artifact as never));
+  expect(revokeObjectURL).toHaveBeenCalledExactlyOnceWith("blob:image/png");
+});
+
+it("does not retain a pending download after the gallery removes its slide", async () => {
+  answerSizes();
+  const pending = deferred<never>();
+  vi.mocked(rpc.artifacts.get).mockReturnValueOnce(pending.promise);
+  await show("a");
+  const available = pictures.slice(1);
+  await act(async () => root.render(<CachedImage selected="a" available={available} />));
+  await act(async () => pending.resolve(artifact as never));
+  await act(async () => root.render(<CachedImage selected="b" available={available} />));
+  expect(revokeObjectURL).toHaveBeenCalledExactlyOnceWith("blob:image/png");
 });

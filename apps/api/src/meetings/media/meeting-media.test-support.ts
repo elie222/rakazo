@@ -88,7 +88,12 @@ export function createMeetingMediaEmulator(publicOrigin: string) {
 
 export async function browserMeetingMediaEmulator() {
   const app = new Hono();
-  const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: 0 });
+  const server = serve({
+    fetch: app.fetch,
+    hostname: "127.0.0.1",
+    port: 0,
+    overrideGlobalObjects: false,
+  });
   await once(server, "listening");
   const address = server.address();
   if (!address || typeof address === "string") {

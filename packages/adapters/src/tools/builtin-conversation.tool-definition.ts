@@ -6,6 +6,8 @@ import {
   GenerateSecretInput,
   LOGIN_FIELD_LIMIT,
   MEMORY_INDEX_PATH,
+  PAGE_ICON_COLORS,
+  PAGE_LIST_MAX_LIMIT,
   SecretAskPurpose,
   SecretHttpRequest,
 } from "@rakazo/contracts";
@@ -122,7 +124,7 @@ export const conversationTools: ConnectorTool[] = [
   {
     name: "ask_user",
     description:
-      "Ask the user one short multiple-choice question with tappable options, then wait for their selection. Use this instead of asking them to type when two to four concise choices are enough. Put the content the user is deciding about, such as a draft email, in `detail`.",
+      "Ask the user one short multiple-choice question with tappable options, then wait for their selection. Use this instead of listing two to four choices in text; they can still type their own. Put the content the user is deciding about, such as a draft email, in `detail`.",
     inputSchema: {
       type: "object",
       properties: {
@@ -244,6 +246,20 @@ export const conversationTools: ConnectorTool[] = [
       type: "object",
       properties: {
         help: { type: "boolean", description: "Return the page kit guide instead of saving." },
+        list: {
+          type: "boolean",
+          description: `List up to ${PAGE_LIST_MAX_LIMIT} matching pages with their pageIds, newest first.`,
+        },
+        query: {
+          type: "string",
+          description: "When listing pages, search by part of the title.",
+        },
+        cursor: {
+          type: "object",
+          description: "Pass nextCursor from the previous page list with the same query.",
+          properties: { pageId: { type: "string" }, updatedAt: { type: "string" } },
+          required: ["pageId", "updatedAt"],
+        },
         pageId: { type: "string", description: "The page to read or update." },
         title: { type: "string", description: "Page title; required for a new page." },
         source: { type: "string", description: "The whole page as JSX." },
@@ -256,6 +272,11 @@ export const conversationTools: ConnectorTool[] = [
             required: ["find", "replace"],
           },
         },
+        icon: {
+          type: "string",
+          description: "The page's app icon: one of the kit's icon names. Set it on a new page.",
+        },
+        iconColor: { type: "string", enum: [...PAGE_ICON_COLORS] },
         images: {
           type: "object",
           description:

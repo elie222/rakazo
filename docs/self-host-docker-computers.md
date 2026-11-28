@@ -24,6 +24,12 @@ Docker computer topology:
 Set any of them to `0`, `none` or `unlimited` to remove that ceiling. A malformed value fails the
 supervisor at startup naming the variable, rather than surfacing later as a failed bot.
 
+When a computer is close to its PID or memory ceiling and a command in it fails, the supervisor's
+log points to the ceiling as the likely cause: `computer.pids_near_limit` or
+`computer.memory_near_limit`, with the computer's container ID and the current and maximum values,
+at most once a minute per computer. If it keeps appearing, raise that ceiling or run fewer bots on
+the host.
+
 Two caps bound how many computers exist. `SANDBOX_MAX_COMPUTERS_PER_USER` caps the computers one
 user's bots may have, and `SANDBOX_MAX_COMPUTERS_PER_SPACE` caps concurrent computer containers per
 Space. `SANDBOX_TEAM_SCREEN_LIMIT` caps active bot desktops on one Team Computer; desktops and

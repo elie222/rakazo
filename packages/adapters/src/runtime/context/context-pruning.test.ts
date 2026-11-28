@@ -211,9 +211,7 @@ describe("context pruning on rebuild", () => {
       },
     ];
 
-    expect(() => pruneComputerScreenshotContext(messages, 1)).toThrow(
-      "the prompt contains 2 user images",
-    );
+    expect(() => pruneComputerScreenshotContext(messages, 1)).toThrow("image limit is 1.");
   });
 
   it("does not apply the default screenshot retention to user images", () => {
@@ -340,14 +338,14 @@ describe("context pruning on rebuild", () => {
       false,
       false,
     ]);
-    expect(() => pruneComputerScreenshotContext([userImage("u")], 0)).toThrow("image limit is 0");
+    expect(() => pruneComputerScreenshotContext([userImage("u")], 0)).toThrow("image limit is 0.");
   });
 
   it("accepts user images exactly at the limit and rejects one more", () => {
     const atLimit = [userImage("u1"), userImage("u2"), screenshot("a")];
     expect(kept(pruneComputerScreenshotContext(atLimit, 2))).toEqual([true, true, false]);
     expect(() => pruneComputerScreenshotContext([...atLimit, userImage("u3")], 2)).toThrow(
-      "contains 3 user images",
+      "image limit is 2.",
     );
   });
 
@@ -375,7 +373,7 @@ describe("context pruning on rebuild", () => {
         { type: "text", text: TOOL_IMAGE_REMOVED_NOTE },
       ],
     });
-    expect(() => pruneComputerScreenshotContext(messages, 0)).toThrow("contains 1 user images");
+    expect(() => pruneComputerScreenshotContext(messages, 0)).toThrow("image limit is 0.");
   });
 
   it("treats a non-finite limit as no limit", () => {

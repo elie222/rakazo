@@ -25,6 +25,7 @@ import {
   ModelSettingsSaveSchema,
   modelChoiceListSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  OrganizationModelConnectInputSchema,
 } from "./model-connections.js";
 import { ModelHeadersSchema } from "./model-headers.js";
 import {
@@ -42,8 +43,30 @@ import {
   VoiceStatusSchema,
 } from "./voice.js";
 
+const OrganizationModelConnectionSchema = z.object({
+  id: Id,
+  provider: z.string(),
+  modelId: z.string(),
+  label: z.string(),
+});
+
 export const modelsRpc = {
   models: {
+    organizationConnections: {
+      available: oc.output(
+        z.object({
+          connections: z.array(OrganizationModelConnectionSchema),
+          selectedId: Id.nullable(),
+          canManage: z.boolean(),
+        }),
+      ),
+      select: oc.input(z.object({ id: Id.nullable() })).output(z.object({ ok: z.literal(true) })),
+      list: oc.input(z.object({})).output(z.array(OrganizationModelConnectionSchema)),
+      create: oc
+        .input(OrganizationModelConnectInputSchema)
+        .output(OrganizationModelConnectionSchema),
+      remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
+    },
     forRole: oc
       .input(z.object({ role: ModelRoleSchema, expectedUserId: Id.optional() }))
       .output(z.array(ModelCatalogEntrySchema)),

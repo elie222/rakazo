@@ -21,10 +21,11 @@ const ENTRIES = [
 const OPTIONAL_VENDORS =
   /^(@aws-sdk\/.+|@azure\/.+|@daytona\/sdk|@e2b\/desktop|novita-sandbox|@composio\/core|@stripe\/link-sdk|@chat-adapter\/(slack|teams|telegram|whatsapp)|@boatdev\/sdk|@boxd-sh\/sdk|@insforge\/instabox-sdk|chat-adapter-sendblue|@axiomhq\/js|@sentry\/node|@alicloud\/.+|@darabonba\/typescript|@kubernetes\/client-node|@larksuiteoapi\/node-sdk|@photon-ai\/chat-adapter-imessage|mppx|railway|@opentelemetry\/(api|sdk-trace|resources|exporter-.+))$/;
 // Packages the bundles load through import() that are not vendor SDKs: an image library, the
-// auth library's own SCIM plugin, the email parser and DKIM check for inbound mail, and the
-// database client, which is also imported statically.
+// HTML parser, the auth library's own SCIM plugin, the email parser and DKIM check for inbound
+// mail, and the database client, which is also imported statically.
 const LAZY_NON_VENDORS = [
   "sharp",
+  "jsdom",
   "@better-auth/scim",
   "postal-mime",
   "mailauth",
@@ -38,6 +39,9 @@ const PENDING = [
   // so the SDK is a static import of every emitted server bundle.
   "@stripe/link-sdk",
 ];
+
+// Large packages a server uses rarely, held to the same rule so every process does not load them.
+const ON_DEMAND = ["jsdom", "esbuild"];
 
 // Vendor SDKs statically imported by each emitted bundle: Map<entry, Set<vendor>>.
 const staticVendors = new Map();
@@ -62,14 +66,14 @@ for (const entry of ENTRIES) {
       }
       // A require() call loads its package at startup just like a static import.
       if (edge.kind !== "import-statement" && edge.kind !== "require-call") continue;
-      if (OPTIONAL_VENDORS.test(name)) found.add(name);
+      if (OPTIONAL_VENDORS.test(name) || ON_DEMAND.includes(name)) found.add(name);
     }
   }
   staticVendors.set(entry, found);
 }
 
 for (const [entry, found] of staticVendors) {
-  test(`${entry} loads optional vendor SDKs only through dynamic import()`, () => {
+  test(`${entry} loads optional vendor SDKs and rarely used packages only through import()`, () => {
     assert.deepEqual(
       [...found].filter((name) => !PENDING.includes(name)),
       [],

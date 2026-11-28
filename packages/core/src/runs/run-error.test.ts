@@ -26,6 +26,7 @@ import {
   MODEL_REQUIRED_SEND_ERROR,
   MODEL_UNPRICED_FOR_CREDITS_ERROR,
   modelFallbackFailure,
+  modelImageLimitError,
   normalizeRunError,
   userRunError,
   VERBATIM_TOOL_RESULT_TOO_LARGE_ERROR,
@@ -415,6 +416,7 @@ describe("normalizeRunError", () => {
         status: "PERMISSION_DENIED",
       }),
       '400: {"message":"The model `example/model` requires terms acceptance.","type":"invalid_request_error","code":"model_terms_required"}',
+      '400: {"type":"invalid_request_error","message":"This example model trains on request data. Turn on \\"Allow paid endpoints that train on request data\\" at https://example.test/settings/privacy to use it."}',
     ])("explains a provider refusing the model to the account: %s", (details) => {
       expect(normalizeRunError(details)).toMatchObject({
         summary: "Your model provider denied access to this model.",
@@ -447,6 +449,14 @@ describe("normalizeRunError", () => {
       expect(normalizeRunError(details)).toEqual({
         summary: details,
         details,
+        kind: "context",
+        recovery: "model",
+      });
+    });
+
+    it("offers another model when the user's images exceed its image limit", () => {
+      expect(normalizeRunError(modelImageLimitError(5))).toMatchObject({
+        summary: modelImageLimitError(5),
         kind: "context",
         recovery: "model",
       });
@@ -493,6 +503,7 @@ describe("normalizeRunError", () => {
       "SAFETY",
       "PROHIBITED_CONTENT",
       '400: {"code":"data_inspection_failed","param":null,"message":"Input text data may contain inappropriate content.","type":"data_inspection_failed"}',
+      "Output data may contain inappropriate content.",
       MODEL_OUTPUT_LIMIT_ERROR,
       "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
     ])("calls unusable model output what it is: %s", (details) => {

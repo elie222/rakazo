@@ -51,6 +51,8 @@ export const ko: Messages = {
   photos: { other: "사진 {count}장" },
   slideOf: "{total}개 중 {n}번째",
   showPhoto: "사진 {n} 보기",
+  previousPhoto: "이전 사진",
+  nextPhoto: "다음 사진",
   view: "보기",
   viewTitle: "{title} 보기",
   rated: "5점 만점에 {rating}점",

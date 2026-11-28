@@ -28,6 +28,7 @@ import {
 import type { ComputerMode, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
+  connectionIn,
   createThreadMessageInTransaction,
   listApprovalRules,
   parseComputerMode,
@@ -497,10 +498,11 @@ async function toolContext(
   routine: RoutineWatchTarget,
 ): Promise<AdapterContext> {
   const rows = await prisma.connection.findMany({
-    where: { userId: routine.userId, spaceId: routine.spaceId },
+    where: connectionIn(routine),
     select: {
       id: true,
       connectorId: true,
+      organizationId: true,
       provider: true,
       providerRef: true,
       displayName: true,

@@ -32,7 +32,7 @@ import { getLogger } from "@rakazo/logging";
 import { activeCodingAgent } from "../cloud-agents/coding-agent-activity.js";
 import { HomeSaveConflictError } from "../storage/home-object-store.js";
 import { diskUpdate, measureComputerDisk } from "./computer-disk.js";
-import { screenLeaseIdForRun, toComputerRef } from "./computer-lifecycle.js";
+import { EXECUTION_LEASE_MS, screenLeaseIdForRun, toComputerRef } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
 import { sandboxAllowanceUsedUp } from "./sandbox/sandbox-allowance.js";
 import { isSandboxDamagedError, isSandboxGoneError } from "./sandbox/sandbox-errors.js";
@@ -555,6 +555,18 @@ export async function sleepComputerIfIdle(
     providerRef: computer.providerRef,
     updatedAt: checkpointedAt,
   };
+  // Writes that do not take the computer, such as a control lease renewal, still move updatedAt
+  // forward. Nothing takes a suspend claim over before its stamp is EXECUTION_LEASE_MS old, so
+  // until then a later stamp is still this claim, and giving the computer back or recording its
+  // stop must match it rather than leave the computer suspending. Half of it leaves room for
+  // clocks that differ between processes.
+  const ownClaim = () => ({
+    ...suspensionClaim,
+    updatedAt:
+      Date.now() - checkpointedAt.getTime() < EXECUTION_LEASE_MS / 2
+        ? { gte: checkpointedAt }
+        : checkpointedAt,
+  });
 
   // Read beside the save so the warning and the next run's note show what the last run left,
   // including when the save fails because build output outgrew it.
@@ -585,7 +597,7 @@ export async function sleepComputerIfIdle(
     if (saved.count !== 1) {
       logHold("suspension_claim_changed", "after_checkpoint");
       await deps.prisma.computer.updateMany({
-        where: suspensionClaim,
+        where: ownClaim(),
         data: { ...(await disk), state: "running" },
       });
       scheduleComputerSleep(deps.jobs, computerId);
@@ -596,7 +608,7 @@ export async function sleepComputerIfIdle(
       // Nothing is left to checkpoint or stop. Retrying would fail the same way every idle
       // window, so clear the dead ref and let the next use boot from the last saved revision.
       const cleared = await deps.prisma.computer.updateMany({
-        where: suspensionClaim,
+        where: ownClaim(),
         data: {
           state: "stopped",
           providerRef: null,
@@ -641,7 +653,7 @@ export async function sleepComputerIfIdle(
       });
     } else {
       await deps.prisma.computer.updateMany({
-        where: suspensionClaim,
+        where: ownClaim(),
         data: { ...(await disk), state: "running" },
       });
       scheduleComputerSleep(deps.jobs, computerId, undefined, rateLimitEnds(error));
@@ -669,7 +681,7 @@ export async function sleepComputerIfIdle(
   if (holdAfterCheckpoint) {
     logHold(holdAfterCheckpoint, "after_checkpoint");
     await deps.prisma.computer.updateMany({
-      where: suspensionClaim,
+      where: ownClaim(),
       data: { ...(await disk), state: "running" },
     });
     scheduleComputerSleep(
@@ -687,7 +699,7 @@ export async function sleepComputerIfIdle(
   ) {
     logHold("suspension_claim_changed", "after_checkpoint");
     await deps.prisma.computer.updateMany({
-      where: suspensionClaim,
+      where: ownClaim(),
       data: { ...(await disk), state: "running" },
     });
     scheduleComputerSleep(deps.jobs, computerId);
@@ -700,7 +712,7 @@ export async function sleepComputerIfIdle(
     await deps.sandbox.stop(ref, ctx, damaged ? { discardUnsaved: true } : undefined);
   } catch (error) {
     await deps.prisma.computer.updateMany({
-      where: suspensionClaim,
+      where: ownClaim(),
       data: { ...(await disk), state: "running" },
     });
     scheduleComputerSleep(deps.jobs, computerId, undefined, rateLimitEnds(error));
@@ -711,7 +723,7 @@ export async function sleepComputerIfIdle(
     throw error;
   }
   const suspended = await deps.prisma.computer.updateMany({
-    where: suspensionClaim,
+    where: ownClaim(),
     data: {
       ...(await disk),
       state: "suspended",

@@ -41,6 +41,7 @@ describe("Hindsight client", () => {
     expect(await probeHindsightKey({ ...config, fetch })).toEqual({
       ok: false,
       error: "Hindsight request failed: 403",
+      accountRefused: true,
     });
     expect(cancel).toHaveBeenCalled();
   });

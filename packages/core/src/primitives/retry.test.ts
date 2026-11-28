@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { pollUntil, retry } from "./retry.js";
+import { pollUntil, retry, WakeLatch } from "./retry.js";
 import { MAX_RETRY_AFTER_MS, parseRetryAfter } from "./retry-policy.js";
 
 afterEach(() => {
@@ -240,5 +240,39 @@ describe("pollUntil", () => {
         { intervalMs: 400, timeoutMs: 1_000, waitingFor: "the answer" },
       ),
     ).rejects.toBe(gone);
+  });
+
+  it("looks again as soon as it is woken during a wait", async () => {
+    vi.useFakeTimers();
+    const wake = new WakeLatch();
+    const check = vi.fn(() => check.mock.calls.length === 2);
+    const result = pollUntil(check, {
+      intervalMs: 60_000,
+      timeoutMs: Number.POSITIVE_INFINITY,
+      wake,
+      waitingFor: "the answer",
+    });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(check).toHaveBeenCalledOnce();
+    wake.wake();
+    await expect(result).resolves.toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not sleep through a wake that lands while a look is running", async () => {
+    vi.useFakeTimers();
+    const wake = new WakeLatch();
+    const check = vi.fn(() => {
+      if (check.mock.calls.length === 1) wake.wake();
+      return check.mock.calls.length === 2;
+    });
+    const result = pollUntil(check, {
+      intervalMs: 60_000,
+      timeoutMs: Number.POSITIVE_INFINITY,
+      wake,
+      waitingFor: "the answer",
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(result).resolves.toBe(true);
   });
 });

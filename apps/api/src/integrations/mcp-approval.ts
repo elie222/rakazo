@@ -3,15 +3,16 @@ import { QUEUE_HOLDING_RUN_STATUSES } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
-  availableInSpace,
   changeMessageBlocks,
   HOLDS_CHAT,
   IsolationError,
+  personalOrOrganizationItemIn,
   storedMessageBlocks,
   withTransactionRetry,
 } from "@rakazo/db";
 import { requireBotThread } from "../bots/bot-thread.js";
 import { mcpConnectedPrompt } from "../bots/hidden-turns.prompt.js";
+import { queueConnectionFollowUp } from "./connection-follow-up.js";
 
 export type McpApprovalDeps = {
   prisma: PrismaClient;
@@ -53,10 +54,10 @@ async function threadsForDecision(
   actor: Actor,
   input: McpApprovalResolution,
 ): Promise<ApprovalThread[]> {
-  // Threads are shared by the space, but a card is about one member's own server:
-  // only that member resolves it.
+  // Threads are shared by the space, but a card is about a server the member can use:
+  // their own or their organization's.
   const server = await deps.prisma.mcpServer.findFirst({
-    where: { id: input.serverId, ...availableInSpace(actor) },
+    where: { id: input.serverId, ...personalOrOrganizationItemIn(actor) },
     select: { id: true },
   });
   if (!server) return [];
@@ -254,32 +255,15 @@ export async function queueMcpConnectedRun(
       select: { id: true },
     }),
     tx.mcpServer.findFirst({
-      where: { id: input.serverId, ...availableInSpace(actor) },
+      where: { id: input.serverId, ...personalOrOrganizationItemIn(actor) },
       select: { name: true },
     }),
   ]);
   if (!bot || busy || !server) return null;
-  const task = await tx.task.create({
-    data: {
-      spaceId: actor.spaceId,
-      botId: input.botId,
-      threadId: thread.id,
-      userId: actor.userId,
-      prompt: mcpConnectedPrompt(server.name),
-      status: "queued",
-    },
+  return queueConnectionFollowUp(tx, actor, {
+    botId: input.botId,
+    threadId: thread.id,
+    prompt: mcpConnectedPrompt(server.name),
+    trigger: "user",
   });
-  const run = await tx.run.create({
-    data: {
-      spaceId: actor.spaceId,
-      botId: input.botId,
-      threadId: thread.id,
-      taskId: task.id,
-      userId: actor.userId,
-      status: "queued",
-      trigger: "user",
-    },
-    select: { id: true },
-  });
-  return run.id;
 }

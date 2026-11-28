@@ -96,7 +96,7 @@ describePostgres("subagent computer coordination", () => {
     expect(parentClaimed).toBe(false);
     expect(
       (await prisma.run.findUniqueOrThrow({ where: { id: parent.runId } })).computerUseStartedAt,
-    ).toBeNull();
+    ).not.toBeNull();
     expect(
       (await prisma.run.findUniqueOrThrow({ where: { id: helper.runId } })).computerUseStartedAt,
     ).not.toBeNull();
@@ -106,6 +106,10 @@ describePostgres("subagent computer coordination", () => {
     expect(next!.fence).toBeGreaterThan(first!.fence);
     await releaseComputerExecutionLease(prisma, next);
     await releaseComputerExecutionLease(prisma, peerLease);
+    await prisma.run.updateMany({
+      where: { id: { in: [helper.runId, parent.runId, other.runId] } },
+      data: { status: "completed" },
+    });
   });
 
   it("serializes a Private Computer with the same fencing protocol", async () => {
@@ -120,7 +124,7 @@ describePostgres("subagent computer coordination", () => {
     checked.mockRestore();
     expect(
       (await prisma.run.findUniqueOrThrow({ where: { id: parent.runId } })).computerUseStartedAt,
-    ).toBeNull();
+    ).not.toBeNull();
     await releaseComputerExecutionLease(prisma, first);
     const second = await next;
     expect(second!.fence).toBeGreaterThan(first!.fence);

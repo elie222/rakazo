@@ -598,13 +598,15 @@ test("a bot's page shows in its reply, opens full screen, is shared by link and 
     pageFrame(page, title).getByRole("heading", { name: "Test dashboard", level: 1 }),
   ).toBeVisible();
   await captureScreenshot(page, testInfo, "page-full-screen");
-  // Opening lands on Close, and Tab reaches the title, Download PDF and Share before anything in
-  // the page.
+  // Opening lands on Close, and Tab reaches the title, Download PDF, Install app and Share before
+  // anything in the page.
   await expect(view.getByRole("button", { name: "Close page" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(view.getByRole("button", { name: title })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(view.getByRole("button", { name: "Download PDF" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(view.getByRole("button", { name: "Install app" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(view.getByRole("button", { name: "Share" })).toBeFocused();
 

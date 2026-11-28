@@ -139,3 +139,40 @@ function headerMenuOptions(
     ],
   };
 }
+
+/**
+ * The native header search bar while `shown`, reporting each change of its text. Hiding it
+ * reports an empty search, so a bar that comes back empty never leaves an old filter applied.
+ */
+export function useHeaderSearch({
+  placeholder,
+  shown,
+  onChange,
+}: {
+  placeholder: string;
+  shown: boolean;
+  onChange: (text: string) => void;
+}) {
+  const navigation = useNavigation();
+  const latest = useRef(onChange);
+  useLayoutEffect(() => {
+    latest.current = onChange;
+  });
+  useLayoutEffect(() => {
+    const change = (text: string) => latest.current(text);
+    if (!shown) change("");
+    navigation.setOptions({
+      headerSearchBarOptions: shown
+        ? {
+            placeholder,
+            hideWhenScrolling: false,
+            autoCapitalize: "none",
+            onChangeText: (event: { nativeEvent: { text: string } }) =>
+              change(event.nativeEvent.text),
+            onCancelButtonPress: () => change(""),
+            onClose: () => change(""),
+          }
+        : undefined,
+    });
+  }, [navigation, placeholder, shown]);
+}

@@ -24,7 +24,7 @@ import {
   runAsTenant,
 } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { InMemoryRealtimeFanout } from "../../notifications/realtime.js";
+import { InMemoryRealtimeFanout, PostgresRealtimeFanout } from "../../notifications/realtime.js";
 import { FakeSandboxProvider } from "../../providers/computer/fake/fake-sandbox.js";
 import { ScriptedAgentRuntime } from "../../runtime/scripted-runtime.js";
 import { EncryptedSecretStore } from "../../secrets/secrets.js";
@@ -72,6 +72,8 @@ describePostgres("a stopping process and the runs it is executing (PostgreSQL)",
   let prisma: PrismaClient;
   let system: PrismaClient;
   let dataDir: string;
+  /** The database's own lease signals, which a running turn waits on as in the worker. */
+  let leaseSignals: PostgresRealtimeFanout;
   const organizations: string[] = [];
   let defaultModelBefore: {
     defaultModelProvider: string | null;
@@ -87,6 +89,7 @@ describePostgres("a stopping process and the runs it is executing (PostgreSQL)",
     db = createDb(url!);
     prisma = db.prisma;
     system = asSystem(prisma);
+    leaseSignals = new PostgresRealtimeFanout({ connectionString: url!, publisher: db.pool });
     dataDir = await mkdtemp(join(tmpdir(), "rakazo-run-drain-"));
     defaultModelBefore = await system.deploymentSettings.findUnique({
       where: { id: "default" },
@@ -127,6 +130,7 @@ describePostgres("a stopping process and the runs it is executing (PostgreSQL)",
     });
     await system.organization.deleteMany({ where: { id: { in: organizations } } });
     await system.user.deleteMany({ where: { id: { in: organizations } } });
+    await leaseSignals.close();
     await prisma.$disconnect();
     await db.pool.end();
     await rm(dataDir, { recursive: true, force: true });
@@ -259,6 +263,7 @@ describePostgres("a stopping process and the runs it is executing (PostgreSQL)",
     const executor = createRunExecutor({
       prisma,
       events: createThreadEvents(prisma, realtime),
+      realtime: leaseSignals,
       jobs,
       sandbox,
       runtime,

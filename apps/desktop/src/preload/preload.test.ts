@@ -8,6 +8,7 @@ function runPreload(
   file: string,
   ipc: { invoke?: unknown; on?: unknown; off?: unknown; sendSync?: unknown } = {},
   platform = "linux",
+  argv: string[] = [],
 ) {
   const invoke =
     (ipc.invoke as ReturnType<typeof vi.fn>) ?? vi.fn(async (channel: string) => ({ channel }));
@@ -20,7 +21,7 @@ function runPreload(
   const source = readFileSync(path.join(import.meta.dirname, file), "utf8");
 
   vm.runInNewContext(source, {
-    process: { platform },
+    process: { platform, argv },
     history,
     window: {
       addEventListener: (type: string, listener: (event: { button: number }) => void) =>
@@ -53,6 +54,7 @@ describe("desktop preload bridge", () => {
     expect(globalName).toBe("rakazoDesktop");
     expect(bridge.platform).toBe("linux");
     expect(Object.keys(bridge).sort()).toEqual([
+      "appIcon",
       "badge",
       "clipboard",
       "computer",
@@ -77,6 +79,10 @@ describe("desktop preload bridge", () => {
       "toggleMaximize",
     ]);
     expect(Object.keys(bridge.update).sort()).toEqual(["check", "download", "install", "state"]);
+
+    await bridge.appIcon!.get();
+    await bridge.appIcon!.set("cap");
+    expect(invoke).toHaveBeenCalledWith("desktop.appIcon.set", "cap");
 
     expect(Object.keys(bridge.badge!)).toEqual(["set"]);
     await bridge.badge!.set(7);
@@ -105,6 +111,8 @@ describe("desktop preload bridge", () => {
     await bridge.update.install();
     await bridge.server!.change();
     expect(invoke.mock.calls.map(([channel]) => channel)).toEqual([
+      "desktop.appIcon.get",
+      "desktop.appIcon.set",
       "desktop.badge.set",
       "desktop.clipboard.write",
       "desktop.device.state",
@@ -213,6 +221,19 @@ describe("desktop preload bridge", () => {
     const { exposeInMainWorld } = runPreload("preload.cjs", {}, platform);
     const [, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoDesktop];
     expect(bridge.speech).toBeUndefined();
+  });
+
+  it("offers installing pages as apps only to a window main started for it", async () => {
+    const plain = runPreload("preload.cjs", {}, "darwin");
+    expect((plain.exposeInMainWorld.mock.calls[0] as [string, RakazoDesktop])[1].pageApps).toBe(
+      undefined,
+    );
+    const { invoke, exposeInMainWorld } = runPreload("preload.cjs", {}, "darwin", [
+      "--rakazo-page-apps",
+    ]);
+    const [, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoDesktop];
+    await bridge.pageApps!.open("app-1");
+    expect(invoke).toHaveBeenCalledWith("desktop.pageApps.open", "app-1");
   });
 
   it("bridges macOS system speech without leaking the IPC event", async () => {

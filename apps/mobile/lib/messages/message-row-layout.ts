@@ -22,6 +22,7 @@ export function messageRowLayout(
   const fillsBubble = blocks.some(
     (block) =>
       block.kind === "app_connect" ||
+      block.kind === "feedback_receipt" ||
       block.kind === "mcp_approval" ||
       block.kind === "tool_question" ||
       block.kind === "app" ||

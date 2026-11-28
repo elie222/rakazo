@@ -29,6 +29,7 @@ model User {
   pageGrants PageGrant[]
   pageComments PageComment[]
   pageReaderStates PageReaderState[]
+  pageApps         PageApp[]
   id                          String                       @id
   name                        String
   email                       String
@@ -82,6 +83,7 @@ model User {
   scimIdentityTombstones      ScimIdentityTombstone[]
   scimProjectionGrants        ScimProjectionGrant[]
   passkeys                    Passkey[]
+  apiKeys                     ApiKey[]
   members                     Member[]
   accessGrants                AccessGrant[]
   invitations                 Invitation[]
@@ -311,6 +313,39 @@ model Passkey {
   @@map("passkey")
 }
 
+/// Better Auth API keys, which let scripts and other agents use the account's bots. `key` holds
+/// only a hash; the key itself is shown once. A test in packages/auth compares it with the plugin.
+model ApiKey {
+  id                  String    @id
+  configId            String    @default("default")
+  name                String?
+  start               String?
+  referenceId         String
+  user                User      @relation(fields: [referenceId], references: [id], onDelete: Cascade)
+  prefix              String?
+  key                 String
+  refillInterval      Int?
+  refillAmount        Int?
+  lastRefillAt        DateTime?
+  enabled             Boolean?  @default(true)
+  rateLimitEnabled    Boolean?  @default(true)
+  rateLimitTimeWindow Int?
+  rateLimitMax        Int?
+  requestCount        Int?      @default(0)
+  remaining           Int?
+  lastRequest         DateTime?
+  expiresAt           DateTime?
+  createdAt           DateTime
+  updatedAt           DateTime
+  permissions         String?
+  metadata            String?
+
+  @@index([configId])
+  @@index([referenceId])
+  @@index([key])
+  @@map("api_keys")
+}
+
 // Directory provisioning (SCIM 2.0), owned by the auth library's SCIM plugin, which reads and
 // writes these tables directly; a test in packages/auth compares them with its schema.
 
@@ -477,14 +512,38 @@ model Organization {
   spaces       Space[]
   billing      BillingAccount?
   modelCredits ModelCreditAccount?
+  modelConnections OrganizationModelConnection[]
   computerAllowanceGrants ComputerAllowanceGrant[]
   mediaCharges MediaCharge[]
   referralCode ReferralCode?
   referredBy   Referral?           @relation("ReferredOrganization")
   referrals    Referral[]          @relation("ReferrerOrganization")
+  organizationLogins OrganizationLogin[]
+  mcpServers   McpServer[]
+  connections  Connection[]
+  secrets      Secret[]
 
   @@unique([slug])
   @@map("organization")
+  agentSkills AgentSkill[]
+  capabilityInstalls CapabilityInstall[]
+
+}
+
+model OrganizationModelConnection {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  provider       String
+  modelId        String
+  label          String
+  secretId       String
+  ciphertext     String
+  supportsImages Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+  @@map("organization_model_connections")
 }
 
 model BillingAccount {
@@ -561,6 +620,7 @@ model AccessGrant {
   email          String
   creditCents    Int       @default(0)
   freeMonths     Int       @default(0)
+  byokTier       String?
   createdById    String?
   createdBy      User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
   organizationId String?
@@ -778,6 +838,9 @@ model SpaceMember {
   member           Member                 @relation(fields: [organizationId, userId], references: [organizationId, userId], onDelete: Cascade)
   role             String                 @default("member")
   createdAt        DateTime
+  organizationModelConnectionId String?
+  organizationModelProvider String?
+  organizationModelId String?
   modelPreferences SpaceModelPreference[]
   voicePreferences SpaceVoicePreference[]
   aiDataConsents AiDataConsent[]
@@ -1011,6 +1074,7 @@ model SpaceVoicePreference {
 }
 
 model Bot {
+  organizationLoginGrants OrganizationLoginGrant[]
   meetingSessions MeetingSession[]
   screenGeneration Int @default(0)
   id                String            @id @default(cuid())
@@ -1294,9 +1358,33 @@ model Task {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   runs      Run[]
+  callback  TaskCallback?
 
   @@index([spaceId, botId])
   @@map("tasks")
+}
+
+/// Where to report a task an API caller started each time it settles. Its signing key is derived
+/// from the server's key, the API key that asked for it and the address, so nothing secret is
+/// stored and a new API key gets a new signing key.
+model TaskCallback {
+  id              String    @id @default(cuid())
+  taskId          String    @unique
+  task            Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  spaceId         String
+  userId          String
+  /// The key that asked for it; a revoked key's callbacks stop. No foreign key, so deleting a
+  /// key leaves the row to be skipped rather than deleted mid-delivery.
+  issuerKeyId     String
+  url             String
+  /// The run and task status last sent, so each settled state is sent once.
+  deliveredRunId  String?
+  deliveredStatus String?
+  deliveredAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([spaceId, userId])
+  @@map("task_callbacks")
 }
 
 model Run {
@@ -1748,9 +1836,9 @@ model AgentImport {
 
 model AgentSkill {
   id          String   @id @default(cuid())
-  spaceId     String
-  space       Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  userId      String
+  spaceId     String?
+  space       Space?    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId      String?
   name        String
   description String
   content     String
@@ -1764,6 +1852,10 @@ model AgentSkill {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  organizationId String?
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
   @@index([spaceId, userId])
   @@index([installId])
   // Case-insensitive unique index agent_skills_spaceId_userId_name_lower_key is created in SQL.
@@ -1771,29 +1863,33 @@ model AgentSkill {
 }
 
 model Connection {
-  id          String   @id @default(cuid())
-  spaceId     String
-  space       Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  userId      String
-  connectorId String
-  provider    String
-  displayName String
-  status      String
-  secretId    String?
-  providerRef String?
-  metadata    Json     @default("{}")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             String        @id @default(cuid())
+  spaceId        String?
+  space          Space?        @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId         String?
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connectorId    String
+  provider       String
+  displayName    String
+  status         String
+  secretId       String?
+  providerRef    String?
+  metadata       Json          @default("{}")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   @@index([spaceId, userId, connectorId])
+  // Active organization connection labels have a case-insensitive unique index in SQL.
+  @@index([organizationId])
   @@map("connections")
 }
 
 model CapabilityInstall {
   id        String   @id @default(cuid())
-  spaceId   String
-  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  userId    String
+  spaceId   String?
+  space     Space?    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId    String?
   kind      String
   name      String
   source    String
@@ -1808,6 +1904,10 @@ model CapabilityInstall {
   mcpServers  McpServer[]
   availableIn CapabilityInstallSpace[]
 
+  organizationId String?
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
   @@index([spaceId, userId])
   @@map("capability_installs")
 }
@@ -2074,6 +2174,9 @@ model Page {
   groupId        String?
   group          ChatGroup?    @relation(fields: [groupId], references: [id], onDelete: Cascade)
   title          String
+  /// A page-kit icon name the bot chose for the page's app icon.
+  icon           String?
+  iconColor      String?
   visibility     String        @default("private")
   shareTokenHash String?       @unique
   /// The link token itself, sealed in the secret store so the owner can copy the link again.
@@ -2089,6 +2192,7 @@ model Page {
   comments       PageComment[]
   readerStates   PageReaderState[]
   images         PageImage[]
+  apps           PageApp[]
 
   @@index([spaceId, userId, updatedAt])
   @@index([botId])
@@ -2106,6 +2210,8 @@ model PageVersion {
   /// The source compiled for the viewer when it was saved, so reads never run the compiler.
   code      String
   images    Json?
+  /// What this version may ask its host for, read from its source when it was saved.
+  abilities String[] @default([])
   createdAt DateTime @default(now())
 
   @@unique([pageId, version])
@@ -2158,6 +2264,29 @@ model PageReaderState {
   @@unique([pageId, userId])
   @@index([userId])
   @@map("page_reader_states")
+}
+
+/// A page installed as its own app on one of the owner's devices, reading it with its own token.
+model PageApp {
+  id         String    @id @default(cuid())
+  pageId     String
+  page       Page      @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spaceId    String
+  /// The sign-in it was installed through: ending that sign-in ends the app, as it does a paired
+  /// computer.
+  sessionId  String?
+  tokenHash  String    @unique
+  /// Abilities the owner approved; a page version's own list says which it uses.
+  abilities  String[]  @default([])
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  @@index([userId])
+  @@index([pageId])
+  @@index([sessionId])
+  @@map("page_apps")
 }
 
 model PageComment {
@@ -2239,7 +2368,7 @@ model UsageRecord {
   agentId            String?
   createdAt          DateTime @default(now())
 
-  @@index([spaceId, userId, createdAt])
+  // usage_records_spaceId_userId_createdAt_covering_idx is raw SQL: Prisma cannot express INCLUDE columns.
   @@map("usage_records")
 }
 
@@ -2274,8 +2403,12 @@ model SpaceMemoryConfig {
 
 model Secret {
   id                String             @id @default(cuid())
-  userId            String
-  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Null only for an organization's secret.
+  userId            String?
+  user              User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Set for an organization's secret, which every member's runs in its Spaces can use.
+  organizationId    String?
+  organization      Organization?      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   spaceId           String?
   space             Space?             @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   kind              String
@@ -2287,15 +2420,20 @@ model Secret {
   pageShare         Page?
 
   @@index([userId, spaceId])
+  @@index([organizationId])
   @@map("secrets")
 }
 
+/// A member's server (`userId` and the Space it was added in), or an organization's
+/// (`organizationId` alone), which every member's agents in every Space of it can use.
 model McpServer {
   id            String            @id @default(cuid())
-  spaceId       String
-  space         Space             @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  userId        String
-  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spaceId       String?
+  space         Space?            @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId        String?
+  user          User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String?
+  organization  Organization?     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   slug          String
   name          String
   description   String            @default("")
@@ -2330,6 +2468,7 @@ model McpServer {
   allBots       Boolean           @default(false)
 
   @@unique([spaceId, userId, slug])
+  @@unique([organizationId, slug])
   @@index([spaceId, userId])
   @@index([installId])
   @@map("mcp_servers")
@@ -2523,6 +2662,31 @@ model BotSecret {
   @@index([botId])
   @@index([spaceId])
   @@map("bot_secrets")
+}
+
+model OrganizationLogin {
+  id             String @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  origin         String
+  sessionCipher  String?
+  sessionVersion Int @default(0)
+  grants         OrganizationLoginGrant[]
+
+  @@index([organizationId])
+  @@map("organization_logins")
+}
+
+model OrganizationLoginGrant {
+  loginId String
+  login   OrganizationLogin @relation(fields: [loginId], references: [id], onDelete: Cascade)
+  botId   String
+  bot     Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@id([loginId, botId])
+  @@index([botId])
+  @@map("organization_login_grants")
 }
 
 /// A member's vault items: logins, cards, contacts, API credentials and command variables. A null
@@ -2740,6 +2904,7 @@ model ModelCreditAccount {
   balanceMicros         BigInt             @default(0)
   pendingCreditCheckout Boolean            @default(false)
   byokFreeUntil         DateTime?
+  freeByokTiers          FreeByokTier[]
   purchaseReadsStarted  BigInt             @default(0)
   purchaseReadApplied   BigInt             @default(0)
   entries               ModelCreditEntry[]
@@ -2748,6 +2913,17 @@ model ModelCreditAccount {
   updatedAt             DateTime           @updatedAt
 
   @@map("model_credit_accounts")
+}
+
+/// The current expiry for a named complimentary own-key tier, tracked separately from other tiers.
+model FreeByokTier {
+  organizationId String
+  account        ModelCreditAccount @relation(fields: [organizationId], references: [organizationId], onDelete: Cascade)
+  tier           String
+  expiresAt      DateTime
+
+  @@id([organizationId, tier])
+  @@map("free_byok_tiers")
 }
 
 /// Current purchase, reservation, or expiry projection. Database triggers journal every change.

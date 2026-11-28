@@ -1,16 +1,27 @@
+import type { JobPublisher } from "@rakazo/adapter-kit";
 import type { ConnectorRegistry } from "@rakazo/adapters";
+import { wakeRun } from "@rakazo/adapters";
 import type { Actor, ConnectionCatalogItem, MessageBlock } from "@rakazo/contracts";
-import { appConnectCard, connectedAppBlock, matchAppCatalog } from "@rakazo/core";
+import {
+  APP_CONNECTION_FOLLOW_UP_NONCE_PREFIX,
+  appConnectCard,
+  connectedAppBlock,
+  matchAppCatalog,
+} from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   changeMessageBlocks,
   createThreadMessageInTransaction,
   IsolationError,
+  organizationItemIn,
   storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { requireBotThread } from "../bots/bot-thread.js";
+import { appConnectedPrompt } from "../bots/hidden-turns.prompt.js";
+import { queueConnectionFollowUp } from "../integrations/connection-follow-up.js";
 import { resolveThreadTarget } from "../threads/thread-target.js";
 
 /**
@@ -306,16 +317,18 @@ export async function chooseFocus(
 }
 
 export async function markAppConnected(
-  deps: OnboardingDeps,
+  deps: OnboardingDeps & { jobs: Pick<JobPublisher, "enqueue"> },
   actor: Actor,
   botId: string,
   provider: string,
   connectorId = deps.connectors.defaultConnectorId,
   threadId?: string,
   messageId?: string,
+  organizationConnectionId?: string,
 ): Promise<void> {
   const { bot, thread: ownThread } = await requireBotThread(deps, actor, botId);
   let thread = ownThread;
+  let chatBotIds = [bot.id];
   if (threadId && threadId !== ownThread.id) {
     const candidate = await deps.prisma.thread.findFirst({
       where: { id: threadId, spaceId: actor.spaceId },
@@ -324,6 +337,7 @@ export async function markAppConnected(
     const target = await resolveThreadTarget(deps.prisma, actor, { groupId: candidate.groupId });
     if (target.kind !== "group" || !target.memberBotIds.includes(botId)) throw new IsolationError();
     thread = { ...ownThread, id: target.threadId };
+    chatBotIds = target.memberBotIds;
   }
   const providerAdapter = deps.connectors.managed(connectorId);
   if (!providerAdapter) return;
@@ -342,48 +356,136 @@ export async function markAppConnected(
     catalog.filter((item) => item.connectorId === connectorId),
     provider,
   );
-  if (!entry?.connected) return;
-  const target = { spaceId: actor.spaceId, botId: bot.id, threadId: thread.id };
-  const updates = await deps.prisma.$transaction(async (tx) => {
+  const shared = organizationConnectionId
+    ? await deps.prisma.connection.findFirst({
+        where: {
+          ...organizationItemIn(actor),
+          id: organizationConnectionId,
+          connectorId,
+          provider: { equals: entry?.slug ?? provider, mode: "insensitive" },
+          status: "connected",
+        },
+        select: { id: true },
+      })
+    : null;
+  if (organizationConnectionId ? !shared : !entry?.connected) return;
+  const committed = await deps.prisma.$transaction(async (tx) => {
     // Two authorizations may finish together on an onboarding message with multiple cards.
     await tx.$executeRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
     // Onboarding cards sit at the start of the chat and inline cards near the end;
     // bound both reads so a long chat is never scanned in full.
-    const select = { id: true, blocks: true } as const;
+    const select = { id: true, seq: true, blocks: true, botId: true, runId: true } as const;
     const first = await tx.message.findMany({
       where: { threadId: thread.id },
       select,
-      orderBy: { createdAt: "asc" },
+      orderBy: { seq: "asc" },
       take: 100,
     });
     const latest = await tx.message.findMany({
       where: { threadId: thread.id },
       select,
-      orderBy: { createdAt: "desc" },
+      orderBy: { seq: "desc" },
       take: 200,
     });
     const own = messageId
       ? await tx.message.findMany({ where: { id: messageId, threadId: thread.id }, select })
       : [];
-    const messages = [...new Map([...first, ...latest, ...own].map((m) => [m.id, m])).values()];
+    const messages = [
+      ...new Map([...own, ...latest, ...first].map((m) => [m.id, m])).values(),
+    ].sort((a, b) => b.seq - a.seq);
+    const chatBots = new Set(chatBotIds);
+    const runIds = messages.flatMap((message) =>
+      message.botId && chatBots.has(message.botId) && message.runId ? [message.runId] : [],
+    );
+    const ownedRuns = runIds.length
+      ? await tx.run.findMany({
+          where: {
+            id: { in: runIds },
+            spaceId: actor.spaceId,
+            userId: actor.userId,
+            botId: { in: chatBotIds },
+            bot: { archivedAt: null },
+            threadId: thread.id,
+          },
+          select: {
+            id: true,
+            botId: true,
+            status: true,
+            trigger: true,
+            sourceMessage: { select: { id: true, role: true, authorUserId: true, threadId: true } },
+          },
+        })
+      : [];
+    const runs = new Map(ownedRuns.map((run) => [run.id, run]));
+    const changes = messages.flatMap((message) => {
+      const requestingBotId = message.botId ?? bot.id;
+      if (!chatBots.has(requestingBotId)) return [];
+      const origin = message.runId ? runs.get(message.runId) : undefined;
+      if (message.runId && origin?.botId !== requestingBotId) return [];
+      const next = changeMessageBlocks(message, (block) => {
+        if (block.kind === "app_connect" && block.organizationConnectionId !== shared?.id)
+          return block;
+        return connectedAppBlock(
+          block,
+          connectorId,
+          entry?.slug ?? provider,
+          deps.connectors.defaultConnectorId,
+        );
+      });
+      return next ? [{ message, requestingBotId, origin, next }] : [];
+    });
+    const confirmedRequest = changes.some(
+      ({ message, requestingBotId, origin }) =>
+        message.id === messageId && requestingBotId === bot.id && origin,
+    );
+    const seenRequests = new Set<string>();
+    const followUps: string[] = [];
     const events = [];
-    for (const message of messages) {
-      const next = changeMessageBlocks(message, (block) =>
-        connectedAppBlock(block, connectorId, entry.slug, deps.connectors.defaultConnectorId),
-      );
-      if (!next) continue;
+    for (const { message, requestingBotId, origin, next } of changes) {
+      if (requestingBotId !== bot.id && !confirmedRequest) continue;
+      const newest = !seenRequests.has(requestingBotId);
+      if (origin) seenRequests.add(requestingBotId);
+      if (
+        confirmedRequest &&
+        newest &&
+        origin &&
+        (origin.trigger === "user" || origin.trigger === "follow_up") &&
+        origin.status !== "cancelled" &&
+        origin.status !== "failed"
+      ) {
+        const source = origin.sourceMessage;
+        const sourceMessageId =
+          source?.role === "user" &&
+          source.authorUserId === actor.userId &&
+          source.threadId === thread.id
+            ? source.id
+            : undefined;
+        const followUp = await queueConnectionFollowUp(tx, actor, {
+          botId: requestingBotId,
+          threadId: thread.id,
+          prompt: appConnectedPrompt(entry?.name ?? provider),
+          trigger: "follow_up",
+          clientNonce: `${APP_CONNECTION_FOLLOW_UP_NONCE_PREFIX}${message.id}`,
+          sourceMessageId,
+        });
+        followUps.push(followUp);
+      }
       await tx.message.update({ where: { id: message.id }, data: { blocks: next.stored } });
       events.push(
         await appendEventInTransaction(tx, {
-          ...target,
+          spaceId: actor.spaceId,
+          threadId: thread.id,
+          botId: requestingBotId,
           type: "thread.message.updated",
           payload: { messageId: message.id, role: "bot", blocks: next.blocks },
         }),
       );
     }
-    return events;
+    return { events, followUps };
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
-  for (const event of updates) await deps.events.notify(thread.id, event.seq);
+  for (const event of committed.events)
+    await bestEffort("notify connected app card", deps.events.notify(thread.id, event.seq));
+  for (const runId of committed.followUps) await wakeRun(deps.jobs, runId);
 }
 
 function capitalize(value: string): string {

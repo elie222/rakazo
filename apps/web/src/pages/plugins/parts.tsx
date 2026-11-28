@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ConnectionCatalogItem, McpServer, PluginMarketplaceEntry } from "@rakazo/contracts";
 import { mcpServerConnection } from "@rakazo/contracts";
-import { catalogItemKey } from "@rakazo/core";
+import { catalogItemAccounts, catalogItemKey } from "@rakazo/core";
 import { mcpServerStatusLabel } from "@rakazo/i18n/plugin-catalog";
 import { Button, SectionHeading } from "@rakazo/ui-web";
 import { Check, ChevronLeft, CircleAlert, TriangleAlert } from "lucide-react";
@@ -85,6 +85,7 @@ export type TileContext = {
   /** Managed apps whose brand also has a plugin, keyed by catalog item. */
   pluginForApp: Map<string, PluginMarketplaceEntry>;
   onOpenApp: (item: ConnectionCatalogItem) => void;
+  organizationName?: string | null;
   onOpenDetail: (item: ConnectionCatalogItem) => void;
   /** Opens where a chat app is set up; absent where that cannot be reached. */
   onOpenChatApp?: () => void;
@@ -112,6 +113,11 @@ export function CatalogTile({
   const title = (
     <div className="min-w-0 flex-1 text-start">
       <div className="truncate text-body-lg font-medium text-foreground">{label}</div>
+      {catalogItemAccounts(connections.connections, item).some((row) => row.organization) ? (
+        <div className="text-body-sm text-muted-foreground">
+          <Trans>Organization</Trans>
+        </div>
+      ) : null}
     </div>
   );
   const tile = (
@@ -201,7 +207,8 @@ function CatalogActions({
       disabled={connecting}
       onClick={(event) => {
         event.stopPropagation();
-        void connections.connect(item);
+        if (context.organizationName) onOpenDetail(item);
+        else connections.connect(item);
       }}
     >
       {connecting ? <Trans>Adding…</Trans> : <Trans>Add</Trans>}

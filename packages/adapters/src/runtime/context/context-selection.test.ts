@@ -677,6 +677,34 @@ describe("bounded context selection", () => {
       }
     }
   });
+  it("keeps available budget when shortening an MCP envelope with large structuredContent", () => {
+    const body = Array.from(
+      { length: 600 },
+      (_, index) => `Paragraph ${index} with page evidence.`,
+    ).join("\n");
+    const inner = {
+      id: "page-1",
+      url: "https://example.test/page-1",
+      title: "Architecture notes",
+      text: body,
+    };
+    const source = JSON.stringify({
+      content: [{ type: "text", text: JSON.stringify(inner) }],
+      structuredContent: { ...inner, revision: 2 },
+      isError: false,
+    });
+    const out = shortenToolResultText(source, 12_000);
+    const envelope = JSON.parse(out);
+    const textCopy = JSON.parse(envelope.content[0].text);
+    expect(out.length).toBeLessThanOrEqual(12_000);
+    expect(envelope.contextTruncated).toBe(true);
+    expect(textCopy.id).toBe("page-1");
+    expect(envelope.structuredContent.id).toBe("page-1");
+    // Previously `wrap(emptyJsonShell)` still included full structuredContent, collapsing the
+    // budget to 128 characters and cutting both copies' text to tiny stubs.
+    expect(textCopy.text.length).toBeGreaterThan(2_000);
+    expect(envelope.structuredContent.text.length).toBeGreaterThan(2_000);
+  });
   it("does not mark an MCP envelope truncated when both copies already fit", () => {
     const inner = { id: "conversation-1", name: "Conversation", note: "brief" };
     const envelope = {

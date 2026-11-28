@@ -38,16 +38,27 @@ const fieldClass = "mt-2";
 const CODE_LENGTH = 6;
 export const submitClass = "mt-3 w-full";
 
-export function AuthPage({ mode }: { mode: AuthMode }) {
+export function AuthPage({
+  mode,
+  at,
+}: {
+  mode: AuthMode;
+  /** Where the form lives when another screen shows it in place of sign-in's own address. */
+  at?: string;
+}) {
   const { t } = useLingui();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const chooserPath = mode === "up" ? "/sign-up" : "/sign-in";
+  const chooserPath = at ?? (mode === "up" ? "/sign-up" : "/sign-in");
   const emailStep = location.pathname === `${chooserPath}/email`;
   const next = signInNext(searchParams.get("next"));
-  // Switching between sign-in and sign-up keeps where the person was going.
-  const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
+  // Switching between sign-in and sign-up keeps where the person was going; a form shown in place
+  // of sign-in also keeps the rest of its own address, such as a page app's Space.
+  const kept = new URLSearchParams(at ? searchParams : undefined);
+  kept.delete("error");
+  if (next) kept.set("next", next);
+  const nextQuery = kept.toString() ? `?${kept}` : "";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -283,7 +294,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
             provider,
             newUserCallbackURL: callbackURL(newAccountDestination(next)),
             callbackURL: callbackURL(next ?? "/app"),
-            errorCallbackURL: callbackURL("/sign-in"),
+            errorCallbackURL: callbackURL(at ? `${at}${nextQuery}` : "/sign-in"),
           }),
         ["/app", "/onboarding", "/integrations/setup", "/sign-in", ...(next ? [next] : [])],
       );
@@ -504,7 +515,10 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   />
                   {mode === "in" && reset?.passwordReset ? (
                     <div className="mt-2 text-right text-body">
-                      <Link to="/forgot-password" className="font-medium text-foreground">
+                      <Link
+                        to={`/forgot-password${next ? `?next=${encodeURIComponent(next)}` : ""}`}
+                        className="font-medium text-foreground"
+                      >
                         <Trans>Forgot password?</Trans>
                       </Link>
                     </div>

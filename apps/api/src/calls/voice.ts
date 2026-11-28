@@ -42,7 +42,9 @@ import {
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import type { Context, Hono } from "hono";
+import type { isTrustedOrigin } from "../auth/trusted-origins.js";
 import { readBoundedBody } from "../http/http-body.js";
+import { crossSiteCookieRequest } from "../http/rpc-route.js";
 import type { DeploymentVoice } from "../voice/deployment-config.js";
 import { hasDeploymentVoiceConsent } from "../voice/deployment-consent.js";
 import { voiceHttpError } from "../voice/http-errors.js";
@@ -882,7 +884,15 @@ export function mountVoiceHttpRoutes(
   app: Hono,
   deps: VoiceDeps,
   authenticate: (c: Context) => Promise<Actor | null>,
+  env: Parameters<typeof isTrustedOrigin>[1],
 ) {
+  app.use("/api/voice/*", async (c, next) => {
+    if (crossSiteCookieRequest(c.req.raw, env)) {
+      return c.json({ error: "Request origin is not allowed." }, 403);
+    }
+    return next();
+  });
+
   app.post("/api/voice/speak", async (c) => {
     const actor = await authenticate(c);
     if (!actor) return c.json({ error: "Unauthorized" }, 401);

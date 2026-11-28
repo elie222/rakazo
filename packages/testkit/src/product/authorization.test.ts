@@ -244,6 +244,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
   it("rejects unauthenticated calls to every protected RPC family", async () => {
     const calls = exhaustiveProtectedCalls([
       ["me"],
+      ["apiKeys/list"],
+      ["apiKeys/create", { name: "script" }],
+      ["apiKeys/revoke", { id: "missing-key" }],
       ["deployment/get"],
       ["deployment/update", { signupsEnabled: true }],
       ["updater/status"],
@@ -251,6 +254,14 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["updater/apply", {}],
       ["models/list"],
       ["models/credentials"],
+      ["models/organizationConnections/available"],
+      ["models/organizationConnections/select", { id: null }],
+      ["models/organizationConnections/list", {}],
+      [
+        "models/organizationConnections/create",
+        { provider: "test", apiKey: "not-a-real-key", modelId: "test/model", label: "Test" },
+      ],
+      ["models/organizationConnections/remove", { id: "missing-connection" }],
       ["models/connect", { provider: "test", apiKey: "not-a-real-key" }],
       ["models/beginOAuth", { provider: "openai-codex" }],
       ["models/submitOAuthCode", { loginId: "missing-login", code: "fake-code" }],
@@ -294,6 +305,24 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["spaces/invites/accept", { token: "missing-token" }],
       ["spaces/invites/cancel", { spaceId: "missing-space" }],
       ["organizations/list"],
+      ["organizations/vault/list"],
+      ["organizations/vault/settings"],
+      ["organizations/vault/revokeSession", { loginId: "missing-login" }],
+      [
+        "organizations/vault/signIn",
+        {
+          loginId: "missing-login",
+          url: "https://example.test",
+          steps: [
+            { kind: "fill", role: "textbox", name: "Password", text: "fake-password" },
+            { kind: "click", role: "button", name: "Sign in" },
+            { kind: "wait", role: "heading", name: "Account" },
+          ],
+        },
+      ],
+      ["organizations/vault/create", { origin: "https://example.test", name: "Test", botIds: [] }],
+      ["organizations/vault/setAgents", { loginId: "missing-login", botIds: [] }],
+      ["organizations/vault/remove", { loginId: "missing-login" }],
       ["organizations/create", { name: "Nope" }],
       ["organizations/rename", { organizationId: "missing-organization", name: "Nope" }],
       ["organizations/remove", { organizationId: "missing-organization" }],
@@ -343,6 +372,12 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/remove", { botId: "missing-bot" }],
       ["bots/removePreview", { botId: "missing-bot" }],
       ["bots/importCreate"],
+      [
+        "bots/importMany",
+        {
+          agents: [{ importKey: "import-key-1", files: [{ path: "SOUL.md", content: "Calm." }] }],
+        },
+      ],
       ["bots/importSetupState"],
       ["bots/templates"],
       ["bots/createFromTemplate", { templateId: "morning-briefing", version: 1 }],
@@ -509,6 +544,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["connections/catalog", {}],
       ["connections/list"],
       ["connections/begin", connectionInput("Unauthenticated")],
+      ["connections/beginForOrganization", connectionInput("Unauthenticated")],
+      ["connections/reconnectOrganization", { connectionId: "missing-connection" }],
       ["connections/complete", { connectionId: "missing-connection" }],
       ["connections/revoke", { connectionId: "missing-connection" }],
       ["connections/rename"],
@@ -543,6 +580,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["pages/setVisibility"],
       ["pages/pin"],
       ["pages/remove"],
+      ["pageApps/install"],
+      ["pageApps/remove"],
+      ["pages/ask"],
       ["usage/list"],
       ["usage/summary"],
       ["usage/limits"],
@@ -593,6 +633,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["billing/endTrial"],
       ["billing/switchToYearly"],
       ["billing/changeTier"],
+      ["billing/renewTrial"],
       ["billing/claimReferral"],
       ["billing/redeemCreditCode", { code: "NOT-A-REAL-CODE" }],
       ["accessGrants/list"],
@@ -623,6 +664,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["mcp/servers/list"],
       ["mcp/servers/create"],
       ["mcp/servers/createForBots"],
+      ["mcp/servers/createForOrganization"],
       ["mcp/servers/connect"],
       ["mcp/servers/update"],
       ["mcp/servers/save"],
@@ -966,7 +1008,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       connectionId: ownerConnection.connectionId,
     });
     expect(
-      await handles.prisma.capabilityInstall.findUnique({ where: { id: ownerCapability.id } }),
+      await db.capabilityInstall.findUnique({ where: { id: ownerCapability.id } }),
     ).not.toBeNull();
     expect(
       await asSystem(handles.prisma).connection.findUniqueOrThrow({

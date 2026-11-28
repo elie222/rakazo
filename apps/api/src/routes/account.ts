@@ -202,6 +202,11 @@ export function accountRoutes(ctx: RouterContext) {
         await billing.changeTier(context.actor, input.tier);
         return billing.status(context.actor);
       }),
+      renewTrial: authed.billing.renewTrial.handler(async ({ context, input }) => {
+        const billing = requireBilling(deps);
+        await billing.renewTrial(context.actor, input.tier, input.interval);
+        return billing.status(context.actor);
+      }),
       claimReferral: authed.billing.claimReferral.handler(async ({ context, input }) => {
         await requireBilling(deps).claimReferral(context.actor, input.code);
         return { ok: true as const };

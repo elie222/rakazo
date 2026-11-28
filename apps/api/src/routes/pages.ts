@@ -1,6 +1,8 @@
 import { AI_CONSENT_REQUIRED } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { aiConsentStatus } from "../account/ai-consent.js";
+import { installPageApp, removePageApp } from "../content/page-apps.js";
+import { askFromPage } from "../content/page-ask.js";
 import {
   addPageComment,
   getPageGrants,
@@ -25,7 +27,7 @@ import {
 import type { RouterContext } from "./context.js";
 
 export function pagesRoutes(ctx: RouterContext) {
-  const { deps, authed } = ctx;
+  const { deps, authed, codexCatalog } = ctx;
   const pageDeps = () => ({
     prisma: deps.prisma,
     secrets: deps.secrets,
@@ -80,6 +82,14 @@ export function pagesRoutes(ctx: RouterContext) {
         getPageImage(deps, context.actor, input),
       ),
     },
+    pageApps: {
+      install: authed.pageApps.install.handler(({ context, input }) =>
+        installPageApp(deps.prisma, deps.jobs, context.actor, input, context.sessionId),
+      ),
+      remove: authed.pageApps.remove.handler(({ context, input }) =>
+        removePageApp(deps.prisma, context.actor, input.appId),
+      ),
+    },
     pages: {
       list: authed.pages.list.handler(({ context, input }) =>
         listPages(deps.prisma, context.actor, input),
@@ -104,6 +114,15 @@ export function pagesRoutes(ctx: RouterContext) {
       remove: authed.pages.remove.handler(({ context, input }) =>
         removePage(pageDeps(), context.actor, input.pageId),
       ),
+      ask: authed.pages.ask.handler(async function* ({ context, input }) {
+        yield* askFromPage(
+          { ...deps, codexCatalog },
+          context.actor,
+          input,
+          context.signal,
+          context.stillAuthorized,
+        );
+      }),
     },
   };
 }

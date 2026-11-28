@@ -124,9 +124,8 @@ export function SpaceSettingOverrides({
                 }
                 control={
                   <Button
-                    variant="ghost"
+                    variant="secondary"
                     size="sm"
-                    className="rounded-full"
                     aria-label={
                       custom ? t`Use account settings for ${label}` : t`Customize ${label}`
                     }

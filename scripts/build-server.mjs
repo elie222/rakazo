@@ -11,8 +11,10 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { promptSourceVersion } from "../packages/core/src/node/prompt-source-version.ts";
+import { buildPageRuntime } from "../packages/page-kit/src/runtime-build.ts";
 
 const builtins = new Set(builtinModules);
+const pageRuntime = await buildPageRuntime();
 
 /** esbuild options for bundling `entry` into `outfile`, shared with the lazy-vendor check. */
 export function serverBuildOptions(entry, outfile) {
@@ -24,10 +26,13 @@ export function serverBuildOptions(entry, outfile) {
     format: "esm",
     target: "node24",
     sourcemap: true,
+    // Stack traces need only the mappings; embedded sources would sit in every process's heap.
+    sourcesContent: false,
     define: {
       __RAKAZO_PROMPT_SOURCE_VERSION__: JSON.stringify(
         promptSourceVersion(fileURLToPath(new URL("../", import.meta.url))),
       ),
+      __RAKAZO_PAGE_RUNTIME__: JSON.stringify(pageRuntime),
     },
     // No "module" condition: resolve externals the way Node will.
     conditions: ["node"],
