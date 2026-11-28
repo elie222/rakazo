@@ -196,19 +196,17 @@ describe("consumeRunEvents and Stop", () => {
     expect(findUnique).toHaveBeenCalledTimes(3);
   });
 
-  it("looks at the run on a slow timer when nothing signals changes", async () => {
+  it("looks at the run once a second when nothing signals changes", async () => {
     const row = { status: "running" };
-    const { ctx, findUnique } = await context(row, false);
+    const { ctx } = await context(row, false);
     let outcome: string | undefined;
     async function* runtime(): AsyncIterable<AgentRuntimeEvent> {
       yield { type: "thinking", active: true };
       row.status = "cancelled";
-      outcome = await quietCall(ctx, 120_000);
+      outcome = await quietCall(ctx, 60_000);
       yield { type: "done", text: "late" };
     }
     const consumed = consumeRunEvents(ctx, runtime());
-    await vi.advanceTimersByTimeAsync(29_000);
-    expect(findUnique).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1_000);
     expect(outcome).toBe("aborted");
     await expect(consumed).resolves.toBe(true);

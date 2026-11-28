@@ -113,7 +113,7 @@ export interface ExecutorDeps {
    * `shutdownSignal` (see `drainRuns`): from then on it claims no run.
    */
   stoppingSignal?: AbortSignal;
-  /** Tells running attempts their run or computer lease changed; absent, they look less often. */
+  /** Tells running attempts their run or computer lease changed; without it they poll as before. */
   realtime?: RealtimeFanout;
   /** Set by withRunLease for one attempt; that run's history writes carry its lease. */
   runLease?: RunLease & { runId: string };

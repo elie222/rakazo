@@ -162,8 +162,8 @@ export async function consumeRunEvents(
   }
 }
 
-/** Without a database-backed signal, how often a turn looks at its run instead. */
-const UNSIGNALLED_LEASE_CHECK_MS = 30_000;
+/** Without a database-backed signal, such as on an embedded database, a turn looks this often. */
+const UNSIGNALLED_LEASE_CHECK_MS = 1_000;
 
 /**
  * Look at the run whenever the database signals a change to its status, lease or takeover,
