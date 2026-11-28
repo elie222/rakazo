@@ -18,7 +18,8 @@ export function messageRowLayout(
   },
 ) {
   const wideAsk = blocks.some(isSecretAskBlock);
-  const full = wideAsk || isCenteredAgentEvent(blocks);
+  const centered = isCenteredAgentEvent(blocks);
+  const full = wideAsk || centered;
   const fillsBubble = blocks.some(
     (block) =>
       block.kind === "app_connect" ||
@@ -34,16 +35,15 @@ export function messageRowLayout(
         !block.instructionUpdate &&
         !block.settingsUpdate),
   );
-  // A routine row is one centered line, so its menu host spans the column instead of the text.
-  const routineRow = blocks.some((block) => block.kind === "routine_event");
   const gutter = activityBotId ? (inGroup ? 28 : 36) : 0;
   return {
     width: full ? "100%" : fillsBubble && !activityBotId ? "90%" : undefined,
     maxWidth: full ? "100%" : activityBotId ? undefined : "90%",
-    menuFullWidth: wideAsk || fillsBubble || routineRow,
+    // A centered event is one line, so its menu host spans the column instead of the text.
+    menuFullWidth: wideAsk || fillsBubble || centered,
     menuMaxWidth: wideAsk
       ? columnWidth - COLUMN_PADDING - gutter
-      : isCenteredAgentEvent(blocks)
+      : centered
         ? columnWidth - COLUMN_PADDING
         : activityBotId
           ? columnWidth - COLUMN_PADDING - gutter

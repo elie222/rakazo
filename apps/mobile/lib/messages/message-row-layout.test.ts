@@ -6,8 +6,10 @@ const layout = (blocks: MobileMessage["blocks"]) =>
   messageRowLayout(blocks, { inGroup: false, columnWidth: 390 });
 
 describe("messageRowLayout", () => {
-  it("lets a routine row span the column so its line centers", () => {
-    const row = layout([{ kind: "routine_event", change: "created", name: "Morning joke" }]);
+  it("lets a message from another bot span the column so its line centers", () => {
+    const row = layout([
+      { kind: "bot_message_received", fromBotId: "b", fromBotName: "Atlas", text: "Done" },
+    ]);
     expect(row.width).toBe("100%");
     expect(row.menuFullWidth).toBe(true);
   });
