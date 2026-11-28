@@ -8,7 +8,7 @@ const layout = (blocks: MobileMessage["blocks"]) =>
 describe("messageRowLayout", () => {
   it("lets a message from another bot span the column so its line centers", () => {
     const row = layout([
-      { kind: "bot_message_received", fromBotId: "b", fromBotName: "Atlas", text: "Done" },
+      { kind: "bot_message_received", fromBotId: "b", fromBotName: "Research", text: "Done" },
     ]);
     expect(row.width).toBe("100%");
     expect(row.menuFullWidth).toBe(true);
