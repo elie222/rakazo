@@ -137,9 +137,7 @@ function header(messageId: string): string | null {
 
 function handoffLine(messageId: string): string {
   const row = container.querySelector(`[data-message-id="${messageId}"]`);
-  const line = [...(row?.querySelectorAll("span") ?? [])].find((span) =>
-    span.textContent?.includes("↪"),
-  );
+  const line = row?.querySelector('[data-testid="handoff-group-chip"]');
   return line?.textContent?.replace(/\s+/g, " ").trim() ?? "";
 }
 
@@ -184,7 +182,7 @@ it("group-removed-member-keeps-author-label", () => {
     plain: header("plain"),
   }).toEqual({
     g1: "G1",
-    handoff: "↪ G2 ← G1",
+    handoff: "G1 → G2",
     g2: "G2",
     gone: "Deleted bot",
     reply: expect.stringContaining("Deleted bot: Gone"),
