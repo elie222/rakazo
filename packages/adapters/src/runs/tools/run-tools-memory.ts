@@ -8,6 +8,7 @@ import {
 import { readHistory, searchHistory } from "@rakazo/db";
 import { redactConnectorPayload } from "../../integrations/connector-safety.js";
 import { stampMemoryEntry, userMemoryDate } from "../../memory/memory-expiry.js";
+import { reportRecallFailure } from "../../memory/memory-failures.js";
 import { editMemory } from "../../memory/memory-tools.js";
 import { MAX_RECALLED_MEMORIES } from "../../runtime/context/history-compaction.prompt.js";
 import { RememberInputSchema } from "../../tools/builtin-conversation.tool-definition.js";
@@ -180,6 +181,7 @@ export const memoryTools: ToolHandlers = {
       },
       context,
     );
+    if (!response.ok) reportRecallFailure(response);
     // All recalled knowledge is derived data; an omitted provider marker cannot certify it.
     if (response.ok && response.value.length > 0) {
       await markReadOutsideContent(ctx, response.value);
