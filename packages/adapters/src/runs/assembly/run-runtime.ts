@@ -341,6 +341,11 @@ export function createRunRuntime(
               messaging.platforms().map((platform) => platform.provider),
               Boolean(isMessagingInstallationActive),
             ).map(messagingProviderName),
+          verifiedChatApps: () =>
+            messaging
+              .platforms()
+              .filter((platform) => platform.capabilities.verifiedSender)
+              .map((platform) => platform.provider),
         }
       : undefined,
     messagingDelivery,

@@ -30,11 +30,9 @@ import {
   messagingWakeIdempotencyKey,
 } from "../../webhooks/inbound-delivery.js";
 import type { MessagingDelivery, OutboundRow } from "../messaging-delivery.js";
+import { messagingMessageClientNonce } from "./messaging-nonce.js";
 
-/** The user message one inbound chat-app message becomes, so a second delivery of it is a no-op. */
-export function messagingMessageClientNonce(provider: string, handle: string): string {
-  return `messaging:${provider}:${handle}`;
-}
+export { messagingMessageClientNonce };
 
 /** The stored artifact of one file of an inbound chat-app message, by its place in the message. */
 export function messagingAttachmentClientNonce(

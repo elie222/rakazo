@@ -131,7 +131,13 @@ function telegramPlatform(
       return adapter.verifiedLinkAddress;
     },
     resolveAddress: (signal) => adapter.resolveLinkAddress(signal),
-    capabilities: { direct: true, groups: options.groups, receipt: null, files: true },
+    capabilities: {
+      direct: true,
+      groups: options.groups,
+      receipt: null,
+      files: true,
+      verifiedSender: true,
+    },
     ...withTelegramRedelivery(adapter),
     ...telegramGroupHooks(adapter),
     isPermanentSendError: isTelegramBlocked,

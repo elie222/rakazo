@@ -72,7 +72,12 @@ import {
 } from "../tools/run-tool-selection.js";
 import { historyMyChatsAllowed } from "../tools/run-tools-memory.js";
 import type { UserComputerState } from "../tools/run-tools-user-computer.js";
-import { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from "../tools/run-tools-user-computer.js";
+import {
+  NO_USER_COMPUTER_ACCESS,
+  USER_COMPUTER_SHELL_TOOL,
+  userComputerOwner,
+  userComputerTrust,
+} from "../tools/run-tools-user-computer.js";
 import {
   modelCreditBillingEnabled,
   resolvedModelRunFields,
@@ -558,13 +563,26 @@ export async function resolveRunCapabilities(
     run.trigger !== "bot_message" &&
     !conversationThread.groupId &&
     !nonOwnerChatRun;
+  const userComputerAccess = {
+    ...(deps.userComputerAccess ?? NO_USER_COMPUTER_ACCESS),
+    verifiedChatApps: deps.messaging?.verifiedChatApps?.() ?? [],
+  };
   const userComputerOwnerId = userComputerOwner({
     trigger: conversationRun.trigger,
     sourceRole: (origin?.sourceMessage ?? sourceMessage)?.role,
     messagingChannelRun: nonOwnerChatRun,
     runUserId: run.userId,
     botUserId: bot.userId,
+    access: userComputerAccess,
+    groupThread: Boolean(conversationThread.groupId),
+    ...(await userComputerTrust(
+      deps.prisma,
+      conversationRun,
+      run.userId === bot.userId,
+      userComputerAccess,
+    )),
     ownerComputerRoutine: parts.records.ownerComputerRoutine,
+    helperRun: run.trigger === BACKGROUND_HELPER_TRIGGER,
   });
   let userComputer: UserComputerState;
   let userComputerShell = false;
@@ -734,7 +752,10 @@ export async function selectRunTools(
             select: { id: true },
           }),
         ),
-      historyRetrievalEnabled: contextStrategy !== "current" && !unknownChannelSourceId,
+      historyRetrievalEnabled:
+        contextStrategy !== "current" &&
+        !unknownChannelSourceId &&
+        !parts.records.switchComputerRoutine,
       historyMyChats: myChatsAllowed,
       ownPromptOnly: ownerComputerRoutine,
       meetingTranscriptsAvailable: parts.meetingTranscriptsAvailable,
