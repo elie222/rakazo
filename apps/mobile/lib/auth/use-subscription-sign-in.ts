@@ -14,9 +14,11 @@ import { Linking } from "react-native";
 import type { rpc as apiRpc } from "../api/api";
 import type { MobileModel, MobileModelCredential } from "../api/mobile-types";
 import { errorText } from "../api/user-error";
+import type { ModelOAuthPhase } from "../models/model-auth";
 import {
   cancelModelOAuthAttempt,
   finishModelOAuthAttempt,
+  modelOAuthPhaseFlags,
   waitForModelOAuth,
 } from "../models/model-auth";
 import { analyticsClient } from "../native/analytics-surface";
@@ -60,9 +62,8 @@ export function useSubscriptionSignIn({
   const { t } = useLingui();
   const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
   const [pasteCode, setPasteCode] = useState("");
-  const [oauthPhase, setOauthPhase] = useState<"idle" | "pending" | "submitting">("idle");
-  const oauthPending = oauthPhase !== "idle";
-  const submittingCode = oauthPhase === "submitting";
+  const [oauthPhase, setOauthPhase] = useState<ModelOAuthPhase>("idle");
+  const { oauthPending, submittingCode } = modelOAuthPhaseFlags(oauthPhase);
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
   const oauthCodeSubmittingRef = useRef(false);

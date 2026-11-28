@@ -1003,6 +1003,98 @@ describe("acpAgentRuntime", () => {
     expect(prompts[1]).toBe("Next question.");
   });
 
+  it("does not duplicate a webhook or routine continuation prompt already carried as source steering", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
+    const threadId = `thread-${randomUUID()}`;
+
+    await collect(
+      runtime,
+      request({
+        threadId,
+        prompt: "Webhook payload arrived.",
+        sourceMessageId: "msg-webhook-1",
+        history: [{ id: "msg-webhook-1", role: "user", content: "Webhook payload arrived." }],
+        async claimSteering() {
+          return [
+            {
+              id: "steer-webhook-1",
+              messageId: "msg-webhook-1",
+              text: "Webhook payload arrived.",
+              origin: "webhook",
+            },
+          ];
+        },
+      }),
+    );
+
+    const prompt = (
+      (
+        requests("session/prompt")[0]?.params as
+          | {
+              prompt?: Array<{ text?: string }>;
+            }
+          | undefined
+      )?.prompt ?? []
+    )
+      .map((block) => block.text ?? "")
+      .join("\n");
+    expect(prompt).toBe("Webhook payload arrived.");
+  });
+
+  it("records claimed steering images under their own message ids so later turns do not resend them", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+      accessCheck: allowed,
+    });
+    const threadId = `thread-${randomUUID()}`;
+    const photo = { name: "steer.png", mimeType: "image/png" as const, data: new Uint8Array([42]) };
+
+    await collect(
+      runtime,
+      request({
+        threadId,
+        prompt: "Review the follow-up.",
+        sourceMessageId: "msg-source",
+        history: [{ id: "msg-steer-img", role: "user", content: "Look at this.", images: [photo] }],
+        async claimSteering() {
+          return [
+            {
+              id: "steer-img-1",
+              messageId: "msg-steer-img",
+              text: "Look at this.",
+              images: [photo],
+              origin: "user",
+            },
+          ];
+        },
+      }),
+    );
+
+    await collect(
+      runtime,
+      request({
+        threadId,
+        prompt: "Anything else?",
+        sourceMessageId: "msg-next",
+        history: [
+          { id: "msg-steer-img", role: "user", content: "Look at this.", images: [photo] },
+          { id: "msg-next", role: "user", content: "Anything else?" },
+        ],
+        async claimSteering() {
+          return [];
+        },
+      }),
+    );
+
+    const firstBlocks =
+      (requests("session/prompt")[0]?.params as { prompt?: Array<{ type: string }> } | undefined)
+        ?.prompt ?? [];
+    const secondBlocks =
+      (requests("session/prompt")[1]?.params as { prompt?: Array<{ type: string }> } | undefined)
+        ?.prompt ?? [];
+    expect(firstBlocks.filter((block) => block.type === "image")).toHaveLength(1);
+    expect(secondBlocks.map((block) => block.type)).toEqual(["text"]);
+  });
+
   it("leaves every other model to the runtime it wraps", async () => {
     const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
 

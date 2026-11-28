@@ -2,6 +2,15 @@ import { MODEL_SIGN_IN_EXPIRED_ERROR } from "@rakazo/contracts";
 import { pollUntil } from "../primitives/retry.js";
 import { isRetryableError } from "../primitives/retry-policy.js";
 
+export type ModelOAuthPhase = "idle" | "pending" | "submitting";
+
+export function modelOAuthPhaseFlags(phase: ModelOAuthPhase) {
+  return {
+    oauthPending: phase !== "idle",
+    submittingCode: phase === "submitting",
+  };
+}
+
 export type ModelOAuthCompletion =
   | { status: "pending" }
   | { status: "ready" }

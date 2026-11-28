@@ -168,6 +168,7 @@ export function createAntigravityCliLogin(options: AntigravityCliLoginOptions = 
         );
       }
 
+      if (signal.aborted) throw signal.reason ?? new Error("Sign-in cancelled.");
       succeeded = true;
       const email = await extractAuthenticatedEmail(output, stderr, profileDir);
       const marker = `${ANTIGRAVITY_CLI_PROVIDER_ID}:${profileId}`;

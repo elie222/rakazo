@@ -12,7 +12,6 @@ import {
   MAX_ENABLED_MODEL_IDS,
   modelOutputLeavesInputRoom,
 } from "@rakazo/contracts";
-import { ANTIGRAVITY_CLI_PROVIDER_ID } from "../providers/agent-cli/antigravity/provider-id.js";
 import { modelCredentialAuthKind } from "../runtime/pi/models/pi-catalog-availability.js";
 import { CHATGPT_OAUTH_PROVIDER } from "../runtime/pi/models/pi-oauth.js";
 import {
@@ -33,7 +32,7 @@ import {
   compatibleEndpointPreset,
   normalizeOpenAiCompatibleBaseUrl,
 } from "./endpoints/openai-compatible-url.js";
-import { modelProviderDefinition } from "./model-provider-registry.js";
+import { modelProviderCliProfile, modelProviderDefinition } from "./model-provider-registry.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret, serializeModelSecret } from "./model-secret.js";
 import { enabledOpenAiCompatibleModelIds } from "./model-selection.js";
@@ -192,11 +191,12 @@ export function buildModelConnectPlaintext(
   // which carries the chatgpt account id it requires. A plain API key can never
   // work there, so reject it instead of persisting a credential that only fails
   // at request time.
+  const signInOnlyRefusal = modelProviderDefinition(input.provider)?.signIn?.apiKeyRefusal;
   if (input.provider === CHATGPT_OAUTH_PROVIDER && apiKey) {
     throw new Error(CHATGPT_SUBSCRIPTION_REQUIRED_MESSAGE);
   }
-  if (input.provider === ANTIGRAVITY_CLI_PROVIDER_ID && apiKey) {
-    throw new Error(ANTIGRAVITY_SIGN_IN_REQUIRED_MESSAGE);
+  if (signInOnlyRefusal && apiKey) {
+    throw new Error(signInOnlyRefusal);
   }
   const maxTokens = connectMaxTokens(input.maxTokens, previous?.maxTokens);
   if (!modelOutputLeavesInputRoom(maxTokens, contextWindow)) {
@@ -243,10 +243,23 @@ export function buildModelConnectPlaintext(
   if (input.provider === CHATGPT_OAUTH_PROVIDER) {
     throw new Error(CHATGPT_SUBSCRIPTION_REQUIRED_MESSAGE);
   }
-  if (input.provider === ANTIGRAVITY_CLI_PROVIDER_ID) {
-    throw new Error(ANTIGRAVITY_SIGN_IN_REQUIRED_MESSAGE);
+  if (signInOnlyRefusal) {
+    throw new Error(signInOnlyRefusal);
   }
   throw new Error("API key must contain at least 8 characters");
+}
+
+/** Extracts a provider's local CLI profile id from a stored OAuth secret, if applicable. */
+export function providerCliProfileIdFromSecret(
+  provider: string,
+  plaintext: string,
+): string | undefined {
+  const cliProfile = modelProviderCliProfile(provider);
+  if (!cliProfile) return undefined;
+  const parsed = parseModelSecret(plaintext);
+  return parsed.kind === "oauth" && "credential" in parsed
+    ? cliProfile.profileIdFromCredential(parsed.credential)
+    : undefined;
 }
 
 function keptCompatibleModels(
@@ -262,8 +275,6 @@ function keptCompatibleModels(
 
 const CHATGPT_SUBSCRIPTION_REQUIRED_MESSAGE =
   "ChatGPT subscription sign-in is required for this provider.";
-const ANTIGRAVITY_SIGN_IN_REQUIRED_MESSAGE =
-  "Google Antigravity sign-in is required for this provider.";
 
 /** Inherited fields come from the previous secret; a corrupt one counts as absent. */
 function tryParseModelSecret(plaintext?: string): StoredModelSecret | undefined {

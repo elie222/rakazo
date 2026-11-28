@@ -6,23 +6,21 @@ import {
 } from "@rakazo/adapter-kit";
 import type { CatalogReads, PiOAuthPersist } from "@rakazo/adapters";
 import {
-  ANTIGRAVITY_CLI_PROVIDER_ID,
-  antigravityCliEnabled,
   assertModelProviderAllowed,
+  cleanupProviderCliProfile,
   compatibleEndpointPreset,
-  isAntigravityProfileId,
   listModelCredentials,
   listPiCatalog,
   ModelSignInError,
   mediaModelsView,
+  modelProviderCliProfile,
   oauthCredentialEmail,
-  parseModelSecret,
   personalCliAccessCheck,
   prepareStoredModelAuth,
   probeCatalogProviderModels,
   probeOpenAiCompatibleModels,
   providerCatalogCache,
-  removeAntigravityProfileDir,
+  providerCliProfileIdFromSecret,
   selectDefaultCredentialId,
   serializeModelSecret,
   setMediaModel,
@@ -122,6 +120,18 @@ export function modelsRoutes(ctx: RouterContext) {
     validateRoleChoices,
     authed,
   } = ctx;
+  const loadCliProfileId = (
+    provider: string,
+    secret: { id: string; ciphertext: string | null },
+  ): Promise<string | undefined> =>
+    secret.ciphertext
+      ? bestEffort(
+          "read stored model secret for cli profile cleanup",
+          deps.secrets
+            .load(secret.ciphertext, secret.id)
+            .then((plaintext) => providerCliProfileIdFromSecret(provider, plaintext)),
+        )
+      : Promise.resolve(undefined);
   const saveSignIn =
     (actor: Actor): PiOAuthPersist<ModelCredential> =>
     async (login) => {
@@ -129,27 +139,11 @@ export function modelsRoutes(ctx: RouterContext) {
         const record = signInRecorder(deps.analytics, actor.userId, login.measure);
         const target = await modelConnectionTarget(deps, actor, login.provider, login.credentialId);
         const retained = await prepareModelReconnectSettings(deps, actor, target);
-        const isAntigravity = canonicalPiProviderId(login.provider) === ANTIGRAVITY_CLI_PROVIDER_ID;
-        let previousProfileId: string | undefined;
-        if (isAntigravity && retained.expectedSecret?.ciphertext) {
-          try {
-            const previousSecret = parseModelSecret(
-              await deps.secrets.load(
-                retained.expectedSecret.ciphertext,
-                retained.expectedSecret.id,
-              ),
-            );
-            if (
-              previousSecret.kind === "oauth" &&
-              "credential" in previousSecret &&
-              isAntigravityProfileId(previousSecret.credential.accountId)
-            ) {
-              previousProfileId = previousSecret.credential.accountId;
-            }
-          } catch {
-            // An unreadable prior secret must not block reconnecting.
-          }
-        }
+        const cliProfile = modelProviderCliProfile(login.provider);
+        const previousProfileId =
+          cliProfile && retained.expectedSecret?.ciphertext
+            ? await loadCliProfileId(login.provider, retained.expectedSecret)
+            : undefined;
         const choice = target
           ? { modelId: login.modelId, thinkingLevel: login.thinkingLevel }
           : subscriptionSignInChoice(login.provider, login.modelId, login.thinkingLevel);
@@ -178,10 +172,11 @@ export function modelsRoutes(ctx: RouterContext) {
           },
           codexCatalog,
         );
-        if (previousProfileId && previousProfileId !== login.credential.accountId) {
+        const currentProfileId = cliProfile?.profileIdFromCredential(login.credential);
+        if (cliProfile && previousProfileId && previousProfileId !== currentProfileId) {
           await bestEffort(
-            "remove previous antigravity profile dir",
-            removeAntigravityProfileDir(previousProfileId),
+            "remove previous cli profile dir",
+            cliProfile.removeProfile(previousProfileId),
           );
         }
         record(login.provider, {
@@ -191,15 +186,7 @@ export function modelsRoutes(ctx: RouterContext) {
         });
         return saved;
       } catch (error) {
-        if (
-          canonicalPiProviderId(login.provider) === ANTIGRAVITY_CLI_PROVIDER_ID &&
-          isAntigravityProfileId(login.credential.accountId)
-        ) {
-          await bestEffort(
-            "remove failed antigravity profile dir",
-            removeAntigravityProfileDir(login.credential.accountId),
-          );
-        }
+        await cleanupProviderCliProfile(login.provider, login.credential);
         // The member is told why a save was refused; anything else is reported generically.
         if (error instanceof ORPCError) throw new ModelSignInError(error.message);
         throw error;
@@ -409,15 +396,16 @@ export function modelsRoutes(ctx: RouterContext) {
       }),
       beginOAuth: authed.models.beginOAuth.handler(async ({ context, input }) => {
         assertModelProviderAllowed(input.provider);
-        if (canonicalPiProviderId(input.provider) === ANTIGRAVITY_CLI_PROVIDER_ID) {
-          if (!antigravityCliEnabled()) {
-            throw new ORPCError("BAD_REQUEST", {
-              message: "Antigravity CLI sign-in is not enabled on this server.",
-            });
+        const cliProfile = modelProviderCliProfile(input.provider);
+        if (cliProfile) {
+          if (!cliProfile.enabled()) {
+            throw new ORPCError("BAD_REQUEST", { message: cliProfile.disabledMessage });
           }
-          const refusal = await personalCliAccessCheck({ prisma: deps.prisma })();
-          if (refusal) {
-            throw new ORPCError("FORBIDDEN", { message: refusal });
+          if (cliProfile.requiresPersonalAccess) {
+            const refusal = await personalCliAccessCheck({ prisma: deps.prisma })();
+            if (refusal) {
+              throw new ORPCError("FORBIDDEN", { message: refusal });
+            }
           }
         }
         // An older app's sign-in renews the provider's newest connection, bound now so a
@@ -719,7 +707,7 @@ export function modelsRoutes(ctx: RouterContext) {
           provider: input.provider,
           credentialId: input.credentialId,
         });
-        const isAntigravity = canonicalPiProviderId(input.provider) === ANTIGRAVITY_CLI_PROVIDER_ID;
+        const cliProfile = modelProviderCliProfile(input.provider);
         let removedSecrets: Array<{ id: string; ciphertext: string }> = [];
         await withTransactionRetry(() =>
           deps.prisma.$transaction(
@@ -754,7 +742,7 @@ export function modelsRoutes(ctx: RouterContext) {
                 },
               );
               if (existing.length === 0) return;
-              if (isAntigravity) {
+              if (cliProfile) {
                 removedSecrets = await tx.secret.findMany({
                   where: {
                     id: { in: existing.map((row) => row.secretId) },
@@ -778,19 +766,14 @@ export function modelsRoutes(ctx: RouterContext) {
             { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
           ),
         );
-        if (isAntigravity && removedSecrets.length > 0) {
+        if (cliProfile && removedSecrets.length > 0) {
           for (const row of removedSecrets) {
-            try {
-              const parsed = parseModelSecret(await deps.secrets.load(row.ciphertext, row.id));
-              if (
-                parsed.kind === "oauth" &&
-                "credential" in parsed &&
-                isAntigravityProfileId(parsed.credential.accountId)
-              ) {
-                await removeAntigravityProfileDir(parsed.credential.accountId);
-              }
-            } catch {
-              // Best-effort cleanup; an unreadable secret must not fail disconnect.
+            const profileId = await loadCliProfileId(input.provider, row);
+            if (profileId) {
+              await bestEffort(
+                "remove disconnected cli profile dir",
+                cliProfile.removeProfile(profileId),
+              );
             }
           }
         }

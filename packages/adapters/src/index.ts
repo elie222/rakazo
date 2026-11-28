@@ -150,6 +150,10 @@ export * from "./models/model-connect-check.js";
 export * from "./models/model-credential-list.js";
 export * from "./models/model-credential-refresh.js";
 export * from "./models/model-provider-allowlist.js";
+export {
+  cleanupProviderCliProfile,
+  modelProviderCliProfile,
+} from "./models/model-provider-registry.js";
 export * from "./models/model-roles.js";
 export * from "./models/model-secret.js";
 export * from "./models/model-selection.js";
@@ -168,12 +172,6 @@ export * from "./payments/payment-wallets.js";
 export * from "./payments/purchase-poll.js";
 export * from "./payments/purchase-service.js";
 export * from "./personal-calendar/native-calendar.js";
-export {
-  antigravityCliEnabled,
-  isAntigravityProfileId,
-  removeAntigravityProfileDir,
-} from "./providers/agent-cli/antigravity/antigravity-profiles.js";
-export { ANTIGRAVITY_CLI_PROVIDER_ID } from "./providers/agent-cli/antigravity/provider-id.js";
 export * from "./providers/billing/stripe/stripe-billing.js";
 export * from "./providers/cloud-agent/cursor/cursor-cloud-agent.js";
 export { T3CodeConnections } from "./providers/cloud-agent/t3code/t3code-connections.js";

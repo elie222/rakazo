@@ -511,24 +511,6 @@ async function runAcpTurn(
     // prompting the CLI, matching PiRuntime so `discardAnsweredSteering` clears them on reply
     // instead of re-queueing an endless loop of follow-up runs.
     const initialSteering = request.claimSteering ? await request.claimSteering([]) : [];
-    const steeringMessageIds = new Set(initialSteering.map((item) => item.messageId));
-    const turnRequest: AgentRunRequest = initialSteering.length
-      ? {
-          ...request,
-          history: request.history.filter((item) => !item.id || !steeringMessageIds.has(item.id)),
-          prompt: `${request.prompt}\n\nAdditional user context:\n${initialSteering
-            .map((item) => item.text)
-            .join("\n")}`,
-          ...(initialSteering.some((item) => item.images?.length)
-            ? {
-                currentTurnImages: [
-                  ...(request.currentTurnImages ?? []),
-                  ...initialSteering.flatMap((item) => item.images ?? []),
-                ],
-              }
-            : {}),
-        }
-      : request;
 
     const fresh = !session;
     const current: AgentSession = session ?? {
@@ -542,13 +524,13 @@ async function runAcpTurn(
     };
     const takesImages = Boolean((capabilities.promptCapabilities as Update | undefined)?.image);
     const turn = turnText(
-      turnRequest,
+      request,
       current,
       fresh,
       includeOwnReplies,
       seesImages && takesImages,
+      initialSteering,
     );
-    for (const id of steeringMessageIds) current.seen.add(id);
     if (turn.leftOut) {
       getLogger().warn("The agent CLI does not take images; the message's images were left out", {
         agent: descriptor.id,

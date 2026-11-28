@@ -37,8 +37,10 @@ describe("antigravityAgent", () => {
     expect(withTools.antigravity.enabledTools).toEqual([]);
     expect(withTools.antigravity.eagerMcpServers).toEqual(["rakazo"]);
     expect(withTools.antigravity.systemPrompt.append).toContain("You are Pip.");
-    expect(withTools.antigravity.systemPrompt.append).toContain("mcp_rakazo_read_file");
-    expect(withTools.antigravity.systemPrompt.append).toContain("Never call unprefixed CLI");
+    expect(withTools.antigravity.systemPrompt.append).toContain("mcp_rakazo_*");
+    expect(withTools.antigravity.systemPrompt.append).toContain(
+      "never call unprefixed CLI built-in tools",
+    );
 
     // A turn without tools has no tool server for the CLI to load.
     const withoutTools = antigravityAgent.sessionMeta?.({ instructions: "You are Pip." }) as {
@@ -190,7 +192,10 @@ describe("antigravityAgent", () => {
       thinkingLevels: ["low", "medium", "high", "xhigh"],
       images: true,
     });
+  });
 
+  it("keeps Antigravity catalog entries when overlaying a live Codex catalog", () => {
+    vi.stubEnv("RAKAZO_ANTIGRAVITY_CLI", "true");
     // Regression: listPiCatalog() must return stable entry references so overlayLiveCatalog
     // (used when a user also has a live ChatGPT/Codex subscription connected) keeps Antigravity.
     const first = listPiCatalog();

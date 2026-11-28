@@ -8,7 +8,12 @@ import type {
   SettingsScope,
   ThinkingLevel,
 } from "@rakazo/contracts";
-import { cancelModelOAuthAttempt, finishModelOAuthAttempt } from "@rakazo/core";
+import type { ModelOAuthPhase } from "@rakazo/core";
+import {
+  cancelModelOAuthAttempt,
+  finishModelOAuthAttempt,
+  modelOAuthPhaseFlags,
+} from "@rakazo/core";
 import { useEffect, useRef, useState } from "react";
 import {
   analyticsSurface,
@@ -69,9 +74,8 @@ export function useModelOAuthSignIn(options: {
   const { onFinished, onError, onClearError } = options;
   const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
   const [pasteCode, setPasteCode] = useState("");
-  const [oauthPhase, setOauthPhase] = useState<"idle" | "pending" | "submitting">("idle");
-  const oauthPending = oauthPhase !== "idle";
-  const submittingCode = oauthPhase === "submitting";
+  const [oauthPhase, setOauthPhase] = useState<ModelOAuthPhase>("idle");
+  const { oauthPending, submittingCode } = modelOAuthPhaseFlags(oauthPhase);
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
   const oauthCodeSubmittingRef = useRef(false);

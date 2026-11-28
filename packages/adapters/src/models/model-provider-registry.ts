@@ -1,3 +1,4 @@
+import type { OAuthCredential } from "@earendil-works/pi-ai";
 import type { MediaGenerationProvider, ModelUsageLookup } from "@rakazo/adapter-kit";
 import type {
   ModelCatalogEntry,
@@ -5,8 +6,14 @@ import type {
   ModelRoutingField,
   ThinkingLevel,
 } from "@rakazo/contracts";
+import { canonicalPiProviderId } from "@rakazo/contracts";
 import { bestEffort } from "@rakazo/logging";
 import type { MediaModelList } from "../media/media-models.js";
+import {
+  antigravityCliEnabled,
+  isAntigravityProfileId,
+  removeAntigravityProfileDir,
+} from "../providers/agent-cli/antigravity/antigravity-profiles.js";
 import {
   ANTIGRAVITY_CLI_CREDENTIAL_SOURCE,
   ANTIGRAVITY_CLI_PROVIDER_ID,
@@ -70,6 +77,16 @@ export interface ModelProviderDefinition {
     billing: string;
     /** A setting the account must turn on first, or the provider refuses the sign-in. */
     setup?: ModelCatalogEntry["signInSetup"];
+    /** Shown when a caller attempts API-key connection on a sign-in-only provider. */
+    apiKeyRefusal?: string;
+  };
+  /** Local CLI profile storage managed by the provider CLI rather than stored API tokens. */
+  cliProfile?: {
+    enabled(): boolean;
+    disabledMessage: string;
+    requiresPersonalAccess: true;
+    profileIdFromCredential(credential: OAuthCredential): string | undefined;
+    removeProfile(profileId: string): Promise<void>;
   };
   /** Ids each connection supplies to route its requests. */
   routingFields?: ModelRoutingField[];
@@ -247,6 +264,15 @@ export const modelProviders = {
       hint: "Google AI Pro/Ultra",
       billing:
         "Sign in with Google through the local Antigravity CLI (agy acp). Uses your Google subscription. Rakazo does not pay or read your Google tokens.",
+      apiKeyRefusal: "Google Antigravity sign-in is required for this provider.",
+    },
+    cliProfile: {
+      enabled: () => antigravityCliEnabled(),
+      disabledMessage: "Antigravity CLI sign-in is not enabled on this server.",
+      requiresPersonalAccess: true,
+      profileIdFromCredential: (credential) =>
+        isAntigravityProfileId(credential.accountId) ? credential.accountId : undefined,
+      removeProfile: (profileId) => removeAntigravityProfileDir(profileId),
     },
   },
 } satisfies Record<string, ModelProviderDefinition>;
@@ -255,6 +281,23 @@ export function modelProviderDefinition(id: string): ModelProviderDefinition | u
   return Object.hasOwn(modelProviders, id)
     ? (modelProviders as Record<string, ModelProviderDefinition>)[id]
     : undefined;
+}
+
+export function modelProviderCliProfile(
+  provider: string,
+): ModelProviderDefinition["cliProfile"] | undefined {
+  return modelProviderDefinition(canonicalPiProviderId(provider))?.cliProfile;
+}
+
+export async function cleanupProviderCliProfile(
+  provider: string,
+  credential: OAuthCredential,
+): Promise<void> {
+  const cliProfile = modelProviderCliProfile(provider);
+  const profileId = cliProfile?.profileIdFromCredential(credential);
+  if (cliProfile && profileId) {
+    await bestEffort("remove provider cli profile", cliProfile.removeProfile(profileId));
+  }
 }
 
 async function googleKeyWasRejected(response: Response): Promise<boolean> {

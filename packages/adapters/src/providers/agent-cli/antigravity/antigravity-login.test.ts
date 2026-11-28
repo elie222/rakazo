@@ -3,9 +3,11 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AuthInteraction } from "@earendil-works/pi-ai";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { deferred } from "@rakazo/core/test-async";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PiOAuthLogins } from "../../../runtime/pi/models/pi-oauth.js";
 import { createAntigravityCliLogin } from "./antigravity-login.js";
-import { antigravityProfileDir } from "./antigravity-profiles.js";
+import { antigravityProfileDir, ensureAntigravityProfileDir } from "./antigravity-profiles.js";
 import { ANTIGRAVITY_CLI_PROVIDER_ID } from "./provider-id.js";
 
 let workDir: string;
@@ -208,5 +210,44 @@ describe("createAntigravityCliLogin", () => {
       }),
     ).rejects.toThrow("Antigravity CLI (`agy`) is not installed");
     expect(existsSync(antigravityProfileDir(profileId, env))).toBe(false);
+  });
+
+  it("removes the profile folder if OAuth finalization is abandoned after cancellation", async () => {
+    vi.stubEnv("DATA_DIR", workDir);
+    const profileId = randomUUID();
+    const profileDir = await ensureAntigravityProfileDir(profileId, { DATA_DIR: workDir });
+    writeFileSync(join(profileDir, "acp_token.json"), '{"token":"secret"}', "utf8");
+    const loginReady = deferred<void>();
+    const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction) => {
+      interaction.notify({
+        type: "auth_url",
+        url: "https://accounts.google.com/o/oauth2/v2/auth?state=cancel-race",
+      });
+      await interaction.prompt({ type: "manual_code", message: "Paste code" });
+      await loginReady.promise;
+      return {
+        type: "oauth",
+        access: `${ANTIGRAVITY_CLI_PROVIDER_ID}:${profileId}`,
+        refresh: `${ANTIGRAVITY_CLI_PROVIDER_ID}:${profileId}`,
+        expires: Number.MAX_SAFE_INTEGER,
+        accountId: profileId,
+      };
+    });
+    const actor = { userId: "user-1", spaceId: "space-1" };
+    const persist = vi.fn(async () => "saved");
+    const started = await logins.begin({
+      ...actor,
+      provider: ANTIGRAVITY_CLI_PROVIDER_ID,
+      persist,
+    });
+    await logins.submit(started.loginId, actor, "auth-code", persist);
+    await logins.cancel(started.loginId, actor, "cancelled");
+    loginReady.resolve();
+
+    await vi.waitFor(() => {
+      expect(existsSync(profileDir)).toBe(false);
+    });
+    expect(persist).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
   });
 });
