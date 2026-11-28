@@ -59,6 +59,7 @@ describe("ticket contracts", () => {
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     completedAt: null,
+    archivedAt: null,
   };
 
   it("accepts a ticket document and rejects unknown statuses", () => {

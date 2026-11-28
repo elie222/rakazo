@@ -107,6 +107,7 @@ export function toTicketDto(row: TicketRow, ticketPrefix: string): Ticket {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     completedAt: row.completedAt ? row.completedAt.toISOString() : null,
+    archivedAt: row.archivedAt?.toISOString() ?? null,
   };
 }
 

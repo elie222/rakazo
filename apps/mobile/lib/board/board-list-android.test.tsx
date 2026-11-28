@@ -93,6 +93,7 @@ it("lets the Android ticket button open its menu without moving until a status i
           error=""
           refreshFailures={0}
           onMove={onMove}
+          onArchive={vi.fn()}
           onRefresh={onRefresh}
         />,
       ),

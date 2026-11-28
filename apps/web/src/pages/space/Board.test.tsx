@@ -12,7 +12,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
-  boards: { subscribe: vi.fn() },
+  notifications: { subscribe: vi.fn() },
   bots: { list: vi.fn() },
   tickets: {
     list: vi.fn(),
@@ -105,6 +105,7 @@ function ticket(
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     completedAt: null,
+    archivedAt: null,
   };
 }
 
@@ -116,17 +117,17 @@ beforeEach(() => {
 });
 
 async function renderBoard(
-  stream?: AsyncIterable<{ ticketId?: string }>,
+  stream?: AsyncIterable<{ type: "board" }>,
   refusal?: unknown,
   entry = "/app/board",
 ) {
-  api.boards.subscribe.mockReset();
-  api.boards.subscribe.mockResolvedValue(
+  api.notifications.subscribe.mockReset();
+  api.notifications.subscribe.mockResolvedValue(
     stream ?? {
       [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }),
     },
   );
-  if (refusal) api.boards.subscribe.mockRejectedValueOnce(refusal);
+  if (refusal) api.notifications.subscribe.mockRejectedValueOnce(refusal);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -269,14 +270,14 @@ it("returns a dragged ticket to its column when the status change fails", async 
       id: "ticket-1",
       status: "done",
     });
-    expect(card().parentElement).toBe(done);
+    expect(card().closest("section")).toBe(done);
     await act(async () => (card() as HTMLButtonElement).click());
     const status = page.container.querySelector<HTMLButtonElement>('[id$="-status"]')!;
     expect(status.textContent).toBe("Done");
     expect(status.disabled).toBe(true);
 
     await act(async () => moving.reject(new TypeError("Failed to fetch")));
-    expect(card().parentElement?.getAttribute("aria-labelledby")).toBe("board-column-todo");
+    expect(card().closest("section")?.getAttribute("aria-labelledby")).toBe("board-column-todo");
     expect(status.textContent).toBe("To do");
     expect(status.disabled).toBe(false);
     expect(toast.error).toHaveBeenCalledExactlyOnceWith("Could not reach the server");
@@ -328,7 +329,7 @@ it("creates a ticket without a status picker", async () => {
 });
 
 function liveStream() {
-  let pending: Deferred<IteratorResult<{ ticketId?: string }>> | undefined;
+  let pending: Deferred<IteratorResult<{ type: "board" }>> | undefined;
   return {
     stream: {
       [Symbol.asyncIterator]: () => ({
@@ -338,7 +339,7 @@ function liveStream() {
         },
       }),
     },
-    event: (ticketId: string) => pending?.resolve({ done: false, value: { ticketId } }),
+    event: () => pending?.resolve({ done: false, value: { type: "board" } }),
     end: () => pending?.resolve({ done: true, value: undefined }),
     error: () => pending?.reject(new Error("Disconnected")),
   };
@@ -374,14 +375,11 @@ it("saves only edits and refreshes comments for the open ticket", async () => {
       });
     }
     await editDescription("Draft details");
-    const calls = api.tickets.comments.mock.calls.length;
-    await act(async () => live.event("ticket-2"));
-    expect(api.tickets.comments).toHaveBeenCalledTimes(calls);
     api.tickets.comments.mockResolvedValue([{ id: "comment-2", body: "Bot progress" }]);
     api.tickets.list.mockResolvedValue({
       tickets: [ticket("Ship", "ticket-1", "doing", "RAK-1", "bot-2", "Bot updated the details")],
     });
-    await act(async () => live.event("ticket-1"));
+    await act(async () => live.event());
     await settle();
     expect(page.container.querySelector('[data-testid="ticket-comments"]')?.textContent).toContain(
       "Bot progress",
@@ -409,40 +407,6 @@ it("saves only edits and refreshes comments for the open ticket", async () => {
   }
 });
 
-it("closes the subscription before retrying a failed ticket refresh", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.useFakeTimers();
-  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
-  api.tickets.list
-    .mockReset()
-    .mockResolvedValueOnce({ tickets: [] })
-    .mockRejectedValueOnce(new Error("Refresh failed"))
-    .mockResolvedValue({ tickets: [ticket("After retry", "ticket-1")] });
-  const next = vi.fn(() => new Promise<IteratorResult<{ ticketId?: string }>>(() => {}));
-  const page = await renderBoard({ [Symbol.asyncIterator]: () => ({ next }) });
-  try {
-    const firstSignal = api.boards.subscribe.mock.calls[0]![1].signal as AbortSignal;
-    expect(firstSignal.aborted).toBe(true);
-    expect(next).not.toHaveBeenCalled();
-    expect(api.boards.subscribe).toHaveBeenCalledTimes(1);
-
-    await act(async () => vi.advanceTimersByTimeAsync(1_000));
-    expect(api.boards.subscribe).toHaveBeenCalledTimes(2);
-    const retrySignal = api.boards.subscribe.mock.calls[1]![1].signal as AbortSignal;
-    expect(retrySignal).not.toBe(firstSignal);
-    expect(retrySignal.aborted).toBe(false);
-    expect(page.container.textContent).toContain("After retry");
-
-    await page.cleanup();
-    expect(retrySignal.aborted).toBe(true);
-    await act(async () => vi.advanceTimersByTimeAsync(5_000));
-    expect(api.boards.subscribe).toHaveBeenCalledTimes(2);
-  } finally {
-    if (page.container.isConnected) await page.cleanup();
-    vi.useRealTimers();
-  }
-});
-
 it.each(["end", "error"] as const)(
   "reconnects after subscription %s and stops on unmount",
   async (failure) => {
@@ -454,13 +418,14 @@ it.each(["end", "error"] as const)(
     const page = await renderBoard(live.stream);
     try {
       const reconnected = liveStream();
-      api.boards.subscribe.mockResolvedValue(reconnected.stream);
+      api.notifications.subscribe.mockResolvedValue(reconnected.stream);
       await act(async () => live[failure]());
       const calls = api.tickets.list.mock.calls.length;
       api.tickets.list.mockResolvedValue({ tickets: [ticket("After reconnect", "ticket-1")] });
       await act(async () => vi.advanceTimersByTimeAsync(1_000));
+      expect(api.notifications.subscribe).toHaveBeenCalledTimes(2);
+      await act(async () => reconnected.event());
       await settle();
-      expect(api.boards.subscribe).toHaveBeenCalledTimes(2);
       expect(api.tickets.list).toHaveBeenCalledTimes(calls + 1);
       await act(async () => {
         await vi.waitFor(() => expect(page.container.textContent).toContain("After reconnect"));
@@ -468,8 +433,8 @@ it.each(["end", "error"] as const)(
       await act(async () => reconnected.end());
       await page.cleanup();
       await act(async () => vi.advanceTimersByTimeAsync(5_000));
-      expect(api.boards.subscribe).toHaveBeenCalledTimes(2);
-      expect(api.boards.subscribe.mock.calls[1]![1].signal.aborted).toBe(true);
+      expect(api.notifications.subscribe).toHaveBeenCalledTimes(2);
+      expect(api.notifications.subscribe.mock.calls[1]![1].signal.aborted).toBe(true);
     } finally {
       if (page.container.isConnected) await page.cleanup();
       vi.useRealTimers();
@@ -489,7 +454,10 @@ it.each([
   const page = await renderBoard(undefined, Object.assign(new Error("Refused"), { status }));
   try {
     await act(async () => vi.advanceTimersByTimeAsync(5_000));
-    expect(api.boards.subscribe).toHaveBeenCalledTimes(attempts);
+    expect(api.notifications.subscribe).toHaveBeenCalledTimes(attempts);
+    const alert = page.container.querySelector('[role="alert"]');
+    if (attempts === 1) expect(alert?.textContent).toContain("Live board updates are unavailable.");
+    else expect(alert).toBeNull();
   } finally {
     await page.cleanup();
     vi.useRealTimers();
@@ -611,7 +579,7 @@ it("does not repeat a posted comment a refresh already brought", async () => {
     await openTicketAndComment(page, "New note");
     // A live refresh lands with the new comment before the post answers.
     api.tickets.comments.mockResolvedValue([earlier, posted]);
-    await act(async () => live.event("ticket-1"));
+    await act(async () => live.event());
     await settle();
     expect(commentsText(page)).toContain("New note");
     // Every later read hangs, so only the post's own write can change the list now.
@@ -743,7 +711,7 @@ it("keeps a live ticket update when an older save response has the same timestam
     const priority = await selectHighPriority(page.container);
 
     api.tickets.list.mockResolvedValue({ tickets: [liveTicket] });
-    await act(async () => live.event(original.id));
+    await act(async () => live.event());
     await settle();
     expect(card().textContent).toContain("Ship today");
 
@@ -752,7 +720,7 @@ it("keeps a live ticket update when an older save response has the same timestam
     await settle();
     expect(priority.disabled).toBe(false);
     expect(card().textContent).toContain("Ship today");
-    expect(card().parentElement?.getAttribute("aria-labelledby")).toBe("board-column-doing");
+    expect(card().closest("section")?.getAttribute("aria-labelledby")).toBe("board-column-doing");
   } finally {
     await page.cleanup();
     vi.unstubAllGlobals();

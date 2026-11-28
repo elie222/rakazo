@@ -95,6 +95,7 @@ export async function listBoardTickets(
   input: {
     spaceId: string;
     status?: string;
+    archived?: boolean;
     assigneeBotId?: string;
     cursor?: string;
   },
@@ -116,8 +117,9 @@ export async function listBoardTickets(
     where: {
       spaceId: input.spaceId,
       boardId: board.id,
-      // Closed tickets are history; they only show up when asked for by status.
-      ...(status ? { status } : { status: { not: "closed" } }),
+      archivedAt: input.archived ? { not: null } : null,
+      // Closed tickets are history, so omit them from the default board listing.
+      ...(status ? { status } : input.archived ? {} : { status: { not: "closed" } }),
       ...(input.assigneeBotId ? { assigneeBotId: input.assigneeBotId } : {}),
       ...(pageCursor
         ? {
@@ -215,6 +217,7 @@ export async function updateTicket(
     description?: string | null;
     priority?: string | null;
     status?: string;
+    archived?: boolean;
     ownerBotId?: string;
   },
 ) {
@@ -237,6 +240,9 @@ export async function updateTicket(
         ...(data.description !== undefined ? { description: data.description } : {}),
         ...(data.priority !== undefined ? { priority: data.priority ?? "normal" } : {}),
         ...(data.assigneeBotId !== undefined ? { assigneeBotId: data.assigneeBotId } : {}),
+        ...(data.archived !== undefined
+          ? { archivedAt: data.archived ? (current.archivedAt ?? new Date()) : null }
+          : {}),
         ...(data.status !== undefined
           ? {
               status: data.status,
@@ -258,7 +264,8 @@ export async function updateTicket(
     boardId: board.id,
     ticketId: result.row.id,
     assigneeBotId: result.row.assigneeBotId,
-    wakeAssignee: result.reassigned && result.row.assigneeBotId !== input.botId,
+    wakeAssignee:
+      !result.row.archivedAt && result.reassigned && result.row.assigneeBotId !== input.botId,
   });
   return { ticket: toTicketDto(result.row, board.ticketPrefix) };
 }

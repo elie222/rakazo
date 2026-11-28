@@ -2,7 +2,7 @@ import type { MenuComponentRef } from "@expo/ui/community/menu";
 import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
 import type { Ticket, TicketStatus } from "@rakazo/contracts";
-import { TICKET_STATUSES } from "@rakazo/contracts";
+import { TICKET_STATUSES, TicketStatusSchema } from "@rakazo/contracts";
 import { useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
@@ -32,6 +32,7 @@ export type BoardListProps = {
   /** A move is saving: no other is offered until it ends. */
   moving?: boolean;
   onMove: (ticket: Ticket, status: TicketStatus) => void;
+  onArchive: (ticket: Ticket) => void;
   onRefresh: () => Promise<void>;
 };
 
@@ -42,6 +43,7 @@ export function BoardList({
   refreshFailures,
   moving = false,
   onMove,
+  onArchive,
   onRefresh,
 }: BoardListProps) {
   const styles = useThemedStyles(createStyles);
@@ -82,6 +84,7 @@ export function BoardList({
               colorScheme={colorScheme}
               moving={moving}
               onMove={onMove}
+              onArchive={onArchive}
             />
           ))}
         </SettingsGroup>
@@ -95,7 +98,8 @@ function TicketMoveRow({
   colorScheme,
   moving,
   onMove,
-}: Pick<BoardListProps, "onMove"> & {
+  onArchive,
+}: Pick<BoardListProps, "onMove" | "onArchive"> & {
   ticket: Ticket;
   colorScheme: ResolvedAppearance;
   moving: boolean;
@@ -104,17 +108,30 @@ function TicketMoveRow({
   const menu = useRef<MenuComponentRef>(null);
   // Android's menu host handles pointer input but is not itself accessible.
   const openMenu = Platform.OS === "android" ? () => menu.current?.show() : undefined;
+  const statuses = ticket.archivedAt
+    ? []
+    : TICKET_STATUSES.filter((status) => status !== ticket.status);
+  const archive =
+    ticket.archivedAt !== undefined
+      ? [{ id: "archive", title: ticket.archivedAt ? t`Restore ticket` : t`Archive ticket` }]
+      : [];
   if (moving) return <SettingsRow title={ticket.title} detail={ticket.ref} disabled dimmed />;
   return (
     <MenuView
       ref={menu}
-      actions={TICKET_STATUSES.filter((status) => status !== ticket.status).map((status) => ({
-        id: status,
-        title: ticketStatusLabel(status),
-      }))}
+      actions={[
+        ...statuses.map((status) => ({ id: status, title: ticketStatusLabel(status) })),
+        ...archive,
+      ]}
       colorScheme={colorScheme}
-      onPressAction={(event) => onMove(ticket, event.nativeEvent.event as TicketStatus)}
-      title={t`Move to`}
+      onPressAction={({ nativeEvent }) => {
+        if (nativeEvent.event === "archive") onArchive(ticket);
+        else {
+          const status = TicketStatusSchema.safeParse(nativeEvent.event);
+          if (status.success) onMove(ticket, status.data);
+        }
+      }}
+      title={t`Ticket actions`}
     >
       <SettingsRow
         accessibilityRole="button"

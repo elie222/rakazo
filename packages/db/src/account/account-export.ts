@@ -474,6 +474,7 @@ async function* spaceRecords(
         createdAt: iso(ticket.createdAt),
         updatedAt: iso(ticket.updatedAt),
         completedAt: isoOrNull(ticket.completedAt),
+        archivedAt: isoOrNull(ticket.archivedAt),
       };
       for (let cursor: { createdAt: Date; id: string } | null = null; ; ) {
         const comments: Awaited<ReturnType<typeof prisma.ticketComment.findMany>> =

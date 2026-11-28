@@ -2869,7 +2869,8 @@ model Ticket {
   createdByUser   User?     @relation("TicketCreatorUser", fields: [createdByUserId], references: [id], onDelete: SetNull)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
-  completedAt       DateTime?
+  completedAt     DateTime?
+  archivedAt      DateTime?
   comments        TicketComment[]
 
   @@unique([boardId, number])

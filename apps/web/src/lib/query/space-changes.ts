@@ -38,6 +38,10 @@ const READS: Record<ReadChangeKind, readonly Procedure[]> = {
     ["meetings", "transcript"],
   ],
   artifacts: [["artifacts", "listSpace"]],
+  board: [
+    ["tickets", "list"],
+    ["tickets", "comments"],
+  ],
   pages: [
     ["pages", "get"],
     ["pages", "list"],

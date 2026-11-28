@@ -268,6 +268,7 @@ describePostgres("account export (PostgreSQL)", () => {
             title: `Ticket in ${spaceId}`,
             assigneeBotId: spaceId === ownedSpace ? `mine-${suffix}` : `theirs-${suffix}`,
             createdByUserId: spaceId === ownedSpace ? exporter : other,
+            archivedAt: spaceId === ownedSpace ? new Date("2026-06-01T00:00:00.000Z") : null,
           },
         });
         await prisma.ticketComment.create({
@@ -554,7 +555,9 @@ describePostgres("account export (PostgreSQL)", () => {
             case "board":
               return [`board ${record.name}`];
             case "ticket":
-              return [`ticket ${record.number} ${record.title} ${record.createdByExporter}`];
+              return [
+                `ticket ${record.number} ${record.title} ${record.createdByExporter} ${record.archivedAt}`,
+              ];
             case "ticket_comment":
               return [`comment ${record.body} ${record.authoredByExporter}`];
             default:

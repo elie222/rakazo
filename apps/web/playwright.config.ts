@@ -19,7 +19,6 @@ const nightlySpecs = [
   "avatar-indicator-bounds",
   "avatar-motion",
   "avatar-studio",
-  "board",
   "bot-organization",
   "chart-export",
   "chart-links",

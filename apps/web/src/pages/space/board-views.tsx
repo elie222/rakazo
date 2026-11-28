@@ -1,7 +1,13 @@
-import { Trans } from "@lingui/react/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, Ticket, TicketPriority, TicketStatus } from "@rakazo/contracts";
-import { TICKET_STATUSES } from "@rakazo/contracts";
+import { isTicketCompletedStatus, TICKET_STATUSES } from "@rakazo/contracts";
 import { Badge, Button } from "@rakazo/ui-web";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@rakazo/ui-web/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -10,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@rakazo/ui-web/components/ui/table";
+import { Ellipsis } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { useTicketPriorityLabels } from "./ticket-priority";
@@ -47,16 +54,51 @@ type TicketViewProps = {
   tickets: Ticket[];
   bots: Bot[];
   onOpen: (id: string) => void;
+  changing: boolean;
+  onArchive: (id: string, archived: boolean) => void;
 };
+
+function TicketActions({
+  ticket,
+  changing,
+  onArchive,
+}: Pick<TicketViewProps, "changing" | "onArchive"> & { ticket: Ticket }) {
+  const { t } = useLingui();
+  if (ticket.archivedAt === undefined) return null;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground"
+            aria-label={t`Actions for ${ticket.ref}`}
+            disabled={changing}
+          />
+        }
+      >
+        <Ellipsis />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => onArchive(ticket.id, !ticket.archivedAt)}>
+          {ticket.archivedAt ? <Trans>Restore ticket</Trans> : <Trans>Archive ticket</Trans>}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 export function BoardColumns({
   tickets,
   bots,
   onOpen,
-  moving,
+  openOnly,
+  changing,
+  onArchive,
   onMove,
 }: TicketViewProps & {
-  moving: boolean;
+  openOnly: boolean;
   onMove: (id: string, status: TicketStatus) => void;
 }) {
   const statuses = useTicketStatusLabels();
@@ -72,78 +114,84 @@ export function BoardColumns({
 
   return (
     <div data-testid="board-columns" className="flex min-h-full gap-3">
-      {TICKET_STATUSES.map((status) => {
-        const canDrop = dragged && dragged.status !== status && !moving;
-        return (
-          <section
-            key={status}
-            aria-labelledby={`board-column-${status}`}
-            className={`min-w-40 flex-1 space-y-2 rounded-lg ${canDrop && destination === status ? "bg-muted ring-1 ring-border" : ""}`}
-            onDragOver={(event) => {
-              if (!canDrop) return;
-              event.preventDefault();
-              event.dataTransfer.dropEffect = "move";
-              setDestination(status);
-            }}
-            onDragLeave={(event) => {
-              if (
-                !(event.relatedTarget instanceof Node) ||
-                !event.currentTarget.contains(event.relatedTarget)
-              ) {
-                setDestination((current) => (current === status ? null : current));
-              }
-            }}
-            onDrop={(event) => {
-              if (!canDrop || event.dataTransfer.getData(TICKET_DRAG_TYPE) !== dragged.id) return;
-              event.preventDefault();
-              finishDrag();
-              onMove(dragged.id, status);
-            }}
-          >
-            <h2 id={`board-column-${status}`} className="flex px-1 py-1">
-              <TicketBadge tone={statusTones[status]}>{statuses[status]}</TicketBadge>
-            </h2>
-            {tickets
-              .filter((ticket) => ticket.status === status)
-              .map((ticket) => (
-                <button
-                  key={ticket.id}
-                  type="button"
-                  data-testid={`board-card-${ticket.id}`}
-                  className="flex w-full flex-col items-start gap-1 rounded-lg border bg-background p-3 text-left text-body hover:bg-muted enabled:cursor-grab focus-visible:outline-2 focus-visible:outline-ring"
-                  draggable={!moving}
-                  onDragStart={(event) => {
-                    event.dataTransfer.effectAllowed = "move";
-                    event.dataTransfer.setData(TICKET_DRAG_TYPE, ticket.id);
-                    setDraggedId(ticket.id);
-                  }}
-                  onDragEnd={finishDrag}
-                  onClick={() => onOpen(ticket.id)}
-                >
-                  <span className="flex w-full flex-wrap items-center justify-between gap-x-2 gap-y-1">
-                    <span className="text-label text-muted-foreground">{ticket.ref}</span>
-                    {ticket.priority !== "normal" ? (
-                      <TicketBadge tone={priorityTones[ticket.priority]}>
-                        {priorities[ticket.priority]}
-                      </TicketBadge>
-                    ) : null}
-                  </span>
-                  <span className="w-full wrap-break-word font-medium">{ticket.title}</span>
-                  {ticket.assigneeBotId ? (
-                    <span className="text-label text-muted-foreground">
-                      {bots.find((bot) => bot.id === ticket.assigneeBotId)?.name}
-                    </span>
-                  ) : null}
-                </button>
-              ))}
-          </section>
-        );
-      })}
+      {TICKET_STATUSES.filter((status) => !openOnly || !isTicketCompletedStatus(status)).map(
+        (status) => {
+          const canDrop = dragged && dragged.status !== status && !changing;
+          return (
+            <section
+              key={status}
+              aria-labelledby={`board-column-${status}`}
+              className={`min-w-40 flex-1 space-y-2 rounded-lg ${canDrop && destination === status ? "bg-muted ring-1 ring-border" : ""}`}
+              onDragOver={(event) => {
+                if (!canDrop) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                setDestination(status);
+              }}
+              onDragLeave={(event) => {
+                if (
+                  !(event.relatedTarget instanceof Node) ||
+                  !event.currentTarget.contains(event.relatedTarget)
+                ) {
+                  setDestination((current) => (current === status ? null : current));
+                }
+              }}
+              onDrop={(event) => {
+                if (!canDrop || event.dataTransfer.getData(TICKET_DRAG_TYPE) !== dragged.id) return;
+                event.preventDefault();
+                finishDrag();
+                onMove(dragged.id, status);
+              }}
+            >
+              <h2 id={`board-column-${status}`} className="flex px-1 py-1">
+                <TicketBadge tone={statusTones[status]}>{statuses[status]}</TicketBadge>
+              </h2>
+              {tickets
+                .filter((ticket) => ticket.status === status)
+                .map((ticket) => (
+                  <div key={ticket.id} className="relative">
+                    <button
+                      type="button"
+                      data-testid={`board-card-${ticket.id}`}
+                      className="flex w-full flex-col items-start gap-1 rounded-lg border bg-background p-3 text-left text-body hover:bg-muted enabled:cursor-grab focus-visible:outline-2 focus-visible:outline-ring"
+                      draggable={!changing}
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData(TICKET_DRAG_TYPE, ticket.id);
+                        setDraggedId(ticket.id);
+                      }}
+                      onDragEnd={finishDrag}
+                      onClick={() => onOpen(ticket.id)}
+                    >
+                      <span className="flex w-full flex-wrap items-center justify-between gap-x-2 gap-y-1 pr-6">
+                        <span className="text-label text-muted-foreground">{ticket.ref}</span>
+                        {ticket.priority !== "normal" ? (
+                          <TicketBadge tone={priorityTones[ticket.priority]}>
+                            {priorities[ticket.priority]}
+                          </TicketBadge>
+                        ) : null}
+                      </span>
+                      <span className="w-full wrap-break-word font-medium">{ticket.title}</span>
+                      {ticket.assigneeBotId ? (
+                        <span className="text-label text-muted-foreground">
+                          {bots.find((bot) => bot.id === ticket.assigneeBotId)?.name}
+                        </span>
+                      ) : null}
+                    </button>
+                    <div className="absolute top-1 right-1">
+                      <TicketActions ticket={ticket} changing={changing} onArchive={onArchive} />
+                    </div>
+                  </div>
+                ))}
+            </section>
+          );
+        },
+      )}
     </div>
   );
 }
 
-export function TicketTable({ tickets, bots, onOpen }: TicketViewProps) {
+export function TicketTable({ tickets, bots, onOpen, changing, onArchive }: TicketViewProps) {
   const statuses = useTicketStatusLabels();
   const priorities = useTicketPriorityLabels();
 
@@ -197,9 +245,12 @@ export function TicketTable({ tickets, bots, onOpen }: TicketViewProps) {
                 {bots.find((bot) => bot.id === ticket.assigneeBotId)?.name ?? "—"}
               </TableCell>
               <TableCell className="px-4 py-1.5">
-                <TicketBadge tone={priorityTones[ticket.priority]}>
-                  {priorities[ticket.priority]}
-                </TicketBadge>
+                <div className="flex items-center justify-between gap-1">
+                  <TicketBadge tone={priorityTones[ticket.priority]}>
+                    {priorities[ticket.priority]}
+                  </TicketBadge>
+                  <TicketActions ticket={ticket} changing={changing} onArchive={onArchive} />
+                </div>
               </TableCell>
             </TableRow>
           ))}

@@ -56,6 +56,7 @@ function ticket(overrides: Record<string, unknown> = {}) {
     createdAt: NOW,
     updatedAt: NOW,
     completedAt: null,
+    archivedAt: null,
     ...overrides,
   };
 }
@@ -74,7 +75,7 @@ describe("ticket tools", () => {
     });
 
     expect(findMany).toHaveBeenCalledWith({
-      where: { spaceId: "ws", boardId: "board-1", status: "doing" },
+      where: { spaceId: "ws", boardId: "board-1", archivedAt: null, status: "doing" },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: 51,
     });
@@ -91,7 +92,7 @@ describe("ticket tools", () => {
 
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { spaceId: "ws", boardId: "board-1", status: { not: "closed" } },
+        where: { spaceId: "ws", boardId: "board-1", archivedAt: null, status: { not: "closed" } },
         take: 51,
       }),
     );
@@ -111,6 +112,22 @@ describe("ticket tools", () => {
 
     const listed = (result as { tickets: { description: string }[] }).tickets[0]!;
     expect(listed.description).toBe(`${"x".repeat(198)}…`);
+  });
+
+  it("can list archived tickets regardless of whether their status is closed", async () => {
+    const findMany = vi.fn(async () => [ticket({ status: "closed", archivedAt: NOW })]);
+    const prisma = { ...boardSpace(), ticket: { findMany } };
+
+    await expect(
+      listBoardTickets({ prisma } as never, { spaceId: "ws", archived: true }),
+    ).resolves.toEqual({
+      tickets: [expect.objectContaining({ status: "closed", archivedAt: NOW.toISOString() })],
+    });
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { spaceId: "ws", boardId: "board-1", archivedAt: { not: null } },
+      }),
+    );
   });
 
   it("pages older tickets with a cursor and rejects a bad one", async () => {
@@ -143,6 +160,7 @@ describe("ticket tools", () => {
       where: {
         spaceId: "ws",
         boardId: "board-1",
+        archivedAt: null,
         status: { not: "closed" },
         OR: [
           { createdAt: { lt: rows[49]!.createdAt } },
@@ -205,6 +223,16 @@ function mutationDeps() {
 }
 
 describe("ticket mutations", () => {
+  it("archives and restores a ticket without changing its status or reference", async () => {
+    const { deps } = mutationDeps();
+    const input = { spaceId: "ws", userId: "user-1", id: "t1" };
+    const archived = await updateTicket(deps, { ...input, archived: true });
+    expect(archived).toHaveProperty("ticket.archivedAt", expect.any(String));
+    await expect(updateTicket(deps, { ...input, archived: false })).resolves.toEqual({
+      ticket: expect.objectContaining({ ref: "RAK-1", status: "todo", archivedAt: null }),
+    });
+  });
+
   it.each([
     ["create", "title", TICKET_TITLE_MAX_LENGTH],
     ["create", "description", TICKET_DESCRIPTION_MAX_LENGTH],

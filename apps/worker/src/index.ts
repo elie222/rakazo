@@ -169,6 +169,7 @@ async function main() {
   });
   const ticketChanges = createTicketChangeNotifier({
     boardEvents,
+    events,
     jobs,
     prisma,
     deploymentLabs: env.deploymentLabs,
