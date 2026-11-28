@@ -1,4 +1,4 @@
-import { botMessageAllowsSilence, userTurnMessageForRun } from "@rakazo/core";
+import { botMessageAllowsSilence, sliceWellFormed, userTurnMessageForRun } from "@rakazo/core";
 import { isPartialReplyClientNonce, storedMessageBlocks } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { loadAgentMemoryContext } from "../../memory/memory-context.js";
@@ -29,37 +29,53 @@ import {
   messageTranscript,
 } from "./reply-context.js";
 import type { ConnectedRun, RunRecords } from "./run-assembly-records.js";
+import {
+  ROUTINE_RECENT_HISTORY_MAX_CHARS,
+  ROUTINE_REPLAY_MESSAGE_MAX_CHARS,
+} from "./run-assembly-records.js";
 import { threadContextForRun } from "./run-instructions.prompt.js";
 import { DELEGATED_EMPTY_NOTICE, runAllowsSilentEmpty } from "./run-replies.prompt.js";
+
+function clipRoutineReplay(text: string): string {
+  const marker = "\n[clipped]";
+  if (text.length <= ROUTINE_REPLAY_MESSAGE_MAX_CHARS) return text;
+  return sliceWellFormed(text, ROUTINE_REPLAY_MESSAGE_MAX_CHARS - marker.length) + marker;
+}
 
 export async function readThreadHistory(hold: RunHold, parts: { records: RunRecords }) {
   const { deps, run } = hold;
   const { bot, historyReach, messages, nonOwnerChatRun, replaysToolHistory, thread } =
     parts.records;
+  // Routine history is bounded by the cursor even though it cannot use the chat summary.
+  // Recheck the cursor from the separately loaded thread before formatting any replay.
+  const cursor = run.trigger === "routine" ? thread.historyCompactedUpToSeq : null;
+  const readable = cursor == null ? messages : messages.filter((message) => message.seq > cursor);
+  const boundedReplay = historyReach === "recent";
   // Group threads and spaces several people share: who wrote each message, so the model can
   // tell the bots and the people apart. A personal space's direct chat stays plain turns.
   const people = await loadSpacePeople(
     deps.prisma,
     thread.space?._count.memberships ?? 0,
     run.userId,
-    messages,
+    readable,
   );
   const speakers = await loadThreadSpeakers(
     deps.prisma,
     thread,
     { spaceId: run.spaceId, bot },
-    messages,
+    readable,
     people,
   );
   const threadContext = threadContextForRun(
     run.trigger,
     {
-      messages: [...messages].reverse().map((m) => {
+      messages: [...readable].reverse().map((m) => {
         const speaker = historySpeaker(speakers, m);
         // In a group, turns from several speakers are joined, so no line may pose as a label.
         const neutral = (value: string) => (speakers ? neutralizeSpeakerLabels(value) : value);
         const text = neutral(messageToAgentHistoryText(m));
         const partial = isPartialReplyClientNonce(m.clientNonce);
+        const content = partial ? `${text}\n\n${PARTIAL_REPLY_NOTE}` : text;
         // Runs for someone other than the owner replay replies as everyone saw them.
         const segments =
           m.role === "user" || m.role === "system" || speaker || !replaysToolHistory
@@ -103,7 +119,7 @@ export async function readThreadHistory(hold: RunHold, parts: { records: RunReco
             | "system",
           ...(speaker ? { speaker } : {}),
           waiting: m.steeringMessages.length > 0,
-          content: partial ? `${text}\n\n${PARTIAL_REPLY_NOTE}` : text,
+          content: boundedReplay ? clipRoutineReplay(content) : content,
           ...(segments
             ? { segments: partial ? [...segments, { text: PARTIAL_REPLY_NOTE }] : segments }
             : {}),
@@ -122,6 +138,20 @@ export async function readThreadHistory(hold: RunHold, parts: { records: RunReco
     summary: threadContext.summary,
     historyCompactedUpToSeq: threadContext.historyCompactedUpToSeq,
   });
+  if (boundedReplay) {
+    const earlierIds = new Set(
+      readable.filter((message) => message.earlierRoutineResult).map((message) => message.id),
+    );
+    let remaining = ROUTINE_RECENT_HISTORY_MAX_CHARS;
+    compactedHistory.history = compactedHistory.history
+      .reverse()
+      .filter((message) => {
+        if (message.id && earlierIds.has(message.id)) return true;
+        remaining -= message.content.length;
+        return remaining >= 0;
+      })
+      .reverse();
+  }
   return { people, speakers, threadContext, compactedHistory };
 }
 
