@@ -454,6 +454,20 @@ describe("Hindsight recall", () => {
     ).resolves.toMatchObject({ ok: true, value: [{ memory: "Shared fact" }] });
   });
 
+  it("hands a refused account back to the caller without logging it", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    try {
+      const fake = hindsightFake({ recall: { [OWN_BANK]: 402, [TEAM_BANK]: [] } });
+      await expect(
+        provider(fake.fetch).recall({ ...recall, scope: "shared" }, context),
+      ).resolves.toMatchObject({ ok: false, accountRefused: true });
+      expect(sink.events).toEqual([]);
+    } finally {
+      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+    }
+  });
+
   it("asks every bank for observations", async () => {
     const fake = hindsightFake({ recall: { [OWN_BANK]: [] } });
     await provider(fake.fetch).recall(

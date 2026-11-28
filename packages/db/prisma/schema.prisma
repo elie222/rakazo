@@ -2368,7 +2368,7 @@ model UsageRecord {
   agentId            String?
   createdAt          DateTime @default(now())
 
-  @@index([spaceId, userId, createdAt])
+  // usage_records_spaceId_userId_createdAt_covering_idx is raw SQL: Prisma cannot express INCLUDE columns.
   @@map("usage_records")
 }
 
