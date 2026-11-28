@@ -12391,6 +12391,11 @@ msgstr "이 모델은 이미지를 읽을 수 없습니다. 이미지를 지원�
 msgid "This model's context window is too small. Choose another model."
 msgstr "이 모델의 컨텍스트 창이 너무 작습니다. 다른 모델을 선택하세요."
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/run-error.ts
+msgid "This model's image limit is {limit}. Send fewer images or choose another model."
+msgstr ""
+
 #: apps/web/src/pages/space/Artifacts.tsx
 msgid "This month"
 msgstr "이번 달"

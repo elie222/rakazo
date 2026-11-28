@@ -12391,6 +12391,11 @@ msgstr "Dit model kan geen afbeeldingen lezen. Kies een model dat afbeeldingen o
 msgid "This model's context window is too small. Choose another model."
 msgstr "Het contextvenster van dit model is te klein. Kies een ander model."
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/run-error.ts
+msgid "This model's image limit is {limit}. Send fewer images or choose another model."
+msgstr ""
+
 #: apps/web/src/pages/space/Artifacts.tsx
 msgid "This month"
 msgstr "Deze maand"
