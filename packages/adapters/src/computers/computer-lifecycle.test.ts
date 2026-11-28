@@ -4452,3 +4452,36 @@ it("looks again at once when the computer it waits for is signalled, not on its 
     vi.useRealTimers();
   }
 });
+
+it("starts its backoff over after a signalled look that still finds the computer busy", async () => {
+  vi.useFakeTimers();
+  try {
+    const bot = { computerId: "computer", archivedAt: null, computerSwitching: true };
+    const findUnique = vi.fn(async () => ({ ...bot }));
+    const realtime = new (class extends InMemoryRealtimeFanout {
+      override describe() {
+        return { ...super.describe(), capabilities: { distributed: true, push: true } };
+      }
+    })();
+    const waiting = waitForRunComputerLease(
+      {
+        bot: { findUnique },
+        run: { updateMany: vi.fn(async () => ({ count: 1 })) },
+      } as unknown as PrismaClient,
+      { computerId: "computer", botId: "bot", runId: "run", workerId: "worker", runFence: 1 },
+      new AbortController().signal,
+      realtime,
+    );
+    const changed = expect(waiting).rejects.toThrow("computer changed");
+    await vi.advanceTimersByTimeAsync(62_000);
+    // Another waiter won the signalled look, so this one still finds the computer busy.
+    await realtime.publish(computerLeaseTopic("computer"), "");
+    await vi.advanceTimersByTimeAsync(0);
+    bot.computerId = "replacement";
+    bot.computerSwitching = false;
+    await vi.advanceTimersByTimeAsync(250);
+    await changed;
+  } finally {
+    vi.useRealTimers();
+  }
+});

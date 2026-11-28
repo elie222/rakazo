@@ -1157,14 +1157,19 @@ export async function waitForRunComputerLease(
   realtime?: RealtimeFanout,
 ): Promise<ComputerExecutionLease | null> {
   const wake = new WakeLatch();
-  const unsubscribe = await realtime?.subscribe(computerLeaseTopic(input.computerId), () =>
-    wake.wake(),
-  );
+  // A release wakes every waiter at once and only one can win, so the rest start their
+  // backoff over: the winner may yield the computer rather than take it.
+  let looksSinceWake = 0;
+  const unsubscribe = await realtime?.subscribe(computerLeaseTopic(input.computerId), () => {
+    looksSinceWake = 0;
+    wake.wake();
+  });
   const maxWaitMs = realtime?.describe().capabilities.distributed
     ? SIGNALLED_COMPUTER_WAIT_MAX_MS
     : UNSIGNALLED_COMPUTER_WAIT_MAX_MS;
+  const nextWaitMs = () => Math.min(250 * 2 ** Math.min(looksSinceWake++, 7), maxWaitMs);
   try {
-    return await waitForComputerLease(prisma, input, signal, { wake, maxWaitMs });
+    return await waitForComputerLease(prisma, input, signal, { wake, nextWaitMs });
   } finally {
     if (unsubscribe) await bestEffort("stop watching computer lease", unsubscribe());
   }
@@ -1174,7 +1179,7 @@ async function waitForComputerLease(
   prisma: PrismaClient,
   input: { computerId: string; botId: string; runId: string; workerId: string; runFence: number },
   signal: AbortSignal,
-  options: { wake: WakeLatch; maxWaitMs: number },
+  options: { wake: WakeLatch; nextWaitMs: () => number },
 ): Promise<ComputerExecutionLease | null> {
   let marked = false;
   const outcome = await pollUntil(
@@ -1210,7 +1215,7 @@ async function waitForComputerLease(
       }
     },
     {
-      intervalMs: (attempt) => Math.min(250 * 2 ** Math.min(attempt - 1, 7), options.maxWaitMs),
+      intervalMs: options.nextWaitMs,
       timeoutMs: Number.POSITIVE_INFINITY,
       signal,
       wake: options.wake,
