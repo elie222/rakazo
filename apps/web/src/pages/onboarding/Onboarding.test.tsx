@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
+import type { ModelCatalogEntry } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -15,6 +17,7 @@ vi.mock("../../lib/query/rpc", () => ({
   selectedSpaceId: () => null,
   rpc: {
     onboarding: { firstBot: vi.fn() },
+    billing: { selectFunding: vi.fn(async () => ({ ok: true })) },
     me: vi.fn(() => {
       account = deferred();
       return account.promise;
@@ -48,6 +51,61 @@ vi.mock("@lingui/react/macro", () => {
 import { rpc } from "../../lib/query/rpc";
 import { OnboardingPage } from "./Onboarding";
 
+const hostedCatalog: ModelCatalogEntry[] = [
+  {
+    provider: "openai-codex",
+    providerName: "OpenAI Codex",
+    subscriptionName: "ChatGPT subscription",
+    id: "codex-model",
+    label: "Codex model",
+    billing: "Subscription",
+    auth: "oauth",
+    signIn: "device-code",
+  },
+  {
+    provider: "anthropic",
+    providerName: "Anthropic",
+    subscriptionName: "Claude subscription",
+    id: "claude-model",
+    label: "Claude model",
+    billing: "API key or subscription",
+    auth: "both",
+    signIn: "auth-url",
+  },
+  {
+    provider: "openai",
+    providerName: "OpenAI",
+    id: "gpt-model",
+    label: "GPT model",
+    billing: "API key",
+  },
+  {
+    provider: "mistral",
+    providerName: "Mistral",
+    id: "mistral-model",
+    label: "Mistral model",
+    billing: "API key",
+  },
+  {
+    provider: "github-copilot",
+    providerName: "GitHub Copilot",
+    id: "copilot-model",
+    label: "Copilot model",
+    billing: "Subscription",
+    auth: "oauth",
+    signIn: "device-code",
+  },
+  {
+    provider: "xai",
+    providerName: "xAI",
+    id: "grok-model",
+    label: "Grok model",
+    billing: "API key or subscription",
+    auth: "both",
+    signIn: "device-code",
+  },
+];
+
 const roots = new Set<Root>();
 
 function mountRoot(host = document.body.appendChild(document.createElement("div"))) {
@@ -67,6 +125,7 @@ async function cleanup() {
 }
 
 beforeEach(() => {
+  i18n.loadAndActivate({ locale: "en", messages: {} });
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
   vi.stubGlobal(
     "fetch",
@@ -266,4 +325,100 @@ it("cleans up the account session before the browser globals are torn down", asy
     vi.stubGlobal("window", browserWindow);
   }
   expect(removeListener).toHaveBeenCalledWith("storage", expect.any(Function));
+});
+
+it("starts a hosted account by choosing credits, a subscription, or an API key", async () => {
+  vi.mocked(rpc.models.list).mockResolvedValueOnce(hostedCatalog);
+  const root = mountRoot();
+  await act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={["/onboarding"]}>
+        <Routes>
+          <Route path="/onboarding/:step?" element={<OnboardingPage />} />
+        </Routes>
+      </MemoryRouter>,
+    ),
+  );
+  await act(async () =>
+    account.resolve({ needsModel: true, needsSignupSurvey: false, billingEnabled: true }),
+  );
+  const choice = (name: string) =>
+    [...document.querySelectorAll('[data-slot="field-label"]')]
+      .find((label) => label.textContent === name)
+      ?.querySelector<HTMLElement>('[role="radio"]') ?? null;
+  const checked = () =>
+    [...document.querySelectorAll('[role="radio"][aria-checked="true"]')].map(
+      (radio) => radio.closest('[data-slot="field-label"]')?.textContent,
+    );
+  const button = (name: string) =>
+    [...document.querySelectorAll("button")].find((entry) => entry.textContent === name);
+  const providerPicker = () => document.querySelector<HTMLElement>('[aria-label="Provider"]');
+
+  expect(checked()).toEqual([]);
+  expect(providerPicker()).toBeNull();
+  expect(button("Continue")).toBeUndefined();
+
+  await act(async () => choice("Use a subscription")!.click());
+  expect(button("Continue")).toBeUndefined();
+  expect(
+    [
+      ...document.querySelectorAll(
+        '[role="radiogroup"][aria-label="Use a subscription"] [role="radio"]',
+      ),
+    ].map((radio) => radio.closest('[data-slot="field-label"]')?.textContent),
+  ).toEqual(["ChatGPT subscription", "Claude subscription", "GitHub Copilot", "xAI"]);
+  await act(async () => choice("Claude subscription")!.click());
+  expect(checked()).toEqual(["Use a subscription", "Claude subscription"]);
+  expect(button("Sign in")).toBeDefined();
+  expect(document.querySelector('input[type="password"]')).toBeNull();
+
+  await act(async () => choice("Use an API key")!.click());
+  expect(choice("Claude subscription")).toBeNull();
+  expect(button("Sign in")).toBeUndefined();
+  await act(async () => providerPicker()!.click());
+  expect(
+    [...document.querySelectorAll('[role="option"]')].map((option) => option.textContent),
+  ).toEqual(["OpenAI API", "Anthropic API", "Mistral", "xAI"]);
+  await act(async () =>
+    [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+      .find((option) => option.textContent === "OpenAI API")!
+      .click(),
+  );
+  expect(document.querySelector('input[type="password"]')).not.toBeNull();
+
+  await act(async () => choice("Rakazo credits")!.click());
+  expect(providerPicker()).toBeNull();
+  expect(document.querySelector('input[type="password"]')).toBeNull();
+  await act(async () => button("Continue")!.click());
+  expect(rpc.billing.selectFunding).toHaveBeenCalledWith({ funding: "credits", surface: "web" });
+});
+
+it("keeps the provider list for self-hosted accounts", async () => {
+  vi.mocked(rpc.models.list).mockResolvedValueOnce(hostedCatalog);
+  const root = mountRoot();
+  await act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={["/onboarding"]}>
+        <Routes>
+          <Route path="/onboarding/:step?" element={<OnboardingPage />} />
+        </Routes>
+      </MemoryRouter>,
+    ),
+  );
+  await act(async () =>
+    account.resolve({ needsModel: true, needsSignupSurvey: false, billingEnabled: false }),
+  );
+  expect(document.querySelector('[role="radio"]')).toBeNull();
+  await act(async () => document.querySelector<HTMLElement>('[aria-label="Provider"]')!.click());
+  expect(
+    [...document.querySelectorAll('[role="option"]')].map((option) => option.textContent),
+  ).toEqual([
+    "ChatGPT subscription",
+    "Claude subscription",
+    "OpenAI API",
+    "Anthropic API",
+    "GitHub Copilot",
+    "Mistral",
+    "xAI",
+  ]);
 });

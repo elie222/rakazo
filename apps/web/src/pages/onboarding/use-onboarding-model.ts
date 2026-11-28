@@ -17,12 +17,13 @@ import { analyticsSurface } from "../../lib/platform/desktop";
 import { rpc } from "../../lib/query/rpc";
 import { useModelConnectionForm } from "../model-settings/use-model-connection-form";
 
-/** Rakazo credits sit among the providers as the one choice that needs no account of its own. */
-const CREDITS_OPTION = "__rakazo_credits__";
 /** Select value for a hosted compatible service; the rest of the value is its base URL. */
 const ENDPOINT_PRESET_OPTION = "endpoint-preset:";
 /** A provider whose catalog entry offers both sign-in and a key appears once per way to connect. */
 type ProviderAuth = "sign-in" | "key";
+/** Where billing is on, a new account first picks how it pays for its model. */
+export type ConnectWay = "credits" | "subscription" | "key";
+type ProviderOption = { value: string; label: string };
 
 const MAIN_PROVIDER_OPTIONS: ReadonlyArray<{ provider: string; auth?: ProviderAuth }> = [
   { provider: "openai-codex" },
@@ -54,7 +55,8 @@ export function useOnboardingModel({
 }) {
   const { t } = useLingui();
   const [providerAuth, setProviderAuth] = useState<ProviderAuth | undefined>();
-  const [credits, setCredits] = useState(false);
+  const [connectWay, setConnectWay] = useState<ConnectWay | null>(null);
+  const credits = connectWay === "credits";
   const [manualModelId, setManualModelId] = useState(false);
   const form = useModelConnectionForm({
     rpc,
@@ -143,13 +145,13 @@ export function useOnboardingModel({
       if (id === "openai") return t`OpenAI API`;
       return providerDisplayName(localizeModelEntry(byId.get(id) ?? { provider: id }), auth);
     };
-    const main = [
-      ...(billingEnabled ? [{ value: CREDITS_OPTION, label: t`Rakazo credits` }] : []),
-      ...MAIN_PROVIDER_OPTIONS.filter((option) => byId.has(option.provider)).map((option) => ({
+    const main = MAIN_PROVIDER_OPTIONS.filter((option) => byId.has(option.provider)).map(
+      (option) => ({
         value: providerOptionValue(option.provider, option.auth),
         label: optionLabel(option.provider, option.auth),
-      })),
-    ];
+        subscription: byId.get(option.provider)?.signIn !== undefined && option.auth !== "key",
+      }),
+    );
     const rest = popularModelProvidersFirst(
       providers
         .filter(
@@ -168,11 +170,35 @@ export function useOnboardingModel({
       (option) => option.value,
       (option) => option.label,
     );
-    return { main, rest };
-  }, [billingEnabled, providers, t]);
+    // Hosted onboarding splits each provider that offers sign-in into its subscription and its key.
+    const restSubscriptions: ProviderOption[] = [];
+    const keyRest = rest.flatMap((option) => {
+      const entry = byId.get(option.value);
+      if (entry?.signIn === undefined) return [option];
+      restSubscriptions.push({
+        value: providerOptionValue(option.value, "sign-in"),
+        label: option.label,
+      });
+      return entry.auth === "oauth"
+        ? []
+        : [{ ...option, value: providerOptionValue(option.value, "key") }];
+    });
+    return {
+      main,
+      rest,
+      subscriptions: [...main.filter((option) => option.subscription), ...restSubscriptions],
+      keyMain: main.filter((option) => !option.subscription),
+      keyRest,
+    };
+  }, [providers, t]);
   // Base UI Select.Value only resolves labels when Root gets `items`.
   const providerItems = useMemo(
-    () => [...providerOptions.main, ...providerOptions.rest],
+    () => [
+      ...providerOptions.main,
+      ...providerOptions.rest,
+      ...providerOptions.subscriptions,
+      ...providerOptions.keyRest,
+    ],
     [providerOptions],
   );
   const modelItems = useMemo(
@@ -180,24 +206,22 @@ export function useOnboardingModel({
     [modelsForProvider],
   );
 
-  const providerValue = credits
-    ? CREDITS_OPTION
-    : endpointPreset
-      ? `${ENDPOINT_PRESET_OPTION}${endpointPreset.baseUrl}`
-      : provider
-        ? providerOptionValue(provider, providerAuth)
-        : null;
+  const providerValue = endpointPreset
+    ? `${ENDPOINT_PRESET_OPTION}${endpointPreset.baseUrl}`
+    : provider
+      ? providerOptionValue(provider, providerAuth)
+      : null;
+
+  function chooseConnectWay(next: ConnectWay) {
+    if (next === connectWay) return;
+    cancelOAuthAttempt("replaced");
+    setProvider("");
+    setProviderAuth(undefined);
+    setConnectWay(next);
+    setError(null);
+  }
 
   function chooseProvider(value: string) {
-    if (value === CREDITS_OPTION) {
-      cancelOAuthAttempt("replaced");
-      setProvider("");
-      setProviderAuth(undefined);
-      setCredits(true);
-      setError(null);
-      return;
-    }
-    setCredits(false);
     if (value.startsWith(ENDPOINT_PRESET_OPTION))
       selectProvider(OPENAI_COMPATIBLE_PROVIDER_ID, value.slice(ENDPOINT_PRESET_OPTION.length));
     else selectProvider(value);
@@ -287,6 +311,9 @@ export function useOnboardingModel({
     ...signIn,
     codeCopied,
     copyOAuthCode,
+    billingEnabled,
+    connectWay,
+    chooseConnectWay,
     credits,
     manualModelId,
     setManualModelId,

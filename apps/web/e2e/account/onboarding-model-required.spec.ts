@@ -88,7 +88,7 @@ test("hosted compatible providers appear in onboarding and require a key", async
   await expect(continueButton).toBeDisabled();
 });
 
-test("Rakazo credits are chosen like a provider, with nothing else to fill in", async ({
+test("a hosted account picks credits, a subscription, or an API key", async ({
   page,
 }, testInfo) => {
   await page.route("**/rpc/me", async (route) => {
@@ -108,10 +108,32 @@ test("Rakazo credits are chosen like a provider, with nothing else to fill in", 
   await expect(page.getByRole("heading", { name: "Connect a model" })).toBeVisible({
     timeout: 20_000,
   });
-  await page.getByRole("combobox", { name: "Provider" }).click();
-  await page.getByRole("option", { name: "Rakazo credits", exact: true }).click();
+  const continueButton = page.getByRole("button", { name: "Continue", exact: true });
+  const providerPicker = page.getByRole("combobox", { name: "Provider" });
+  await expect(page.getByRole("radio", { checked: true })).toHaveCount(0);
+  await expect(providerPicker).toHaveCount(0);
+  await expect(continueButton).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "onboarding-connect-ways");
+
+  await page.getByRole("radio", { name: "Use a subscription", exact: true }).click();
+  const subscriptions = page.getByRole("radiogroup", { name: "Use a subscription" });
+  await expect(subscriptions.getByRole("radio")).not.toHaveCount(0);
+  await subscriptions.getByRole("radio").first().click();
+  await expect(page.locator('input[type="password"]')).toHaveCount(0);
+  await expect(continueButton).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "onboarding-subscription");
+
+  await page.getByRole("radio", { name: "Use an API key", exact: true }).click();
+  await expect(subscriptions).toHaveCount(0);
+  await providerPicker.click();
+  await expect(page.getByRole("option", { name: "Rakazo credits", exact: true })).toHaveCount(0);
+  await page.getByRole("option", { name: "OpenAI API", exact: true }).click();
+  await expect(page.getByLabel("API key", { exact: true })).toBeVisible();
+
+  await page.getByRole("radio", { name: "Rakazo credits", exact: true }).click();
+  await expect(providerPicker).toHaveCount(0);
   await expect(page.getByRole("combobox", { name: "Model", exact: true })).toHaveCount(0);
-  await expect(page.getByLabel(/API key/)).toHaveCount(0);
+  await expect(page.locator('input[type="password"]')).toHaveCount(0);
   await captureScreenshot(page, testInfo, "onboarding-rakazo-credits");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect.poll(() => funding).toEqual({ funding: "credits", surface: "web" });

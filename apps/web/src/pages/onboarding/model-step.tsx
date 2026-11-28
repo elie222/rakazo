@@ -3,7 +3,12 @@ import { isUnlistedCompatibleModel } from "@rakazo/core";
 import {
   Button,
   Disclosure,
+  Field,
+  FieldLabel,
+  FieldTitle,
   Input,
+  RadioGroup,
+  RadioGroupItem,
   Select,
   SelectContent,
   SelectGroup,
@@ -12,11 +17,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@rakazo/ui-web";
+import type { LucideIcon } from "lucide-react";
+import { KeyRound, LogIn, Wallet } from "lucide-react";
+import type { ReactNode } from "react";
 import { FoundModelPicker } from "../../components/models/FoundModelPicker";
 import { ModelHeadersEditor } from "../../components/models/ModelHeadersEditor";
 import { SubscriptionSignInSteps } from "../../components/models/SubscriptionSignInSteps";
 import { CompatibleKeyField } from "../model-settings/compatible-key-field";
-import type { OnboardingModel } from "./use-onboarding-model";
+import type { ConnectWay, OnboardingModel } from "./use-onboarding-model";
 
 const CUSTOM_MODEL_OPTION = "__rakazo_custom_model__";
 
@@ -25,11 +33,12 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
   const {
     acceptsKey,
     accountId,
+    billingEnabled,
+    connectWay,
     apiKey,
     cancelOAuthAttempt,
     canSaveModel,
     compatibleKeyRequired,
-    chooseProvider,
     credits,
     endpointPreset,
     error,
@@ -46,9 +55,6 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
     needsRouting,
     notice,
     provider,
-    providerItems,
-    providerOptions,
-    providerValue,
     saveModel,
     selected,
     setAccountId,
@@ -63,45 +69,20 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
 
   return (
     <div>
-      <h1 className="text-display font-medium text-foreground">
+      <h1 id={`${fieldId}-title`} className="text-display font-medium text-foreground">
         <Trans>Connect a model</Trans>
       </h1>
-      <div className="mt-8 block text-body font-medium text-foreground">
-        <span>
-          <Trans>Provider</Trans>
-        </span>
-        <Select
-          value={providerValue}
-          onValueChange={(value) => {
-            if (typeof value !== "string" || !value) return;
-            chooseProvider(value);
-          }}
-          items={providerItems}
-        >
-          <SelectTrigger aria-label={t`Provider`} className="mt-2 w-full">
-            <SelectValue placeholder={t`Choose a provider`} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {providerOptions.main.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-            {providerOptions.main.length && providerOptions.rest.length ? (
-              <SelectSeparator />
-            ) : null}
-            <SelectGroup>
-              {providerOptions.rest.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-      </div>
+      {billingEnabled ? (
+        <ConnectWayChoice model={model} fieldId={fieldId} />
+      ) : (
+        <ProviderSelect model={model} options={model.providerOptions} />
+      )}
+      {billingEnabled && connectWay === "key" ? (
+        <ProviderSelect
+          model={model}
+          options={{ main: model.providerOptions.keyMain, rest: model.providerOptions.keyRest }}
+        />
+      ) : null}
       {provider ? (
         <>
           {isOpenAiCompatible && !endpointPreset ? (
@@ -221,14 +202,128 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
         </p>
       ) : null}
       {error ? <p className="mt-3 text-body text-destructive">{error}</p> : null}
-      <Button
-        className="mt-6"
-        disabled={!credits && !canSaveModel}
-        onClick={() => void (credits ? fundWithCredits() : saveModel())}
-      >
-        <Trans>Continue</Trans>
-      </Button>
+      {!billingEnabled || connectWay === "credits" || connectWay === "key" ? (
+        <Button
+          className="mt-6"
+          disabled={!credits && !canSaveModel}
+          onClick={() => void (credits ? fundWithCredits() : saveModel())}
+        >
+          <Trans>Continue</Trans>
+        </Button>
+      ) : null}
     </div>
+  );
+}
+
+type ProviderOption = { value: string; label: string };
+
+function ProviderSelect({
+  model,
+  options,
+}: {
+  model: OnboardingModel;
+  options: { main: ProviderOption[]; rest: ProviderOption[] };
+}) {
+  const { t } = useLingui();
+  return (
+    <div className="mt-8 block text-body font-medium text-foreground">
+      <span>
+        <Trans>Provider</Trans>
+      </span>
+      <Select
+        value={model.providerValue}
+        onValueChange={(value) => {
+          if (typeof value !== "string" || !value) return;
+          model.chooseProvider(value);
+        }}
+        items={model.providerItems}
+      >
+        <SelectTrigger aria-label={t`Provider`} className="mt-2 w-full">
+          <SelectValue placeholder={t`Choose a provider`} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            {options.main.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+          {options.main.length && options.rest.length ? <SelectSeparator /> : null}
+          <SelectGroup>
+            {options.rest.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+/** Credits, a subscription sign-in, or an API key: the three ways a hosted account can start. */
+function ConnectWayChoice({ model, fieldId }: { model: OnboardingModel; fieldId: string }) {
+  const { t } = useLingui();
+  const { connectWay, chooseConnectWay, providerOptions, providerValue } = model;
+  const subscriptions = providerOptions.subscriptions;
+  const ways: Array<{ value: ConnectWay; icon: LucideIcon; title: ReactNode }> = [
+    { value: "credits", icon: Wallet, title: <Trans>Rakazo credits</Trans> },
+    ...(subscriptions.length
+      ? [{ value: "subscription" as const, icon: LogIn, title: <Trans>Use a subscription</Trans> }]
+      : []),
+    { value: "key", icon: KeyRound, title: <Trans>Use an API key</Trans> },
+  ];
+  return (
+    <>
+      <RadioGroup
+        aria-labelledby={`${fieldId}-title`}
+        value={connectWay}
+        onValueChange={(value) => chooseConnectWay(value as ConnectWay)}
+        className="mt-8 grid-cols-1 gap-3 sm:grid-cols-3"
+      >
+        {ways.map(({ value, icon: Icon, title }) => (
+          <FieldLabel
+            key={value}
+            htmlFor={`${fieldId}-way-${value}`}
+            className="cursor-pointer *:data-[slot=field]:p-4"
+          >
+            <Field className="gap-4">
+              <div className="flex items-start justify-between">
+                <Icon aria-hidden className="size-5 text-foreground" />
+                <RadioGroupItem id={`${fieldId}-way-${value}`} value={value} />
+              </div>
+              <FieldTitle className="text-body-lg text-foreground">{title}</FieldTitle>
+            </Field>
+          </FieldLabel>
+        ))}
+      </RadioGroup>
+      {connectWay === "subscription" ? (
+        <RadioGroup
+          aria-label={t`Use a subscription`}
+          value={providerValue}
+          onValueChange={(value) => model.chooseProvider(String(value))}
+          className="mt-4 grid-cols-1 gap-2 sm:grid-cols-2"
+        >
+          {subscriptions.map((option) => (
+            <FieldLabel
+              key={option.value}
+              htmlFor={`${fieldId}-subscription-${option.value}`}
+              className="cursor-pointer"
+            >
+              <Field orientation="horizontal">
+                <RadioGroupItem
+                  id={`${fieldId}-subscription-${option.value}`}
+                  value={option.value}
+                />
+                <FieldTitle className="text-foreground">{option.label}</FieldTitle>
+              </Field>
+            </FieldLabel>
+          ))}
+        </RadioGroup>
+      ) : null}
+    </>
   );
 }
 
