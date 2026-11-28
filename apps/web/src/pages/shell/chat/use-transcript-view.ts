@@ -92,7 +92,11 @@ export function useTranscriptView({
     activeSnapshot,
     transcript,
     artifactTarget,
-    composerRunning: currentRuns.some((run) => isActive(run.status)),
+    // A question holds nothing, so there is nothing to stop: Stop would only end the turn and leave
+    // its question unanswerable.
+    composerRunning: currentRuns.some(
+      (run) => isActive(run.status) && run.status !== "waiting_input",
+    ),
     resolveBot,
     resolveMemberName,
     /** What the transcript draws from the open chat's snapshot. */
