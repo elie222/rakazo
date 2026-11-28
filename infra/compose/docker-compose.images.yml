@@ -744,6 +744,8 @@ services:
       COMPOSE_PATH_SEPARATOR: ${COMPOSE_PATH_SEPARATOR:-}
       # Starting the updater does not enable scheduling. Set 6 to check every six hours.
       RAKAZO_AUTO_UPDATE_INTERVAL_HOURS: ${RAKAZO_AUTO_UPDATE_INTERVAL_HOURS:-0}
+      # Database snapshots to keep, one taken before each update. 0 takes none.
+      RAKAZO_UPDATE_DATABASE_SNAPSHOTS: ${RAKAZO_UPDATE_DATABASE_SNAPSHOTS:-0}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

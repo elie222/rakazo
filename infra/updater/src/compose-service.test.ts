@@ -73,6 +73,9 @@ describe("the updater compose service", () => {
     expect(updater.environment?.RAKAZO_AUTO_UPDATE_INTERVAL_HOURS).toBe(
       interpolated("RAKAZO_AUTO_UPDATE_INTERVAL_HOURS", "0"),
     );
+    expect(updater.environment?.RAKAZO_UPDATE_DATABASE_SNAPSHOTS).toBe(
+      interpolated("RAKAZO_UPDATE_DATABASE_SNAPSHOTS", "0"),
+    );
   });
 
   it("publishes nothing on the host", () => {

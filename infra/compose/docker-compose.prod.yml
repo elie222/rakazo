@@ -778,6 +778,8 @@ services:
       # resolveUpdaterConfig still refuses to start the sidecar without a dedicated secure value.
       RAKAZO_UPDATER_TOKEN: ${RAKAZO_UPDATER_TOKEN:-}
       RAKAZO_AUTO_UPDATE_INTERVAL_HOURS: ${RAKAZO_AUTO_UPDATE_INTERVAL_HOURS:-0}
+      # Database snapshots to keep, one taken before each update. 0 takes none.
+      RAKAZO_UPDATE_DATABASE_SNAPSHOTS: ${RAKAZO_UPDATE_DATABASE_SNAPSHOTS:-0}
       RAKAZO_UPDATER_HOST: "0.0.0.0"
       RAKAZO_UPDATER_PORT: "7092"
       RAKAZO_IMAGE: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}

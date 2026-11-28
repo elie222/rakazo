@@ -244,8 +244,9 @@ Updates and rollbacks run one at a time. A failed pull leaves running services a
 pin and attempts to redeploy the cached previous image. A failed fork build also restores the
 pre-update branch and commit (including when checkout succeeded but merge did not) so a later
 manual `--build` cannot deploy the rejected or unintended revision. Database migrations are not
-reversed. The sidecar never recreates itself, never touches Postgres or Caddy, and never runs
-migrations — that ordering belongs to the API's dependency on the `migrate` service.
+reversed. The sidecar never recreates itself, never touches Caddy, and never runs
+migrations — that ordering belongs to the API's dependency on the `migrate` service. It reads
+Postgres only for an optional [snapshot before an update](#database-snapshot-before-an-update).
 
 Only `https://` and `ssh://` git remotes are accepted. Merges are fast-forward only. A dirty or
 untracked source tree fails closed before anything runs (the application Dockerfile uses `COPY . .`).
@@ -391,6 +392,66 @@ release pin when the selected release has not changed. An `edge`, prerelease or 
 unattendedly replaced by an older stable release, even if `.env` was edited to say `latest`.
 Existing edge installations must review release notes and migrate to a compatible stable release
 manually before scheduling can proceed. Cloud CI deployment triggers remain unchanged.
+
+## Database snapshot before an update
+
+Rolling back restores the previous image, never the previous database, so an update whose
+migrations cannot be undone needs a database copy from just before it. Set
+`RAKAZO_UPDATE_DATABASE_SNAPSHOTS` in `.env` to the number of outgoing releases to keep copies
+for (1 to 30; `0`, the default, takes none) and recreate the updater:
+
+```dotenv
+RAKAZO_UPDATE_DATABASE_SNAPSHOTS=2
+```
+
+Each scheduled or manual update then dumps the database after its images are pulled or its
+checkout is fast-forwarded and before any service is recreated, checks that the dump can be
+listed, and saves it as `backups/pre-update/<time>-<outgoing tag>.dump` in the deployment
+directory, readable only by root. If the snapshot fails, the update stops there with the running
+services untouched. A rollback takes no snapshot, and an update that finds nothing to change
+takes none either.
+
+An update that fails and is tried again is snapshotted again, and by then the failed attempt's
+migrations may already have run. The first attempt's file is therefore never replaced: a later
+attempt, whichever release it targets, saves `<time>-<outgoing tag>+retry.dump` beside it, with
+the first attempt's time, and each further attempt replaces only that file. The pair is closed
+when an update succeeds, not by a rollback or a change of release, and the next update then starts a new one. The
+setting counts these pairs, so each holds one or two files. If you finish a failed update by
+hand instead, delete `backups/pre-update/.in-progress` so the next update starts a new pair.
+
+The dump is a `pg_dump` custom-format file of the Compose `postgres` service, with owners and
+privileges, written inside that container first and then copied out, so it needs free space for
+about two copies. Leave the setting at `0` when the database runs outside this Compose stack. It
+is a way back from one update, not a backup: it covers the database only, not the bot homes and
+files in the application data volume, and it never leaves the server, so keep the
+[scheduled backups](./self-host-backups.md) too. It holds everything in the database, account
+details included, unencrypted: protect the directory as you would a backup.
+
+To go back after a bad update, restore the database before the previous release starts on it:
+that release cannot run on the newer schema. Pause scheduling, stop everything that uses the
+database, and restore the snapshot. Choose the newest `<time>-<outgoing tag>.dump` for the
+release you are going back to; a `+retry.dump` beside it is newer, but restore it only if you
+know the earlier attempts never reached their migrations. Use your own Compose files in place
+of `docker-compose.images.yml`, the ones the updater runs:
+
+```bash
+COMPOSE="docker compose --env-file .env -f docker-compose.images.yml"
+$COMPOSE stop api worker web migrate
+sudo cat "backups/pre-update/<time>-<outgoing tag>.dump" | $COMPOSE exec -T postgres sh -c \
+  'pg_restore --clean --if-exists --create --exit-on-error -U "$POSTGRES_USER" -d template1'
+```
+
+The files belong to root, hence `sudo cat`. `migrate` is stopped too: after a recreate that timed
+out it may still be connected.
+
+`--create` drops the database and creates it again from the snapshot, so tables the failed
+update added do not survive, and grants and revocations return as they were. It refuses while
+anything is still connected: stop any other service from your overlay that uses the database
+(and `pitr`, if enabled) first. Then start the previous release. If the update failed and the
+updater already put the previous image back, `.env` names it and `$COMPOSE up -d --wait` is
+enough. If the update went through and you are undoing it, call `/rollback` as shown above.
+Everything written to the database after the snapshot is lost, so restore right away or roll
+forward instead.
 
 ## The deploy directory must be one path
 

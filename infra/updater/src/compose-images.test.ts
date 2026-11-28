@@ -110,6 +110,9 @@ describe("the images compose file", () => {
     expect(updater?.environment?.RAKAZO_AUTO_UPDATE_INTERVAL_HOURS).toBe(
       interpolated("RAKAZO_AUTO_UPDATE_INTERVAL_HOURS", "0"),
     );
+    expect(updater?.environment?.RAKAZO_UPDATE_DATABASE_SNAPSHOTS).toBe(
+      interpolated("RAKAZO_UPDATE_DATABASE_SNAPSHOTS", "0"),
+    );
     expect(updater?.environment?.RAKAZO_COMPOSE_FILE).toBe(
       interpolated("RAKAZO_COMPOSE_FILE", "docker-compose.images.yml"),
     );

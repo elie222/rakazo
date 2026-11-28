@@ -43,6 +43,8 @@ export interface UpdaterConfig {
   /** Zero disables scheduled updates, including when the updater profile is enabled. */
   autoUpdateIntervalMs: number;
   autoUpdateDisabledReason: string | null;
+  /** Pre-update database snapshots to keep. Zero takes none. */
+  databaseSnapshots: number;
 }
 
 /**
@@ -107,6 +109,10 @@ export function resolveUpdaterConfig(env: NodeJS.ProcessEnv): UpdaterConfig {
   if (!Number.isInteger(hours) || hours < 0 || hours > 168) {
     throw new Error("RAKAZO_AUTO_UPDATE_INTERVAL_HOURS must be 0 (disabled) or 1–168.");
   }
+  const databaseSnapshots = Number(env.RAKAZO_UPDATE_DATABASE_SNAPSHOTS?.trim() || "0");
+  if (!Number.isInteger(databaseSnapshots) || databaseSnapshots < 0 || databaseSnapshots > 30) {
+    throw new Error("RAKAZO_UPDATE_DATABASE_SNAPSHOTS must be 0 (disabled) or 1–30.");
+  }
   const mirroredComputer =
     updateServices.includes("computer") &&
     (env[COMPUTER_IMAGE_ENV]?.trim() || OFFICIAL_COMPUTER_IMAGE) !== OFFICIAL_COMPUTER_IMAGE;
@@ -117,6 +123,7 @@ export function resolveUpdaterConfig(env: NodeJS.ProcessEnv): UpdaterConfig {
   return {
     autoUpdateIntervalMs: autoUpdateDisabledReason === null ? hours * 60 * 60 * 1_000 : 0,
     autoUpdateDisabledReason,
+    databaseSnapshots,
     deployDir,
     composeFiles: composeFiles.map((composeFile) => path.posix.join(deployDir, composeFile)),
     updateServices,

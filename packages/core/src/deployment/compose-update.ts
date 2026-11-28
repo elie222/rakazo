@@ -343,6 +343,24 @@ export function composeUpArgv(
   return { command: "docker", args };
 }
 
+/** One program in a running service's container, as argv: nothing here is parsed by a shell. */
+export function composeExecArgv(
+  target: ComposeTarget,
+  service: string,
+  command: readonly string[],
+): ComposeInvocation {
+  return { command: "docker", args: [...composeBase(target), "exec", "-T", service, ...command] };
+}
+
+/** Copies between a service's container (`service:/path`) and the local filesystem. */
+export function composeCopyArgv(
+  target: ComposeTarget,
+  source: string,
+  destination: string,
+): ComposeInvocation {
+  return { command: "docker", args: [...composeBase(target), "cp", source, destination] };
+}
+
 export function composePsArgv(target: ComposeTarget): ComposeInvocation {
   return { command: "docker", args: [...composeBase(target), "ps", "--format", "json"] };
 }
