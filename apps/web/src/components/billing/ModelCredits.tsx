@@ -3,6 +3,7 @@ import { ORPCError } from "@orpc/client";
 import type { BillingStatus, ByokInterval, ByokTier, HeldCreditAmount } from "@rakazo/contracts";
 import {
   byokTierChangeOffered,
+  byokTrialRenewalOffered,
   byokYearlySwitchSavings,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   HeldCreditAmountSchema,
@@ -17,7 +18,7 @@ import {
   formatBillingDate,
   formatBillingPrice,
 } from "@rakazo/i18n/billing";
-import { tierComputerDescription, tierComputerSummary } from "@rakazo/i18n/computer-usage";
+import { tierComputerDescription } from "@rakazo/i18n/computer-usage";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,12 +34,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
 } from "@rakazo/ui-web";
 import { RefreshCw } from "lucide-react";
 import { useState } from "react";
@@ -48,75 +43,9 @@ import type { RpcClient } from "../../lib/query/rpc";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { ComputerUsage } from "./ComputerUsage";
 import type { CreditAmount } from "./PlanControls";
-import { ByokIntervalToggle, CreditAmountSelect } from "./PlanControls";
+import { ByokIntervalToggle, ByokTierSelect, CreditAmountSelect } from "./PlanControls";
 
 type TierOffer = NonNullable<BillingStatus["byokTiers"]>[number];
-
-/** The own-key plan's tiers at `interval`, each with its price and computer. */
-function ByokTierSelect({
-  tiers,
-  interval,
-  value,
-  disabled,
-  onChange,
-}: {
-  tiers: TierOffer[];
-  interval: ByokInterval;
-  value: ByokTier;
-  disabled?: boolean;
-  onChange: (offer: TierOffer) => void;
-}) {
-  const { t, i18n } = useLingui();
-  const offered = tiers.flatMap((offer) => {
-    const cents = tierPriceCents(offer, interval);
-    return cents === null
-      ? []
-      : [
-          {
-            offer,
-            price: formatBillingPrice(
-              { amount: cents, currency: "usd", interval, intervalCount: 1 },
-              i18n.locale,
-            ),
-          },
-        ];
-  });
-  return (
-    <Select
-      value={value}
-      disabled={disabled}
-      onValueChange={(next) => {
-        const chosen = offered.find(({ offer }) => offer.tier === next);
-        if (chosen) onChange(chosen.offer);
-      }}
-      items={offered.map(({ offer }) => ({ value: offer.tier, label: offer.name }))}
-    >
-      <SelectTrigger aria-label={t`Plan`} className="min-w-28">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent
-        alignItemWithTrigger={false}
-        align="start"
-        className="w-auto min-w-(--anchor-width)"
-      >
-        <SelectGroup>
-          {offered.map(({ offer, price }) => (
-            <SelectItem key={offer.tier} value={offer.tier} className="py-2">
-              <span className="flex flex-col gap-0.5">
-                <span>
-                  {offer.name} · {price}
-                </span>
-                <span className="text-label text-muted-foreground">
-                  {tierComputerSummary(offer)}
-                </span>
-              </span>
-            </SelectItem>
-          ))}
-        </SelectGroup>
-      </SelectContent>
-    </Select>
-  );
-}
 
 /** The free period's subscribe button, at the chosen tier and interval. */
 function SubscribeLabel({ price, annualPrice }: { price: string; annualPrice: string | null }) {
@@ -124,6 +53,64 @@ function SubscribeLabel({ price, annualPrice }: { price: string; annualPrice: st
     <Trans>Subscribe for {annualPrice} / year</Trans>
   ) : (
     <Trans>Subscribe for {price} / month</Trans>
+  );
+}
+
+/** Keeps a cancelled trial, on the tier and billing period picked here. */
+function RenewTrial({
+  status,
+  disabled,
+  onRenew,
+}: {
+  status: BillingStatus;
+  disabled: boolean;
+  onRenew: (plan: { tier: ByokTier; interval: ByokInterval }) => void;
+}) {
+  const { i18n } = useLingui();
+  const tiers = status.byokTiers ?? [];
+  const current = subscribedTier(status)?.tier ?? "standard";
+  const [tier, setTier] = useState<ByokTier>(current);
+  const [chosenInterval, setChosenInterval] = useState<ByokInterval>(
+    status.byokInterval ?? "month",
+  );
+  const offer = tiers.find((candidate) => candidate.tier === tier);
+  if (!offer) return null;
+  const interval = offer.annualPriceCents ? chosenInterval : "month";
+  // The plan the trial already has keeps the price it was started at.
+  const kept = tier === current && interval === (status.byokInterval ?? "month");
+  const price = formatBillingPrice(
+    {
+      amount:
+        (kept ? status.byokPriceCents : tierPriceCents(offer, interval)) ?? offer.monthlyPriceCents,
+      currency: "usd",
+      interval,
+      intervalCount: 1,
+    },
+    i18n.locale,
+  );
+  return (
+    <div className="mt-5 flex flex-wrap items-center gap-3">
+      {tiers.length > 1 ? (
+        <ByokTierSelect
+          tiers={tiers}
+          interval={interval}
+          value={tier}
+          disabled={disabled}
+          onChange={(next) => setTier(next.tier)}
+        />
+      ) : null}
+      {offer.annualPriceCents ? (
+        <ByokIntervalToggle
+          monthlyCents={offer.monthlyPriceCents}
+          annualCents={offer.annualPriceCents}
+          value={interval}
+          onChange={setChosenInterval}
+        />
+      ) : null}
+      <Button disabled={disabled} onClick={() => onRenew({ tier, interval })}>
+        <Trans>Renew for {price}</Trans>
+      </Button>
+    </div>
   );
 }
 
@@ -372,7 +359,18 @@ export function ModelCreditsSettings({
               <p className="mt-2 text-body text-muted-foreground">
                 <Trans>Cancelled trials have no computer hours.</Trans>
               </p>
-              {status.canManage && status.hasCustomer ? (
+              {byokTrialRenewalOffered(status) ? (
+                <RenewTrial
+                  status={status}
+                  disabled={pending}
+                  onRenew={(plan) =>
+                    action(async (client) => {
+                      await client.billing.renewTrial(plan);
+                      await refresh();
+                    })
+                  }
+                />
+              ) : status.canManage && status.hasCustomer ? (
                 <Button
                   className="mt-5"
                   variant="secondary"

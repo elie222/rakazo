@@ -56,6 +56,8 @@ export const pl: Messages = {
   },
   slideOf: "{n} z {total}",
   showPhoto: "Pokaż zdjęcie {n}",
+  previousPhoto: "Poprzednie zdjęcie",
+  nextPhoto: "Następne zdjęcie",
   view: "Zobacz",
   viewTitle: "Zobacz {title}",
   rated: "Ocena {rating} na 5",

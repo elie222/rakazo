@@ -51,6 +51,8 @@ export const ptBR: Messages = {
   photos: { one: "{count} foto", other: "{count} fotos" },
   slideOf: "{n} de {total}",
   showPhoto: "Mostrar foto {n}",
+  previousPhoto: "Foto anterior",
+  nextPhoto: "Próxima foto",
   view: "Ver",
   viewTitle: "Ver {title}",
   rated: "Nota {rating} de 5",

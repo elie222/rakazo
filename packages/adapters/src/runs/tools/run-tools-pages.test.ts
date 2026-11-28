@@ -1,6 +1,8 @@
 import type { PageVisibility } from "@rakazo/contracts";
+import { PAGE_LIST_MAX_LIMIT, PAGE_TITLE_MAX_LENGTH } from "@rakazo/contracts";
 import sharp from "sharp";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { TOOL_RESULT_TEXT_LIMIT } from "../../runtime/pi/pi-runtime-limits.js";
 import type { RunContext } from "../assembly/run-context.js";
 
 const publishMessage = vi.fn();
@@ -196,6 +198,129 @@ describe("save_page", () => {
   });
 });
 
+describe("listing pages", () => {
+  function listing(rows: unknown[], groupId: string | null = null) {
+    const ctx = context({}) as RunContext;
+    const findMany = vi.fn(async (_query: unknown) => rows);
+    Object.assign(ctx.deps.prisma.page, { findMany });
+    Object.assign(ctx.thread, { groupId });
+    return { ctx, findMany };
+  }
+
+  it("lists only the bot's own pages, newest first and bounded, with what a save needs", async () => {
+    const { ctx, findMany } = listing([
+      { id: "page-2", title: "Deals", visibility: "link", updatedAt: new Date("2026-11-02") },
+      { id: "page-1", title: "Plan", visibility: "private", updatedAt: new Date("2026-11-01") },
+    ]);
+    const result = await pageTools.save_page!(ctx, call({ list: true }));
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { spaceId: "space-1", userId: "user-1", OR: [{ botId: "bot-1" }] },
+        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+        take: PAGE_LIST_MAX_LIMIT + 1,
+      }),
+    );
+    expect(result).toEqual({
+      pages: [
+        {
+          pageId: "page-2",
+          title: "Deals",
+          updatedAt: "2026-11-02T00:00:00.000Z",
+          sharedByLink: true,
+        },
+        { pageId: "page-1", title: "Plan", updatedAt: "2026-11-01T00:00:00.000Z" },
+      ],
+    });
+    expect((ctx as { state: { tainted: boolean } }).state.tainted).toBe(true);
+  });
+
+  it("adds the group's pages in a group chat", async () => {
+    const { ctx, findMany } = listing([], "group-1");
+    await pageTools.save_page!(ctx, call({ list: true }));
+    expect(findMany.mock.calls[0]?.[0]).toMatchObject({
+      where: { OR: [{ botId: "bot-1" }, { groupId: "group-1" }] },
+    });
+  });
+
+  it("filters reachable pages by a literal title fragment", async () => {
+    const { ctx, findMany } = listing([]);
+    await pageTools.save_page!(ctx, call({ list: true, query: "  50% off  " }));
+    expect(findMany.mock.calls[0]?.[0]).toMatchObject({
+      where: { title: { contains: "50\\% off", mode: "insensitive" } },
+    });
+  });
+
+  it("returns the last listed page as the cursor when more pages match", async () => {
+    const { ctx } = listing(
+      Array.from({ length: PAGE_LIST_MAX_LIMIT + 1 }, (_, index) => ({
+        id: String(index),
+        title: "Plan",
+        visibility: "private",
+        updatedAt: new Date("2026-11-01"),
+      })),
+    );
+    const result = (await pageTools.save_page!(ctx, call({ list: true }))) as {
+      pages: unknown[];
+      nextCursor?: { pageId: string; updatedAt: string };
+    };
+    expect(result.pages).toHaveLength(PAGE_LIST_MAX_LIMIT);
+    expect(result.nextCursor).toEqual({
+      pageId: String(PAGE_LIST_MAX_LIMIT - 1),
+      updatedAt: "2026-11-01T00:00:00.000Z",
+    });
+  });
+
+  it("continues a title search after the cursor within the same access scope", async () => {
+    const { ctx, findMany } = listing([], "group-1");
+    const updatedAt = new Date("2026-11-01");
+    await pageTools.save_page!(
+      ctx,
+      call({
+        list: true,
+        query: "Plan",
+        cursor: { pageId: "page-1", updatedAt: updatedAt.toISOString() },
+      }),
+    );
+    expect(findMany.mock.calls[0]?.[0]).toMatchObject({
+      where: {
+        spaceId: "space-1",
+        userId: "user-1",
+        OR: [{ botId: "bot-1" }, { groupId: "group-1" }],
+        title: { contains: "Plan", mode: "insensitive" },
+        AND: { OR: [{ updatedAt: { lt: updatedAt } }, { updatedAt, id: { lt: "page-1" } }] },
+      },
+    });
+  });
+
+  it("keeps long escaped titles and their continuation cursor within the tool result budget", async () => {
+    const updatedAt = new Date("2026-11-01");
+    const { ctx } = listing(
+      Array.from({ length: PAGE_LIST_MAX_LIMIT }, (_, index) => ({
+        id: `page-${index}`,
+        title: '"'.repeat(PAGE_TITLE_MAX_LENGTH),
+        visibility: "private",
+        updatedAt,
+      })),
+    );
+    const result = (await pageTools.save_page!(ctx, call({ list: true }))) as {
+      pages: { pageId: string }[];
+      nextCursor?: { pageId: string; updatedAt: string };
+    };
+    expect(JSON.stringify(result).length).toBeLessThanOrEqual(TOOL_RESULT_TEXT_LIMIT);
+    expect(result.pages.length).toBeLessThan(PAGE_LIST_MAX_LIMIT);
+    expect(result.nextCursor).toEqual({
+      pageId: result.pages.at(-1)!.pageId,
+      updatedAt: updatedAt.toISOString(),
+    });
+  });
+
+  it("answers an empty list when the bot has no pages", async () => {
+    const { ctx } = listing([]);
+    expect(await pageTools.save_page!(ctx, call({ list: true }))).toEqual({ pages: [] });
+    expect((ctx as { state: { tainted: boolean } }).state.tainted).toBe(false);
+  });
+});
+
 describe("saving a shared page", () => {
   const edit = { find: "Hi", replace: "Hello" };
 
@@ -295,10 +420,14 @@ describe("saving a shared page", () => {
     expect(tx.page.updateMany).not.toHaveBeenCalled();
   });
 
-  it("does not hold a private page, a read, a new page, or any save under Never ask", async () => {
+  it("does not hold a private page, a read, a listing, a new page, or any save under Never ask", async () => {
     const cases = [
       [request({ pageId: "page-1", edits: [edit] }), context({}, { currentVersion: 1 })],
       [request({ pageId: "page-1" }), context({}, { currentVersion: 1, visibility: "link" })],
+      [
+        request({ list: true, pageId: "page-1", edits: [edit] }),
+        context({}, { currentVersion: 1, visibility: "link" }),
+      ],
       [request({ title: "New", source: source("New") }), context({})],
       [
         request({ pageId: "page-1", edits: [edit] }),

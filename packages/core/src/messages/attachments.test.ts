@@ -30,6 +30,18 @@ const secretRedactor = (secrets: readonly string[]) => (text: string) =>
   redactSecrets(text, secrets);
 
 describe("attachment helpers", () => {
+  it("keeps the stored feedback receipt in both history formats", () => {
+    const receipt = {
+      kind: "feedback_receipt",
+      reportKind: "feedback",
+      reportId: "report-1",
+      description: "Please add a larger preview.\nThe current one is hard to read.",
+    } as const;
+    const text = blocksToAgentHistoryText([receipt]);
+    expect(JSON.parse(text)).toEqual({ ...receipt, status: "submitted" });
+    expect(blocksToAgentHistorySegments([receipt])).toEqual([{ text }]);
+  });
+
   it.each([
     ["xls", "application/vnd.ms-excel"],
     ["xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
@@ -1328,6 +1340,31 @@ describe("tool step history", () => {
     expect(blocksToAgentHistorySegments([{ kind: "text", text: "Hi." }])).toEqual([
       { text: "Hi." },
     ]);
+  });
+
+  it("redacts secrets inside feedback_receipt JSON before serialization escapes them", () => {
+    const secret = 'tok-"line1"\nline2';
+    const redact = (text: string) => text.replaceAll(secret, "[redacted]");
+    const rendered = blocksToAgentHistoryText(
+      [
+        {
+          kind: "feedback_receipt",
+          reportId: "rep-1",
+          reportKind: "bug",
+          description: `Saw ${secret} in logs`,
+        },
+      ],
+      redact,
+    );
+    expect(rendered).not.toContain("tok-");
+    expect(rendered).not.toContain("line2");
+    expect(JSON.parse(rendered)).toEqual({
+      kind: "feedback_receipt",
+      reportId: "rep-1",
+      reportKind: "bug",
+      description: "Saw [redacted] in logs",
+      status: "submitted",
+    });
   });
 });
 

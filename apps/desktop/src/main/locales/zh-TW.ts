@@ -223,4 +223,14 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "Restart Rakazo": "重新啟動 Rakazo",
   "Not Now": "稍後再說",
   "Restart Rakazo to finish setup": "重新啟動 Rakazo 以完成設定",
+  // Page apps
+  "Keep on Top": "保持在最上層",
+  "Open in Rakazo": "在 Rakazo 中打開",
+  "Uninstall…": "解除安裝…",
+  "Uninstall {name}?": "要解除安裝「{name}」嗎？",
+  Uninstall: "解除安裝",
+  "Allow {name} to ask its bot?": "允許「{name}」向它的機器人提問嗎？",
+  "Allow {name} to show notifications?": "允許「{name}」顯示通知嗎？",
+  "{name} was removed.": "「{name}」已被移除。",
+  "Move to Trash": "丟到垃圾桶",
 };

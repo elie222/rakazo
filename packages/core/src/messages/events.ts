@@ -10,6 +10,7 @@ import { cloudAgentBlockFromPayload } from "../integrations/cloud-agent.js";
 import { sliceWellFormed } from "../primitives/utf8.js";
 import { modelFallbackFailure, parseModelFallbackFailure } from "../runs/run-error.js";
 import { payloadAuthor } from "./message-replies.js";
+import { isFeedbackReceiptMessage } from "./message-text.js";
 import type { SecretMatcher } from "./secret-matcher.js";
 import { createSecretMatcher } from "./secret-matcher.js";
 
@@ -75,9 +76,9 @@ export function projectMessages(
     const createdAt =
       typeof event.createdAt === "string" ? event.createdAt : event.createdAt.toISOString();
     if (event.type === "thread.message.created") {
-      clearLive(event);
       const role = (payload.role as ThreadMessage["role"]) ?? "bot";
       const blocks = (payload.blocks as MessageBlock[]) ?? [];
+      if (!isFeedbackReceiptMessage(blocks)) clearLive(event);
       for (const block of blocks) {
         if (block.kind === "subagent") {
           durableSubagents.add(block.agentId);

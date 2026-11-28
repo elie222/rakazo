@@ -75,6 +75,17 @@ contextBridge.exposeInMainWorld("rakazoDesktop", {
         },
       }
     : {}),
+  // Main starts the window with this argument where it can install pages as apps.
+  ...(process.argv.includes("--rakazo-page-apps")
+    ? {
+        pageApps: {
+          install: (input) => ipcRenderer.invoke("desktop.pageApps.install", input),
+          installed: () => ipcRenderer.invoke("desktop.pageApps.installed"),
+          open: (appId) => ipcRenderer.invoke("desktop.pageApps.open", appId),
+          uninstall: (appId) => ipcRenderer.invoke("desktop.pageApps.uninstall", appId),
+        },
+      }
+    : {}),
   window: {
     close: () => ipcRenderer.invoke("desktop.window.close"),
     minimize: () => ipcRenderer.invoke("desktop.window.minimize"),

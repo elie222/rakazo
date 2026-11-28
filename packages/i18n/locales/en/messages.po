@@ -520,6 +520,14 @@ msgstr "{name} options"
 msgid "{name} stopped"
 msgstr "{name} stopped"
 
+#: apps/mobile/app/(settings)/billing.tsx
+msgid "{name}, {price} / month"
+msgstr "{name}, {price} / month"
+
+#: apps/mobile/app/(settings)/billing.tsx
+msgid "{name}, {price} / year"
+msgstr "{name}, {price} / year"
+
 #: apps/mobile/lib/routines/routine.ts
 msgid "{name}, Off"
 msgstr "{name}, Off"
@@ -1848,6 +1856,10 @@ msgstr "Ask bot to revise"
 msgid "Ask first"
 msgstr "Ask first"
 
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Ask the bot questions"
+msgstr "Ask the bot questions"
+
 #: apps/mobile/app/routines.tsx
 msgid "Ask this Bot in chat to set up a routine."
 msgstr "Ask this Bot in chat to set up a routine."
@@ -2276,6 +2288,11 @@ msgstr "Browse"
 msgid "Browse MCP servers"
 msgstr "Browse MCP servers"
 
+#: apps/mobile/components/cards/feedback-receipt-card.tsx
+#: apps/web/src/pages/shell/chat/message-view.tsx
+msgid "Bug report sent"
+msgstr "Bug report sent"
+
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Built-in"
@@ -2434,6 +2451,7 @@ msgstr "Can't read images"
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/components/messages/AskCard.tsx
 #: apps/web/src/components/messages/markdown-link-prompt.tsx
+#: apps/web/src/components/pages/PageAppButton.tsx
 #: apps/web/src/components/settings/ApiKeysSettings.tsx
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
@@ -2654,9 +2672,10 @@ msgstr "Check in."
 msgid "Check this yourself"
 msgstr "Check this yourself"
 
+#: apps/web/src/components/pages/PageDrawing.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
-#: apps/web/src/components/pages/PageView.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
+#: apps/web/src/pages/PageAppPage.tsx
 msgid "Check your connection and try again."
 msgstr "Check your connection and try again."
 
@@ -3136,6 +3155,7 @@ msgstr "Confirm removal"
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
 #: apps/web/src/pages/plugins/connector-detail.tsx
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 #: apps/web/src/pages/settings/PaymentWalletSettingsPanel.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
@@ -3219,10 +3239,6 @@ msgstr "Connect MCP server “{name}”"
 #: apps/mobile/components/cards/McpApprovalCard.tsx
 msgid "Connect MCP server {name}"
 msgstr "Connect MCP server {name}"
-
-#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
-msgid "Connect memory provider"
-msgstr "Connect memory provider"
 
 #: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Connect my own"
@@ -4759,6 +4775,10 @@ msgstr "Couldn't change the app icon"
 msgid "Couldn't copy. Select the link and copy it."
 msgstr "Couldn't copy. Select the link and copy it."
 
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Couldn't install this app. Try again."
+msgstr "Couldn't install this app. Try again."
+
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Couldn't load grants"
 msgstr "Couldn't load grants"
@@ -6032,6 +6052,11 @@ msgstr "Failed."
 msgid "Failure handling"
 msgstr "Failure handling"
 
+#: apps/mobile/components/cards/feedback-receipt-card.tsx
+#: apps/web/src/pages/shell/chat/message-view.tsx
+msgid "Feedback sent"
+msgstr "Feedback sent"
+
 #: packages/i18n/src/app-icon.ts
 msgid "Feet"
 msgstr "Feet"
@@ -6721,6 +6746,20 @@ msgstr "Input"
 msgid "Inputs"
 msgstr "Inputs"
 
+#: apps/web/src/components/pages/PageAppButton.tsx
+#: apps/web/src/pages/PageAppPage.tsx
+msgid "Install"
+msgstr "Install"
+
+#. placeholder {0}: page.title
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Install {0}?"
+msgstr "Install {0}?"
+
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Install app"
+msgstr "Install app"
+
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Install for organization"
@@ -6860,13 +6899,22 @@ msgstr "Isolated"
 msgid "Isolated preview: no access to your account"
 msgstr "Isolated preview: no access to your account"
 
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "It can:"
+msgstr "It can:"
+
 #: apps/mobile/app/new-space.tsx
 msgid "It could not be opened. Try again from the sidebar."
 msgstr "It could not be opened. Try again from the sidebar."
 
 #: apps/web/src/components/pages/PageViewHost.tsx
+#: apps/web/src/pages/PageAppPage.tsx
 msgid "It may have been deleted, or it belongs to someone else."
 msgstr "It may have been deleted, or it belongs to someone else."
+
+#: apps/web/src/components/vault/VaultSettings.tsx
+msgid "Items"
+msgstr "Items"
 
 #: apps/mobile/lib/inbox/sections/confirm-delete-section.ts
 #: apps/web/src/pages/shell/shell-dialogs.tsx
@@ -7537,6 +7585,10 @@ msgstr "Memory {position}"
 msgid "Memory for {title}"
 msgstr "Memory for {title}"
 
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "Memory provider"
+msgstr "Memory provider"
+
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "Mentions"
 msgstr "Mentions"
@@ -7764,6 +7816,7 @@ msgid "month"
 msgstr "month"
 
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/billing/PlanControls.tsx
@@ -8701,6 +8754,10 @@ msgstr "Open {name}"
 msgid "Open {title}"
 msgstr "Open {title}"
 
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Open app"
+msgstr "Open app"
+
 #: apps/web/src/pages/shell/chat/chat-header.tsx
 msgid "Open call"
 msgstr "Open call"
@@ -9203,7 +9260,7 @@ msgid "Plain HTTP does not pair this computer. Use HTTPS, or a loopback server."
 msgstr "Plain HTTP does not pair this computer. Use HTTPS, or a loopback server."
 
 #: apps/mobile/app/(settings)/billing.tsx
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/PlanControls.tsx
 msgid "Plan"
 msgstr "Plan"
 
@@ -9558,6 +9615,12 @@ msgstr "Recall from this peer; save to Rakazo’s own peers."
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Recall only"
 msgstr "Recall only"
+
+#. placeholder {0}: block.reportId
+#: apps/mobile/components/cards/feedback-receipt-card.tsx
+#: apps/web/src/pages/shell/chat/message-view.tsx
+msgid "Receipt {0}"
+msgstr "Receipt {0}"
 
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
 msgid "Received"
@@ -9973,6 +10036,10 @@ msgstr "Rename"
 msgid "Rename section"
 msgstr "Rename section"
 
+#: apps/web/src/components/billing/ModelCredits.tsx
+msgid "Renew for {price}"
+msgstr "Renew for {price}"
+
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/lib/cards/run-error-presentation.ts
 #: apps/web/src/components/billing/ModelCredits.tsx
@@ -10380,6 +10447,7 @@ msgstr "Row {line}"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/components/settings/approval-settings-rows.tsx
+#: apps/web/src/components/settings/ApprovalRulesSettings.tsx
 msgid "Rules"
 msgstr "Rules"
 
@@ -11149,6 +11217,10 @@ msgstr "Show list"
 #: apps/web/src/pages/space/ScratchpadSection.tsx
 msgid "Show more"
 msgstr "Show more"
+
+#: apps/web/src/components/pages/PageAppButton.tsx
+msgid "Show notifications"
+msgstr "Show notifications"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/components/I18nBootstrap.tsx
@@ -12345,9 +12417,10 @@ msgstr "This page couldn't be shown."
 
 #: apps/mobile/lib/pages/page-card.tsx
 #: apps/web/src/components/pages/PageCard.tsx
+#: apps/web/src/components/pages/PageDrawing.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
-#: apps/web/src/components/pages/PageView.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
+#: apps/web/src/pages/PageAppPage.tsx
 msgid "This page couldn't load"
 msgstr "This page couldn't load"
 
@@ -12356,6 +12429,7 @@ msgstr "This page couldn't load"
 #: apps/mobile/app/page.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
+#: apps/web/src/pages/PageAppPage.tsx
 #: apps/web/src/pages/SharedPage.tsx
 msgid "This page isn't available"
 msgstr "This page isn't available"
@@ -13559,6 +13633,7 @@ msgstr "Write what this routine should do."
 msgid "year"
 msgstr "year"
 
+#: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/billing/PlanControls.tsx
 msgid "Yearly"
 msgstr "Yearly"
@@ -13655,6 +13730,7 @@ msgstr "Your card was not charged"
 #: apps/mobile/app/page.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
+#: apps/web/src/pages/PageAppPage.tsx
 msgid "Your changes aren't saved. Check your connection."
 msgstr "Your changes aren't saved. Check your connection."
 
@@ -13708,6 +13784,10 @@ msgstr "Your OpenRouter"
 msgid "Your other spaces stay private"
 msgstr "Your other spaces stay private"
 
+#: apps/web/src/components/billing/CreditChoice.tsx
+msgid "Your own AI"
+msgstr "Your own AI"
+
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Your plan becomes {annualPrice} / year when your trial ends."
 msgstr "Your plan becomes {annualPrice} / year when your trial ends."
@@ -13749,7 +13829,6 @@ msgstr "Your skills"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/paywall.tsx
-#: apps/web/src/components/billing/CreditChoice.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Your subscription or API key"
 msgstr "Your subscription or API key"

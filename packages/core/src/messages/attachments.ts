@@ -346,6 +346,10 @@ function blockHistoryText(block: MessageBlock, redact?: (text: string) => string
   if (block.kind === "text") {
     return clean(block.text);
   }
+  if (block.kind === "feedback_receipt") {
+    const raw = JSON.stringify({ ...block, status: "submitted" });
+    return redact ? redactJsonText(raw, redact) : raw;
+  }
   // The tools a reply used, and what the bot wrote before each, are kept out of its text;
   // without them a later turn cannot tell what it already did.
   if (block.kind === "steps") return toolStepsHistoryText(block.steps, { redact });

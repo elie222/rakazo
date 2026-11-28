@@ -16,7 +16,16 @@ export function SpacesSettingsPanel({
   const { t } = useLingui();
   return (
     <div className="space-y-8" data-testid="settings-spaces">
-      <SettingsGroup>
+      <SettingsGroup
+        action={
+          onNewSpace ? (
+            <Button variant="secondary" onClick={onNewSpace}>
+              <Plus data-icon="inline-start" />
+              {t`New private space`}
+            </Button>
+          ) : null
+        }
+      >
         {spaces.map((option) => (
           <button
             key={option.id}
@@ -33,12 +42,6 @@ export function SpacesSettingsPanel({
           </button>
         ))}
       </SettingsGroup>
-      {onNewSpace ? (
-        <Button variant="outline" className="rounded-full" onClick={onNewSpace}>
-          <Plus />
-          {t`New private space`}
-        </Button>
-      ) : null}
     </div>
   );
 }

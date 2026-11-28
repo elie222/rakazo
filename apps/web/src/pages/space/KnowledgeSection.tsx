@@ -56,19 +56,17 @@ export function KnowledgeSection({ botId }: { botId: string }) {
 /** The space's shared memory documents, mounted in the Memory settings overlay. */
 export function SpaceMemorySection() {
   return (
-    <section
-      className="rounded-xl border border-border px-4 py-4"
-      data-testid="space-memory-documents"
-    >
-      <SectionHeading variant="heading">
-        <Trans>Shared memory</Trans>
-      </SectionHeading>
-      <p className="mt-1 text-body-sm text-muted-foreground">
-        <Trans>Every bot in this space reads these notes and keeps them up to date.</Trans>
-      </p>
-      <div className="mt-3">
-        <MemoryDocumentList input={{ scope: "user" }} testId="space-memory-list" />
+    <section className="space-y-3" data-testid="space-memory-documents">
+      {/* Inset like the card's rows, so the heading starts where their text does. */}
+      <div className="px-4">
+        <SectionHeading variant="heading">
+          <Trans>Shared memory</Trans>
+        </SectionHeading>
+        <p className="mt-1 text-body-sm text-muted-foreground">
+          <Trans>Every bot in this space reads these notes and keeps them up to date.</Trans>
+        </p>
       </div>
+      <MemoryDocumentList input={{ scope: "user" }} testId="space-memory-list" />
     </section>
   );
 }
@@ -206,7 +204,10 @@ function MemoryDocumentList({
           <Trans>Memory</Trans>
         </SectionHeading>
       ) : null}
-      <div data-testid={testId} className={compact ? "rounded-xl bg-muted/50 p-4" : undefined}>
+      <div
+        data-testid={testId}
+        className={compact ? "rounded-xl bg-muted/50 p-4" : "rounded-xl bg-muted/50 px-4 py-1.5"}
+      >
         {error ? <div className="pb-2 text-body-sm text-destructive">{error}</div> : null}
         {kb > 0 ? (
           <p className="pb-2 text-body-sm text-muted-foreground" data-testid="memory-budget-note">
@@ -244,7 +245,7 @@ function MemoryDocumentList({
                 </Button>
                 <Tooltip>
                   <TooltipTrigger
-                    render={<Button variant="ghost" size="icon-sm" />}
+                    render={<Button variant="ghost" size="icon" />}
                     aria-label={t`Download`}
                     disabled={busy}
                     onClick={() => change.run({ kind: "download", doc })}

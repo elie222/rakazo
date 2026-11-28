@@ -1,5 +1,4 @@
 import { createRequire } from "node:module";
-import { build } from "esbuild";
 
 const require = createRequire(import.meta.url);
 
@@ -8,6 +7,8 @@ const require = createRequire(import.meta.url);
  * policy allows only inline scripts, so hosts fetch this text and inline it into the page.
  */
 export async function buildPageRuntime(): Promise<string> {
+  // Imported on use: a server bundle inlines the built runtime and never loads the bundler.
+  const { build } = await import("esbuild");
   const result = await build({
     entryPoints: [require.resolve("@rakazo/page-kit/runtime")],
     bundle: true,

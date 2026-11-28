@@ -125,6 +125,7 @@ import { homeRetentionSweep } from "./computers/home-retention.js";
 import { localSignupAdmitter, mountLocalComputerHost } from "./computers/local-settings.js";
 import { mountScreenTarget } from "./computers/screen-proxy.js";
 import { storeInboundAttachment } from "./content/artifacts.js";
+import { mountPageAppRoutes } from "./content/page-app-routes.js";
 import { mountSharedPages } from "./content/shared-pages.js";
 import { apiEmail, emailErrorLogger } from "./email/email.js";
 import { mountEmailInboundRoute } from "./email/email-inbound.js";
@@ -157,6 +158,7 @@ import { mountMeetingWebhook } from "./meetings/meeting-routes.js";
 import { startMessagingRuntime } from "./messaging/messaging-runtime.js";
 import { settleWithTimeout } from "./messaging/team-chat-startup.js";
 import { recordSignInEnded } from "./models/model-connect-analytics.js";
+import type { RouterDeps } from "./router.js";
 import { createRouter, routerEnv } from "./router.js";
 import { handleHttpError } from "./rpc-errors.js";
 import { organizationLoginBrowser } from "./spaces/organization-login-browser.js";
@@ -662,7 +664,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       enabled: (spaceId) => meetings.enabled(spaceId),
     });
 
-  const router = createRouter({
+  const routerDeps: RouterDeps = {
     organizationLoginBrowser: await organizationLoginBrowser(env.encryptionKey),
     // Only computers people paired: nothing clears a routine's "Use my computer" when this
     // server's own screen is turned off and on again.
@@ -735,7 +737,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       openSignup: env.messagingOpenSignup,
     },
     env: routerEnv(env),
-  });
+  };
+  const router = createRouter(routerDeps);
   const app = new Hono();
   app.onError(handleHttpError);
   const inFlight = trackInFlightRequests();
@@ -803,6 +806,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   mountScreenTarget(app, prisma, env.screenProxySecret);
   mountScriptAssets(app);
   mountSharedPages(app, { prisma, artifacts }, requestClientIp);
+  mountPageAppRoutes(app, { ...routerDeps, sessionActor }, requestClientIp);
   const auditAuthResponse = createAuthResponseAudit();
   for (const [path, reason] of SYSTEM_CONTEXT_PATHS) {
     app.use(path, (_c, next) => runAsSystem(reason, next));

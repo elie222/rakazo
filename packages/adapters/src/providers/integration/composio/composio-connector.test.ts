@@ -583,9 +583,7 @@ describe("composio tool mapping", () => {
       ))
         events.push(event);
       expect(events.map(({ type }) => type)).toEqual(["result"]);
-      expect(composioSdkState.executions).toEqual([
-        { tool: "GITHUB_GET_REPOS", args: {}, options: { account: "ca-work" } },
-      ]);
+      expect(composioSdkState.executions).toEqual([{ tool: "GITHUB_GET_REPOS", args: {} }]);
       expect(composioSdkState.created.at(-1)).toEqual({
         userId: "user-1",
         config: {
@@ -1095,7 +1093,6 @@ describe("composio tool mapping", () => {
         {
           tool: "DROPBOX_LIST_FILES_IN_FOLDER",
           args: { path: "/Invoices" },
-          options: { account: "ca-work" },
         },
       ],
     },

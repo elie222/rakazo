@@ -121,11 +121,7 @@ export function composioAccountTools(
         yield { type: "error", message: "The selected account needs to be reconnected." };
         return;
       }
-      const result = await session.execute(
-        route.toolName,
-        call.args,
-        ref ? { account: ref } : undefined,
-      );
+      const result = await session.execute(route.toolName, call.args);
       if (result.error || result.resultType !== "completed") {
         yield {
           type: "error",

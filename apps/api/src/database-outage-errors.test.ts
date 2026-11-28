@@ -1,24 +1,32 @@
 import { ORPCError } from "@orpc/server";
 import { SandboxUnavailableError } from "@rakazo/adapter-kit";
-import { databaseOutage } from "@rakazo/db";
+import { DatabaseOutage, databaseOutage } from "@rakazo/db";
 import type { TestSink } from "@rakazo/logging";
-import { createLogger, createTestSink, installLogger, runWithLogContext } from "@rakazo/logging";
+import {
+  createLogger,
+  createTestSink,
+  getLogger,
+  installLogger,
+  runWithLogContext,
+} from "@rakazo/logging";
 import { requestLogging } from "@rakazo/logging/hono";
 import { Hono } from "hono";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { authLibraryLogger, withAuthLibraryFailures } from "./auth/auth-library-failures.js";
 import { handleHttpError, handleRpcError, requestHitDatabaseOutage } from "./rpc-errors.js";
 
 let sink: TestSink;
 beforeEach(() => {
-  installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
-  databaseOutage.succeeded();
+  // Another file in this worker can leave the singleton's log throttle active.
+  const outage = new DatabaseOutage();
+  const failed = vi.spyOn(databaseOutage, "failed").mockImplementation(outage.failed.bind(outage));
+  const previousLogger = getLogger();
   sink = createTestSink();
   installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
-});
-afterEach(() => {
-  installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
-  databaseOutage.succeeded();
+  return () => {
+    failed.mockRestore();
+    installLogger(previousLogger);
+  };
 });
 
 /** Prisma's error while Postgres fails over. */

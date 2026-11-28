@@ -199,6 +199,7 @@ export async function pageDocument(
   errorTitle: string,
   options: {
     reply?: boolean;
+    ask?: boolean;
     review?: boolean;
     reviewAnchor?: string;
     reviewAnchorOccurrence?: number;

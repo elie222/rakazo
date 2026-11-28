@@ -580,6 +580,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["pages/setVisibility"],
       ["pages/pin"],
       ["pages/remove"],
+      ["pageApps/install"],
+      ["pageApps/remove"],
+      ["pages/ask"],
       ["usage/list"],
       ["usage/summary"],
       ["usage/limits"],
@@ -630,6 +633,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["billing/endTrial"],
       ["billing/switchToYearly"],
       ["billing/changeTier"],
+      ["billing/renewTrial"],
       ["billing/claimReferral"],
       ["billing/redeemCreditCode", { code: "NOT-A-REAL-CODE" }],
       ["accessGrants/list"],
@@ -1004,7 +1008,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       connectionId: ownerConnection.connectionId,
     });
     expect(
-      await handles.prisma.capabilityInstall.findUnique({ where: { id: ownerCapability.id } }),
+      await db.capabilityInstall.findUnique({ where: { id: ownerCapability.id } }),
     ).not.toBeNull();
     expect(
       await asSystem(handles.prisma).connection.findUniqueOrThrow({

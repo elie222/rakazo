@@ -38,8 +38,8 @@ const ENTRYPOINTS = {
   web: ["apps/web/server/standalone-server.ts", "apps/web/dist-server/index.js"],
   migrate: ["apps/api/src/cli/migrate-database.ts", "apps/api/dist/cli/migrate-database.js"],
 };
-// Their production dependencies are what the bundled code may load at runtime, for example the
-// page runtime build, mermaid, and the Prisma CLI that applies migrations.
+// Their production dependencies are what the bundled code may load at runtime, for example
+// mermaid and the Prisma CLI that applies migrations.
 const SERVER_WORKSPACES = ["apps/api", "apps/worker"];
 // Read from disk at runtime, outside any package: the computer image's page-browser scripts.
 const EXTRA_PATHS = ["infra/sandboxes/computer"];

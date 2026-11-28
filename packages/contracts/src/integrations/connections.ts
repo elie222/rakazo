@@ -18,6 +18,7 @@ export const ConnectionCatalogItemSchema = z.object({
   connectorId: z.string(),
   slug: z.string(),
   name: z.string(),
+  description: z.string().optional(),
   logo: z.string().nullable(),
   connected: z.boolean(),
   noAuth: z.boolean(),

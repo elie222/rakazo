@@ -95,15 +95,12 @@ function Segmented({
           const selected = options.find((option) => option.value === next);
           if (selected) onChange(selected.value);
         }}
-        className="grid w-full gap-1 rounded-lg bg-muted p-1"
+        variant="segmented"
+        className="grid w-full gap-1"
         style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
       >
         {options.map((option) => (
-          <ToggleGroupItem
-            key={option.value}
-            value={option.value}
-            className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
-          >
+          <ToggleGroupItem key={option.value} value={option.value}>
             {option.label}
           </ToggleGroupItem>
         ))}

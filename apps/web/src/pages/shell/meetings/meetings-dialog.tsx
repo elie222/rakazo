@@ -90,6 +90,7 @@ export default function MeetingsDialog({
                     <Input
                       id="meeting-link"
                       type="url"
+                      size="lg"
                       aria-describedby="meeting-capture-notice"
                       autoComplete="off"
                       value={url}

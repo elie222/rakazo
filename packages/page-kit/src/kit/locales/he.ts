@@ -51,6 +51,8 @@ export const he: Messages = {
   photos: { one: "תמונה אחת", two: "{count} תמונות", other: "{count} תמונות" },
   slideOf: "{n} מתוך {total}",
   showPhoto: "הצגת תמונה {n}",
+  previousPhoto: "התמונה הקודמת",
+  nextPhoto: "התמונה הבאה",
   view: "צפייה",
   viewTitle: "צפייה ב־{title}",
   rated: "דירוג {rating} מתוך 5",
