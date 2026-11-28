@@ -1,9 +1,9 @@
 import { botMessageAllowsSilence, userTurnMessageForRun } from "@rakazo/core";
 import { isPartialReplyClientNonce, storedMessageBlocks } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { warnMemoryAccountRefused } from "../../memory/memory-account-refused.js";
 import { loadAgentMemoryContext } from "../../memory/memory-context.js";
 import { latestEndedDate } from "../../memory/memory-expiry.js";
+import { reportRecallFailure } from "../../memory/memory-failures.js";
 import { PARTIAL_REPLY_NOTE } from "../../messaging/automated-messages.prompt.js";
 import {
   historyWindowSize,
@@ -278,10 +278,8 @@ export async function loadTurnContext(
       // Provider extraction and recall return derived knowledge, even when the original
       // conversation was this bot's own. Storage cannot promote it to owner authority.
       recalledMemory = stored.length ? formatRecalledMemory(stored) : "";
-    } else if (recalled.accountRefused) {
-      warnMemoryAccountRefused("recall", recalled.error);
     } else {
-      getLogger().error("semantic memory recall failed", recalled.error);
+      reportRecallFailure(recalled);
     }
   }
   if (!compactedHistory.usedLocalSummary) {

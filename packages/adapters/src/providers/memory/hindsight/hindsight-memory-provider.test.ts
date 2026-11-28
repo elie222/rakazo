@@ -458,7 +458,7 @@ describe("Hindsight recall", () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "test", sinks: [sink] }));
     try {
-      const fake = hindsightFake({ recall: { [OWN_BANK]: 402, [TEAM_BANK]: 402 } });
+      const fake = hindsightFake({ recall: { [OWN_BANK]: 402, [TEAM_BANK]: [] } });
       await expect(
         provider(fake.fetch).recall({ ...recall, scope: "shared" }, context),
       ).resolves.toMatchObject({ ok: false, accountRefused: true });

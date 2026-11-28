@@ -13,6 +13,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { byteLength, truncateUtf8 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
+import { warnMemoryAccountRefused } from "../../../memory/memory-failures.js";
 import { memoryConnectionIdentity } from "../../../memory/memory-provider-descriptor.js";
 import {
   assertLocalServiceBaseUrlSync,
@@ -490,12 +491,12 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
       }),
     );
     const results: SemanticMemoryResult[] = [];
-    const failedSpaceBanks: { bank: string; error: string }[] = [];
+    const failedSpaceBanks: { bank: string; error: string; accountRefused?: true }[] = [];
     for (const [index, bank] of banks.entries()) {
       const answer = found[index];
       if (!answer) continue;
       if (!answer.ok) {
-        if (index < written.length) failedSpaceBanks.push({ bank, error: answer.error });
+        if (index < written.length) failedSpaceBanks.push({ bank, ...answer });
         continue;
       }
       const external = !written.includes(bank);
@@ -511,12 +512,15 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     }
     const own = found[0];
     // The caller reports a failure handed back to it.
-    if (!results.length && own && !own.ok) return own;
+    const returnsOwnFailure = !results.length && own !== undefined && !own.ok;
     if (!context.signal.aborted) {
-      for (const failed of failedSpaceBanks) {
-        getLogger().warn("Hindsight recall failed for a Space memory bank", failed);
+      for (const { bank, error, accountRefused } of failedSpaceBanks) {
+        if (returnsOwnFailure && bank === banks[0]) continue;
+        if (accountRefused) warnMemoryAccountRefused("recall", error);
+        else getLogger().warn("Hindsight recall failed for a Space memory bank", { bank, error });
       }
     }
+    if (returnsOwnFailure) return own;
     // Stable sorting keeps the own bank first on ties. Rank before deduplication so a repeated
     // fact keeps its strongest match instead of its first bank's lower score.
     results.sort((left, right) => right.score - left.score);

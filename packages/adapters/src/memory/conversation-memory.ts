@@ -21,7 +21,7 @@ import {
   isUserProgressClientNonce,
   USER_PROGRESS_CLIENT_NONCE_PREFIX,
 } from "../runs/lifecycle/user-progress.js";
-import { warnMemoryAccountRefused } from "./memory-account-refused.js";
+import { warnMemoryAccountRefused } from "./memory-failures.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 
 /** A person or another bot talking to the bot; routines, webhooks and channels are not. */

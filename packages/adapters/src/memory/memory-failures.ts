@@ -1,3 +1,4 @@
+import type { SemanticMemoryResponse } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 
 /**
@@ -6,4 +7,9 @@ import { getLogger } from "@rakazo/logging";
  */
 export function warnMemoryAccountRefused(operation: "recall" | "retain", error: string): void {
   getLogger().warn("memory.account_refused", { "memory.operation": operation, error });
+}
+
+export function reportRecallFailure(failure: Extract<SemanticMemoryResponse, { ok: false }>): void {
+  if (failure.accountRefused) warnMemoryAccountRefused("recall", failure.error);
+  else getLogger().error("semantic memory recall failed", failure.error);
 }
