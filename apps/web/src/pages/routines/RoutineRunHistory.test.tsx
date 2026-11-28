@@ -164,6 +164,59 @@ it("says when history could not load and recovers when runs change", async () =>
   }
 });
 
+it("lets the reader retry the same first page without a refresh event", async () => {
+  const finish = deferred<RoutineHistory>();
+  routines.history.mockRejectedValueOnce(new Error("offline")).mockReturnValue(finish.promise);
+  const view = await mounted();
+  try {
+    await view.settled(() => expect(view.container.querySelector('[role="alert"]')).not.toBeNull());
+    expect(routines.history).toHaveBeenCalledTimes(1);
+    const retry = view.button("Try again");
+    expect(retry).toBeDefined();
+    await act(async () => {
+      retry?.click();
+      retry?.click();
+    });
+    expect(routines.history.mock.calls.map(([input]) => input)).toEqual([
+      { routineId: "routine-1", limit: 5 },
+      { routineId: "routine-1", limit: 5 },
+    ]);
+    await act(async () => finish.resolve(page([run])));
+    await view.settled(() => expect(view.rows()).toHaveLength(1));
+    expect(view.container.querySelector('[role="alert"]')).toBeNull();
+    expect(view.button("Try again")).toBeUndefined();
+  } finally {
+    await view.close();
+  }
+});
+
+it("preserves cached rows and disables retry while their refresh is pending", async () => {
+  const finish = deferred<RoutineHistory>();
+  routines.history
+    .mockResolvedValueOnce(page([run]))
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockReturnValue(finish.promise);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = await mounted({ client });
+  try {
+    await view.settled(() => expect(view.rows()).toHaveLength(1));
+    await act(async () => spaceChanged("runs", client));
+    await view.settled(() => expect(view.container.querySelector('[role="alert"]')).not.toBeNull());
+    expect(view.rows()).toHaveLength(1);
+    expect(view.button("Try again")?.disabled).toBe(false);
+    await act(async () => view.button("Try again")?.click());
+    await view.settled(() => expect(view.button("Try again")?.disabled).toBe(true));
+    expect(view.rows()).toHaveLength(1);
+    expect(routines.history).toHaveBeenCalledTimes(3);
+    expect(routines.history.mock.calls[2]?.[0]).toEqual({ routineId: "routine-1", limit: 5 });
+    await act(async () => finish.resolve(page([run, { ...run, id: "second", messageId: null }])));
+    await view.settled(() => expect(view.rows()).toHaveLength(2));
+    expect(view.container.querySelector('[role="alert"]')).toBeNull();
+  } finally {
+    await view.close();
+  }
+});
+
 it("never reads again on a timer, nor when only routines change", async () => {
   vi.useFakeTimers();
   routines.history.mockResolvedValue(page([run]));
@@ -200,10 +253,10 @@ it("loads older runs below the latest ones until there are none left", async () 
 
 it("says when older runs could not load and keeps what is shown", async () => {
   const cursor = { id: "run-1", createdAt: run.createdAt };
-  routines.history.mockImplementation(async (input: { before?: unknown }) => {
-    if (input.before) throw new Error("offline");
-    return page([run], cursor);
-  });
+  routines.history
+    .mockResolvedValueOnce(page([run], cursor))
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockResolvedValueOnce(page([{ ...run, id: "older", messageId: null }]));
   const view = await mounted();
   try {
     await view.settled(() => expect(view.rows()).toHaveLength(1));
@@ -214,7 +267,15 @@ it("says when older runs could not load and keeps what is shown", async () => {
       ),
     );
     expect(view.rows()).toHaveLength(1);
+    expect(view.button("Try again")).toBeUndefined();
     expect(view.button("Load older runs")).toBeDefined();
+    await act(async () => view.button("Load older runs")?.click());
+    await view.settled(() => expect(view.rows()).toHaveLength(2));
+    expect(routines.history.mock.calls.slice(1).map(([input]) => input)).toEqual([
+      { routineId: "routine-1", before: cursor, limit: 20 },
+      { routineId: "routine-1", before: cursor, limit: 20 },
+    ]);
+    expect(view.container.querySelector('[role="alert"]')).toBeNull();
   } finally {
     await view.close();
   }
