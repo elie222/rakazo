@@ -25,10 +25,13 @@ const message = (text: string) =>
     },
   });
 
-function fake(tail: string[], admitted = true) {
+const goodReceipt = { runId: "r", connectionId: "c", modelId: "text-model" };
+
+function fake(tail: string[], admitted = true, receipt: typeof goodReceipt | null = goodReceipt) {
   const close = vi.fn();
   const send = vi.fn(async (_frame: object) => {});
-  const open = vi.fn(() => ({
+  const consumeVerifiedProviderCompletion = vi.fn(() => receipt ?? undefined);
+  const open = vi.fn((_input: object) => ({
     cwd: "/isolated",
     async *lines() {
       yield encode({ id: 1, result: { protocolVersion: 1 } });
@@ -37,16 +40,17 @@ function fake(tail: string[], admitted = true) {
     },
     send,
     close,
+    consumeVerifiedProviderCompletion,
   }));
   // Expose an iterable, not the iterator factory API of this fixture.
   const runtime = createKimiCodeRuntime({
     admitsInteractiveOwnerTurn: () => admitted,
-    open: () => {
-      const child = open();
+    open: (input) => {
+      const child = open(input);
       return { ...child, lines: child.lines() };
     },
   });
-  return { runtime, close, send, open };
+  return { runtime, close, send, open, consumeVerifiedProviderCompletion };
 }
 
 async function collect(runtime: AgentRuntime, input = request) {
@@ -63,9 +67,39 @@ describe("dormant Kimi Code runtime", () => {
       { type: "done", text: "answer" },
     ]);
     expect(f.close).toHaveBeenCalledTimes(1);
+    expect(f.open).toHaveBeenCalledExactlyOnceWith({
+      ...goodReceipt,
+      apiKey: "fake-key",
+      signal: expect.any(AbortSignal),
+    });
+    expect(f.consumeVerifiedProviderCompletion).toHaveBeenCalledTimes(1);
     expect(f.send.mock.calls.map(([frame]) => frame)).not.toContainEqual(
       expect.objectContaining({ apiKey: "fake-key" }),
     );
+  });
+
+  it.each([
+    ["missing", null],
+    ["other run", { ...goodReceipt, runId: "different-run" }],
+    ["other connection", { ...goodReceipt, connectionId: "different-connection" }],
+    ["other model", { ...goodReceipt, modelId: "different-model" }],
+  ] as const)("withholds partial answer when the receipt is %s", async (_, receipt) => {
+    const f = fake([message("partial"), terminal], true, receipt);
+    const turn = f.runtime.run(request)[Symbol.asyncIterator]();
+    await expect(turn.next()).rejects.toThrow(/^Kimi Code ACP turn did not complete\.$/);
+    expect(f.open).toHaveBeenCalledTimes(1);
+    expect(f.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not publish text or query the receipt on a rejected ACP prompt", async () => {
+    const f = fake([
+      message("partial"),
+      encode({ id: 3, error: { code: -32000, message: "fixture private diagnostics" } }),
+    ]);
+    await expect(collect(f.runtime)).rejects.toThrow(/^Kimi Code ACP turn did not complete\.$/);
+    expect(f.consumeVerifiedProviderCompletion).not.toHaveBeenCalled();
+    expect(f.open).toHaveBeenCalledTimes(1);
+    expect(f.close).toHaveBeenCalledTimes(1);
   });
 
   it("never opens a child without positive interactive owner admission", async () => {
@@ -107,6 +141,7 @@ describe("dormant Kimi Code runtime", () => {
         })(),
         send: async () => {},
         close,
+        consumeVerifiedProviderCompletion: () => goodReceipt,
       }),
     });
     await expect(collect(runtime)).rejects.toThrow("did not complete");

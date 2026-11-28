@@ -11,10 +11,23 @@ import { createTextTurn } from "./acp-text.js";
  * cap line size before buffering, and free the isolated home on close/abort.
  * The ACP client is not itself a process or workspace sandbox.
  */
+interface ACPProviderBinding {
+  readonly runId: string;
+  readonly connectionId: string;
+  readonly modelId: string;
+}
+
 interface IsolatedAcpChild {
   readonly cwd: string;
   readonly lines: AsyncIterable<string>;
   send(frame: object): Promise<void>;
+  /**
+   * Consume the per-child, one-use verdict from trusted provider egress, not ACP.
+   * It may be returned only after the full response is verified successful for a
+   * single exact upstream attempt. Missing, partial, retried, or failed responses
+   * must not produce a verdict. This does not implement the egress observer.
+   */
+  consumeVerifiedProviderCompletion(): ACPProviderBinding | undefined;
   close(): void;
 }
 
@@ -22,7 +35,7 @@ interface KimiRuntimeOptions {
   /** Server-side, run-scoped owner/DM, human invocation, and eligible credential check. */
   admitsInteractiveOwnerTurn(request: AgentRunRequest, context?: Partial<AdapterContext>): boolean;
   /** Operator-owned launcher boundary; no process or HTTP fallback exists here. */
-  open(input: { apiKey: string; modelId: string; signal: AbortSignal }): IsolatedAcpChild;
+  open(input: ACPProviderBinding & { apiKey: string; signal: AbortSignal }): IsolatedAcpChild;
 }
 
 /** Unregistered until launcher isolation and provider eligibility are verified.
@@ -80,7 +93,8 @@ export function createKimiCodeRuntime(options: KimiRuntimeOptions): AgentRuntime
       try {
         signal.throwIfAborted();
         let closed = false;
-        const child = options.open({ apiKey: model.apiKey, modelId: model.id, signal });
+        const binding = { runId, connectionId: model.connectionId, modelId: model.id };
+        const child = options.open({ ...binding, apiKey: model.apiKey, signal });
         close = () => {
           if (closed) return;
           closed = true;
@@ -107,6 +121,14 @@ export function createKimiCodeRuntime(options: KimiRuntimeOptions): AgentRuntime
           if (action.text) output.push(action.text);
           if (action.done) {
             signal.throwIfAborted();
+            // A CLI end_turn can also indicate a failed provider call.
+            const receipt = child.consumeVerifiedProviderCompletion();
+            if (
+              receipt?.runId !== binding.runId ||
+              receipt.connectionId !== binding.connectionId ||
+              receipt.modelId !== binding.modelId
+            )
+              throw new Error("ACP provider completion could not be verified.");
             result = output.join("");
             break;
           }
