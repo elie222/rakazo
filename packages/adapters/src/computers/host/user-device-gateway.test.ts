@@ -95,13 +95,27 @@ function fakePrisma() {
           : ids(where)
               .map((id) => devices.get(id))
               .filter((row) => row?.revokedAt),
-      findFirst: async ({ where }: { where: { userId: string; revokedAt: null; kind: string } }) =>
-        [...devices.values()].find(
+      findFirst: async ({
+        where,
+        orderBy,
+      }: {
+        where: { userId: string; revokedAt: null; kind: string };
+        orderBy?: { createdAt: "asc" | "desc" };
+      }) => {
+        const matches = [...devices.values()].filter(
           (row) =>
             row.userId === where.userId &&
             !row.revokedAt &&
             (row.kind ?? "computer") === where.kind,
-        ) ?? null,
+        );
+        if (orderBy) {
+          const direction = orderBy.createdAt === "asc" ? 1 : -1;
+          matches.sort(
+            (a, b) => direction * ((a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0)),
+          );
+        }
+        return matches[0] ?? null;
+      },
     },
     userDeviceConnection: {
       upsert: async ({ where, create }: { where: { deviceId: string }; create: ConnectionRow }) =>
@@ -271,6 +285,30 @@ describe("device tokens", () => {
 });
 
 describe("user device gateway in the holding process", () => {
+  it("returns the earliest pairedSince date when the newer computer was inserted first", async () => {
+    const { devices, deviceRows } = setup();
+    const userId = "pair-order-user";
+    const earlier = new Date("2026-01-01T00:00:00.000Z");
+    const later = new Date("2026-01-02T00:00:00.000Z");
+    for (const [name, createdAt] of [
+      ["Later", later],
+      ["Earlier", earlier],
+    ] as const) {
+      deviceRows.set(name, {
+        id: name,
+        userId,
+        name,
+        platform: "linux",
+        kind: "computer",
+        tokenHash: hashUserDeviceToken(createUserDeviceToken()),
+        revokedAt: null,
+        lastSeenAt: null,
+        createdAt,
+      });
+    }
+    await expect(devices.pairedSince(userId)).resolves.toEqual(earlier);
+  });
+
   it("streams values, skipping heartbeats, until done", async () => {
     const { hub, devices, connections } = setup();
     const socket = new FakeSocket();
