@@ -3,7 +3,6 @@ import {
   AGENT_IMPORT_ASK_ACTION_ID,
   ATTACHMENT_COUNT_CEILING,
   ATTACHMENT_MAX_BYTES,
-  ATTACHMENT_MAX_COUNT,
   attachmentSizeLabel,
   isAllowedAttachmentMimeType,
   isAttachmentImageMimeType,
@@ -33,9 +32,11 @@ function isWellFormedBase64(value: string): boolean {
   return /^[A-Za-z0-9+/]*$/.test(body);
 }
 
+const DEFAULT_SERVER_ATTACHMENT_COUNT = 10;
+
 export function attachmentCountFromEnv(source: { MAX_ATTACHMENTS_PER_MESSAGE?: string }): number {
   const value = source.MAX_ATTACHMENTS_PER_MESSAGE?.trim();
-  if (!value) return ATTACHMENT_MAX_COUNT;
+  if (!value) return DEFAULT_SERVER_ATTACHMENT_COUNT;
   const count = Number(value);
   if (
     !/^\d+$/.test(value) ||
@@ -259,6 +260,7 @@ export function blocksToAgentHistorySegments(blocks: MessageBlock[]): AgentHisto
 
 function blockHistoryText(block: MessageBlock): string {
   if (block.kind === "text") return block.text;
+  if (block.kind === "feedback_receipt") return JSON.stringify({ ...block, status: "submitted" });
   // The tools a reply used, and what the bot wrote before each, are kept out of its text;
   // without them a later turn cannot tell what it already did.
   if (block.kind === "steps") return toolStepsHistoryText(block.steps);

@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
-import type { ChatPreferencesPatch } from "@rakazo/contracts";
+import type { AccountChatPreferencesPatch } from "@rakazo/contracts";
 import { APP_LOCALE_LABELS } from "@rakazo/core";
+import { appIconLabel } from "@rakazo/i18n/app-icon";
 import * as Notifications from "expo-notifications";
 import { useFocusEffect, useIsFocused, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -20,6 +21,7 @@ import type { MobileMe } from "../../lib/api/mobile-types";
 import { useLiveStream } from "../../lib/api/roster-signals";
 import { loadSessionToken } from "../../lib/api/session";
 import { errorText } from "../../lib/api/user-error";
+import { appIconRead } from "../../lib/appearance/app-icon";
 import {
   getCachedAppearancePreference,
   setAppearancePreference,
@@ -93,7 +95,7 @@ export default function General() {
   });
   const chatSave = useSave({
     target: ACCOUNT_SETTINGS,
-    save: async (chatPreferences: ChatPreferencesPatch, send) => {
+    save: async (chatPreferences: AccountChatPreferencesPatch, send) => {
       queryClient.setQueryData(
         meRead.queryKey,
         await send("preferences/update", { chatPreferences }),
@@ -102,6 +104,7 @@ export default function General() {
     stale: [meRead.queryKey],
     onFailed: () => Alert.alert(t`Could not save`),
   });
+  const { data: appIcon } = useScreenQuery(appIconRead);
   const appearance = getCachedAppearancePreference();
   const enterToSend = useComposerHardwareEnterPreference();
   const chatSaveDisabled = loadingAccount || chatSave.pending;
@@ -219,6 +222,16 @@ export default function General() {
     notificationQueue.current.update(next);
   }
 
+  const soundSwitch =
+    me?.chatPreferences?.notificationSounds === undefined ? null : (
+      <SettingsSwitch
+        label={t`Sound for alerts that need attention`}
+        value={me.chatPreferences.notificationSounds}
+        disabled={chatSaveDisabled}
+        onChange={(notificationSounds) => chatSave.run({ notificationSounds })}
+      />
+    );
+
   function updateBotStyle(botAvatarSet: MobileMe["botAvatarSet"] | "") {
     if (me && botAvatarSet) botStyle.run(botAvatarSet);
   }
@@ -270,6 +283,17 @@ export default function General() {
             title={t`Language`}
             value={APP_LOCALE_LABELS[locale]}
           />
+          {appIcon?.supported ? (
+            <SettingsRow
+              accessibilityRole="button"
+              accessibilityLabel={t`App icon`}
+              accessibilityValue={{ text: appIconLabel(appIcon.icon) }}
+              chevron="right"
+              onPress={() => router.push("/app-icon")}
+              title={t`App icon`}
+              value={appIconLabel(appIcon.icon)}
+            />
+          ) : null}
           <SettingsSwitch label={t`Haptics`} value={hapticsEnabled} onChange={updateHaptics} />
         </SettingsGroup>
 
@@ -315,6 +339,7 @@ export default function General() {
                 void updateNotifications({ ...notifications, needsAttention })
               }
             />
+            {soundSwitch}
             {hasLiveUpdateSettings() ? (
               <SettingsRow
                 accessibilityRole="button"
@@ -328,6 +353,10 @@ export default function General() {
               title={t`Notification settings`}
             />
             {notificationError ? <Text style={styles.error}>{notificationError}</Text> : null}
+          </SettingsGroup>
+        ) : soundSwitch ? (
+          <SettingsGroup accessibilityLabel={t`Notifications`} label={t`Notifications`}>
+            {soundSwitch}
           </SettingsGroup>
         ) : null}
 

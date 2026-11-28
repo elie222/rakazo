@@ -5,6 +5,7 @@ import {
   LoginFieldLabels,
   OneTimeCodeTarget,
 } from "../bots/bot-secrets.js";
+import { FEEDBACK_KINDS } from "../bots/builtin-tools.js";
 import { Id, ThinkingLevelSchema } from "../ids.js";
 import { AgentImportSetupItemSchema } from "../integrations/agent-import-setup.js";
 import { McpTransportSchema } from "../integrations/mcp.js";
@@ -198,6 +199,7 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     /** Inline app authorization card: logo, name, one-line
         description, and an Authorize button that flips to connected. */
     kind: z.literal("app_connect"),
+    organizationConnectionId: z.string().optional(),
     /** Absent on cards stored before connector ids; the server reads those as its default. */
     connectorId: z.string().optional(),
     provider: z.string(),
@@ -242,6 +244,12 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     durationSeconds: z.number().int().nonnegative().optional(),
   }),
   z.object({ kind: z.literal("meta"), text: z.string() }),
+  z.object({
+    kind: z.literal("feedback_receipt"),
+    reportId: Id,
+    reportKind: z.enum(FEEDBACK_KINDS),
+    description: z.string(),
+  }),
   /**
    * A routine was created, changed, switched on or off, or deleted. The name only, never the
    * prompt, and no `text` field on purpose: clients word the row, and the model never sees it.
@@ -462,6 +470,12 @@ export type ToolStepCall = z.infer<typeof ToolStepCallSchema>;
  */
 export const ToolHistorySchema = z.object({
   steps: z.array(z.object({ tool: z.string(), calls: z.array(ToolStepCallSchema) }).nullable()),
+  /**
+   * The turn this reply ended, exactly as the model was sent it and answered (opaque, written by
+   * the runtime), so the bot's next turn can send it unchanged and the provider can reuse it
+   * from its prompt cache.
+   */
+  transcript: z.string().optional(),
 });
 export type ToolHistory = z.infer<typeof ToolHistorySchema>;
 /** A step as a run replays it: what the UI shows, with its tool and kept calls when it has them. */
@@ -469,3 +483,26 @@ export type HistoryToolStep = Extract<MessageBlock, { kind: "steps" }>["steps"][
   tool?: string;
   calls?: ToolStepCall[];
 };
+
+/**
+ * The run of consecutive pictures that starts at `index`, or null when `index` is not a picture or
+ * not the first of its run. A lone picture is a run of one. Web and mobile both group a message's
+ * pictures by it; `isPicture` narrows which image blocks a client draws as pictures.
+ */
+export function consecutiveImageRun<T extends { kind: string }>(
+  items: readonly T[],
+  index: number,
+  isPicture: (item: T) => boolean = () => true,
+): (T & { kind: "image" })[] | null {
+  const matches = (item: T | undefined): item is T & { kind: "image" } =>
+    item?.kind === "image" && isPicture(item);
+  const first = items[index];
+  if (!matches(first) || matches(items[index - 1])) return null;
+  const pictures = [first];
+  for (let at = index + 1; at < items.length; at += 1) {
+    const item = items[at];
+    if (!matches(item)) break;
+    pictures.push(item);
+  }
+  return pictures;
+}

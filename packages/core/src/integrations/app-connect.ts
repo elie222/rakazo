@@ -1,4 +1,5 @@
-import type { ConnectionCatalogItem, MessageBlock } from "@rakazo/contracts";
+import type { Connection, ConnectionCatalogItem, MessageBlock } from "@rakazo/contracts";
+import { sliceWellFormed } from "../primitives/utf8.js";
 import { connectionLabelFrom } from "./connection-catalog.js";
 import { featuredConnectorProvidersMatch } from "./featured-connectors.js";
 
@@ -33,11 +34,16 @@ export function matchConnectedAppCatalog(catalog: ConnectionCatalogItem[], app: 
 }
 
 export function appConnectCard(entry: ConnectionCatalogItem): AppConnectBlock {
+  const curatedDescription = Object.entries(APP_DESCRIPTIONS).find(
+    ([slug]) =>
+      entry.slug.toLowerCase() === slug || featuredConnectorProvidersMatch(entry.slug, slug),
+  )?.[1];
+  const catalogDescription = entry.description?.replace(/\s+/g, " ").trim() ?? "";
   const description =
-    Object.entries(APP_DESCRIPTIONS).find(
-      ([slug]) =>
-        entry.slug.toLowerCase() === slug || featuredConnectorProvidersMatch(entry.slug, slug),
-    )?.[1] ?? "";
+    curatedDescription ??
+    (catalogDescription.length > 200
+      ? `${sliceWellFormed(catalogDescription, 199).trimEnd()}…`
+      : catalogDescription);
   return {
     kind: "app_connect",
     connectorId: entry.connectorId,
@@ -88,6 +94,9 @@ export function appConnectedInput(
     botId,
     threadId,
     ...(messageId ? { messageId } : {}),
+    ...(block.organizationConnectionId
+      ? { organizationConnectionId: block.organizationConnectionId }
+      : {}),
     connectorId: block.connectorId,
     provider: block.provider,
   };
@@ -96,4 +105,33 @@ export function appConnectedInput(
 /** What an app card sends as the new connection's name: its catalog name, kept to a valid label. */
 export function appConnectLabel(block: AppConnectBlock) {
   return connectionLabelFrom(block.name, block.provider);
+}
+
+export function appConnectState(
+  block: AppConnectBlock,
+  connections: Connection[] | undefined,
+  localStatus: AppConnectBlock["status"],
+) {
+  const shared = connections?.find((row) => row.id === block.organizationConnectionId);
+  return {
+    canAuthorize: !block.organizationConnectionId || shared?.manageable === true,
+    status:
+      block.status === "connected" || shared?.status === "connected" ? "connected" : localStatus,
+  } as const;
+}
+
+export function appConnectRequest(block: AppConnectBlock) {
+  return block.organizationConnectionId
+    ? {
+        procedure: "connections/reconnectOrganization" as const,
+        input: { connectionId: block.organizationConnectionId },
+      }
+    : {
+        procedure: "connections/begin" as const,
+        input: {
+          connectorId: block.connectorId,
+          provider: block.provider,
+          displayName: appConnectLabel(block),
+        },
+      };
 }

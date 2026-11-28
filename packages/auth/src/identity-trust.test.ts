@@ -139,6 +139,10 @@ function fixture({
     member: { findMany: vi.fn(async () => []) },
     messagingIdentity: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     messagingLinkCode: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    pageApp: {
+      deleteMany: vi.fn(async () => ({ count: 0 })),
+      updateMany: vi.fn(async () => ({ count: 0 })),
+    },
     account: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     userDevice: { updateMany: vi.fn(async () => ({ count: 0 })) },
     passkey: {
@@ -1439,6 +1443,13 @@ describe("ending sessions", () => {
     expect(reset.status).toBe(200);
     expect(f.data.session).toHaveLength(0);
     expect(ended(afterDeleteSession)).toEqual([...ids].sort());
+  });
+
+  it("still reports an ended session when its page apps could not be removed", async () => {
+    const { f, first, ids, afterDeleteSession } = await signedInTwice();
+    vi.mocked(f.prisma.pageApp.deleteMany).mockRejectedValue(new Error("database unavailable"));
+    await f.request("/sign-out", {}, first);
+    expect(ended(afterDeleteSession)).toEqual([ids[0]]);
   });
 
   it("reports every session that signing out everywhere ends", async () => {

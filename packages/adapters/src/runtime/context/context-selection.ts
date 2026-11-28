@@ -41,11 +41,15 @@ export interface ContextSelectionOptions {
   /** Never drop current request, steering, approvals or authoritative constraints. */
   protectedIndexes?: readonly number[];
   recentExchanges?: number;
+  /** A user message that rides along with an exchange (a recalled-memory note) without being one. */
+  notAnExchange?: (message: ContextMessage) => boolean;
   /**
    * Exchanges older than recentExchanges stay while the messages before index `before`, where
-   * the current request starts, fit `tokens`.
+   * the current request starts, fit `tokens`. With `anchor`, the kept history starts at the
+   * latest message it accepts at or before where it would start, up to `tokens` further back,
+   * so the start holds across requests instead of moving with every new exchange.
    */
-  earlier?: { before: number; tokens: number };
+  earlier?: { before: number; tokens: number; anchor?: (message: ContextMessage) => boolean };
   cacheWarmth?: "likely-warm" | "likely-cold" | "unknown";
   /** Keep tool protocol intact while shortening oversized result bodies. */
   truncateToolResults?: boolean;
@@ -425,35 +429,54 @@ function shortenMcpEnvelope(source: string, size: number, marker: string): strin
 
   const structuredSource =
     payload.structuredContent === undefined ? undefined : JSON.stringify(payload.structuredContent);
-  let parts = originalParts.map((part) => ({ ...part }));
-  const emptyJsonShell = parts.map((part) => (isJsonTextPart(part) ? { ...part, text: "" } : part));
-  let budget = Math.max(128, size - wrap(emptyJsonShell).length);
-  let encoded = wrap(parts);
+  // Compute the shell without structuredContent or large shrinkable parts so a large
+  // structuredContent (or sibling prose block) does not make `size - shell` negative and
+  // collapse the initial budget to 128 characters.
+  const emptyShell = JSON.stringify({
+    ...payload,
+    content: originalParts.map((part) =>
+      isJsonTextPart(part) ? { ...part, text: "" } : JSON.stringify(part).length > 128 ? {} : part,
+    ),
+    ...(structuredSource !== undefined ? { structuredContent: null } : {}),
+  });
+  const bodyLengths = [
+    ...originalParts.filter(isJsonTextPart).map((part) => JSON.stringify(part.text).length),
+    ...(structuredSource !== undefined ? [structuredSource.length] : []),
+  ];
+  const available = Math.max(128, size - emptyShell.length);
+  const equalShare = Math.floor(available / Math.max(1, bodyLengths.length));
+  const smallTotal = bodyLengths.reduce((sum, len) => (len <= equalShare ? sum + len : sum), 0);
+  const largeCount = bodyLengths.filter((len) => len > equalShare).length;
+  let budget = Math.max(
+    128,
+    largeCount > 0 ? Math.floor((available - smallTotal) / largeCount) : available,
+  );
+  let encoded = wrap(originalParts);
 
   for (let attempt = 0; attempt < 6 && encoded.length > size; attempt++) {
     let changed = false;
-    parts = parts.map((part) => {
+    const nextParts = originalParts.map((part) => {
       if (isJsonTextPart(part)) {
         const shortened = shortenStructuredResult(part.text, budget, marker);
-        if (shortened === undefined || shortened === part.text) return part;
+        if (shortened === undefined || shortened === part.text) return { ...part };
         changed = true;
         return { ...part, text: shortened };
       }
       const serialized = JSON.stringify(part);
-      if (serialized.length <= 128) return part;
+      if (serialized.length <= 128) return { ...part };
       const shortened = shortenStructuredResult(
         serialized,
         Math.min(budget, Math.max(128, Math.floor(size / 4))),
         marker,
       );
-      if (shortened === undefined || shortened === serialized) return part;
+      if (shortened === undefined || shortened === serialized) return { ...part };
       try {
         const parsed = JSON.parse(shortened) as typeof part;
-        if (!parsed || typeof parsed !== "object") return part;
+        if (!parsed || typeof parsed !== "object") return { ...part };
         changed = true;
         return parsed;
       } catch {
-        return part;
+        return { ...part };
       }
     });
     if (structuredSource !== undefined) {
@@ -467,9 +490,16 @@ function shortenMcpEnvelope(source: string, size: number, marker: string): strin
       }
     }
     if (changed) payload.contextTruncated = true;
-    encoded = wrap(parts);
-    if (encoded.length <= size) break;
-    if (!changed) break;
+    const nextEncoded = wrap(nextParts);
+    if (nextEncoded.length <= size) {
+      encoded = nextEncoded;
+      break;
+    }
+    if (!changed || nextEncoded === encoded) {
+      encoded = nextEncoded;
+      break;
+    }
+    encoded = nextEncoded;
     budget = Math.max(128, Math.floor(budget * (size / encoded.length)) - 1);
   }
   // Soft target may still be exceeded by protected ids. Keep the envelope on this path even when
@@ -719,20 +749,50 @@ export function selectContext<T extends ContextMessage>(
   const currentStart = options.earlier?.before ?? 0;
   let earlierTokens = 0;
   // Retain a contiguous recent suffix. Skip no holes inside a retained tool group.
+  let windowEnd = -1;
   for (let index = groups.length - 1; index >= 0; index--) {
     const group = groups[index]!;
-    if (group.indexes.some((i) => messages[i]!.role === "user")) exchanges += 1;
+    if (
+      group.indexes.some(
+        (i) => messages[i]!.role === "user" && !options.notAnExchange?.(messages[i]!),
+      )
+    )
+      exchanges += 1;
     if (selected.has(group)) continue;
     const earlier = group.indexes[0]! < currentStart;
     if (
       exchanges > exchangeLimit &&
       (!earlier || earlierTokens + group.tokens > (options.earlier?.tokens ?? 0))
-    )
+    ) {
+      windowEnd = index;
       break;
+    }
     if (used + group.tokens > available) break;
     selected.add(group);
     used += group.tokens;
     if (earlier) earlierTokens += group.tokens;
+  }
+  // Moving the start with every exchange would rewrite the provider's cached prefix each time.
+  const anchor = options.earlier?.anchor;
+  const firstKept = groups.find(
+    (group, index) =>
+      index > windowEnd && selected.has(group) && messages[group.indexes[0]!]!.role !== "system",
+  );
+  if (anchor && windowEnd >= 0 && firstKept && !anchor(messages[firstKept.indexes[0]!]!)) {
+    const extension: Group[] = [];
+    let extra = 0;
+    for (let index = windowEnd; index >= 0; index--) {
+      const group = groups[index]!;
+      if (selected.has(group)) continue;
+      extra += group.tokens;
+      if (extra > (options.earlier?.tokens ?? 0) || used + extra > available) break;
+      extension.push(group);
+      if (anchor(messages[group.indexes[0]!]!)) {
+        for (const kept of extension) selected.add(kept);
+        used += extra;
+        break;
+      }
+    }
   }
   const selectedIndexes = new Set([...selected].flatMap((group) => group.indexes));
   return {

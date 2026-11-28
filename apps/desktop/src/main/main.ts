@@ -35,6 +35,7 @@ import { appWindowTargets, desktop, permissionTarget } from "./desktop-state.js"
 import { createLocaleHandler, errorDetail, startDesktopLocale, t, withDetail } from "./i18n.js";
 import type { IpcCaller } from "./ipc/ipc.js";
 import { handleIpc, sentFrom } from "./ipc/ipc.js";
+import { registerPageApps } from "./page-apps/page-apps-ipc.js";
 import { installServerHeaders } from "./setup/server-request-headers.js";
 import {
   DEFAULT_LOCAL_WEB_URL,
@@ -115,7 +116,7 @@ import {
 } from "./this-computer/local-stack.js";
 import type { ServerBundle } from "./this-computer/mac-runtime.js";
 import { nativeStackEligible, readServerBundle } from "./this-computer/mac-runtime.js";
-import { NativeStackController } from "./this-computer/native-stack.js";
+import { NativeStackController, prefetchForUpdate } from "./this-computer/native-stack.js";
 import {
   StackStopMenuAvailability,
   stopStackLeftBehind,
@@ -128,7 +129,6 @@ import { applicationMenuInstaller, followUpdateState, installUpdate } from "./wi
 import { createAppOpener } from "./windows/app-opener.js";
 import {
   createWindow,
-  developmentIcon,
   installBundledRenderer,
   markOnce,
   PROBE_TIMEOUT_MS,
@@ -136,6 +136,7 @@ import {
   remoteServerOrigin,
   resolveSessionForTarget,
   ServerUnavailable,
+  startAppIcon,
 } from "./windows/app-window.js";
 import { DEEP_LINK_SCHEME } from "./windows/deep-link.js";
 import { registerDeepLinkHandlers } from "./windows/second-instance.js";
@@ -590,6 +591,7 @@ app.whenReady().then(async () => {
       : undefined,
   );
   followUpdateState(() => installApplicationMenu());
+  desktop.desktopUpdater.subscribe((update) => prefetchForUpdate(desktop.localStack, update));
   const screenDriver = screenDriverRelease(process.platform);
   const screenPermissions: ScreenPermissionApi = {
     isTrustedAccessibilityClient: (prompt) =>
@@ -785,6 +787,7 @@ app.whenReady().then(async () => {
       prepareHostComputer(userDataDir, bundle === null ? "docker" : "native", hostScreen),
     );
     desktop.localStack = bundle === null ? dockerStack() : nativeStack(bundle, moving);
+    prefetchForUpdate(desktop.localStack, desktop.desktopUpdater.state());
   };
   // Setup can read the Docker controller's idle state while the move choice is pending.
   // Opening or starting the local stack waits for that choice before preparing the bridge.
@@ -815,8 +818,7 @@ app.whenReady().then(async () => {
     markOnce("rk:main:caches-cleared");
   }
 
-  const icon = developmentIcon();
-  if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);
+  await startAppIcon(userDataDir);
   installApplicationMenu();
   const browserAuth = createBrowserAuthHandlers((target) => shell.openExternal(target));
   app.on("before-quit", browserAuth.cancelAll);
@@ -888,6 +890,7 @@ app.whenReady().then(async () => {
     createClipboardHandler(permissionTarget, (text) => clipboard.writeText(text)),
   );
   handleIpc("desktop.passkeys.rpIds", () => passkeyRpIds);
+  registerPageApps(userDataDir);
   handleIpc("desktop.monitoring.enabled", () => reportsErrors);
   handleIpc("desktop.server.change", () => {
     showSetupWindow();

@@ -1,3 +1,6 @@
+import type { PageAbility } from "../artifacts/page-abilities.js";
+import type { AppIcon } from "./app-icons.js";
+
 /**
  * `unsupported` covers an unpackaged build and a repository with no published releases, which is
  * the normal state for a fork. It is not an error the user needs to act on. Automatic checks stay
@@ -90,10 +93,30 @@ export function isDesktopMenuCommand(value: unknown): value is DesktopMenuComman
   return (DESKTOP_MENU_COMMANDS as readonly unknown[]).includes(value);
 }
 
+export interface RakazoDesktopPageApp {
+  appId: string;
+  pageId: string;
+  title: string;
+}
+
+export interface RakazoDesktopPageAppInstall extends RakazoDesktopPageApp {
+  /** The app's own token from `pageApps.install`; only the desktop's main process keeps it. */
+  token: string;
+  abilities: PageAbility[];
+  /** Square PNGs, base64, at each icon size the platform wants. */
+  icon: { size: number; png: string }[];
+}
+
 export interface RakazoDesktop {
   /** Optional for older desktop releases. Returns false when the native write is refused. */
   clipboard?: {
     writeText: (text: string) => Promise<boolean>;
+  };
+  /** Absent on older desktop releases. */
+  appIcon?: {
+    get: () => Promise<AppIcon>;
+    /** False when the icon could not be applied or saved. */
+    set: (icon: AppIcon) => Promise<boolean>;
   };
   /** Optional for compatibility with older desktop releases. */
   badge?: {
@@ -125,6 +148,18 @@ export interface RakazoDesktop {
   locale?: {
     /** The language the page shows, so the app's own menus, dialogs and setup window follow it. */
     set: (locale: string) => Promise<void>;
+  };
+  /**
+   * Pages installed as their own apps. Absent where the desktop cannot install them: other
+   * platforms, unpackaged builds and older releases.
+   */
+  pageApps?: {
+    /** False when the app could not be made; nothing is left behind then. */
+    install: (input: RakazoDesktopPageAppInstall) => Promise<boolean>;
+    installed: () => Promise<RakazoDesktopPageApp[]>;
+    open: (appId: string) => Promise<boolean>;
+    /** Removes the app and revokes its token. */
+    uninstall: (appId: string) => Promise<boolean>;
   };
   /** Optional for compatibility with older desktop releases. */
   passkeys?: {
@@ -253,6 +288,8 @@ export interface DesktopLocalStackState {
   output: string[];
   /** Bytes pulled per image layer in the current attempt; the sum is the only progress Docker reports. */
   layerBytes: Record<string, number>;
+  /** Full size of each download whose size is known in advance; Docker layers never have one. */
+  layerTotals: Record<string, number>;
   /** Image tag this app launches (`v<app version>` for installed builds, `edge` otherwise). */
   imageTag: string;
 }

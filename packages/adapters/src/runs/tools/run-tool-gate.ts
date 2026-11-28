@@ -72,6 +72,7 @@ import {
 } from "../lifecycle/run-effects.js";
 import { enqueueSteeringContinuation, renewRunLease } from "../lifecycle/run-lifecycle.js";
 import { notifyRun } from "../lifecycle/run-notifications.js";
+import { publishNarrationBeforeAsk } from "../lifecycle/run-progress.js";
 import { refusal } from "../turn/tool-refusal.js";
 import { auditToolCall } from "./run-tool-audit.js";
 import type { ToolRequest } from "./run-tool-request.js";
@@ -776,6 +777,10 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
   if (!(await renewRunLease(deps, runId, ctx.workerId, ctx.fence))) {
     // Another worker owns the run now; exit without leaving a local pause card.
     return pauseForApproval(ctx);
+  }
+  if (ctx.replyMode === "chat") {
+    // Keep narration above the card so it reads as context for the approval.
+    await publishNarrationBeforeAsk(ctx);
   }
   await ctx.computer.checkpoint.flush();
   await persistTurnCheckpoint(ctx, executionId);

@@ -372,7 +372,14 @@ describe("PipedreamConnector", () => {
         }
         if (url.includes("/v1/connect/apps?")) {
           return Response.json({
-            data: [{ id: "app-1", name_slug: "gmail", name: "Gmail" }],
+            data: [
+              {
+                id: "app-1",
+                name_slug: "gmail",
+                name: "Gmail",
+                description: "Read and send email.",
+              },
+            ],
             page_info: {},
           });
         }
@@ -406,6 +413,7 @@ describe("PipedreamConnector", () => {
       expect.objectContaining({
         connectorId: "pipedream",
         slug: "gmail",
+        description: "Read and send email.",
         connected: true,
       }),
     ]);
@@ -430,6 +438,65 @@ describe("PipedreamConnector", () => {
     expect(JSON.parse(String(connectRequest?.init?.body))).toEqual(
       expect.objectContaining({ external_user_id: externalId }),
     );
+  });
+
+  it("omits malformed descriptions from the app catalog", async () => {
+    const connector = new PipedreamConnector(FAKE_CONFIG, {
+      fetch: async (input) => {
+        const url = String(input);
+        if (url.endsWith("/v1/oauth/token")) {
+          return Response.json({ access_token: "fake-access-token", expires_in: 3_600 });
+        }
+        if (url.includes("/v1/connect/apps?")) {
+          return Response.json({
+            data: [{ id: "app-1", name_slug: "example", name: "Example", description: 42 }],
+            page_info: {},
+          });
+        }
+        if (url.includes("/accounts?")) {
+          return Response.json({ data: [], page_info: {} });
+        }
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+
+    const [app] = await connector.catalog(context);
+
+    expect(app?.slug).toBe("example");
+    expect(app).not.toHaveProperty("description");
+  });
+
+  it.each([403, 503])("handles HTTP %s from the mailbox profile", async (status) => {
+    const connector = new PipedreamConnector(FAKE_CONFIG, {
+      fetch: async (input) =>
+        String(input).endsWith("/v1/oauth/token")
+          ? Response.json({ access_token: "fake-access-token", expires_in: 3_600 })
+          : Response.json({ error: "Profile unavailable" }, { status }),
+    });
+    const identity = connector.connectedAccountIdentity("GMAIL", "account-1", context);
+    if (status === 403) await expect(identity).resolves.toBeUndefined();
+    else await expect(identity).rejects.toThrow("HTTP 503");
+  });
+
+  it("deletes only the selected account when an organization has two accounts for an app", async () => {
+    const deleted: string[] = [];
+    const connector = new PipedreamConnector(FAKE_CONFIG, {
+      fetch: async (input, init) => {
+        const path = new URL(String(input)).pathname;
+        if (path.endsWith("/v1/oauth/token")) {
+          return Response.json({ access_token: "fake-access-token", expires_in: 3_600 });
+        }
+        if (init?.method === "DELETE") {
+          deleted.push(path);
+          return new Response(null, { status: 204 });
+        }
+        return Response.json({
+          data: ["account-1", "account-2"].map((id) => ({ id, app: { name_slug: "gmail" } })),
+        });
+      },
+    });
+    await connector.revoke("account-2", { ...context, organizationId: "org-example" });
+    expect(deleted).toEqual(["/v1/connect/fake-project-id/accounts/account-2"]);
   });
 
   it("marks account-list failures as pre-delete so revoke can restore local retry state", async () => {
@@ -936,6 +1003,71 @@ describe("PipedreamConnector", () => {
         connectedContext("gmail"),
       ),
     ).resolves.toBeUndefined();
+  });
+
+  it("uses the organization's external identity from another member's Space", async () => {
+    const emulator = new ThirdPartyConnectorEmulator();
+    let expectedOwner: string | undefined;
+    const toolOwners: string[] = [];
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      if (url.pathname.endsWith("/tokens")) {
+        const data = JSON.parse(String(init?.body)) as { external_user_id: string };
+        expectedOwner = data.external_user_id;
+      }
+      const toolOwner = new Headers(init?.headers).get("x-pd-external-user-id");
+      if (toolOwner) toolOwners.push(toolOwner);
+      return emulator.fetch(input, init);
+    };
+    const connector = new PipedreamConnector(FAKE_CONFIG, {
+      fetch,
+      resolveHostname: emulator.resolveHostname,
+    });
+    const organizationId = "fixture-team";
+    await connector.begin(
+      { provider: "linear", redirectUrl: "https://rakazo.example.test/app" },
+      { ...context, organizationId },
+    );
+    const member = { ...context, userId: "fixture-member", spaceId: "another-space" };
+    expect(await connector.connectionReady(member, "linear")).toBe(false);
+    const providerRef = await connector.resolveConnectedAccountId(
+      member.userId,
+      "linear",
+      "linear",
+      [],
+      member.spaceId,
+      organizationId,
+    );
+    expect(providerRef).toBe("account-linear");
+    const ctx = {
+      ...member,
+      connectedConnections: [
+        {
+          id: "shared",
+          connectorId: "pipedream",
+          externalId: "linear",
+          displayName: "Shared Linear",
+          providerRef,
+          organizationId,
+        },
+      ],
+    };
+    const [tool] = await connector.discoverTools(ctx);
+    expect(tool).toBeDefined();
+    const events = [];
+    for await (const event of connector.execute(
+      {
+        tool: tool!.name,
+        route: tool!.route,
+        args: { text: "fixture" },
+        executionId: "fixture-execution",
+      },
+      ctx,
+    ))
+      events.push(event);
+    expect(events[0]?.type).toBe("result");
+    expect(expectedOwner).toBeTruthy();
+    expect(new Set(toolOwners)).toEqual(new Set([expectedOwner]));
   });
 
   it("runs catalog, connection, discovery, execution, and revoke against the protocol emulator", async () => {

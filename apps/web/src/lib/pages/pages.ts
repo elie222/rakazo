@@ -1,17 +1,36 @@
 import { useLingui } from "@lingui/react/macro";
-import type { MessageBlock, PageSectionAnchor } from "@rakazo/contracts";
-import { PAGE_RUNTIME_PATH, pageReply, pageReplyText, pageViewerDocument } from "@rakazo/core";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type {
+  AiDataUse,
+  MessageBlock,
+  PageImageSource,
+  PageImages,
+  PageSectionAnchor,
+  PageState,
+} from "@rakazo/contracts";
+import {
+  ensureAiDataConsent,
+  newClientId,
+  PAGE_RUNTIME_PATH,
+  pageReply,
+  pageReplyText,
+  pageViewerDocument,
+} from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
+import type { QueryKey } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
 import { useSearchParams } from "react-router-dom";
+import { promptDataConsent } from "../calls/voice-consent";
 import { useSpaceQueries } from "../query/query";
+import type { RpcClient } from "../query/rpc";
 import { errorCode } from "../query/user-error";
 
 /** The search parameter naming the page open full screen over a chat. */
@@ -58,12 +77,74 @@ async function fetchPageRuntime(): Promise<string> {
   return response.text();
 }
 
+export type PageContent = {
+  code: string;
+  images: PageImages;
+  readImage: (imageId: string) => { queryKey: QueryKey; queryFn: () => Promise<PageImageSource> };
+};
+
+export function usePageContent(
+  page: { code: string; images: PageImages } | null | undefined,
+  readImage: PageContent["readImage"],
+): PageContent | undefined {
+  const latest = useRef(readImage);
+  latest.current = readImage;
+  return useMemo(
+    () =>
+      page
+        ? {
+            code: page.code,
+            images: page.images,
+            readImage: (imageId: string) => latest.current(imageId),
+          }
+        : undefined,
+    [page],
+  );
+}
+
+export function useReviewedPageContent(
+  pageId: string | null,
+  page: { code: string; images: PageImages; version: number } | undefined,
+): PageContent | undefined {
+  const queries = useSpaceQueries();
+  return usePageContent(pageId ? page : undefined, (imageId) => ({
+    queryKey: [...queries.pageReviews.image.key(), imageId],
+    queryFn: () =>
+      queries.pageReviews.image.call({ pageId: pageId!, version: page!.version, imageId }),
+  }));
+}
+
+function usePageImages(content: PageContent | undefined): Record<string, string> | undefined {
+  const entries = Object.entries(content?.images ?? {});
+  const names = content ? entries.map(([name]) => name).join("\n") : undefined;
+  const combine = useCallback(
+    (results: { isPending: boolean; data?: PageImageSource }[]) => {
+      if (names === undefined || results.some((result) => result.isPending)) return undefined;
+      return Object.fromEntries(
+        (names ? names.split("\n") : []).flatMap((name, index) => {
+          const src = results[index]?.data?.src;
+          return src ? [[name, src]] : [];
+        }),
+      );
+    },
+    [names],
+  );
+  return useQueries({
+    queries: entries.map(([, imageId]) => ({
+      ...content!.readImage(imageId),
+      staleTime: Number.POSITIVE_INFINITY,
+      refetchOnMount: false,
+    })),
+    combine,
+  });
+}
+
 /**
- * A page's compiled code as the sandboxed viewer's document; null until the runtime has loaded.
+ * A page as the sandboxed viewer's document; null until the runtime and its pictures have loaded.
  * `failed` says the runtime could not be fetched, and `retry` fetches it again.
  */
 export function usePageDocument(
-  code: string | undefined,
+  content: PageContent | undefined,
   /** The app surface behind the page; a tablet sheet sits on the background. */
   on: "card" | "background" = "card",
   /** The chat's composer is beside the page, so its reply buttons can fill it. */
@@ -72,6 +153,9 @@ export function usePageDocument(
   bottomInset = 0,
   review = false,
   reviewAnchor?: PageSectionAnchor,
+  state?: PageState,
+  /** The page's chat can take its questions. */
+  ask = false,
 ): { document: string | null; failed: boolean; retry: () => void } {
   const { t, i18n } = useLingui();
   const theme = useAppTheme();
@@ -81,32 +165,41 @@ export function usePageDocument(
   // Fetched again on every mount; the browser revalidates the server's no-cache runtime.
   const runtime = useQuery({ queryKey: ["page-runtime"], queryFn: fetchPageRuntime });
   const errorTitle = t`This page couldn't be shown.`;
+  const savedState = useRef(state);
+  savedState.current = state;
+  const code = content?.code;
+  const images = usePageImages(content);
   const viewerDocument = useMemo(
     () =>
-      runtime.data === undefined || code === undefined
+      runtime.data === undefined || code === undefined || images === undefined
         ? null
         : pageViewerDocument({
             runtime: runtime.data,
             code,
+            images,
             theme,
             errorTitle,
             surface,
             touch,
             reply,
+            ask,
             bottomInset,
             review,
             reviewAnchor: reviewAnchor?.section,
             reviewAnchorOccurrence: reviewAnchor?.sectionOccurrence,
             lang: i18n.locale,
+            state: savedState.current,
           }),
     [
       runtime.data,
       code,
+      images,
       theme,
       errorTitle,
       surface,
       touch,
       reply,
+      ask,
       bottomInset,
       review,
       reviewAnchor,
@@ -116,6 +209,52 @@ export function usePageDocument(
   const { refetch } = runtime;
   const retry = useCallback(() => void refetch(), [refetch]);
   return { document: viewerDocument, failed: runtime.isError && runtime.data === undefined, retry };
+}
+
+/** The chat a page's questions go to; null for a page with none. */
+export function pageAskChat(page: {
+  botId: string | null;
+  groupId: string | null;
+}): { botId: string } | { groupId: string } | null {
+  return page.groupId ? { groupId: page.groupId } : page.botId ? { botId: page.botId } : null;
+}
+
+const ASK_USES: AiDataUse[] = ["model", "memory"];
+
+/**
+ * A page's question to its bot, answered with the text of the bot's reply; null when there is
+ * none. The question is a message in the chat, so its AI data sharing is confirmed first.
+ */
+export async function askPageBot(
+  rpc: RpcClient,
+  page: { id: string; botId: string | null; groupId: string | null },
+  text: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const chat = pageAskChat(page);
+  if (!chat) return null;
+  const answer = await bestEffort(
+    "page ask",
+    (async () => {
+      await ensureAiDataConsent({
+        uses: ASK_USES,
+        status: () => rpc.aiConsent.status({ ...chat, uses: ASK_USES }),
+        // A page that closes takes its unanswered prompt with it.
+        prompt: (recipient, privacyUrl) => promptDataConsent(recipient, privacyUrl, signal),
+        allow: (input) => rpc.aiConsent.allow(input),
+      });
+      const events = await rpc.pages.ask(
+        { pageId: page.id, text, clientNonce: newClientId() },
+        { signal },
+      );
+      for await (const event of events) {
+        if (event.kind === "answer") return event.text;
+        if (event.kind === "failed") return null;
+      }
+      return null;
+    })(),
+  );
+  return answer ?? null;
 }
 
 type Dock = { node: HTMLElement | null; page: { id: string; title: string } | null };

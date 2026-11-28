@@ -228,7 +228,10 @@ export class Dictation {
   private vadTimer: ReturnType<typeof setInterval> | undefined;
   private speechSamples = 0;
   private sampleInput: (() => boolean) | undefined;
+  /** Energy in this recording. A Web Speech prefix is not energy and must not start this true. */
   private heardSpeech = false;
+  /** Silence may end an endpoint turn: prior text, or energy in this recording. */
+  private endpointArmed = false;
   private onFinal: ((text: string) => void) | null = null;
   /** Mode of the running session: an endpoint turn reports back even without words. */
   private mode: DictationMode | null = null;
@@ -293,6 +296,7 @@ export class Dictation {
     this.chunks = [];
     this.speechSamples = 0;
     this.heardSpeech = false;
+    this.endpointArmed = false;
     this.onFinal = null;
     this.mode = null;
     if (this.snapshot.status !== "idle" || this.snapshot.error) this.set(IDLE);
@@ -526,9 +530,12 @@ export class Dictation {
       for (const track of stream.getTracks()) track.stop();
       return;
     }
+    // Prior text may end the turn on a quiet gap. It is not energy in this recording:
+    // a silent fallback must not be uploaded on top of the Web Speech prefix.
     const keptSpeech = this.snapshot.transcript.trim().length > 0;
     this.speechSamples = 0;
-    this.heardSpeech = keptSpeech;
+    this.heardSpeech = false;
+    this.endpointArmed = keptSpeech;
     const endpoint = mode === "endpoint";
     const monitoring = this.monitorInput(stream, mine, endpoint ? endpointMs : undefined);
     if (endpoint && !monitoring) {
@@ -598,7 +605,10 @@ export class Dictation {
         }
         this.speechSamples += 1;
         const speech = Math.sqrt(sum / data.length) > SILENCE_RMS;
-        if (speech) this.heardSpeech = true;
+        if (speech) {
+          this.heardSpeech = true;
+          this.endpointArmed = true;
+        }
         return speech;
       };
       let silentFor = 0;
@@ -609,7 +619,7 @@ export class Dictation {
         const speaking = this.sampleInput?.();
         const full =
           endpointMs !== undefined && Date.now() - startedAt >= MAX_ENDPOINT_RECORDING_MS;
-        if (full && !this.heardSpeech) {
+        if (full && !this.endpointArmed) {
           this.finish(this.snapshot.transcript, mine);
           return;
         }
@@ -618,7 +628,7 @@ export class Dictation {
             silentFor = 0;
             return;
           }
-          if (endpointMs === undefined || !this.heardSpeech) return;
+          if (endpointMs === undefined || !this.endpointArmed) return;
           silentFor += ENDPOINT_TICK_MS;
           if (silentFor < endpointMs) return;
         }
@@ -654,6 +664,8 @@ export class Dictation {
     if (this.speechSamples >= 2 && !this.heardSpeech) {
       this.chunks = [];
       this.media = null;
+      // `heardSpeech` is energy in this recording only. Deliver a Web Speech prefix
+      // without asking a model to invent text for the silent fallback.
       const prefix = normalizedTranscript(this.snapshot.transcript);
       if (prefix) {
         this.finish(prefix, mine);

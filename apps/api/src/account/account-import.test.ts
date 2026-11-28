@@ -1,8 +1,9 @@
-import { link, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { link, mkdtemp, open, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Actor } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
+import { zipStream } from "./account-export.js";
 import type { AccountImportDeps, ArchiveEntry, ArchiveSink } from "./account-import.js";
 import {
   ACCOUNT_IMPORT_LIMITS,
@@ -19,6 +20,8 @@ import {
   incompressibleBytes,
   manifestFor,
 } from "./account-import.test-support.js";
+
+import { parseZipArchive } from "./account-zip-reader.js";
 
 const actor: Actor = {
   userId: "user-1",
@@ -123,6 +126,31 @@ function corruptCrc(bytes: Uint8Array): Uint8Array {
 const limits = { ...ACCOUNT_IMPORT_LIMITS, artifactBytes: 1024 };
 
 describe("account import archive", () => {
+  // 65,535 entries take seconds alone and several times longer on a busy shared runner.
+  it("writes an importable ZIP64 footer at the classic entry-count boundary", async () => {
+    const entryCount = 65_535;
+    async function* files() {
+      yield { path: "manifest.json", data: [] };
+      yield { path: "spaces/s1/records.jsonl", data: [] };
+      for (let index = 2; index < entryCount; index++) {
+        yield { path: `spaces/s1/homes/b1/note-${index}.txt`, data: [] };
+      }
+    }
+    const tempDir = await spoolDir();
+    try {
+      const archive = join(tempDir, "many-files.zip");
+      await writeFile(archive, zipStream(files()));
+      const handle = await open(archive, "r");
+      try {
+        expect(await parseZipArchive(handle)).toHaveLength(entryCount);
+      } finally {
+        await handle.close();
+      }
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  }, 90_000);
+
   it("rejects another format", async () => {
     const bytes = buildArchive([
       ["manifest.json", JSON.stringify({ ...manifestFor([]), format: "other-export" })],

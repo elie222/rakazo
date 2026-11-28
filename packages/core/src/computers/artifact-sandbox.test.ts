@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   PAGE_COPY_MAX_LENGTH,
+  pageAskRequest,
   pageCopyRequest,
   pageLinkRequest,
   pageReplyText,
+  pageStateRequest,
   pageViewerDocument,
   SANDBOXED_ARTIFACT_CSP,
   withSandboxedArtifactCsp,
@@ -59,6 +61,25 @@ describe("withSandboxedArtifactCsp", () => {
   });
 });
 
+describe("pageStateRequest", () => {
+  it("passes on values a page can save and nothing else", () => {
+    expect(pageStateRequest({ type: "rakazo-page:state", values: { note: "Charger" } })).toEqual({
+      note: "Charger",
+    });
+    expect(pageStateRequest({ type: "rakazo-page:state", values: {} })).toBeNull();
+    expect(pageStateRequest({ type: "rakazo-page:state", values: { "bad key": 1 } })).toBeNull();
+    expect(
+      pageStateRequest({
+        type: "rakazo-page:state",
+        values: { note: "kept", huge: "x".repeat(70_000), deep: [[[[[[[1]]]]]]] },
+      }),
+    ).toEqual({ note: "kept" });
+    const halves = { a: "x".repeat(40_000), b: "y".repeat(40_000) };
+    expect(pageStateRequest({ type: "rakazo-page:state", values: halves })).toBeNull();
+    expect(pageStateRequest({ type: "rakazo-page:copy", values: { note: "x" } })).toBeNull();
+  });
+});
+
 describe("pageViewerDocument", () => {
   const base = { runtime: "", code: "", theme: "dark" as const, errorTitle: "x" };
 
@@ -68,6 +89,9 @@ describe("pageViewerDocument", () => {
       "<html data-touch data-reply>",
     );
     expect(pageViewerDocument(base)).toContain("<html><head>");
+    expect(pageViewerDocument({ ...base, reply: true, ask: true })).toContain(
+      "<html data-reply data-ask>",
+    );
   });
 
   it("carries page code that tries to close its script as inert JSON", () => {
@@ -109,6 +133,24 @@ describe("pageReplyText", () => {
     for (const unusable of ["x".repeat(301), " \n ", 7, undefined]) {
       expect(pageReplyText(unusable)).toBeNull();
     }
+  });
+});
+
+describe("pageAskRequest", () => {
+  it("passes a page's question, trimmed, up to the ask limit and nothing else", () => {
+    const ask = { type: "rakazo-page:ask", id: "ask-1", text: "  Next step? " };
+    expect(pageAskRequest(ask)).toEqual({ id: "ask-1", text: "Next step?" });
+    expect(pageAskRequest({ ...ask, text: "x".repeat(2000) })?.text).toHaveLength(2000);
+    for (const unusable of [
+      { ...ask, text: "x".repeat(2001) },
+      { ...ask, text: "  " },
+      { ...ask, text: 7 },
+      { ...ask, id: "" },
+      { ...ask, id: "i".repeat(65) },
+      { ...ask, type: "rakazo-page:reply" },
+      "rakazo-page:ask",
+    ])
+      expect(pageAskRequest(unusable)).toBeNull();
   });
 });
 

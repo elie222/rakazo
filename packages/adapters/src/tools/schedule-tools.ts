@@ -65,7 +65,7 @@ export const SCHEDULE_TOOL_NAMES = new Set([
 ]);
 
 /** Routine runs may create, list, or cancel routines, but may not update them. */
-const ROUTINE_RUN_HIDDEN_TOOLS = new Set(["schedule_update"]);
+export const ROUTINE_RUN_HIDDEN_TOOLS: ReadonlySet<string> = new Set(["schedule_update"]);
 
 export function filterBuiltinToolsForRun<T extends { name: string }>(
   tools: T[],

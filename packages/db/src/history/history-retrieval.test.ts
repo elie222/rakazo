@@ -325,6 +325,46 @@ describe("local history retrieval", () => {
     expect(result.snapshots[0]!.topic).toBe("x".repeat(199));
     expect(Buffer.from(result.snapshots[0]!.topic).toString()).toBe(result.snapshots[0]!.topic);
   });
+  it("pages files before shortening a ten-file message's caption", async () => {
+    const { mock, prisma } = db();
+    const caption = "Message text. ".repeat(130);
+    const files = Array.from({ length: 10 }, (_, i) => ({
+      id: `file-${i}`,
+      name: `${"表".repeat(240)}${i}.png`,
+      mimeType: "image/png",
+      size: 1,
+    }));
+    mock.$queryRaw.mockResolvedValue([
+      {
+        ...row(1, caption),
+        blocks: [
+          { kind: "text", text: caption },
+          ...files.map((f) => ({
+            kind: "image",
+            artifactId: f.id,
+            name: f.name,
+            mimeType: f.mimeType,
+          })),
+        ],
+      },
+    ]);
+    mock.artifact.findMany.mockResolvedValue(files);
+    const response = await readHistory(prisma, scope, { messageId: "message-1", limit: 1 });
+    const first = response.messages[0]!;
+    expect(first.text).toBe(caption);
+    expect(first.nextTextOffset).toBeNull();
+    expect(first.attachments!.length).toBeLessThan(10);
+    const offset = first.attachments!.length;
+    expect(first).toMatchObject({ nextAttachmentOffset: offset });
+    const more = await readHistory(prisma, scope, {
+      messageId: "message-1",
+      limit: 1,
+      attachmentOffset: offset,
+    });
+    expect(
+      [...first.attachments!, ...more.messages[0]!.attachments!].map((f) => f.artifactId),
+    ).toEqual(files.map((f) => f.id));
+  });
   it("preserves surrogate pairs while reducing Unicode pages to the response budget", async () => {
     const { mock, prisma } = db();
     const text = `${"é".repeat(399)}😀${"é".repeat(399)}!`;

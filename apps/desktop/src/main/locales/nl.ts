@@ -101,6 +101,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Almost ready…": "Bijna klaar…",
   "Rakazo is ready.": "Rakazo is klaar.",
   "{size} downloaded": "{size} gedownload",
+  "{done} of {total}": "{done} van {total}",
   "Connecting…": "Verbinden…",
   "Checking…": "Controleren…",
   "Rakazo answered at {url}.": "Rakazo antwoordde op {url}.",
@@ -242,4 +243,14 @@ export const NL_MESSAGES: Record<string, string> = {
   "Restart Rakazo": "Rakazo opnieuw starten",
   "Not Now": "Niet nu",
   "Restart Rakazo to finish setup": "Start Rakazo opnieuw om de configuratie te voltooien",
+  // Page apps
+  "Keep on Top": "Altijd bovenop",
+  "Open in Rakazo": "Open in Rakazo",
+  "Uninstall…": "Verwijder…",
+  "Uninstall {name}?": "{name} verwijderen?",
+  Uninstall: "Verwijder",
+  "Allow {name} to ask its bot?": "{name} toestaan zijn bot vragen te stellen?",
+  "Allow {name} to show notifications?": "{name} toestaan meldingen te tonen?",
+  "{name} was removed.": "{name} is verwijderd.",
+  "Move to Trash": "Verplaats naar prullenmand",
 };

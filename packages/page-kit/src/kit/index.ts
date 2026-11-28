@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import type { PageHelperName, PageKitComponentName } from "../components.js";
 import { PAGE_HELPERS, PAGE_KIT_COMPONENTS } from "../components.js";
+import * as ask from "./ask.js";
 import * as calendar from "./calendar.js";
 import * as charts from "./charts.js";
 import * as controls from "./controls.js";
@@ -10,10 +11,12 @@ import * as diagram from "./diagram.js";
 import * as icon from "./icon.js";
 import * as layout from "./layout.js";
 import * as media from "./media.js";
+import * as pageState from "./page-state.js";
 import * as text from "./text.js";
 import * as theme from "./theme.js";
 
 const modules = {
+  ...ask,
   ...calendar,
   ...charts,
   ...controls,
@@ -23,6 +26,7 @@ const modules = {
   ...icon,
   ...layout,
   ...media,
+  ...pageState,
   ...text,
   ...theme,
 };

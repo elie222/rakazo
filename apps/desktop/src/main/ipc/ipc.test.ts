@@ -57,7 +57,7 @@ function appBridge(caller: IpcCaller): RakazoDesktop {
   vm.runInNewContext(
     readFileSync(path.join(import.meta.dirname, "../../preload/preload.cjs"), "utf8"),
     {
-      process: { platform: "darwin" },
+      process: { platform: "darwin", argv: [] },
       window: { addEventListener: () => undefined },
       require: () => ({
         contextBridge: {
@@ -110,6 +110,7 @@ beforeEach(() => {
   desktop.mainWindow = null;
   desktop.replacedAppWindow = null;
   desktop.setupWindow = null;
+  desktop.pageAppWindow = null;
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -128,6 +129,15 @@ describe("sentFrom", () => {
     const { app, setup } = open();
     for (const [, event] of strangers(app)) expect(sentFrom("app", event)).toBe(false);
     for (const [, event] of strangers(setup)) expect(sentFrom("setup", event)).toBe(false);
+  });
+
+  it("accepts a page app's shell only, never its frame or another window", () => {
+    const shell = fakeWindow("rakazo-page-app://shell/page-app-shell.html");
+    desktop.pageAppWindow = shell.win;
+    expect(sentFrom("pageApp", shell.event)).toBe(true);
+    for (const [, event] of strangers(shell)) expect(sentFrom("pageApp", event)).toBe(false);
+    shell.frame.url = "rakazo-page-app://frame/1";
+    expect(sentFrom("pageApp", shell.event)).toBe(false);
   });
 
   it.each(["https://other.example.com/app/bot", "data:text/html,page", "file:///page", "invalid"])(
@@ -224,7 +234,6 @@ describe("handleIpc", () => {
       expect(mocks.sync.has(name)).toBe(sync === true);
     }
     expect(handler).not.toHaveBeenCalled();
-    // Reported once per channel, however often a page keeps calling.
     expect(vi.mocked(reportDesktopError).mock.calls).toEqual(
       names.map((name) => [expect.any(Error), "desktop.ipc", { "ipc.channel": name }]),
     );
@@ -240,6 +249,7 @@ describe("handleIpc", () => {
       "desktop.setup.state",
     ]);
     expect(names.filter((name) => ipcChannels[name].refused === LIVE)).toEqual([
+      "desktop.appIcon.get",
       "desktop.update.check",
       "desktop.update.download",
       "desktop.update.install",
@@ -272,22 +282,18 @@ describe("handleIpc", () => {
     expect(await page.window.close()).toBe("handled");
 
     switchServer(app);
-    // Dictation cleanup and the calls a page makes without waiting get an answer.
     await expect(page.speech!.stop(1)).resolves.toBeUndefined();
     await expect(page.speech!.abort(1)).resolves.toBeUndefined();
     await expect(page.server!.change()).resolves.toBeUndefined();
     await expect(page.locale!.set("es")).resolves.toBeUndefined();
     await expect(page.computer!.revokeAccess()).resolves.toBeUndefined();
     await expect(page.oauth.cancel!("https://sign-in.invalid")).resolves.toBeUndefined();
-    // Calls whose answer the page reads get the one that means nothing was done.
     await expect(page.speech!.start("en-US", 1)).resolves.toBe(false);
     await expect(page.badge!.set(3)).resolves.toBe(false);
     await expect(page.clipboard!.writeText("text")).resolves.toBe(false);
     await expect(page.device!.setAllowed(true)).resolves.toBeNull();
     await expect(page.update.state()).resolves.toBe(LIVE_ANSWER);
-    // A sign-in that did not open is a failure its caller handles.
     await expect(page.oauth.open!("https://sign-in.invalid")).rejects.toThrow("may not call");
-    // Only its own window's controls are still answered.
     expect(names.filter((name) => ipcChannels[name].from === "appOrReplaced")).toEqual([
       "desktop.window.close",
       "desktop.window.minimize",
@@ -296,7 +302,6 @@ describe("handleIpc", () => {
     ]);
     for (const call of ["close", "minimize", "state", "toggleMaximize"] as const)
       await expect(page.window[call](), call).resolves.toBe("handled");
-    // The page a switch replaces is expected to keep calling.
     expect(reportDesktopError).not.toHaveBeenCalled();
   });
 

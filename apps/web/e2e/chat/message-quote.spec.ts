@@ -4,6 +4,7 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
+  expectStoredSend,
   rpc,
   signup,
 } from "../helpers/helpers";
@@ -83,7 +84,16 @@ test("selecting a text span quotes it into a reply", async ({ page }, testInfo) 
     .filter({ has: page.getByTestId("message-user-bubble") })
     .filter({ hasText: `quote-source-${stamp}` })
     .first();
+  const botRow = transcript
+    .locator("[data-message-id]")
+    .filter({ hasText: `done. i handled: quote-source-${stamp}` })
+    .first();
   await expect(sourceRow).toBeVisible({ timeout: 20_000 });
+  // The chat shows the send before the server stores it, and only the stored message can be quoted.
+  await expectStoredSend(sourceRow);
+  // Escape in the composer stops a working bot before it reaches the pill, so let the run finish.
+  await expect(botRow).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
 
   await selectAndRelease(page, sourceRow, "**forty two percent**");
   await expect(quoteButton).toBeVisible();
@@ -113,7 +123,6 @@ test("selecting a text span quotes it into a reply", async ({ page }, testInfo) 
   await expect(replyChip).toContainText(/forty two percent/);
   await expect(replyChip).toContainText("**forty two percent**");
 
-  // A new selection replaces the quote even within the same message and focuses the composer.
   await sourceRow.click();
   await selectAndRelease(page, sourceRow, "growth");
   await expect(quoteButton).toBeVisible();
@@ -127,10 +136,6 @@ test("selecting a text span quotes it into a reply", async ({ page }, testInfo) 
   await captureScreenshot(page, testInfo, "quote-shortcut-applied");
 
   // A bot message quotes the same way as one of my own.
-  const botRow = transcript
-    .locator("[data-message-id]")
-    .filter({ hasText: `done. i handled: quote-source-${stamp}` })
-    .first();
   await botRow.click();
   await selectAndRelease(page, botRow, "forty two percent");
   await expect(quoteButton).toBeVisible();
@@ -204,6 +209,7 @@ test("an armed reply survives the parent paging out of the transcript", async ({
   await composer.press("Enter");
   const parentRow = userRow(parentText);
   await expect(parentRow).toBeVisible({ timeout: 20_000 });
+  await expectStoredSend(parentRow);
 
   await selectAndRelease(page, parentRow, `evict-parent-${stamp}`);
   await page.getByTestId("quote-selection").click();

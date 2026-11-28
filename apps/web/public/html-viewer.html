@@ -17,7 +17,7 @@ function guard() {
 }
 addEventListener("message", (event) => {
   const preview = document.getElementById("preview");
-  // A page asks the app to open a link, offer a reply, copy text or make room for its height; only those pass up.
+  // A page asks the app to open a link, offer a reply, ask its bot, copy text, save what the reader set or make room for its height; only those pass up.
   if (event.source === preview.contentWindow && parent !== window) {
     const data = event.data;
     // A click or key in the page also activates this shell, which the page cannot fake; the guard
@@ -35,8 +35,12 @@ addEventListener("message", (event) => {
       parent.postMessage({ type: data.type, url: data.url, gesture: fresh }, "*");
     } else if (data && data.type === "rakazo-page:reply" && typeof data.text === "string") {
       parent.postMessage({ type: data.type, text: data.text.slice(0, 300), gesture: fresh }, "*");
+    } else if (data && data.type === "rakazo-page:ask" && typeof data.id === "string" && typeof data.text === "string") {
+      parent.postMessage({ type: data.type, id: data.id, text: data.text, gesture: fresh }, "*");
     } else if (data && data.type === "rakazo-page:copy" && typeof data.id === "string" && typeof data.text === "string") {
       parent.postMessage({ type: data.type, id: data.id, text: data.text, gesture: fresh }, "*");
+    } else if (data && data.type === "rakazo-page:state" && data.values && typeof data.values === "object") {
+      parent.postMessage({ type: data.type, values: data.values }, "*");
     } else if (data && data.type === "rakazo-page:height" && Number.isFinite(data.height)) {
       const dimensions = { type: data.type, height: data.height };
       if (Number.isFinite(data.scrollHeight) && data.scrollHeight >= 0) {
@@ -62,6 +66,14 @@ addEventListener("message", (event) => {
   // The app's answer to a copy: only whether it worked comes back down, never clipboard contents.
   if (event.data && event.data.type === "rakazo-page:copied") {
     preview.contentWindow.postMessage({ type: event.data.type, id: String(event.data.id), ok: event.data.ok === true }, "*");
+    return;
+  }
+  // The bot's answer to the page's own question, and nothing else from the app.
+  if (event.data && event.data.type === "rakazo-page:answer") {
+    const ok = event.data.ok === true && typeof event.data.text === "string";
+    const answer = { type: event.data.type, id: String(event.data.id), ok };
+    if (ok) answer.text = event.data.text.slice(0, 20000);
+    preview.contentWindow.postMessage(answer, "*");
     return;
   }
   if (event.data?.type === "rakazo-page:scroll-preview" && Number.isFinite(event.data.top) && event.data.top >= 0) {

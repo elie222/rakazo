@@ -1,5 +1,5 @@
 import * as z from "zod";
-import { PageSourceSchema, PageTitleSchema } from "../artifacts/pages.js";
+import { PageIconColorSchema, PageSourceSchema, PageTitleSchema } from "../artifacts/pages.js";
 import { BotSchema } from "../bots/bot.js";
 import { BotAvatarSetSchema } from "../bots/bot-avatar.js";
 import { Id, IsoDate, ReplyModeSchema } from "../ids.js";
@@ -130,6 +130,9 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     botId: Id.nullable(),
     groupId: Id.nullable(),
     title: PageTitleSchema,
+    /** Absent in archives made before pages had app icons. */
+    icon: z.string().max(64).nullable().optional(),
+    iconColor: PageIconColorSchema.nullable().optional(),
     pinnedAt: IsoDate.nullable(),
     currentVersion: PageVersionNumber,
     createdAt: IsoDate,

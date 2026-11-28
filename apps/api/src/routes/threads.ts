@@ -11,12 +11,10 @@ import {
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import {
-  AttachmentValidationError,
   CALL_CLIENT_NONCE_PREFIX,
   ClientError,
   callClientNonce,
   expandSkillReferencesInPrompt,
-  MODEL_REQUIRED_SEND_ERROR,
   QUEUE_HOLDING_RUN_STATUSES,
 } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
@@ -36,8 +34,6 @@ import {
 } from "@rakazo/db";
 import { HANG_UP_PROMPT } from "../bots/hidden-turns.prompt.js";
 import { assertTeachingSendAllowed } from "../bots/taught-skills.js";
-import { answerComputerRequest } from "../computers/computer-control.js";
-import type { RouterDeps } from "../router.js";
 import {
   createRoutineTestRun,
   routineTestRunNonce,
@@ -59,17 +55,13 @@ import {
   setThreadUnreadState,
 } from "../threads/thread-read-state.js";
 import { retryThreadRun } from "../threads/thread-retry.js";
+import type { UserSendInput } from "../threads/thread-send.js";
+import { sendAsUser } from "../threads/thread-send.js";
 import { threadSnapshot } from "../threads/thread-snapshot.js";
-import { isStopMessage, stopThreadRuns } from "../threads/thread-stop.js";
-import { replayExistingSend } from "../threads/thread-strict-answer.js";
+import { stopThreadRuns } from "../threads/thread-stop.js";
+import { takeoverReleaser } from "../threads/thread-takeover.js";
 import type { ThreadTarget } from "../threads/thread-target.js";
-import {
-  replyParentBotId,
-  resolveThreadTarget,
-  sendTargetBotIds,
-  sendThreadMessage,
-  threadHead,
-} from "../threads/thread-target.js";
+import { resolveThreadTarget, threadHead } from "../threads/thread-target.js";
 import type { RouterContext } from "./context.js";
 import {
   botsRunOwnModels,
@@ -88,26 +80,6 @@ export function callMarkerClientNonce(callId: string): string {
 
 /** A send with routines that already has runs saved under its nonce. */
 class SavedSubmission extends Error {}
-
-/** A chat reply hands the screen back to the bot whose run it steers, in a group as in a DM. */
-export function takeoverReleaser(deps: RouterDeps, actor: Actor, target: ThreadTarget) {
-  return async (runId: string) => {
-    const botId =
-      target.kind === "bot"
-        ? target.botId
-        : (
-            await deps.prisma.run.findUnique({
-              where: { id: runId, spaceId: actor.spaceId },
-              select: { botId: true },
-            })
-          )?.botId;
-    if (!botId) return;
-    // A reply from someone the bot did not ask still steers it, but answers nothing.
-    await answerComputerRequest(deps, actor, botId, "done", runId).catch((error: unknown) => {
-      if (!(error instanceof ORPCError)) throw error;
-    });
-  };
-}
 
 function calendarDevice(
   { actor, nativeSessionId }: { actor: Actor; nativeSessionId?: string },
@@ -135,81 +107,12 @@ export function threadsRoutes(ctx: RouterContext) {
             select: { botId: true },
           })
         )?.botId ?? target.memberBotIds[0]!);
-  const send = async (
+  const send = (
     actor: Actor,
-    input: Parameters<typeof sendThreadMessage>[3] & {
-      botId?: string;
-      groupId?: string;
-      nativeCalendarDeviceKey?: string;
-    },
-    startRoutines?: Parameters<typeof sendThreadMessage>[5],
+    input: UserSendInput,
+    startRoutines?: Parameters<typeof sendAsUser>[3],
     nativeSessionId?: string,
-  ) => {
-    const target = await resolveThreadTarget(deps.prisma, actor, input);
-    const releaseTakeover = takeoverReleaser(deps, actor, target);
-    if (target.kind === "bot") {
-      await assertTeachingSendAllowed(deps.prisma, actor.spaceId, target.botId);
-    }
-    // Strict card answers replay any saved receipt before checking model setup so a retry
-    // after a lost HTTP response still returns its receipt if model lookup is unavailable.
-    if (input.answersQuestion) {
-      const replayed = await replayExistingSend(
-        deps,
-        target.threadId,
-        actor.userId,
-        input.clientNonce,
-        releaseTakeover,
-        input,
-      );
-      if (replayed) return replayed;
-    }
-    const setup = await modelSetup(deps, actor);
-    // A bot with its own runnable model needs no main model, and stopping work needs none.
-    const replied =
-      target.kind === "group" ? await replyParentBotId(deps.prisma, target, input) : undefined;
-    const noModel =
-      setup.needsModel &&
-      !(await botsRunOwnModels(deps, actor, sendTargetBotIds(target, input, replied)));
-    if (noModel && (input.answersQuestion || !isStopMessage(input))) {
-      throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
-    }
-    const confirmingImages =
-      input.imageHandling === "confirm" && Boolean(input.artifactIds?.length);
-    // Reuse the funding modelSetup resolved; a send never asks billing twice.
-    const deployment = setup.hasDeployment
-      ? { provider: deps.env.defaultProvider, model: deps.env.defaultModel }
-      : null;
-    const deviceKey = nativeSessionId && target.kind === "bot" && input.nativeCalendarDeviceKey;
-    return sendThreadMessage(
-      {
-        ...deps,
-        maxAttachmentsPerMessage: deps.env.maxAttachmentsPerMessage,
-        imageAdmission: confirmingImages
-          ? {
-              secrets: deps.secrets,
-              deployment,
-              hostedProvider: setup.creditsAvailable ? deployment?.provider : undefined,
-              codexCatalog,
-            }
-          : undefined,
-      },
-      actor,
-      target,
-      {
-        ...input,
-        noModel,
-        nativeCalendarSessionId: deviceKey ? nativeSessionId : undefined,
-        nativeCalendarDeviceDigest: deviceKey ? nativeCalendarDeviceDigest(deviceKey) : undefined,
-      },
-      releaseTakeover,
-      startRoutines,
-    ).catch((error: unknown) => {
-      if (error instanceof AttachmentValidationError) {
-        throw new ClientError("BAD_REQUEST", error.message);
-      }
-      throw error;
-    });
-  };
+  ) => sendAsUser({ ...deps, codexCatalog }, actor, input, startRoutines, nativeSessionId);
   return {
     threads: {
       head: authed.threads.head.handler(async ({ context, input }) => {

@@ -209,17 +209,14 @@ export function ThreadComposer({
     if (base !== null && draftRef.current === dictated.current) showDictation("");
     dictatedBase.current = null;
   }
-  // Send during dictation stops it first and sends once its words are in.
   const [sendAfterDictation, setSendAfterDictation] = useState(false);
   function sendOrFinish() {
     if (recording) dictation.finish(() => setSendAfterDictation(true));
     else void send();
   }
   // Saving waits for a pause in typing; closing the conversation or leaving the app saves at once.
-  // Set while the composer holds text that storage does not have yet.
   const pendingSave = useRef<(() => boolean) | null>(null);
   function flushDraftSave() {
-    // A failed save stays pending, so the next flush retries it.
     if (pendingSave.current?.()) pendingSave.current = null;
   }
   useEffect(() => {

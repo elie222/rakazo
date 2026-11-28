@@ -202,9 +202,24 @@ export function accountRoutes(ctx: RouterContext) {
         await billing.changeTier(context.actor, input.tier);
         return billing.status(context.actor);
       }),
+      renewTrial: authed.billing.renewTrial.handler(async ({ context, input }) => {
+        const billing = requireBilling(deps);
+        await billing.renewTrial(context.actor, input.tier, input.interval);
+        return billing.status(context.actor);
+      }),
       claimReferral: authed.billing.claimReferral.handler(async ({ context, input }) => {
         await requireBilling(deps).claimReferral(context.actor, input.code);
         return { ok: true as const };
+      }),
+      redeemCreditCode: authed.billing.redeemCreditCode.handler(async ({ context, input }) => {
+        const billing = requireBilling(deps);
+        const code = billing.modelCreditsEnabled
+          ? deps.env.creditCodes?.get(input.code.toUpperCase())
+          : undefined;
+        if (!code)
+          throw new ClientError("NOT_FOUND", "That code isn't valid", "CREDIT_CODE_INVALID");
+        await billing.redeemCreditCode(context.actor, code);
+        return { creditCents: code.creditCents };
       }),
     },
     accessGrants: {

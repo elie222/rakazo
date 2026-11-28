@@ -4,9 +4,11 @@ import {
   cloudAgentForActor,
   cloudAgentsEnabled,
   cloudAgentsForActor,
+  ORGANIZATION_MODEL_CONNECTION_PREFIX,
   parseModelSecret,
   resolveMemberMainModel,
   selectConfiguredModel,
+  selectedOrganizationModelConnection,
   toStringRecord,
 } from "@rakazo/adapters";
 import type {
@@ -204,7 +206,12 @@ export async function aiConsentStatus(
         selected
           .filter((model) => model.provider)
           .map((model) => [
-            JSON.stringify([model.provider, model.id, model.credential?.secretId]),
+            JSON.stringify([
+              model.provider,
+              model.id,
+              model.credential?.secretId,
+              model.connectionId,
+            ]),
             model,
           ]),
       ).values(),
@@ -220,24 +227,41 @@ export async function aiConsentStatus(
           },
         })
       : [];
+    const readBaseUrl = async (ciphertext: string, secretId: string) => {
+      try {
+        const secret = parseModelSecret(await deps.secrets.load(ciphertext, secretId));
+        return secret.kind === "openai_compatible" && URL.canParse(secret.baseUrl)
+          ? secret.baseUrl
+          : undefined;
+      } catch {
+        // Unreadable credentials still disclose by provider; the base URL is unknown.
+        return undefined;
+      }
+    };
     const baseUrls = new Map(
       await Promise.all(
-        secrets.map(async (secret): Promise<[string, string | undefined]> => {
-          try {
-            const parsed = parseModelSecret(await deps.secrets.load(secret.ciphertext, secret.id));
-            return [secret.id, parsed.kind === "openai_compatible" ? parsed.baseUrl : undefined];
-          } catch {
-            // Unreadable credentials still disclose by provider; the base URL is unknown.
-            return [secret.id, undefined];
-          }
-        }),
+        secrets.map(
+          async (secret) => [secret.id, await readBaseUrl(secret.ciphertext, secret.id)] as const,
+        ),
       ),
     );
     for (const model of models) {
+      let baseUrl = model.credential ? baseUrls.get(model.credential.secretId) : undefined;
+      if (model.id && model.connectionId?.startsWith(ORGANIZATION_MODEL_CONNECTION_PREFIX)) {
+        const row = await selectedOrganizationModelConnection(
+          deps.prisma,
+          actor,
+          model.connectionId,
+          model.provider!,
+          model.id,
+        );
+        if (!row) continue;
+        baseUrl = await readBaseUrl(row.ciphertext, row.secretId);
+      }
       add(
         aiRecipient({
           provider: model.provider!,
-          baseUrl: model.credential ? baseUrls.get(model.credential.secretId) : undefined,
+          baseUrl,
           use: "model",
         }),
       );

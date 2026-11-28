@@ -1,6 +1,6 @@
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import type { PageComment } from "@rakazo/contracts";
+import type { PageComment, PageDetail } from "@rakazo/contracts";
 import {
   activeBotId,
   captureScreenshot,
@@ -145,6 +145,43 @@ test("a week calendar keeps its days aligned in a desktop two-column page", asyn
   expect(heatmapColors).toHaveLength(2);
   expect(new Set(heatmapColors).size).toBe(2);
   await captureScreenshot(page, testInfo, "page-calendar-two-columns");
+});
+
+test("a reader's ticks and notes stay on the page after it reopens", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await signup(page, `pages-state-${Date.now()}@rakazo.test`, "password12", "Packer");
+  await completeOnboarding(page);
+  const title = "Lisbon packing list";
+  const source = `function Trip() {
+    const [notes, setNotes] = usePageState("notes", "");
+    return <Page title="Lisbon packing list" summary="Four nights, carry-on only.">
+      <Section heading="Documents"><Checklist saveAs="documents" items={[
+        { text: "Passport", done: true },
+        { text: "Boarding pass on phone", meta: "Check in opens Thursday" },
+        { text: "Travel insurance card" }
+      ]} /></Section>
+      <Section heading="Notes"><Input label="Anything else" value={notes} onChange={setNotes} placeholder="Add a note" /></Section>
+    </Page>;
+  }
+  export default Trip;`;
+  await send(page, `call save_page with ${JSON.stringify({ title, source })}\nthen say Done.`);
+  const card = page.getByTestId("page-card");
+  await expect(card).toHaveCount(1, { timeout: 30_000 });
+  await card.getByRole("button", { name: `Open ${title}` }).click();
+  const pageId = new URL(page.url()).searchParams.get("page")!;
+  let frame = pageFrame(page, title);
+  await frame.getByText("Boarding pass on phone").click();
+  await frame.getByLabel("Anything else").fill("Adapter for EU plugs");
+  await expect
+    .poll(async () => (await rpc<PageDetail>(page, "pages/get", { pageId })).readerState)
+    .toEqual({ documents: { "Boarding pass on phone": true }, notes: "Adapter for EU plugs" });
+
+  await page.reload();
+  frame = pageFrame(page, title);
+  await expect(frame.getByRole("checkbox", { name: "Boarding pass on phone" })).toBeChecked();
+  await expect(frame.getByRole("checkbox", { name: "Travel insurance card" })).not.toBeChecked();
+  await expect(frame.getByLabel("Anything else")).toHaveValue("Adapter for EU plugs");
+  await captureScreenshot(page, testInfo, "page-saved-checklist");
 });
 
 test("a day calendar fits a phone-width page while a week calendar scrolls", async ({
@@ -453,6 +490,82 @@ test("shared page contents jump below the header and copy fallback", async ({
   await visitor.close();
 });
 
+test("a page shows the pictures kept with it to its owner and on its shared link", async ({
+  page,
+  browser,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await signup(page, `pages-pictures-${Date.now()}@rakazo.test`, "password12", "Trip Planner");
+  await completeOnboarding(page);
+  const photo = await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1200;
+    canvas.height = 675;
+    const draw = canvas.getContext("2d")!;
+    const sky = draw.createLinearGradient(0, 0, 0, 675);
+    sky.addColorStop(0, "#f4b183");
+    sky.addColorStop(0.55, "#c5d7e8");
+    sky.addColorStop(1, "#2f5d7c");
+    draw.fillStyle = sky;
+    draw.fillRect(0, 0, 1200, 675);
+    draw.fillStyle = "#fbe3a1";
+    draw.beginPath();
+    draw.arc(820, 300, 70, 0, Math.PI * 2);
+    draw.fill();
+    draw.fillStyle = "#1d3b52";
+    draw.fillRect(0, 430, 1200, 245);
+    draw.fillStyle = "#3c4a3e";
+    draw.beginPath();
+    draw.moveTo(0, 440);
+    draw.lineTo(260, 300);
+    draw.lineTo(520, 440);
+    draw.fill();
+    return canvas.toDataURL("image/png").split(",")[1]!;
+  });
+  const file = await rpc<{ id: string }>(page, "artifacts/create", {
+    botId: activeBotId(page),
+    name: "harbour.png",
+    mimeType: "image/png",
+    contentBase64: photo,
+  });
+  const title = "Harbour weekend";
+  const source = `export default function Trip() {
+    return <Page title="Harbour weekend" summary="Two nights by the water.">
+      <Image src="image:harbour" alt="The harbour at dusk" caption="The view from the quay" ratio="16/9" />
+      <CardGrid label="Where to stay">
+        <ProductCard title="Quay Hotel" image="image:harbour" price="$180 a night" note="Sea view" />
+        <ProductCard title="Old Town Inn" price="$120 a night" note="Ten minutes on foot" />
+      </CardGrid>
+    </Page>;
+  }`;
+  await send(
+    page,
+    `call save_page with ${JSON.stringify({ title, source, images: { harbour: file.id } })}\nthen say Done.`,
+  );
+  const card = page.getByTestId("page-card");
+  await expect(card).toHaveCount(1, { timeout: 30_000 });
+  await card.getByRole("button", { name: `Open ${title}` }).click();
+  const picture = pageFrame(page, title).getByRole("img", { name: "The harbour at dusk" });
+  await expect(picture).toHaveAttribute("src", /^data:image\/webp;base64,/);
+  await expect(pageFrame(page, title).getByRole("img", { name: "Quay Hotel" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "page-pictures");
+
+  await page.getByTestId("page-view").getByRole("button", { name: "Share" }).click();
+  const share = page.getByTestId("page-share");
+  await share.getByRole("radio", { name: /Anyone with the link/ }).click();
+  const link = share.getByRole("link", { name: "Open link" });
+  await expect(link).toBeVisible();
+  const visitor = await browser.newContext({ reducedMotion: "reduce" });
+  const outside = await visitor.newPage();
+  await outside.setViewportSize({ width: 1280, height: 860 });
+  await outside.goto((await link.getAttribute("href"))!);
+  await expect(
+    pageFrame(outside, title).getByRole("img", { name: "The harbour at dusk" }),
+  ).toHaveAttribute("src", /^data:image\/webp;base64,/);
+  await captureScreenshot(outside, testInfo, "page-public-pictures");
+  await visitor.close();
+});
+
 test("a bot's page shows in its reply, opens full screen, is shared by link and updates", async ({
   page,
   browser,
@@ -485,13 +598,15 @@ test("a bot's page shows in its reply, opens full screen, is shared by link and 
     pageFrame(page, title).getByRole("heading", { name: "Test dashboard", level: 1 }),
   ).toBeVisible();
   await captureScreenshot(page, testInfo, "page-full-screen");
-  // Opening lands on Close, and Tab reaches the title, Download PDF and Share before anything in
-  // the page.
+  // Opening lands on Close, and Tab reaches the title, Download PDF, Install app and Share before
+  // anything in the page.
   await expect(view.getByRole("button", { name: "Close page" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(view.getByRole("button", { name: title })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(view.getByRole("button", { name: "Download PDF" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(view.getByRole("button", { name: "Install app" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(view.getByRole("button", { name: "Share" })).toBeFocused();
 

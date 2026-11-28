@@ -98,6 +98,7 @@ export const HE_MESSAGES: Record<string, string> = {
   "Almost ready…": "כמעט מוכן…",
   "Rakazo is ready.": "Rakazo מוכן.",
   "{size} downloaded": "הורדו {size}",
+  "{done} of {total}": "{done} מתוך {total}",
   "Connecting…": "מתחבר…",
   "Checking…": "בודק…",
   "Rakazo answered at {url}.": "Rakazo הגיב בכתובת {url}.",
@@ -232,4 +233,14 @@ export const HE_MESSAGES: Record<string, string> = {
   "Restart Rakazo": "הפעלה מחדש של Rakazo",
   "Not Now": "לא עכשיו",
   "Restart Rakazo to finish setup": "הפעילו מחדש את Rakazo כדי להשלים את ההגדרה",
+  // Page apps
+  "Keep on Top": "השאר למעלה",
+  "Open in Rakazo": "פתח ב-Rakazo",
+  "Uninstall…": "הסר התקנה…",
+  "Uninstall {name}?": "להסיר את {name}?",
+  Uninstall: "הסר התקנה",
+  "Allow {name} to ask its bot?": "לאפשר ל-{name} לשאול את הבוט שלו?",
+  "Allow {name} to show notifications?": "לאפשר ל-{name} להציג התראות?",
+  "{name} was removed.": "{name} הוסר.",
+  "Move to Trash": "העבר לפח",
 };

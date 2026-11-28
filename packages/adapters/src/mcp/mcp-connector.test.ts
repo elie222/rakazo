@@ -110,6 +110,8 @@ function mcpFetch(
     ttlMs?: number;
     /** Send `tools/list_changed` ahead of the next tool call's result. */
     announceListChanged?: boolean;
+    /** Custom `tools/call` result payload. */
+    callResult?: Record<string, unknown>;
   },
   expectedUrl = "https://mcp.example.test/mcp",
 ) {
@@ -174,7 +176,7 @@ function mcpFetch(
       const reply = {
         jsonrpc: "2.0",
         id: message.id,
-        result: { content: [{ type: "text", text: "ok" }] },
+        result: state.callResult ?? { content: [{ type: "text", text: "ok" }] },
       };
       if (!state.announceListChanged) return Response.json(reply);
       state.announceListChanged = false;
@@ -705,6 +707,55 @@ describe("MCP connector session cache", () => {
     await connector.close();
   });
 
+  it("uses distinct catalog groups for assigned servers with colliding names", async () => {
+    const first = { ...SERVER, name: "Notion", slug: "slug-a" };
+    const second = { ...first, id: "server-2", slug: "slug-b" };
+    const unavailable = {
+      ...first,
+      id: "server-3",
+      name: "notion",
+      slug: "slug-c",
+      endpoint: "https://mcp.example.test/unavailable",
+    };
+    const unique = { ...first, id: "server-4", name: "Docs", slug: "slug-d" };
+    const healthyFetch = mcpFetch({ failNext: false, initializations: 0 });
+    const connector = new McpConnector(
+      {
+        mcpServer: { findMany: async () => [unavailable, unique] },
+        botMcpServer: {
+          findMany: async () =>
+            [first, second].map((server) => ({ ...ASSIGNMENT, serverId: server.id, server })),
+        },
+      } as never,
+      {} as never,
+      {
+        network: {
+          ...TEST_NETWORK,
+          fetch: async (input, init) =>
+            logicalHref(input, init) === unavailable.endpoint
+              ? new Response("unavailable", { status: 500 })
+              : healthyFetch(input, init),
+        },
+      },
+    );
+    try {
+      const tools = await connector.discoverTools({
+        spaceId: "w1",
+        userId: "u1",
+        botId: "bot-1",
+        signal: new AbortController().signal,
+      } as never);
+      expect(tools.map(({ name, route }) => [name, route?.catalogGroup])).toEqual([
+        ["mcp__slug-a__echo", "Notion (slug-a)"],
+        ["mcp__slug-b__echo", "Notion (slug-b)"],
+        ["mcp__slug-c__unavailable", "notion (slug-c)"],
+        ["mcp__slug-d__echo", "Docs"],
+      ]);
+    } finally {
+      await connector.close();
+    }
+  });
+
   it("exposes 20 MCP tools directly and switches at 21", async () => {
     const context = {
       spaceId: "w1",
@@ -746,6 +797,44 @@ describe("MCP connector session cache", () => {
       }
       await connector.close();
     }
+  });
+
+  it("labels a spilled catalog with the server name when the slug is opaque", async () => {
+    const slug = "integration-aaa231a9";
+    const assignment = { ...ASSIGNMENT, server: { ...SERVER, slug, name: "Docs" } };
+    vi.stubGlobal(
+      "fetch",
+      mcpFetch({
+        failNext: false,
+        initializations: 0,
+        tools: Array.from({ length: DIRECT_TOOL_LIMIT + 1 }, (_, index) => ({
+          name: `tool_${index}`,
+          inputSchema: { type: "object" },
+        })),
+      }),
+    );
+    const connector = new McpConnector(
+      {
+        mcpServer: NO_SHARED_SERVERS,
+        botMcpServer: {
+          findMany: vi.fn().mockResolvedValue([assignment]),
+          findFirst: vi.fn().mockResolvedValue(assignment),
+        },
+      } as never,
+      {} as never,
+      { network: TEST_NETWORK },
+    );
+    const tools = await connector.discoverTools({
+      spaceId: "w1",
+      userId: "u1",
+      botId: "bot-1",
+      signal: new AbortController().signal,
+    } as never);
+    const search = tools.find((tool) => tool.name === "connectors_search_tools");
+    expect(search?.description).toContain("Docs:");
+    expect(search?.description).toContain("sources listed here only");
+    expect(search?.description).not.toContain(slug);
+    await connector.close();
   });
 
   it("records a discovery failure as a failed tool completion", async () => {
@@ -1900,8 +1989,8 @@ describe("MCP connector session cache", () => {
       where: expect.objectContaining({
         enabled: true,
         allBots: true,
-        userId: "u1",
-        assignments: { none: { botId: "bot-1" } },
+        OR: expect.arrayContaining([expect.objectContaining({ userId: "u1" })]),
+        assignments: { none: { botId: "bot-1", spaceId: "w1", userId: "u1" } },
       }),
     });
     const events = [];
@@ -1909,7 +1998,11 @@ describe("MCP connector session cache", () => {
     for await (const event of connector.execute(call, context)) events.push(event);
     expect(events).toMatchObject([{ type: "result" }]);
     expect(prisma.mcpServer.findFirst).toHaveBeenCalledWith({
-      where: expect.objectContaining({ id: "server-1", allBots: true, userId: "u1" }),
+      where: expect.objectContaining({
+        id: "server-1",
+        allBots: true,
+        OR: expect.arrayContaining([expect.objectContaining({ userId: "u1" })]),
+      }),
     });
     expect(state.calls).toEqual(["list_sites"]);
     await connector.close();
@@ -4175,6 +4268,76 @@ it.each([
       [false, undefined],
     ]);
     expect(Boolean(tools[0]?.batch?.outgoingDrafts?.GMAIL_SEND_EMAIL)).toBe(hasDrafts);
+  } finally {
+    await connector.close();
+  }
+});
+
+it("drops a text block that repeats structuredContent while keeping errors intact", async () => {
+  const payload = { id: "page-1", text: "Full page content" };
+  const state = {
+    failNext: false,
+    initializations: 0,
+    callResult: {
+      content: [{ type: "text", text: JSON.stringify(payload) }],
+      structuredContent: payload,
+    } as Record<string, unknown>,
+  };
+  vi.stubGlobal("fetch", mcpFetch(state));
+  const connector = new McpConnector(
+    {
+      mcpServer: NO_SHARED_SERVERS,
+      botMcpServer: {
+        findMany: vi.fn(async () => [ASSIGNMENT]),
+        findFirst: vi.fn(async () => ASSIGNMENT),
+      },
+    } as never,
+    new EncryptedSecretStore("fake-key"),
+    { network: TEST_NETWORK },
+  );
+  const context = {
+    operationId: "test",
+    traceId: "test",
+    spaceId: "w1",
+    userId: "u1",
+    botId: "bot-1",
+    signal: new AbortController().signal,
+  };
+  try {
+    const [tool] = await connector.discoverTools(context);
+    const run = async () => {
+      const events = [];
+      for await (const event of connector.execute(
+        { tool: tool!.name, args: {}, executionId: "call-1", route: tool!.route },
+        context,
+      )) {
+        events.push(event);
+      }
+      return events;
+    };
+
+    expect(await run()).toEqual([
+      {
+        type: "result",
+        data: { content: [], structuredContent: payload },
+      },
+    ]);
+
+    state.callResult = {
+      content: [{ type: "text", text: JSON.stringify(payload) }],
+      structuredContent: payload,
+      isError: true,
+    };
+    expect(await run()).toEqual([
+      {
+        type: "result",
+        data: {
+          content: [{ type: "text", text: JSON.stringify(payload) }],
+          structuredContent: payload,
+          isError: true,
+        },
+      },
+    ]);
   } finally {
     await connector.close();
   }

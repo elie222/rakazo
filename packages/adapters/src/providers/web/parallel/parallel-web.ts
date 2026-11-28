@@ -39,9 +39,10 @@ export type ParallelWebOptions = RemoteTransportDependencies & {
   fetchTimeoutMs?: number;
 };
 
-/** Optional anonymous MCP backend for the existing builtin web tools. */
+/** Optional MCP backend for the existing builtin web tools; keyless unless PARALLEL_API_KEY is set. */
 export class ParallelWebProvider implements WebProvider {
   private readonly sessionKey = resolveEncryptionKey();
+  private readonly apiKey = process.env.PARALLEL_API_KEY?.trim();
 
   constructor(private readonly options: ParallelWebOptions = {}) {}
 
@@ -138,9 +139,11 @@ export class ParallelWebProvider implements WebProvider {
         ]),
       )
       .digest("hex");
+    const headers: Record<string, string> = { "User-Agent": USER_AGENT };
+    if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
     const raw = await withAbort(
       callRemoteMcpTool(
-        { ...this.options, endpoint: ENDPOINT, headers: { "User-Agent": USER_AGENT }, signal },
+        { ...this.options, endpoint: ENDPOINT, headers, signal },
         name,
         { ...args, session_id: sessionId },
         (raw) => {

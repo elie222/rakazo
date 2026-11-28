@@ -2,12 +2,22 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { ORPCError } from "@orpc/client";
 import type { AgentSkill, AgentSkillCatalogEntry, MemoryDocument } from "@rakazo/contracts";
 import { isDeletableMemoryDocument, isEmptyBotMemory } from "@rakazo/contracts";
+import { activeOrganizationForSpace, canShareWithOrganization } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
-import { Badge, Button, SectionHeading, Skeleton, Textarea } from "@rakazo/ui-web";
+import {
+  Badge,
+  Button,
+  Checkbox,
+  Field,
+  FieldLabel,
+  SectionHeading,
+  Skeleton,
+  Textarea,
+} from "@rakazo/ui-web";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@rakazo/ui-web/components/ui/tooltip";
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Plus } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   AvailabilityControl,
   AvailabilityLabel,
@@ -17,6 +27,7 @@ import {
 import { downloadArtifactBytes } from "../../lib/pages/artifact-open";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { useSpaceRpc } from "../../lib/query/space-rpc";
+import { useOrganizations } from "../../lib/spaces/organizations";
 
 const NO_DOCS: MemoryDocument[] = [];
 const NO_SKILLS: AgentSkillCatalogEntry[] = [];
@@ -45,19 +56,17 @@ export function KnowledgeSection({ botId }: { botId: string }) {
 /** The space's shared memory documents, mounted in the Memory settings overlay. */
 export function SpaceMemorySection() {
   return (
-    <section
-      className="rounded-xl border border-border px-4 py-4"
-      data-testid="space-memory-documents"
-    >
-      <SectionHeading variant="heading">
-        <Trans>Shared memory</Trans>
-      </SectionHeading>
-      <p className="mt-1 text-body-sm text-muted-foreground">
-        <Trans>Every bot in this space reads these notes and keeps them up to date.</Trans>
-      </p>
-      <div className="mt-3">
-        <MemoryDocumentList input={{ scope: "user" }} testId="space-memory-list" />
+    <section className="space-y-3" data-testid="space-memory-documents">
+      {/* Inset like the card's rows, so the heading starts where their text does. */}
+      <div className="px-4">
+        <SectionHeading variant="heading">
+          <Trans>Shared memory</Trans>
+        </SectionHeading>
+        <p className="mt-1 text-body-sm text-muted-foreground">
+          <Trans>Every bot in this space reads these notes and keeps them up to date.</Trans>
+        </p>
       </div>
+      <MemoryDocumentList input={{ scope: "user" }} testId="space-memory-list" />
     </section>
   );
 }
@@ -195,7 +204,10 @@ function MemoryDocumentList({
           <Trans>Memory</Trans>
         </SectionHeading>
       ) : null}
-      <div data-testid={testId} className={compact ? "rounded-xl bg-muted/50 p-4" : undefined}>
+      <div
+        data-testid={testId}
+        className={compact ? "rounded-xl bg-muted/50 p-4" : "rounded-xl bg-muted/50 px-4 py-1.5"}
+      >
         {error ? <div className="pb-2 text-body-sm text-destructive">{error}</div> : null}
         {kb > 0 ? (
           <p className="pb-2 text-body-sm text-muted-foreground" data-testid="memory-budget-note">
@@ -233,7 +245,7 @@ function MemoryDocumentList({
                 </Button>
                 <Tooltip>
                   <TooltipTrigger
-                    render={<Button variant="ghost" size="icon-sm" />}
+                    render={<Button variant="ghost" size="icon" />}
                     aria-label={t`Download`}
                     disabled={busy}
                     onClick={() => change.run({ kind: "download", doc })}
@@ -330,6 +342,11 @@ Steps the agent should follow.
 
 /** Your own skills in this space, plus the built-in ones; plugin skills are listed by plugin. */
 export function AgentSkills() {
+  const organizationList = useOrganizations();
+  const canShare = canShareWithOrganization(activeOrganizationForSpace(organizationList));
+  const organizationScopeId = useId();
+  const [forOrganization, setForOrganization] = useState(false);
+
   const rpc = useSpaceRpc();
   const { t } = useLingui();
   const queries = useSpaceQueries();
@@ -384,7 +401,10 @@ export function AgentSkills() {
     setError(null);
     try {
       if (creating) {
-        await rpc.agentSkills.create({ content: draft });
+        await rpc.agentSkills.create({
+          content: draft,
+          ...(forOrganization ? { organization: true } : {}),
+        });
       } else if (open) {
         await rpc.agentSkills.update({ skillId: open.id, content: draft });
       }
@@ -456,7 +476,11 @@ export function AgentSkills() {
                 </span>
                 <span className="flex shrink-0 items-center gap-2">
                   <AvailabilityLabel availability={entry.availability} />
-                  <SkillSourceBadge source={entry.source} />
+                  {entry.organization ? (
+                    <Trans>Organization</Trans>
+                  ) : (
+                    <SkillSourceBadge source={entry.source} />
+                  )}
                 </span>
               </span>
               <span className="mt-0.5 block truncate text-body-sm text-muted-foreground" dir="auto">
@@ -465,6 +489,19 @@ export function AgentSkills() {
             </Button>
           ))
         : null}
+      {creating && (canShare || forOrganization) ? (
+        <Field orientation="horizontal" className="mb-3">
+          <Checkbox
+            id={organizationScopeId}
+            checked={forOrganization}
+            onCheckedChange={setForOrganization}
+            disabled={busy}
+          />
+          <FieldLabel htmlFor={organizationScopeId}>
+            <Trans>Share with organization</Trans>
+          </FieldLabel>
+        </Field>
+      ) : null}
       {editorOpen ? (
         <div className="pb-2">
           {open ? (
@@ -472,8 +509,12 @@ export function AgentSkills() {
               <div className="min-w-0 truncate text-body font-normal text-foreground" dir="auto">
                 {open.name}
               </div>
-              <SkillSourceBadge source={open.source} />
-              {open.source === "user" ? (
+              {open.organization ? (
+                <Trans>Organization</Trans>
+              ) : (
+                <SkillSourceBadge source={open.source} />
+              )}
+              {open.source === "user" && !open.organization ? (
                 <div className="ms-auto">
                   <AvailabilityControl
                     kind="skill"
@@ -565,6 +606,7 @@ export function AgentSkills() {
           onClick={() => {
             selection.current += 1;
             setOpen(null);
+            setForOrganization(false);
             setCreating(true);
             setConfirmingDelete(false);
             setDraft(NEW_SKILL_TEMPLATE);

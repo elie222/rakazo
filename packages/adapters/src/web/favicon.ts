@@ -1,11 +1,11 @@
 import { registrableDomain } from "@rakazo/core/egress";
-import { JSDOM } from "jsdom";
 import { detectImageMimeType } from "../media/image-mime-type.js";
 import type { ResolveHostname } from "../network/network-address.js";
 import { fetchSafeWebBytes } from "./web-ssrf.js";
 
 const PAGE_MAX_BYTES = 256 * 1024;
-const ICON_MAX_BYTES = 64 * 1024;
+/** Many sites declare only a large PNG app icon. MAX_INPUT_PIXELS is what bounds decoding. */
+const ICON_MAX_BYTES = 256 * 1024;
 const FETCH_TIMEOUT_MS = 4_000;
 const MAX_REDIRECTS = 3;
 const ALLOWED_PORTS = [80, 443] as const;
@@ -152,7 +152,9 @@ async function resolveFavicon(
     maxBytes: PAGE_MAX_BYTES,
     truncate: true,
   }).catch(() => undefined);
-  const candidates = page ? iconCandidates(new TextDecoder().decode(page.body), page.url) : [];
+  const candidates = page
+    ? await iconCandidates(new TextDecoder().decode(page.body), page.url)
+    : [];
   // After a redirect to another host (x.com to www.x.com, say), the icon lives where the page
   // ended up. That origin already passed the SSRF checks, and the fallback fetch is checked again.
   const fallback = `${page ? new URL(page.url).origin : origin}/favicon.ico`;
@@ -176,7 +178,8 @@ async function resolveFavicon(
 }
 
 /** Icon URLs a page declares, in document order, apple-touch icons after plain ones. SVG is skipped. */
-export function iconCandidates(html: string, pageUrl: string): string[] {
+export async function iconCandidates(html: string, pageUrl: string): Promise<string[]> {
+  const { JSDOM } = await import("jsdom");
   const icons: string[] = [];
   const touchIcons: string[] = [];
   const document = JSDOM.fragment(html);

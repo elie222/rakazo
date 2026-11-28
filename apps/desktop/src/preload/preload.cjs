@@ -18,6 +18,10 @@ contextBridge.exposeInMainWorld("rakazoDesktop", {
   clipboard: {
     writeText: (text) => ipcRenderer.invoke("desktop.clipboard.write", text),
   },
+  appIcon: {
+    get: () => ipcRenderer.invoke("desktop.appIcon.get"),
+    set: (icon) => ipcRenderer.invoke("desktop.appIcon.set", icon),
+  },
   badge: {
     set: (count) => ipcRenderer.invoke("desktop.badge.set", count),
   },
@@ -68,6 +72,17 @@ contextBridge.exposeInMainWorld("rakazoDesktop", {
             ipcRenderer.on("desktop.speech.event", handler);
             return () => ipcRenderer.off("desktop.speech.event", handler);
           },
+        },
+      }
+    : {}),
+  // Main starts the window with this argument where it can install pages as apps.
+  ...(process.argv.includes("--rakazo-page-apps")
+    ? {
+        pageApps: {
+          install: (input) => ipcRenderer.invoke("desktop.pageApps.install", input),
+          installed: () => ipcRenderer.invoke("desktop.pageApps.installed"),
+          open: (appId) => ipcRenderer.invoke("desktop.pageApps.open", appId),
+          uninstall: (appId) => ipcRenderer.invoke("desktop.pageApps.uninstall", appId),
         },
       }
     : {}),

@@ -27,6 +27,7 @@ import {
   answerWaitingRunWithTextInTransaction,
   appendEventInTransaction,
   clearEndedRunState,
+  connectionIn,
   createGroupRepos,
   createRepos,
   createThreadMessageInTransaction,
@@ -146,8 +147,7 @@ async function resolveOwnedConnectorDisplayNames(
   const rows = await tx.connection.findMany({
     where: {
       id: { in: connectionIds },
-      spaceId: actor.spaceId,
-      userId: actor.userId,
+      ...connectionIn(actor),
       status: "connected",
     },
     select: { id: true, displayName: true },

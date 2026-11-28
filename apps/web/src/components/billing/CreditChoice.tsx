@@ -1,6 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { BillingStatus, ByokInterval } from "@rakazo/contracts";
-import { DEFAULT_MONTHLY_CREDIT_AMOUNT, ModelCreditAmountSchema } from "@rakazo/contracts";
+import type { BillingStatus, ByokInterval, ByokTier } from "@rakazo/contracts";
+import {
+  DEFAULT_MONTHLY_CREDIT_AMOUNT,
+  ModelCreditAmountSchema,
+  SELF_HOST_URL,
+} from "@rakazo/contracts";
 import { formatBillingAmount, formatMonthlyPrice } from "@rakazo/i18n/billing";
 import { bestEffort } from "@rakazo/logging/best-effort";
 import { Button, Card, CardContent, CardFooter, CardHeader } from "@rakazo/ui-web";
@@ -14,7 +18,7 @@ import { rpc } from "../../lib/query/rpc";
 import { AccountMenu } from "../account/AccountMenu";
 import { InfoTooltip } from "../InfoTooltip";
 import type { CreditAmount } from "./PlanControls";
-import { ByokIntervalToggle, CreditAmountSelect } from "./PlanControls";
+import { ByokIntervalToggle, ByokTierSelect, CreditAmountSelect } from "./PlanControls";
 
 /** A checked line on a plan, with more about it behind an info button when it needs it. */
 type PlanFeature = string | { text: string; info: { label: string; text: string } };
@@ -22,6 +26,7 @@ type PlanFeature = string | { text: string; info: { label: string; text: string 
 /** One plan to choose: its name, price, what it includes and the button that picks it. */
 function PlanCard({
   title,
+  titleAction,
   price,
   detail,
   features,
@@ -29,6 +34,8 @@ function PlanCard({
   highlighted = false,
 }: {
   title: ReactNode;
+  /** Beside the title, in a row as tall as a segmented toggle so cards side by side line up. */
+  titleAction?: ReactNode;
   price: ReactNode;
   detail?: ReactNode;
   features: PlanFeature[];
@@ -37,8 +44,9 @@ function PlanCard({
 }) {
   return (
     <Card className={highlighted ? "ring-2 ring-primary" : undefined}>
-      <CardHeader>
+      <CardHeader className="flex min-h-9 flex-wrap items-center justify-between gap-3">
         <h2 className="text-heading3 font-medium">{title}</h2>
+        {titleAction}
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-4">
         {price}
@@ -95,7 +103,14 @@ export function CreditChoice({
   ];
   const trialDays = status.trialDays;
   const [amount, setAmount] = useState<CreditAmount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
-  const [interval, setByokInterval] = useState<ByokInterval>("month");
+  const [chosenInterval, setByokInterval] = useState<ByokInterval>("year");
+  const tiers = status.byokTiers ?? [];
+  const [tier, setTier] = useState<ByokTier>("standard");
+  const offer = tiers.find((candidate) => candidate.tier === tier);
+  const monthlyCents = offer?.monthlyPriceCents ?? status.byokPriceCents;
+  const annualCents = offer ? offer.annualPriceCents : status.byokAnnualPriceCents;
+  // A tier offered monthly only bills monthly whatever was picked before.
+  const interval = annualCents ? chosenInterval : "month";
   const credit = formatBillingAmount(amount, "usd", i18n.locale);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -128,7 +143,7 @@ export function CreditChoice({
   async function choose(ownKey: boolean) {
     setPending(true);
     setError(null);
-    const terms = { interval };
+    const terms = { interval, ...(offer ? { tier } : {}) };
     try {
       if (ownKey && status.byokFreeUntil) {
         go((await client.billing.checkout(terms)).url);
@@ -157,37 +172,67 @@ export function CreditChoice({
       {dismissible ? null : (
         <AccountMenu disabled={pending} signingOut={signingOut} onLogOut={() => void logOut()} />
       )}
-      <h1 className="text-heading1 font-medium">
-        <Trans>Choose how to use Rakazo</Trans>
-      </h1>
-      <div className="grid gap-4 min-[480px]:grid-cols-2">
+      <div className="flex flex-col gap-2">
+        <h1 className="text-heading1 font-medium">
+          <Trans>Choose how to use Rakazo</Trans>
+        </h1>
+        {status.freePeriodEnded ? (
+          <p className="text-body text-muted-foreground">
+            <Trans>
+              Thanks for being an early user. Running Rakazo in the cloud has real costs, so it's
+              now paid. It's still free if you{" "}
+              <a
+                className="whitespace-nowrap underline underline-offset-4 hover:text-foreground"
+                href={SELF_HOST_URL}
+                target="_blank"
+                rel="noreferrer"
+              >
+                self-host
+              </a>
+              .
+            </Trans>
+          </p>
+        ) : null}
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
         <PlanCard
-          title={<Trans>Your subscription or API key</Trans>}
+          title={<Trans>Your own AI</Trans>}
+          titleAction={
+            monthlyCents && annualCents ? (
+              <ByokIntervalToggle
+                monthlyCents={monthlyCents}
+                annualCents={annualCents}
+                value={interval}
+                onChange={setByokInterval}
+              />
+            ) : null
+          }
           price={
-            status.byokPriceCents && status.byokAnnualPriceCents ? (
-              <div className="flex h-12 items-center justify-between gap-3">
-                <MonthlyPrice
-                  cents={
-                    interval === "year"
-                      ? Math.round(status.byokAnnualPriceCents / 12)
-                      : status.byokPriceCents
-                  }
-                />
-                <ByokIntervalToggle
-                  monthlyCents={status.byokPriceCents}
-                  annualCents={status.byokAnnualPriceCents}
-                  value={interval}
-                  onChange={setByokInterval}
-                />
-              </div>
+            tiers.length > 1 ? (
+              <ByokTierSelect
+                wide
+                tiers={tiers}
+                interval={interval}
+                value={tier}
+                disabled={pending}
+                onChange={(next) => setTier(next.tier)}
+              />
             ) : (
-              <p className="flex h-12 items-center text-display font-medium tracking-tight">
-                {status.byokPriceCents ? (
-                  formatMonthlyPrice(status.byokPriceCents, i18n.locale)
+              <div className="flex h-12 items-center">
+                {monthlyCents && annualCents ? (
+                  <MonthlyPrice
+                    cents={interval === "year" ? Math.round(annualCents / 12) : monthlyCents}
+                  />
                 ) : (
-                  <Trans>Free</Trans>
+                  <p className="text-display font-medium tracking-tight">
+                    {monthlyCents ? (
+                      formatMonthlyPrice(monthlyCents, i18n.locale)
+                    ) : (
+                      <Trans>Free</Trans>
+                    )}
+                  </p>
                 )}
-              </p>
+              </div>
             )
           }
           detail={<Trans>Works with your ChatGPT or Claude plan.</Trans>}

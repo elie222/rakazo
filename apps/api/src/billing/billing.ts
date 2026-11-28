@@ -44,6 +44,7 @@ import {
 import { ClientError, retry } from "@rakazo/core";
 import type { BillingAccount, PrismaClient } from "@rakazo/db";
 import {
+  activeFreeByokTier,
   billingAccountForOrganization,
   byokFreeUntil,
   createBillingAccount,
@@ -70,25 +71,28 @@ import {
   unexpiredCreditAccount,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import { applyAccessGrants } from "../auth/access-grants.js";
+import { applyAccessGrants, grantCreditCode } from "../auth/access-grants.js";
 import type { ScheduleLifecycleEmail } from "../email/lifecycle-email.js";
 import {
   byokTierOffers,
   byokTrialAvailable,
+  planAtTier,
   planTerms,
+  renewedPlan,
   subscribedByokPrice,
   subscriptionStarted,
+  yearlyPlan,
 } from "./byok-terms.js";
 import type { UnderLease } from "./checkout-lease.js";
 import { withCheckoutLease } from "./checkout-lease.js";
 import { readCloudComputers, readComputerUsage, saveCloudComputerSize } from "./computer-usage.js";
+import type { CreditCode } from "./credit-codes.js";
 import { createPartnerSales } from "./partner-sales.js";
 import { schedulePlanStartEmails } from "./plan-start-emails.js";
 import { createReferrals } from "./referrals.js";
 import { trialOutcome } from "./trial-outcome.js";
 
 export { TRIAL_DAYS };
-/** An invited organization's first trial. */
 export const INVITED_TRIAL_DAYS = INVITED_TRIAL_WEEKS * 7;
 const PRICE_CACHE_MS = 60 * 60 * 1000;
 
@@ -131,6 +135,7 @@ export interface BillingService {
   switchToYearly(actor: Actor): Promise<void>;
   /** Moves the own-key plan to another tier at the same interval, billing the difference now. */
   changeTier(actor: Actor, tier: ByokTier): Promise<void>;
+  renewTrial(actor: Actor, tier: ByokTier, interval: ByokInterval): Promise<void>;
   /** Re-fetches the customer's subscription and bills the member count if it drifted. */
   sync(customerId: string): Promise<void>;
   /**
@@ -149,6 +154,8 @@ export interface BillingService {
     expectedCustomerId?: string,
   ): Promise<void>;
   claimReferral(actor: Actor, code: string): Promise<void>;
+  /** Owners only: adds a credit code's credits to the organization, once per account. */
+  redeemCreditCode(actor: Actor, code: CreditCode): Promise<void>;
 }
 
 export function createBillingService(deps: {
@@ -169,7 +176,6 @@ export function createBillingService(deps: {
   const { prisma, provider } = deps;
   const appUrl = `${deps.webOrigin}/app`;
   const returnUrl = `${deps.webOrigin}${BILLING_RETURN_PATH}`;
-  /** A mobile checkout returns through the API either way, which hands back to the app. */
   const mobileReturnUrl = `${returnUrl}?client=mobile`;
   const modelCredits = provider.describe().capabilities.modelCredits === true;
   const referrals = createReferrals(deps);
@@ -233,7 +239,6 @@ export function createBillingService(deps: {
     await pull(account.customerId);
   }
 
-  /** Reads the provider's subscription and credit purchases into the account. */
   async function pull(customerId: string): Promise<void> {
     if (modelCredits && provider.listCreditPurchases) {
       const account = await prisma.billingAccount.findUnique({ where: { customerId } });
@@ -567,6 +572,7 @@ export function createBillingService(deps: {
   async function changeByokPlan(
     actor: Actor,
     target: (from: BillingByokPlan) => BillingByokPlan | null,
+    resume = false,
   ) {
     if (!provider.changeByokPlan) throw new ORPCError("NOT_FOUND");
     const { organizationId } = await managedOrganization(actor);
@@ -583,9 +589,11 @@ export function createBillingService(deps: {
         !account?.subscriptionId ||
         !subscribed ||
         account.creditAmountCents ||
-        account.cancelAtPeriodEnd ||
+        account.cancelAtPeriodEnd !== resume ||
         // Paid up: an overdue period must not be credited against the new plan.
-        (account.status !== "active" && account.status !== "trialing")
+        (resume
+          ? account.status !== "trialing"
+          : account.status !== "active" && account.status !== "trialing")
       )
         throw conflict();
       const from = {
@@ -608,6 +616,7 @@ export function createBillingService(deps: {
       const changed = await provider.changeByokPlan!(account.customerId, account.subscriptionId, {
         from,
         to,
+        resume,
       });
       await sync(account.customerId);
       if (!changed) throw conflict();
@@ -746,18 +755,27 @@ export function createBillingService(deps: {
           trialDays(organizationId),
           organizationOwnerHadTrial(prisma, organizationId, "byok"),
         ]);
+        const now = new Date();
+        const subscriptionStatus = account?.status ?? null;
+        const free = activeFreeByokTier(credits, subscriptionStatus, now);
+        const freeAccessUntil = byokFreeUntil(credits, now);
         const freeUntil =
           credits.mode === "byok" &&
           BYOK_TIERS.standard.monthlyPriceCents !== null &&
-          !hasBillingAccess(account?.status ?? null)
-            ? byokFreeUntil(credits)
+          !hasBillingAccess(subscriptionStatus) &&
+          !needsBillingPortal(subscriptionStatus)
+            ? freeAccessUntil
             : null;
+        const access = hasModelAccess(credits, subscriptionStatus, now);
+        const freePeriodEnded =
+          !access && !account?.subscribedAt && credits.byokFreeUntil !== null && !freeAccessUntil;
         const subscribed = subscribedByokPrice(account);
-        const tier = subscribed?.tier ?? "standard";
+        const tier = free?.tier ?? subscribed?.tier ?? "standard";
         const hourMicros = deps.sandbox && sandboxDisplayedHourMicros(deps.sandbox);
         const offers = byokTierOffers(Boolean(sized), hourMicros);
         return {
-          access: hasModelAccess(credits, account?.status ?? null),
+          access,
+          ...(freePeriodEnded && { freePeriodEnded: true as const }),
           funding:
             credits.mode === "byok"
               ? "byok"
@@ -769,8 +787,10 @@ export function createBillingService(deps: {
           creditPurchasesEnabled: deps.managedModelsAvailable ?? true,
           byokPriceCents:
             BYOK_TIERS.standard.monthlyPriceCents &&
-            (subscribed?.cents ?? BYOK_TIERS.standard.monthlyPriceCents),
-          byokInterval: subscribed?.interval ?? "month",
+            (free
+              ? byokTierPriceCents(free.tier, "month")
+              : (subscribed?.cents ?? BYOK_TIERS.standard.monthlyPriceCents)),
+          byokInterval: free ? "month" : (subscribed?.interval ?? "month"),
           byokAnnualPriceCents: byokTierPriceCents(tier, "year"),
           byokTier: tier,
           ...(offers.length ? { byokTiers: offers } : {}),
@@ -907,24 +927,15 @@ export function createBillingService(deps: {
     },
 
     async switchToYearly(actor) {
-      await changeByokPlan(actor, (from) => {
-        const amountCents = byokTierPriceCents(from.tier, "year");
-        // A subscriber on an older, cheaper price would pay more.
-        return from.interval === "month" &&
-          amountCents !== null &&
-          from.amountCents * 12 > amountCents
-          ? { tier: from.tier, interval: "year", amountCents }
-          : null;
-      });
+      await changeByokPlan(actor, yearlyPlan);
     },
 
     async changeTier(actor, tier) {
-      await changeByokPlan(actor, (from) => {
-        const amountCents = byokTierPriceCents(tier, from.interval);
-        return tier !== from.tier && amountCents !== null
-          ? { tier, interval: from.interval, amountCents }
-          : null;
-      });
+      await changeByokPlan(actor, (from) => planAtTier(from, tier));
+    },
+
+    async renewTrial(actor, tier, interval) {
+      await changeByokPlan(actor, (from) => renewedPlan(from, tier, interval), true);
     },
 
     // Each billing event fixes missed seat counts; a failed update fails it, so it is redelivered.
@@ -951,6 +962,16 @@ export function createBillingService(deps: {
     async claimReferral(actor, code) {
       const { organizationId, isOwner } = await organization(actor);
       if (isOwner) await referrals.claim(organizationId, code, actor.userId);
+    },
+
+    async redeemCreditCode(actor, code) {
+      const { organizationId } = await managedOrganization(actor);
+      const credited = await grantCreditCode(prisma, {
+        userId: actor.userId,
+        organizationId,
+        code,
+      });
+      await publishOrganizationChange(prisma, deps.realtime, credited);
     },
 
     async cancelForDeletedUser(userId) {

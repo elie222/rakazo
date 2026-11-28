@@ -7,6 +7,7 @@ import { Button } from "@rakazo/ui-web";
 import { useIsMobile } from "@rakazo/ui-web/hooks/use-mobile";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
+import type { Ref } from "react";
 import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { CallCard } from "../components/call/CallCard";
@@ -15,7 +16,6 @@ import { ComputerUpdateProgress } from "../components/computers/ComputerUpdatePr
 import { PageLoading } from "../components/PageLoading";
 import { PageViewHost } from "../components/pages/PageViewHost";
 import { authClient } from "../lib/auth/auth";
-import { peekBootstrapSeed } from "../lib/bootstrap";
 import { toolActivityPreference } from "../lib/chat/tool-activity-preference";
 import { composerEnterToSendPreference } from "../lib/composer/composer-enter-to-send-pref";
 import { PagesProvider, usePagesForChat } from "../lib/pages/pages";
@@ -23,13 +23,7 @@ import { desktopBridge } from "../lib/platform/desktop";
 import { usePreloadRecoveryState } from "../lib/platform/preload-recovery";
 import { botsSidebarDensityPreference } from "../lib/preferences/bots-sidebar-density-pref";
 import { chatPreferencesQuery, useChatPreferences } from "../lib/preferences/chat-preferences";
-import {
-  lastChatKey,
-  lastChatOf,
-  queryClient,
-  spaceQueries,
-  spaceSeedKey,
-} from "../lib/query/query";
+import { queryClient, spaceQueries } from "../lib/query/query";
 import type { RpcClient } from "../lib/query/rpc";
 import { createSpaceRpc, selectedSpaceId } from "../lib/query/rpc";
 import { SpaceRpcProvider } from "../lib/query/space-rpc";
@@ -69,10 +63,16 @@ import { SnoozedChats } from "./shell/sidebar/snoozed-chats";
 import { useChatSnooze } from "./shell/sidebar/use-chat-snooze";
 import { useMobileSidebar } from "./shell/sidebar/use-mobile-sidebar";
 import { useSidebarExpansion } from "./shell/sidebar/use-sidebar-expansion";
+import { useSidebarScroll } from "./shell/sidebar/use-sidebar-scroll";
 import { useSidebarSearch } from "./shell/sidebar/use-sidebar-search";
 import { useSidebarView } from "./shell/sidebar/use-sidebar-view";
 import { useSnoozeClock } from "./shell/sidebar/use-snooze-clock";
-import { useRosterDrop, useSpaceBootstrap, useSpaceRoster } from "./shell/sidebar/use-space-roster";
+import {
+  useRosterDrop,
+  useSpaceBootstrap,
+  useSpaceRoster,
+  useSpaceRosterSeed,
+} from "./shell/sidebar/use-space-roster";
 import { useSpaceEpoch } from "./shell/space-switch";
 import { TimezonePrompt, withSavedTimezone } from "./shell/timezone-prompt";
 import { useActiveChat } from "./shell/use-active-chat";
@@ -92,12 +92,13 @@ import { useSpaceActions } from "./shell/use-space-actions";
 import { useOpenSpaceChat } from "./shell/use-space-switch";
 
 export function ShellPage() {
-  // A new key per space switch, so nothing from the previous space survives it.
+  // Reset the Space's shell while keeping the scroll position of the shared roster.
   const spaceEpoch = useSpaceEpoch();
-  return <SpaceShell key={spaceEpoch} />;
+  const sidebarScrollRef = useSidebarScroll();
+  return <SpaceShell key={spaceEpoch} sidebarScrollRef={sidebarScrollRef} />;
 }
 
-function SpaceShell() {
+function SpaceShell({ sidebarScrollRef }: { sidebarScrollRef: Ref<HTMLDivElement> }) {
   const { botId, groupId } = useParams();
   const [shellSpaceId] = useState(selectedSpaceId);
   const [rpc] = useState(() => createSpaceRpc(shellSpaceId));
@@ -105,15 +106,7 @@ function SpaceShell() {
   const userId = session.data?.user.id;
   // Held from the first render, so Cmd/Ctrl+N works before the sidebar has data.
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
-  // A revisited space, or the shell reopened from another page, starts from what it showed
-  // last time while its fresh bootstrap loads.
-  const [{ seed, startChat }] = useState(() => {
-    const primed = peekBootstrapSeed(botId);
-    if (primed) return { seed: primed, startChat: undefined };
-    const cached = queryClient.getQueryData(spaceSeedKey(userId ?? null, shellSpaceId));
-    const lastChat = queryClient.getQueryData(lastChatKey(userId ?? null, shellSpaceId));
-    return { seed: cached, startChat: botId || groupId ? undefined : lastChatOf(cached, lastChat) };
-  });
+  const { seed, startChat } = useSpaceRosterSeed(userId ?? null, shellSpaceId, botId, groupId);
   const {
     navigate,
     navigationRevision,
@@ -207,7 +200,6 @@ function SpaceShell() {
     searchQuery: search.query,
     now: snoozeNow,
   });
-
   const { inGroup, routeChat, active, activeGroup, activeBotId, activeGroupId, userBubble } =
     useActiveChat({ botId, groupId, startChat, bots, groups, now: snoozeNow });
   const selectBot = useCallback(
@@ -244,6 +236,7 @@ function SpaceShell() {
       rpc,
       activeBotId,
       activeGroupId,
+      notificationSounds: me?.chatPreferences?.notificationSounds,
       openChat: (alert) => {
         setMobileSidebarOpen(false);
         navigate(alert.groupId ? `/app/g/${alert.groupId}` : `/app/${alert.botId}`);
@@ -655,6 +648,7 @@ function SpaceShell() {
         />
       ) : null}
       <ShellSidebar
+        scrollRef={sidebarScrollRef}
         isMobile={isMobileSidebar}
         mobileOpen={mobileSidebarOpen}
         setMobileOpen={setMobileSidebarOpen}
@@ -920,7 +914,6 @@ function SpaceShell() {
           onConnectedAppsChange={setFooterLogos}
           onOpenBot={(bot) => {
             openCreatedBot(bot);
-            // As after any new bot: the Space's sections and counts come from the server.
             void bestEffort("refresh bots after opening one", refreshBots());
           }}
         />

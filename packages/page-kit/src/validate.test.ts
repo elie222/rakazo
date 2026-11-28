@@ -12,7 +12,11 @@ describe("checkPageSource", () => {
       PAGE_KIT_GUIDE.indexOf("## Example") + "## Example".length,
     );
     // It also carries the viewer code, compiled once here for the save to keep.
-    expect(checkPageSource(example)).toEqual({ ok: true, code: pageViewerCode(example) });
+    expect(checkPageSource(example)).toEqual({
+      ok: true,
+      code: pageViewerCode(example),
+      abilities: [],
+    });
   });
 
   it("documents every component and helper the kit gives a page", () => {
@@ -75,7 +79,7 @@ describe("checkPageSource", () => {
       "const notes = { require: 'sign-off' };\nconst App = () => <Text>{notes.require}</Text>;",
     ],
   ])("accepts %s", (_name, body) => {
-    expect(checkPageSource(page(body))).toEqual({ ok: true, code: expect.any(String) });
+    expect(checkPageSource(page(body))).toMatchObject({ ok: true, code: expect.any(String) });
   });
 
   // Each rejection names the line so the bot can fix the file before the user sees it.
@@ -187,7 +191,7 @@ describe("checkPageSource", () => {
   it("accepts a default export written as an export list, as bundlers emit it", () => {
     expect(
       checkPageSource("const App = () => <Text />;\nexport {\n  App as default\n};\n"),
-    ).toEqual({ ok: true, code: expect.any(String) });
+    ).toEqual({ ok: true, code: expect.any(String), abilities: [] });
   });
 
   it.each([
@@ -218,6 +222,7 @@ describe("checkPageSource", () => {
     expect(result).toEqual({
       ok: true,
       code: expect.any(String),
+      abilities: [],
       warnings: [
         "line 1: &lt; in a JavaScript string shows up literally; write the plain character instead.",
         "line 2: &amp; in a JavaScript string shows up literally; write the plain character instead.",
@@ -226,7 +231,7 @@ describe("checkPageSource", () => {
     // A lone ampersand or an unknown name is ordinary text.
     expect(
       checkPageSource(page("const s = 'R&D &copy; & co';\nconst App = () => <Text>{s}</Text>;")),
-    ).toEqual({ ok: true, code: expect.any(String) });
+    ).toEqual({ ok: true, code: expect.any(String), abilities: [] });
   });
 
   it("warns, without refusing, about icon names the kit does not have and offers close ones", () => {
@@ -238,10 +243,28 @@ describe("checkPageSource", () => {
     expect(result).toEqual({
       ok: true,
       code: expect.any(String),
+      abilities: [],
       warnings: [
         'line 1: no kit icon is named "airplane", and an unknown icon draws nothing. Did you mean "plane"?',
         'line 3: no kit icon is named "alert-triangle", and an unknown icon draws nothing. Did you mean "triangle-alert", "circle-alert"?',
         'line 4: no kit icon is named "HomeSweet", and an unknown icon draws nothing. Pick one from the icon list in the guide.',
+      ],
+    });
+  });
+
+  it("warns when a plain element loads an image: name only kit components resolve", () => {
+    const result = checkPageSource(
+      page(
+        'const App = () => <Page title="t">\n<img src="image:harbour" alt="image: harbour" />\n<img src={"image:quay"} />\n<Image src="image:harbour" />\n</Page>;',
+      ),
+    );
+    expect(result).toEqual({
+      ok: true,
+      code: expect.any(String),
+      abilities: [],
+      warnings: [
+        'line 2: <img> does not load "image:harbour"; only kit components resolve image: names, so use <Image src="image:harbour" />.',
+        'line 3: <img> does not load "image:quay"; only kit components resolve image: names, so use <Image src="image:quay" />.',
       ],
     });
   });
@@ -253,7 +276,7 @@ describe("checkPageSource", () => {
           'const Badge = ({ icon }) => <b>{icon}</b>;\nconst Icon = ({ name }) => <i>{name}</i>;\nconst App = () => <><Badge icon="logo" /><Icon name="logo" /></>;',
         ),
       ),
-    ).toEqual({ ok: true, code: expect.any(String) });
+    ).toEqual({ ok: true, code: expect.any(String), abilities: [] });
   });
 
   it("rejects a component named like a kit component that uses that component inside itself", () => {
@@ -279,7 +302,7 @@ describe("checkPageSource", () => {
           "function Steps({ step }) { return <svg><rect width={step} /></svg>; }\nfunction copyText(t) { return t; }\nconst App = () => <Page title='t'><Steps step={2} /></Page>;",
         ),
       ),
-    ).toEqual({ ok: true, code: expect.any(String) });
+    ).toEqual({ ok: true, code: expect.any(String), abilities: [] });
   });
 
   it.each([
@@ -291,7 +314,7 @@ describe("checkPageSource", () => {
       checkPageSource(
         `function Status() { return <Text>Ready</Text>; }\nexport default ${exported};`,
       ),
-    ).toEqual({ ok: true, code: expect.any(String) });
+    ).toEqual({ ok: true, code: expect.any(String), abilities: [] });
   });
 
   it("still rejects a recursive helper before an anonymous default export", () => {
@@ -316,6 +339,32 @@ describe("checkPageSource", () => {
     // Fewer characters than the limit, but two bytes each.
     expect(errors("é".repeat(Math.ceil((room + 1) / 2)))[0]).toMatch(/^The page is 26214\d bytes;/);
   });
+  it("reports the abilities a page's source uses, counting a namespace import of the kit as all", () => {
+    const abilities = (body: string) => {
+      const result = checkPageSource(page(body));
+      return result.ok ? result.abilities : result.errors;
+    };
+    expect(
+      abilities(
+        "const App = () => <Button label='Ask' onClick={() => askBot('Next?').then(() => notify('Done'))} />;",
+      ),
+    ).toEqual(["ask", "notify"]);
+    expect(
+      abilities(
+        "import { askBot as ask } from 'rakazo/page';\nconst App = () => <Button label='Ask' onClick={() => ask('x')} />;",
+      ),
+    ).toEqual(["ask"]);
+    // An escaped name still reaches the helper.
+    expect(
+      abilities("const App = () => <Button label='Ask' onClick={() => ask\\u0042ot('x')} />;"),
+    ).toEqual(["ask"]);
+    expect(
+      abilities(
+        "import * as Kit from 'rakazo/page';\nconst App = () => <Kit.Text>askBot</Kit.Text>;",
+      ),
+    ).toEqual(["ask", "notify"]);
+  });
+
   it("accepts every runtime helper by name and rejects an import the kit does not have", () => {
     for (const name of PAGE_HELPERS)
       expect(
@@ -354,7 +403,7 @@ describe("checkPageSource", () => {
     </Page>
   );
 }`;
-    expect(checkPageSource(source)).toEqual({ ok: true, code: expect.any(String) });
+    expect(checkPageSource(source)).toEqual({ ok: true, code: expect.any(String), abilities: [] });
   });
   describe("a hook called outside a component", () => {
     it("rejects a hook at the top level of the file, which crashes the viewer", () => {
@@ -403,7 +452,7 @@ describe("checkPageSource", () => {
         checkPageSource(
           "export default function App() { const t = useTheme(); return <Text>{t.text.primary}</Text>; }\n",
         ),
-      ).toEqual({ ok: true, code: expect.any(String) });
+      ).toEqual({ ok: true, code: expect.any(String), abilities: [] });
     });
 
     it("accepts a hook inside a component written as an arrow", () => {
@@ -411,7 +460,7 @@ describe("checkPageSource", () => {
         checkPageSource(
           "const App = () => { const [v] = useState(1); return <Text>{v}</Text>; };\nexport default App;\n",
         ),
-      ).toEqual({ ok: true, code: expect.any(String) });
+      ).toEqual({ ok: true, code: expect.any(String), abilities: [] });
     });
 
     it("accepts a hook inside a nested function", () => {
@@ -419,7 +468,7 @@ describe("checkPageSource", () => {
         checkPageSource(
           "function inner() { const t = useTheme(); return t; }\nfunction App() { return <Text>{inner().text.primary}</Text>; }\nexport default App;\n",
         ),
-      ).toEqual({ ok: true, code: expect.any(String) });
+      ).toEqual({ ok: true, code: expect.any(String), abilities: [] });
     });
 
     it("accepts a hook that is referenced but not called", () => {
@@ -427,7 +476,7 @@ describe("checkPageSource", () => {
         checkPageSource(
           "const f = useTheme;\nexport default function App() { return <Text>{f().text.primary}</Text>; }\n",
         ),
-      ).toEqual({ ok: true, code: expect.any(String) });
+      ).toEqual({ ok: true, code: expect.any(String), abilities: [] });
     });
 
     it("accepts a hook used as a property of something else", () => {
@@ -435,7 +484,7 @@ describe("checkPageSource", () => {
         checkPageSource(
           "const helpers = { useTheme };\nexport default function App() { return <Text>{helpers.useTheme().text.primary}</Text>; }\n",
         ),
-      ).toEqual({ ok: true, code: expect.any(String) });
+      ).toEqual({ ok: true, code: expect.any(String), abilities: [] });
     });
 
     it("accepts an ordinary function called at the top level of the file", () => {
@@ -443,7 +492,7 @@ describe("checkPageSource", () => {
         checkPageSource(
           "const total = sum([1, 2, 3]);\nexport default function App() { return <Text>{total}</Text>; }\n",
         ),
-      ).toEqual({ ok: true, code: expect.any(String) });
+      ).toEqual({ ok: true, code: expect.any(String), abilities: [] });
     });
 
     it("accepts a page that keeps its own hook, so the name is not React's", () => {
@@ -451,7 +500,7 @@ describe("checkPageSource", () => {
         checkPageSource(
           "function useTotal() { return 3; }\nconst total = useTotal();\nexport default function App() { return <Text>{total}</Text>; }\n",
         ),
-      ).toEqual({ ok: true, code: expect.any(String) });
+      ).toEqual({ ok: true, code: expect.any(String), abilities: [] });
     });
   });
 });

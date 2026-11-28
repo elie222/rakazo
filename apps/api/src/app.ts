@@ -118,12 +118,14 @@ import { isTrustedOrigin, mobileAuthOrigins } from "./auth/trusted-origins.js";
 import { mountUserDeviceRoutes } from "./auth/user-devices.js";
 import { createBillingService } from "./billing/billing.js";
 import { mountBillingRoutes } from "./billing/billing-webhook.js";
+import { mountBotAccess } from "./bot-access/public-api-routes.js";
 import { createSpeechSummarizer } from "./calls/speech-summary.js";
 import { mountVoiceHttpRoutes } from "./calls/voice.js";
 import { homeRetentionSweep } from "./computers/home-retention.js";
 import { localSignupAdmitter, mountLocalComputerHost } from "./computers/local-settings.js";
 import { mountScreenTarget } from "./computers/screen-proxy.js";
 import { storeInboundAttachment } from "./content/artifacts.js";
+import { mountPageAppRoutes } from "./content/page-app-routes.js";
 import { mountSharedPages } from "./content/shared-pages.js";
 import { apiEmail, emailErrorLogger } from "./email/email.js";
 import { mountEmailInboundRoute } from "./email/email-inbound.js";
@@ -133,6 +135,7 @@ import { sendReferralEmails } from "./email/referral-email.js";
 import type { AppEnv } from "./env.js";
 import { loadEnv, withEnvOverrides } from "./env.js";
 import { mountAppAssociation } from "./http/app-association.js";
+import type { AppLifecycle } from "./http/app-lifecycle.js";
 import {
   clientIpMiddleware,
   createClientIpResolver,
@@ -155,8 +158,10 @@ import { mountMeetingWebhook } from "./meetings/meeting-routes.js";
 import { startMessagingRuntime } from "./messaging/messaging-runtime.js";
 import { settleWithTimeout } from "./messaging/team-chat-startup.js";
 import { recordSignInEnded } from "./models/model-connect-analytics.js";
+import type { RouterDeps } from "./router.js";
 import { createRouter, routerEnv } from "./router.js";
 import { handleHttpError } from "./rpc-errors.js";
+import { organizationLoginBrowser } from "./spaces/organization-login-browser.js";
 import type { SpaceDeletionDeps } from "./spaces/space-deletion.js";
 import { afterSpaceDeparture } from "./spaces/space-departure.js";
 import { cspReportRoutes } from "./telemetry/csp-report.js";
@@ -166,7 +171,7 @@ import { mountWebhookHttpRoutes } from "./webhooks/webhook.js";
 // A stop that hands runs back is allowed 30 seconds before the process is killed.
 const REQUEST_DRAIN_MS = 20_000;
 
-export interface AppHandles {
+export interface AppHandles extends AppLifecycle {
   app: Hono;
   prisma: PrismaClient;
   jobs: JobPublisher;
@@ -178,17 +183,6 @@ export interface AppHandles {
   notifications: NotificationProvider;
   executor: ReturnType<typeof createRunExecutor>;
   runtime: AgentRuntime;
-  awaitIdle?: () => Promise<void>;
-  backgroundFailures?: () => Array<{ name: string; count: number }>;
-  /** Node `upgrade` listener for desktop device sockets; absent when the feature is off. */
-  handleUpgrade?: UserDeviceHub["handleUpgrade"];
-  /**
-   * Stops this process. With `letRunsFinish`, the runs it is executing first end their turn, for
-   * up to RUN_DRAIN_MS, while it claims nothing new; otherwise, or when a later stop arrives
-   * without it, they are handed back at once. Either way, new runs stop at once; the rest waits
-   * for `connectionsClosed`, which settles once the server has stopped taking requests.
-   */
-  stop: (options?: { letRunsFinish?: boolean; connectionsClosed?: Promise<void> }) => Promise<void>;
 }
 
 // Startup and everything it schedules (pollers, team chat, the in-memory job
@@ -631,6 +625,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       : undefined;
 
   // Self-hosted deployments without billing keep every saved home.
+  const onRetentionError = emailErrorLogger("saved home retention failed");
   const stopHomeRetention =
     email && billing && home instanceof ObjectAgentHomeStore
       ? startHourlySweep(
@@ -639,18 +634,20 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
             email,
             appUrl: new URL("/app", env.webOrigin).href,
             syncBilling: (customerId) => billing.sync(customerId),
-            onError: (error) => getLogger().error("saved home retention failed", error),
+            onError: onRetentionError,
           }),
-          (error) => getLogger().error("saved home retention failed", error),
+          onRetentionError,
         )
       : undefined;
 
   const stopOrganizationDeletions = startHourlySweep(
-    finishStalledOrganizationDeletions({ ...spaceDeletionDeps, billing }),
+    finishStalledOrganizationDeletions({
+      ...spaceDeletionDeps,
+      billing,
+      connectors: stack.connector,
+    }),
     (error) => getLogger().error("stalled organization deletion failed", error),
   );
-
-  // Meeting requests use a runtime with no persistent session recording.
   const meetingRuntime = new PiAgentRuntime();
   const meetingMedia =
     meetingMediaConfig &&
@@ -667,7 +664,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       enabled: (spaceId) => meetings.enabled(spaceId),
     });
 
-  const router = createRouter({
+  const routerDeps: RouterDeps = {
+    organizationLoginBrowser: await organizationLoginBrowser(env.encryptionKey),
     // Only computers people paired: nothing clears a routine's "Use my computer" when this
     // server's own screen is turned off and on again.
     userDevices: userDevicesOverride ?? userDevices,
@@ -739,7 +737,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       openSignup: env.messagingOpenSignup,
     },
     env: routerEnv(env),
-  });
+  };
+  const router = createRouter(routerDeps);
   const app = new Hono();
   app.onError(handleHttpError);
   const inFlight = trackInFlightRequests();
@@ -806,7 +805,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   mountApiRequestBodyLimits(app);
   mountScreenTarget(app, prisma, env.screenProxySecret);
   mountScriptAssets(app);
-  mountSharedPages(app, prisma, requestClientIp);
+  mountSharedPages(app, { prisma, artifacts }, requestClientIp);
+  mountPageAppRoutes(app, { ...routerDeps, sessionActor }, requestClientIp);
   const auditAuthResponse = createAuthResponseAudit();
   for (const [path, reason] of SYSTEM_CONTEXT_PATHS) {
     app.use(path, (_c, next) => runAsSystem(reason, next));
@@ -866,9 +866,10 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     });
   }
   mountRpcRoute(app, router, requestSession, env);
+  mountBotAccess(app, { prisma, auth, router, jobs, encryptionKey: env.encryptionKey });
   mountAccountExportRoute(app, { prisma, auth, artifacts, home });
   mountAuditExportRoute(app, { prisma, sessionActor });
-  mountVoiceHttpRoutes(app, { prisma, secrets, env }, (c) => sessionActor(c.req.raw));
+  mountVoiceHttpRoutes(app, { prisma, secrets, env }, (c) => sessionActor(c.req.raw), env);
   mountAccountImportRoute(
     app,
     { ...spaceDeletionDeps, maxArtifactBytes: env.maxUploadSizeBytes },

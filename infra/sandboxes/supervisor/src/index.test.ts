@@ -53,6 +53,7 @@ import {
   releaseAssignedScreen,
   removeOwnedComputer,
   resetManagedScreensCommand,
+  retryFailedScreenTeardown,
   SCREEN_REUSE_MS,
   sandboxCommandTimedOut,
   sandboxTimeoutCommand,
@@ -850,7 +851,7 @@ describe("sandbox supervisor input containment", () => {
   });
 
   it.each([false, true])(
-    "retains a screen slot when teardown fails (retainBrowser=%s)",
+    "retains a screen slot when teardown fails and frees it once the stop is retried (retainBrowser=%s)",
     async (retainBrowser) => {
       const assigned = new Map<string, ScreenAssignment>();
       expect(nextScreenIndex(assigned, "writer")).toBe(0);
@@ -869,10 +870,22 @@ describe("sandbox supervisor input containment", () => {
         ),
       ).rejects.toThrow("browser still running");
 
-      expect(assigned.get("writer")).toEqual({ index: 0, releasing: true });
-      expect(() => nextScreenIndex(assigned, "writer")).toThrow(/still being released/);
+      expect(assigned.get("writer")).toEqual({
+        index: 0,
+        releasing: true,
+        idleAt: expect.any(Number),
+      });
       expect(nextScreenIndex(assigned, "researcher")).toBe(1);
       expect(releaseAssignedScreen(assigned, "writer")).toBe(0);
+
+      const stopped: number[] = [];
+      await retryFailedScreenTeardown(assigned, "writer", undefined, async (index) => {
+        stopped.push(index);
+        return { code: 0, stderr: "" };
+      });
+      expect(stopped).toEqual([0]);
+      expect(assigned.get("writer")).toBeUndefined();
+      expect(nextScreenIndex(assigned, "writer")).toBe(0);
     },
   );
 
@@ -917,7 +930,7 @@ describe("sandbox supervisor input containment", () => {
     expect(nextScreenIndex(assigned, "writer")).toBe(0);
     // The container died mid-release (e.g. OOM kill): the slot is stuck releasing.
     expect(releaseAssignedScreen(assigned, "writer")).toBe(0);
-    expect(() => nextScreenIndex(assigned, "writer")).toThrow(/still being released/);
+    expect(assigned.get("writer")?.releasing).toBe(true);
 
     expect(currentComputerScreens(registry, boots, containerId, "2026-10-11T18:00:00.000Z")).toBe(
       assigned,
@@ -1009,6 +1022,19 @@ describe("sandbox supervisor input containment", () => {
     );
     expect(releaseAssignedScreen(assigned, "writer", "run-1:1")).toBeUndefined();
     expect(releaseAssignedScreen(assigned, "writer", "run-2:2")).toBe(0);
+  });
+
+  it("does not retry a failed teardown for an older lease", async () => {
+    const assigned = new Map<string, ScreenAssignment>();
+    expect(nextScreenIndex(assigned, "writer", "run-2:2")).toBe(0);
+    expect(releaseAssignedScreen(assigned, "writer", "run-2:2")).toBe(0);
+    const stop = vi.fn(async () => ({ code: 0, stderr: "" }));
+
+    await expect(retryFailedScreenTeardown(assigned, "writer", "run-1:1", stop)).rejects.toThrow(
+      /owned by a newer execution/,
+    );
+    expect(stop).not.toHaveBeenCalled();
+    expect(assigned.get("writer")).toEqual({ index: 0, leaseId: "run-2:2", releasing: true });
   });
 
   it("does not let a closing viewer release a screen claimed by a run", () => {

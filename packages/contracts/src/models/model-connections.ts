@@ -404,6 +404,23 @@ export const ModelConnectInputSchema = z
   });
 export type ModelConnectInput = z.infer<typeof ModelConnectInputSchema>;
 
+export const ORGANIZATION_MODEL_API_KEY_MIN_LENGTH = 8;
+
+export const OrganizationModelConnectInputSchema = ModelConnectInputSchema.safeExtend({
+  apiKey: z.string().trim().min(ORGANIZATION_MODEL_API_KEY_MIN_LENGTH),
+  modelId: z.string().trim().min(1).max(512),
+  label: ModelConnectionLabelSchema,
+  credentialId: z.never().optional(),
+});
+
+export type OrganizationModelConnectInput = z.input<typeof OrganizationModelConnectInputSchema>;
+
+export function organizationModelProviders<T extends { id: string; baseUrl?: string }>(
+  providers: readonly T[],
+): T[] {
+  return providers.filter((provider) => !provider.baseUrl);
+}
+
 export const ModelOAuthSignInModeSchema = z.enum(["device-code", "auth-url"]);
 export type ModelOAuthSignInMode = z.infer<typeof ModelOAuthSignInModeSchema>;
 

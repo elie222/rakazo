@@ -96,6 +96,7 @@ export const TH_MESSAGES: Record<string, string> = {
   "Almost ready…": "เกือบเสร็จแล้ว…",
   "Rakazo is ready.": "Rakazo พร้อมใช้งานแล้ว",
   "{size} downloaded": "ดาวน์โหลดแล้ว {size}",
+  "{done} of {total}": "{done} จาก {total}",
   "Connecting…": "กำลังเชื่อมต่อ…",
   "Checking…": "กำลังตรวจสอบ…",
   "Rakazo answered at {url}.": "Rakazo ตอบกลับที่ {url}",
@@ -224,4 +225,14 @@ export const TH_MESSAGES: Record<string, string> = {
   "Restart Rakazo": "เริ่ม Rakazo ใหม่",
   "Not Now": "ไว้ก่อน",
   "Restart Rakazo to finish setup": "เริ่ม Rakazo ใหม่เพื่อตั้งค่าให้เสร็จ",
+  // Page apps
+  "Keep on Top": "อยู่ด้านบนเสมอ",
+  "Open in Rakazo": "เปิดใน Rakazo",
+  "Uninstall…": "ถอนการติดตั้ง…",
+  "Uninstall {name}?": "ถอนการติดตั้ง {name} หรือไม่",
+  Uninstall: "ถอนการติดตั้ง",
+  "Allow {name} to ask its bot?": "อนุญาตให้ {name} ถามบอทของตนหรือไม่",
+  "Allow {name} to show notifications?": "อนุญาตให้ {name} แสดงการแจ้งเตือนหรือไม่",
+  "{name} was removed.": "{name} ถูกลบแล้ว",
+  "Move to Trash": "ย้ายไปที่ถังขยะ",
 };

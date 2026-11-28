@@ -5,6 +5,7 @@ import {
   BACKGROUND_HELPER_TRIGGER,
   chatAppConnectNote,
   HELPER_RESULT_TRIGGER,
+  isAppConnectionFollowUp,
   isCallClientNonce,
   isOwnerStartedRun,
   messagingChannelPrivacyBlock,
@@ -31,7 +32,10 @@ import { teamWorkspaceInstruction } from "../../computers/screens/computer-suppo
 import type { RunMediaSources } from "../../media/media-sources.js";
 import { approvedModelCreditOffering } from "../../model-credits/offerings.js";
 import { resolveDeploymentModel } from "../../models/deployment-model.js";
-import { selectConfiguredModel } from "../../models/model-roles.js";
+import {
+  ORGANIZATION_MODEL_CONNECTION_PREFIX,
+  selectConfiguredModel,
+} from "../../models/model-roles.js";
 import {
   findConnectedModelCredential,
   PINNED_PROVIDER_NOT_CONNECTED,
@@ -177,6 +181,9 @@ export async function startTurnModel(
     { settings, deployment: runDeployment },
     scripted,
     registerRunSecrets,
+    (pinnedComputerModels?.main.connectionId ?? selected.connectionId)?.startsWith(
+      ORGANIZATION_MODEL_CONNECTION_PREFIX,
+    ),
   );
   const started = await startRunModel(
     deps,
@@ -515,7 +522,9 @@ export async function resolveRunCapabilities(
         })
       : null;
   // Calls carry no schema flag: the sending client encodes them in the clientNonce.
-  const sourceClientNonce = sourceMessage?.clientNonce ?? null;
+  const sourceClientNonce = isAppConnectionFollowUp(run)
+    ? null
+    : (sourceMessage?.clientNonce ?? null);
   // A follow-up can be queued by a bot (group handoffs); only the user's own counts.
   const ownerStartedRun = isOwnerStartedRun(
     conversationRun.trigger,

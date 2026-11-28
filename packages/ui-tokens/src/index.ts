@@ -202,7 +202,7 @@ export const webDarkOverrides = {
   primaryHover: "#DBDBDB",
   primaryDisabled: "#F5F5F521",
   primaryForeground: "#121212",
-  secondary: "#F5F5F50A",
+  secondary: "#F5F5F514",
   secondaryForeground: "#F5F5F5",
   chatUser: "#3E3E3E",
   chatUserForeground: "#F5F5F5",
@@ -418,6 +418,26 @@ export const botColors = [
   "#F2622A",
   "#D9508A",
 ] as const;
+
+/**
+ * The gradient behind an installed page app's icon, top to bottom, by the color the bot chose.
+ * Keys match `PAGE_ICON_COLORS` in the contracts.
+ */
+export const pageAppIconGradients = {
+  blue: ["#60A5FA", "#2563EB"],
+  indigo: ["#818CF8", "#4F46E5"],
+  purple: ["#C084FC", "#7C3AED"],
+  pink: ["#F472B6", "#DB2777"],
+  red: ["#F87171", "#DC2626"],
+  orange: ["#FB923C", "#EA580C"],
+  yellow: ["#FCD34D", "#D97706"],
+  green: ["#34D399", "#059669"],
+  teal: ["#2DD4BF", "#0D9488"],
+  gray: ["#9CA3AF", "#4B5563"],
+} as const satisfies Record<string, readonly [string, string]>;
+
+/** The page glyph on every app icon plate. */
+export const pageAppIconGlyph = "#FFFFFF";
 
 export function isAppearancePreference(
   value: string | null | undefined,

@@ -32,6 +32,7 @@ const usageTimezoneAliases = new Map([
   ["asia/calcutta", "Asia/Kolkata"],
   ["asia/rangoon", "Asia/Yangon"],
   ["asia/saigon", "Asia/Ho_Chi_Minh"],
+  ["europe/kiev", "Europe/Kyiv"],
 ]);
 
 /** Images and videos made on a member's own key. They count no tokens, so token totals skip them. */

@@ -23,6 +23,7 @@ function server(overrides: Partial<DiagnosticsServer> = {}): DiagnosticsServer {
     id: "server_private_1",
     spaceId: "space_private_1",
     userId: "user_private_1",
+    organizationId: null,
     transport: "stdio",
     enabled: true,
     allSpaces: false,

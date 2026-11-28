@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import type { ThreadSnapshot } from "@rakazo/contracts";
 import {
   activeBotId,
   captureScreenshot,
@@ -30,8 +31,27 @@ test("a bot connects an app inline in a normal chat", async ({ page }, testInfo)
     );
     await captureScreenshot(page, testInfo, `web-pending-${theme}`);
   }
+  const before = await rpc<ThreadSnapshot>(page, "threads/get", { botId });
+  const originRun = before.messages.find((message) =>
+    message.blocks.some((block) => block.kind === "app_connect" && block.status === "pending"),
+  )?.runId;
+  expect(originRun).toBeTruthy();
   await card.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(card.getByText("Connected", { exact: true })).toBeVisible();
+  const beforeIds = new Set(before.messages.map((message) => message.id));
+  await expect
+    .poll(async () => {
+      const after = await rpc<ThreadSnapshot>(page, "threads/get", { botId });
+      return after.messages.some(
+        (message) =>
+          !beforeIds.has(message.id) &&
+          message.role === "bot" &&
+          message.runId &&
+          message.runId !== originRun &&
+          message.blocks.some((block) => block.kind === "text"),
+      );
+    })
+    .toBe(true);
   await page.reload();
   await expect(card.getByText("Connected", { exact: true })).toBeVisible();
   for (const theme of ["light", "dark"]) {
@@ -43,9 +63,8 @@ test("a bot connects an app inline in a normal chat", async ({ page }, testInfo)
   }
 });
 
-test("a group card authorizes in its own thread without duplicate pending cards", async ({
-  page,
-}, testInfo) => {
+test("one group sign-in resolves both bots' requests", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
   await signup(page, `group-connect-${Date.now()}@rakazo.test`, "password12", "Sample");
   await completeOnboarding(page);
   const firstBotId = activeBotId(page);
@@ -58,12 +77,38 @@ test("a group card authorizes in its own thread without duplicate pending cards"
   await page.getByRole("combobox", { name: "Message Team" }).fill("Can you check my Gmail inbox?");
   await page.keyboard.press("Enter");
   const card = page.getByRole("group", { name: "Gmail connection", exact: true });
-  await expect(card).toHaveCount(1);
-  await expect(card.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
+  await expect(card).toHaveCount(2);
+  await expect(card.first().getByRole("button", { name: "Connect", exact: true })).toBeVisible();
+  const before = await rpc<ThreadSnapshot>(page, "threads/get", { groupId: group.id });
+  const requests = new Set(
+    before.messages
+      .filter((message) => message.blocks.some((block) => block.kind === "app_connect"))
+      .map((message) => message.runId),
+  );
   await captureScreenshot(page, testInfo, "group-app-connect-pending");
-  await card.getByRole("button", { name: "Connect", exact: true }).click();
-  await expect(card.getByText("Connected", { exact: true })).toBeVisible();
+  await card.first().getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(card.getByText("Connected", { exact: true })).toHaveCount(2);
+  const beforeIds = new Set(before.messages.map((message) => message.id));
+  await expect
+    .poll(async () => {
+      const after = await rpc<ThreadSnapshot>(page, "threads/get", { groupId: group.id });
+      return [
+        ...new Set(
+          after.messages
+            .filter(
+              (message) =>
+                !beforeIds.has(message.id) &&
+                message.role === "bot" &&
+                message.runId &&
+                !requests.has(message.runId) &&
+                message.blocks.some((block) => block.kind === "text"),
+            )
+            .map((message) => message.botId),
+        ),
+      ].sort();
+    })
+    .toEqual([firstBotId, peerId].sort());
   await page.reload();
-  await expect(card.getByText("Connected", { exact: true })).toBeVisible();
+  await expect(card.getByText("Connected", { exact: true })).toHaveCount(2);
   await captureScreenshot(page, testInfo, "group-app-connect-connected");
 });

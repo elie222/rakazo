@@ -93,10 +93,18 @@ export const billingRpc = {
     switchToYearly: oc.output(BillingStatusSchema),
     /** Owners only: moves the own-key plan to another tier at the same interval, billing the difference now. */
     changeTier: oc.input(z.object({ tier: ByokTierSchema })).output(BillingStatusSchema),
+    /** Owners only: keeps a trial that was set to cancel, on the chosen own-key plan, billed when the trial ends. */
+    renewTrial: oc
+      .input(z.object({ tier: ByokTierSchema, interval: ByokIntervalSchema }))
+      .output(BillingStatusSchema),
     /** Records who invited this organization; ignored once it has subscribed. */
     claimReferral: oc
       .input(z.object({ code: z.string().min(1).max(64) }))
       .output(z.object({ ok: z.literal(true) })),
+    /** Owners only: adds a credit code's credits to the organization, once per account. */
+    redeemCreditCode: oc
+      .input(z.object({ code: z.string().trim().min(1).max(64) }))
+      .output(z.object({ creditCents: z.number().int().positive() })),
   },
   /** Admins only, on deployments that sell model credits. */
   accessGrants: {

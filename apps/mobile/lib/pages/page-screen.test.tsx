@@ -11,6 +11,7 @@ const host = vi.hoisted(() => ({
   message: undefined as ((data: string, answer: (message: object) => void) => void) | undefined,
   copied: [] as string[],
   opened: [] as string[],
+  asked: [] as string[],
   t: (text: string) => text,
   routes: [] as { name: string; params?: object }[],
   went: [] as unknown[],
@@ -28,6 +29,7 @@ const host = vi.hoisted(() => ({
     code: "",
     botId: "bot-1" as string | null,
     groupId: null as string | null,
+    abilities: ["ask"],
   },
 }));
 
@@ -93,6 +95,7 @@ vi.mock("../../components/media/sandboxed-html-preview", () => ({
 }));
 vi.mock("../api/api", () => ({
   currentApiBase: () => "https://app.example",
+  selectedSpaceId: () => "space-1",
   captureApiRequestContext: async () => ({
     apiBase: "https://app.example",
     sessionGeneration: 0,
@@ -149,6 +152,12 @@ vi.mock("./page-review-comments", () => ({
   },
 }));
 vi.mock("./page-runtime", () => ({ loadPageRuntime: async () => "" }));
+vi.mock("./page-ask", () => ({
+  askPageBot: async (_page: unknown, text: string) => {
+    host.asked.push(text);
+    return "Step two";
+  },
+}));
 vi.mock("../native/native", () => ({
   useMobileTokens: () => ({}),
   useResolvedAppearance: () => host.theme,
@@ -243,6 +252,34 @@ it("copies and opens links for a page only right after the person tapped it", as
   await act(async () => root.unmount());
 });
 
+it("asks the page's bot once per tap and answers every question the page waits on", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.spyOn(Date, "now").mockReturnValue(4_000_000);
+  const root = createRoot(document.createElement("div"));
+  await act(async () => root.render(createElement(PageScreen)));
+  expect(host.html).toContain('"ask":true');
+  const answers: object[] = [];
+  const ask = (id: string) =>
+    act(async () => {
+      host.message?.(JSON.stringify({ type: "rakazo-page:ask", id, text: "Next?" }), (answer) =>
+        answers.push(answer),
+      );
+      await flush();
+    });
+  await ask("before-tap");
+  host.touch.onTouchStart?.(at(10, 10));
+  host.touch.onTouchEnd?.(at(10, 10));
+  await ask("tapped");
+  await ask("same-tap");
+  expect(host.asked).toEqual(["Next?"]);
+  expect(answers).toEqual([
+    { type: "rakazo-page:answer", id: "before-tap", ok: false },
+    { type: "rakazo-page:answer", id: "tapped", ok: true, text: "Step two" },
+    { type: "rakazo-page:answer", id: "same-tap", ok: false },
+  ]);
+  await act(async () => root.unmount());
+});
+
 it("does not let a page that reloads right after a tap act on that tap", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.spyOn(Date, "now").mockReturnValue(3_000_000);
@@ -291,7 +328,7 @@ it("puts a tapped reply in the page's own chat unsent, closing the page or openi
   // Opened from its chat: the reply goes back there.
   host.routes = [{ name: "thread", params: { botId: "bot-1" } }];
   let root = await show();
-  expect(host.html).toContain('{"reply":true}');
+  expect(host.html).toContain('{"reply":true,"ask":true}');
   await act(async () =>
     host.message?.(JSON.stringify({ type: "rakazo-page:reply", text: "B" }), () => {}),
   );
@@ -324,7 +361,7 @@ it("puts a tapped reply in the page's own chat unsent, closing the page or openi
   host.went = [];
   host.page = { ...host.page, botId: null, groupId: null };
   root = await show();
-  expect(host.html).toContain('{"reply":false}');
+  expect(host.html).toContain('{"reply":false,"ask":false}');
   await tapThenReply("Orphan");
   expect(host.went).toEqual([]);
   host.page = { ...host.page, botId: "bot-1" };

@@ -134,6 +134,8 @@ export const BILLING_CANCELLATION_REASONS = [
 ] as const;
 export type BillingCancellationReason = (typeof BILLING_CANCELLATION_REASONS)[number];
 
+export const SELF_HOST_URL = "https://rakazo.com/docs/self-host";
+
 export const BillingStatusSchema = z.object({
   funding: z.enum(["byok", "credits"]).nullable().optional(),
   balanceUsd: z.number().optional(),
@@ -164,6 +166,8 @@ export const BillingStatusSchema = z.object({
     .optional(),
   /** End of an unpaid own-key organization's free period. */
   byokFreeUntil: z.string().nullable().optional(),
+  /** The organization's free period has run out and it has never subscribed. */
+  freePeriodEnded: z.literal(true).optional(),
   access: z.boolean(),
   /** Only organization owners start checkout or open the billing portal. */
   canManage: z.boolean(),
@@ -235,6 +239,22 @@ export function paymentOverdue(status: BillingStatus): boolean {
 /** A trial set to cancel, which gets no computer hours until it is renewed. */
 export function isCancelledTrial(status: BillingStatus): boolean {
   return status.state === "trialing" && status.cancelAtPeriodEnd;
+}
+
+/**
+ * Whether an owner can keep a cancelled own-key trial by picking the plan it continues on. Other
+ * cancelled trials are renewed in the billing portal.
+ */
+export function byokTrialRenewalOffered(status: BillingStatus): boolean {
+  return Boolean(
+    status.canManage &&
+      isCancelledTrial(status) &&
+      status.funding === "byok" &&
+      !status.byokFreeUntil &&
+      !status.monthlyAmountCents &&
+      status.byokPriceCents &&
+      status.byokTiers?.length,
+  );
 }
 
 /** Why computers ran out of hours: a trial's smaller allowance, a cancelled trial, or the plan's. */

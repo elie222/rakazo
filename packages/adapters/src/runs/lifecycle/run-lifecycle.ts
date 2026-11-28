@@ -12,11 +12,12 @@ import {
   displayName,
   isTerminal,
   nextFence,
+  PERSON_RUN_TRIGGERS,
   redactSecrets,
   truncatePlainText,
   userRunError,
 } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import type { Prisma, PrismaClient } from "@rakazo/db";
 import { databaseOutage, retryWhileDatabaseUnavailable, spaceTakesWork } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
@@ -240,23 +241,27 @@ export function providerOutageRetryDelay(priorFailures: number): number {
 /**
  * A bot uses its computer for one run at a time, and runs that found it held wait without
  * a retry timer. The run releasing it starts the next one due. Runs backing off after a
- * failure keep their delay.
+ * failure keep their delay. A person waiting for an answer goes before background work.
  */
 export async function startNextWaitingRun(
   deps: ExecutorDeps,
   botId: string,
   releasedBy: string,
 ): Promise<void> {
-  const next = await deps.prisma.run.findFirst({
-    where: {
-      botId,
-      status: "queued",
-      id: { not: releasedBy },
-      OR: [{ wakeAt: null }, { wakeAt: { lte: new Date() } }],
-    },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    select: { id: true },
-  });
+  const due = {
+    botId,
+    status: "queued" as const,
+    id: { not: releasedBy },
+    OR: [{ wakeAt: null }, { wakeAt: { lte: new Date() } }],
+  };
+  const oldest = (where: Prisma.RunWhereInput) =>
+    deps.prisma.run.findFirst({
+      where,
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { id: true },
+    });
+  const next =
+    (await oldest({ ...due, trigger: { in: [...PERSON_RUN_TRIGGERS] } })) ?? (await oldest(due));
   if (next) await wakeRun(deps.jobs, next.id);
 }
 
@@ -407,6 +412,7 @@ export async function claimRun(
     spaceId: string;
     botId: string;
     trigger: string;
+    clientNonce: string | null;
     status: string;
     checkpoint: string | null;
     leaseFence: number;

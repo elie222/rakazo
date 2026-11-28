@@ -110,6 +110,7 @@ export const PL_MESSAGES: Record<string, string> = {
   "Almost ready…": "Prawie gotowe…",
   "Rakazo is ready.": "Rakazo jest gotowe.",
   "{size} downloaded": "Pobrano {size}",
+  "{done} of {total}": "{done} z {total}",
   "Connecting…": "Łączenie…",
   "Checking…": "Sprawdzanie…",
   "Rakazo answered at {url}.": "Rakazo odpowiedziało pod adresem {url}.",
@@ -252,4 +253,14 @@ export const PL_MESSAGES: Record<string, string> = {
   "Restart Rakazo": "Uruchom Rakazo ponownie",
   "Not Now": "Nie teraz",
   "Restart Rakazo to finish setup": "Uruchom Rakazo ponownie, aby ukończyć konfigurację",
+  // Page apps
+  "Keep on Top": "Zawsze na wierzchu",
+  "Open in Rakazo": "Otwórz w Rakazo",
+  "Uninstall…": "Odinstaluj…",
+  "Uninstall {name}?": "Odinstalować {name}?",
+  Uninstall: "Odinstaluj",
+  "Allow {name} to ask its bot?": "Pozwolić {name} zadawać pytania swojemu botowi?",
+  "Allow {name} to show notifications?": "Pozwolić {name} wyświetlać powiadomienia?",
+  "{name} was removed.": "{name} zostało usunięte.",
+  "Move to Trash": "Przenieś do kosza",
 };

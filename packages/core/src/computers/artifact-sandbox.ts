@@ -1,5 +1,12 @@
-import type { PageSectionAnchor } from "@rakazo/contracts";
-import { PageSectionOccurrence } from "@rakazo/contracts";
+import type { PageSectionAnchor, PageState } from "@rakazo/contracts";
+import {
+  PAGE_ASK_MAX_LENGTH,
+  PAGE_STATE_MAX_BYTES,
+  PAGE_STATE_MAX_KEYS,
+  PageSectionOccurrence,
+  PageStateSchema,
+  pageStateBytes,
+} from "@rakazo/contracts";
 
 // Same policy as the web preview: nothing loads from the network, so a script
 // cannot send what it reads to a remote image or font URL.
@@ -44,6 +51,8 @@ export function pageViewerDocument(input: {
   touch?: boolean;
   /** The host can put a page's reply in a chat composer beside it; public pages have none. */
   reply?: boolean;
+  /** The host can send the page's questions into its chat and answer them. */
+  ask?: boolean;
   review?: boolean;
   reviewAnchor?: string;
   reviewAnchorOccurrence?: number;
@@ -51,22 +60,26 @@ export function pageViewerDocument(input: {
   bottomInset?: number;
   /** The reader's app language, for the kit's own words when the page does not set `lang`. */
   lang?: string;
+  state?: PageState;
+  images?: Record<string, string>;
 }): string {
   const boot = JSON.stringify({
     code: input.code,
+    images: input.images,
     theme: input.theme,
     errorTitle: input.errorTitle,
     lang: input.lang,
     review: input.review || undefined,
     reviewAnchor: input.review ? input.reviewAnchor : undefined,
     reviewAnchorOccurrence: input.review ? input.reviewAnchorOccurrence : undefined,
+    state: input.state,
   }).replace(/</g, "\\u003c");
   const inset =
     input.bottomInset !== undefined && Number.isFinite(input.bottomInset) && input.bottomInset > 0
       ? `<style>:root{--rk-bottom-inset:${Math.round(input.bottomInset)}px}</style>`
       : "";
   return [
-    `<!DOCTYPE html><html${input.touch ? " data-touch" : ""}${input.reply ? " data-reply" : ""}><head><meta charset="utf-8">`,
+    `<!DOCTYPE html><html${input.touch ? " data-touch" : ""}${input.reply ? " data-reply" : ""}${input.ask ? " data-ask" : ""}><head><meta charset="utf-8">`,
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<script>${input.runtime}</script>`,
     input.surface !== undefined && HEX_COLOR.test(input.surface)
@@ -83,6 +96,24 @@ export function pageReplyText(text: unknown): string | null {
   if (typeof text !== "string") return null;
   const clean = text.replace(/\s+/g, " ").trim();
   return clean && clean.length <= 300 ? clean : null;
+}
+
+/** A question a page asked its bot through `askBot`; null when it is not one the host sends. */
+export function pageAskRequest(data: unknown): { id: string; text: string } | null {
+  if (!data || typeof data !== "object") return null;
+  const { type, id, text } = data as { type?: unknown; id?: unknown; text?: unknown };
+  if (type !== "rakazo-page:ask" || typeof id !== "string" || typeof text !== "string") return null;
+  const question = text.trim();
+  if (id.length === 0 || id.length > 64 || !question || question.length > PAGE_ASK_MAX_LENGTH)
+    return null;
+  return { id, text: question };
+}
+
+/** The answer `askBot` waits for: the bot's reply, or null when there is none to give. */
+export function pageAskAnswer(id: string, text: string | null) {
+  return text === null
+    ? { type: "rakazo-page:answer", id, ok: false }
+    : { type: "rakazo-page:answer", id, ok: true, text };
 }
 
 /** A page's copy buttons send at most this much; the kit refuses longer text before asking. */
@@ -112,6 +143,22 @@ export function pageLinkRequest(data: unknown): string | null {
   } catch {
     return null;
   }
+}
+
+const PAGE_STATE_MESSAGE = "rakazo-page:state";
+
+export function pageStateRequest(data: unknown): PageState | null {
+  if (!data || typeof data !== "object") return null;
+  const { type, values } = data as { type?: unknown; values?: unknown };
+  if (type !== PAGE_STATE_MESSAGE || !values || typeof values !== "object") return null;
+  const entries = Object.entries(values);
+  if (entries.length > PAGE_STATE_MAX_KEYS) return null;
+  const valid = entries.filter(
+    ([key, value]) => PageStateSchema.safeParse(Object.fromEntries([[key, value]])).success,
+  );
+  const kept = Object.fromEntries(valid);
+  // More than one save can hold is refused by the server anyway, so it is not sent.
+  return valid.length > 0 && pageStateBytes(kept) <= PAGE_STATE_MAX_BYTES ? kept : null;
 }
 
 /** The answer a page's copy button waits for. */

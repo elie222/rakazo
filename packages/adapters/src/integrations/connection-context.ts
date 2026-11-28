@@ -1,11 +1,19 @@
-import type { AdapterContext } from "@rakazo/adapter-kit";
+import type { AdapterContext, ManagedConnectorProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import type { PluginConnectionRow } from "../providers/integration/composio/composio-connector.js";
-import { planLiveConnectionSync } from "../providers/integration/composio/composio-connector.js";
+import {
+  personalComposioConnections,
+  planLiveConnectionSync,
+} from "../providers/integration/composio/composio-connector.js";
 import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
 
 export function selectRunConnections<
-  T extends { connectorId: string; provider: string; status: string },
+  T extends {
+    connectorId: string;
+    provider: string;
+    status: string;
+    organizationId?: string | null;
+  },
 >(rows: T[], connectedComposioProviders: string[]): T[] {
   const liveProviders = new Set(
     connectedComposioProviders.map((provider) => provider.trim().toLowerCase()).filter(Boolean),
@@ -17,7 +25,7 @@ export function selectRunConnections<
   );
   return rows.filter((row) => {
     if (row.status === "connected") return true;
-    if (row.status === "revoked") return false;
+    if (row.status === "revoked" || row.organizationId) return false;
     // Recover a pending/error Composio row only when this provider has no
     // connected row of its own. A sibling that shares the slug must not
     // pull a non-live row — and its dead providerRef — into the run.
@@ -37,20 +45,37 @@ export function connectedContext(
     provider: string;
     displayName: string;
     providerRef: string | null;
+    organizationId?: string | null;
   }>,
 ): Pick<AdapterContext, "connectedConnections" | "connectedProviders"> {
   return {
-    connectedConnections: rows.map((row) => ({
-      id: row.id,
-      connectorId: row.connectorId,
-      externalId: row.provider,
-      displayName: row.displayName,
-      providerRef: row.providerRef ?? undefined,
-    })),
-    connectedProviders: rows
-      .filter((row) => row.connectorId === "composio")
-      .map((row) => row.provider),
+    connectedConnections: [...rows]
+      .sort((a, b) => Number(Boolean(a.organizationId)) - Number(Boolean(b.organizationId)))
+      .map((row) => ({
+        id: row.id,
+        connectorId: row.connectorId,
+        externalId: row.provider,
+        displayName: row.displayName,
+        providerRef: row.providerRef ?? undefined,
+        ...(row.organizationId ? { organizationId: row.organizationId } : {}),
+      })),
+    connectedProviders: personalComposioConnections(rows).map((row) => row.provider),
   };
+}
+
+/** A concrete saved account must still be active. A slug ref can be a no-auth app. */
+export async function loadOrganizationReconnectCheck(
+  provider: ManagedConnectorProvider,
+  context: AdapterContext,
+): Promise<(connection: { provider: string; providerRef: string | null }) => boolean> {
+  const active = await provider.listConnectedRefs?.(context);
+  const refs = new Set(active ?? (await provider.listReconnectRefs?.(context)));
+  return ({ provider: app, providerRef }) =>
+    Boolean(
+      providerRef &&
+        providerRef !== app &&
+        (active ? !refs.has(providerRef) : refs.has(providerRef)),
+    );
 }
 
 export async function loadLivePlugins(

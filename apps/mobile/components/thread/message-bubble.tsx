@@ -2,10 +2,9 @@ import { ph, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { MarkdownLongPressContext, withBlockMentions } from "@rakazo/chat-ui/native";
 import type { LoginFieldInput, MessageBlock } from "@rakazo/contracts";
-import { artifactPreviewKind, isAttachmentAudioMimeType } from "@rakazo/contracts";
+import { isAttachmentAudioMimeType } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
 import {
-  formatFileSize,
   isApprovalAskBlock,
   isQuestionAskBlock,
   messagingProviderLabel,
@@ -25,6 +24,7 @@ import type { MobileArtifactTarget } from "../../lib/artifacts/artifact-open";
 import { openMobileArtifact } from "../../lib/artifacts/artifact-open";
 import { allowsSpace } from "../../lib/cards/ask-action-label";
 import { plainAskTitle } from "../../lib/cards/ask-title";
+import { attachmentGroups } from "../../lib/messages/attachment-groups";
 import { isInlineImageBlock } from "../../lib/messages/inline-image";
 import {
   mentionedBots,
@@ -50,13 +50,15 @@ import { AskReceiptView } from "../cards/ask-receipt";
 import { ChoiceCard } from "../cards/ChoiceCard";
 import { ComputerCard } from "../cards/ComputerCard";
 import { ChangeUndo, isUndoableChange } from "../cards/change-undo";
+import { FeedbackReceiptCard } from "../cards/feedback-receipt-card";
 import { ImportSetupCard } from "../cards/ImportSetupCard";
 import { McpApprovalCard } from "../cards/McpApprovalCard";
 import { OutgoingDraftCard } from "../cards/OutgoingDraftCard";
 import { RoutineApprovalDetail } from "../cards/routine-approval-detail";
 import { ToolQuestionCard } from "../cards/ToolQuestionCard";
+import { AttachmentFile } from "../media/attachment-file";
 import { AudioAttachment } from "../media/audio-attachment";
-import type { ImageArtifactPreviewTarget } from "../media/image-artifact-viewer";
+import { ImageAttachmentDeck } from "../media/image-attachment-deck";
 import { InlineImageAttachment } from "../media/inline-image-attachment";
 import { MessageMentions } from "../messages/bot-mention";
 import { MessageCaption } from "../messages/message-caption";
@@ -154,6 +156,7 @@ function isOwnCardBlock(block: MessageBlock): boolean {
     isSpecialMessageBlock(block) ||
     block.kind === "page" ||
     block.kind === "app" ||
+    block.kind === "feedback_receipt" ||
     block.kind === "tool_question"
   );
 }
@@ -175,6 +178,10 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
     const first = blocks[0]!;
     if (first.kind === "page")
       return <PageCard key={`page-${index}`} block={first} messageId={message.id} />;
+    if (first.kind === "feedback_receipt")
+      return (
+        <FeedbackReceiptCard key={first.reportId} block={first} actionProps={props.actionProps} />
+      );
     if (first.kind === "tool_question")
       return (
         <ToolQuestionCard
@@ -246,6 +253,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   onChoiceDismissed,
   onPreviewFile,
   onPreviewImage,
+  imageStackMaxWidth,
   peerExchange,
   onOpenPeerChat,
   actionProps,
@@ -279,7 +287,8 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   onChoiceDismissed?: (question: string) => void;
   /** Opens a file the app can show; other types go to the share sheet. */
   onPreviewFile: (artifactId: string) => void;
-  onPreviewImage: (target: ImageArtifactPreviewTarget) => void;
+  onPreviewImage: MessageRowActions["previewImage"];
+  imageStackMaxWidth?: number;
   peerExchange?: PeerExchange;
   onOpenPeerChat: (peer: { peerBotId: string; peerBotName: string }) => void;
   actionProps: MessageActionProps;
@@ -288,7 +297,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = withUserBubble(mobileTokens(), userBubble);
-  const { t, i18n } = useLingui();
+  const { t } = useLingui();
   const [peerExpanded, setPeerExpanded] = useState(false);
   const outgoing = message.role === "user" && !authorName;
   const showSpeaker = !hideSenderLabel && (showBotSenderName || Boolean(authorName));
@@ -600,9 +609,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
       </View>
     );
   }
-  const attachments = message.blocks.filter(
-    (block) => block.kind === "image" || block.kind === "file",
-  );
+  const attachments = attachmentGroups(message.blocks);
   const caption = message.blocks
     .flatMap((block) => {
       if (block.kind === "channel_message" && block.text) {
@@ -620,7 +627,9 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
         : authorName;
     const speakerColor =
       message.role === "bot" ? speakerColorFor(bots, members, message.botId) : undefined;
-    const hasInlineImages = attachments.some(isInlineImageBlock);
+    const hasInlineImages = attachments.some(
+      (group) => group.kind === "pictures" || isInlineImageBlock(group.attachment),
+    );
     const bubbleStyle = {
       maxWidth: "100%",
       borderRadius: 20,
@@ -652,104 +661,89 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
             ) : null}
           </View>
         ) : null}
-        {attachments.map((attachment, index) => (
-          <View
-            key={`${attachment.artifactId ?? attachment.name ?? attachment.kind}-${index}`}
-            style={hasInlineImages && !isInlineImageBlock(attachment) ? bubbleStyle : undefined}
-          >
-            {attachment.kind === "image" ? (
-              isInlineImageBlock(attachment) ? (
-                <InlineImageAttachment
-                  threadTarget={artifactTarget}
-                  artifactId={attachment.artifactId}
-                  name={attachment.name ?? t`Image`}
-                  mimeType={attachment.mimeType ?? "image/png"}
-                  labelColor={outgoing ? tokens.chatUserForeground : tokens.foreground}
+        {attachments.map((group) =>
+          group.kind === "pictures" ? (
+            <ImageAttachmentDeck
+              key={`stack-${group.index}`}
+              threadTarget={artifactTarget}
+              images={group.pictures}
+              onOpen={onPreviewImage}
+              actionProps={actionProps}
+              maxWidth={imageStackMaxWidth}
+            />
+          ) : (
+            <View
+              key={`${group.attachment.artifactId ?? group.attachment.name ?? group.attachment.kind}-${group.index}`}
+              style={
+                hasInlineImages && !isInlineImageBlock(group.attachment) ? bubbleStyle : undefined
+              }
+            >
+              {group.attachment.kind === "image" ? (
+                isInlineImageBlock(group.attachment) ? (
+                  <InlineImageAttachment
+                    threadTarget={artifactTarget}
+                    artifactId={group.attachment.artifactId}
+                    name={group.attachment.name ?? t`Image`}
+                    mimeType={group.attachment.mimeType ?? "image/png"}
+                    labelColor={outgoing ? tokens.chatUserForeground : tokens.foreground}
+                    pressableProps={actionProps}
+                    onOpen={() =>
+                      onPreviewImage({
+                        artifactId: group.attachment.artifactId!,
+                        name: group.attachment.name ?? t`Image`,
+                        mimeType: group.attachment.mimeType ?? "image/png",
+                      })
+                    }
+                  />
+                ) : (
+                  <Pressable
+                    {...actionProps}
+                    onPress={() =>
+                      group.attachment.artifactId
+                        ? void openMobileArtifact(
+                            artifactTarget,
+                            group.attachment.artifactId,
+                            group.attachment.name ?? t`Image`,
+                            group.attachment.mimeType ?? "image/png",
+                          ).catch((err) =>
+                            Alert.alert(t`Could not open image`, errorText(err, t`Try again.`)),
+                          )
+                        : undefined
+                    }
+                  >
+                    <Text
+                      style={{
+                        color: outgoing ? tokens.chatUserForeground : tokens.foreground,
+                        fontSize: 15,
+                      }}
+                    >
+                      🖼 {group.attachment.name ?? t`Image`}
+                    </Text>
+                  </Pressable>
+                )
+              ) : group.attachment.artifactId &&
+                isAttachmentAudioMimeType(group.attachment.mimeType ?? "") ? (
+                <AudioAttachment
                   pressableProps={actionProps}
-                  onOpen={() =>
-                    onPreviewImage({
-                      artifactId: attachment.artifactId!,
-                      name: attachment.name ?? t`Image`,
-                      mimeType: attachment.mimeType ?? "image/png",
-                    })
-                  }
+                  target={artifactTarget}
+                  artifactId={group.attachment.artifactId}
+                  name={group.attachment.name ?? t`File`}
+                  mimeType={group.attachment.mimeType!}
+                  labelColor={outgoing ? tokens.chatUserForeground : undefined}
                 />
               ) : (
-                <Pressable
-                  {...actionProps}
-                  onPress={() =>
-                    attachment.artifactId
-                      ? void openMobileArtifact(
-                          artifactTarget,
-                          attachment.artifactId,
-                          attachment.name ?? t`Image`,
-                          attachment.mimeType ?? "image/png",
-                        ).catch((err) =>
-                          Alert.alert(t`Could not open image`, errorText(err, t`Try again.`)),
-                        )
-                      : undefined
-                  }
-                >
-                  <Text
-                    style={{
-                      color: outgoing ? tokens.chatUserForeground : tokens.foreground,
-                      fontSize: 15,
-                    }}
-                  >
-                    🖼 {attachment.name ?? t`Image`}
-                  </Text>
-                </Pressable>
-              )
-            ) : attachment.artifactId && isAttachmentAudioMimeType(attachment.mimeType ?? "") ? (
-              <AudioAttachment
-                pressableProps={actionProps}
-                target={artifactTarget}
-                artifactId={attachment.artifactId}
-                name={attachment.name ?? t`File`}
-                mimeType={attachment.mimeType!}
-                labelColor={outgoing ? tokens.chatUserForeground : undefined}
-              />
-            ) : (
-              <Pressable
-                {...actionProps}
-                onPress={() =>
-                  attachment.artifactId
-                    ? artifactPreviewKind(attachment.mimeType ?? "") !== "none"
-                      ? onPreviewFile(attachment.artifactId)
-                      : void openMobileArtifact(
-                          artifactTarget,
-                          attachment.artifactId,
-                          attachment.name ?? t`File`,
-                          attachment.mimeType ?? "text/plain",
-                        ).catch((err) =>
-                          Alert.alert(t`Could not open file`, errorText(err, t`Try again.`)),
-                        )
-                    : undefined
-                }
-              >
-                <Text
-                  style={{
-                    color: outgoing ? tokens.chatUserForeground : tokens.foreground,
-                    fontSize: 15,
-                  }}
-                >
-                  📎 {attachment.name ?? t`File`}
-                </Text>
-                {formatFileSize(attachment.size, i18n.locale) ? (
-                  <Text
-                    style={{
-                      color: outgoing ? tokens.chatUserForeground : tokens.mutedForeground,
-                      marginTop: 4,
-                      fontSize: 13,
-                    }}
-                  >
-                    {formatFileSize(attachment.size, i18n.locale)}
-                  </Text>
-                ) : null}
-              </Pressable>
-            )}
-          </View>
-        ))}
+                <AttachmentFile
+                  attachment={group.attachment}
+                  target={artifactTarget}
+                  color={outgoing ? tokens.chatUserForeground : tokens.foreground}
+                  secondaryColor={outgoing ? tokens.chatUserForeground : tokens.mutedForeground}
+                  pressableProps={actionProps}
+                  onPreviewFile={onPreviewFile}
+                />
+              )}
+            </View>
+          ),
+        )}
         {appConnectBlocks.map((block, index) => (
           <AppConnectCard
             key={`${block.provider}-${index}`}

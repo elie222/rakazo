@@ -80,6 +80,8 @@ export type Evidence = {
   calls: ServiceCall[];
   /** The bot under test, to tell its calls from a peer's. */
   subjectBotId?: string;
+  /** The subject's page titles and versions, in creation order. */
+  pages?: Array<{ title: string; currentVersion: number }>;
   routines: Array<{
     name: string;
     prompt: string;
@@ -90,6 +92,8 @@ export type Evidence = {
   /** Routines the bot created during the trial, including ones it later cancelled. */
   routinesCreated?: number;
   memory: string;
+  /** The Space's shared memory documents, which every bot in it reads. */
+  sharedMemory?: string;
   approvalPending: boolean;
   clarificationPending?: boolean;
   pendingApproval: { kind: string; request: unknown } | null;
@@ -139,6 +143,8 @@ export type EvalCase = {
   botMemory?: string;
   /** The bot's other private memory documents by path, as an agent import leaves them. */
   botMemoryDocuments?: Record<string, string>;
+  /** The Space's shared MEMORY.md, written through the memory API before the first step. */
+  sharedMemory?: string;
   taughtSkill?: true;
   history?: ReturnType<typeof historyFixture>;
   configure?: (services: EvalServices) => void;

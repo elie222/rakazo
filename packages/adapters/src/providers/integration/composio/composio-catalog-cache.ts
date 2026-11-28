@@ -1,6 +1,7 @@
 export type ToolkitDirectoryEntry = {
   slug: string;
   name: string;
+  description?: string;
   logo: string | null;
   noAuth: boolean;
   /** No shared sign-in and no project setup for this app, so connecting it can only fail. */

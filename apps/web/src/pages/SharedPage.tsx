@@ -1,12 +1,12 @@
 import { Trans } from "@lingui/react/macro";
-import type { SharedPage } from "@rakazo/contracts";
+import type { PageImageSource, SharedPage } from "@rakazo/contracts";
 import { pageShareTokenFromSlug, SHARED_PAGE_PATH_PREFIX } from "@rakazo/contracts";
 import { Button, buttonVariants, Spinner } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { PublicPageShell } from "../components/pages/PublicPageShell";
-import { usePageDocument } from "../lib/pages/pages";
+import { usePageContent, usePageDocument } from "../lib/pages/pages";
 
 async function readSharedPage(token: string): Promise<SharedPage | null> {
   const response = await fetch(`${SHARED_PAGE_PATH_PREFIX}${token}`, {
@@ -16,6 +16,18 @@ async function readSharedPage(token: string): Promise<SharedPage | null> {
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`Shared page returned ${response.status}`);
   return (await response.json()) as SharedPage;
+}
+
+async function readSharedPageImage(token: string, imageId: string): Promise<PageImageSource> {
+  const response = await fetch(
+    `${SHARED_PAGE_PATH_PREFIX}${token}/images/${encodeURIComponent(imageId)}`,
+    { credentials: "omit", referrerPolicy: "no-referrer" },
+  );
+  if (!response.ok)
+    throw Object.assign(new Error(`Shared page image returned ${response.status}`), {
+      status: response.status,
+    });
+  return (await response.json()) as PageImageSource;
 }
 
 /** A page someone shared by link, for anyone holding it, signed in or not. */
@@ -38,7 +50,11 @@ function SharedPageBody() {
     enabled: token !== null,
     retry: false,
   });
-  const viewer = usePageDocument(shared.data?.code);
+  const content = usePageContent(shared.data, (imageId) => ({
+    queryKey: ["shared-page", token, "image", imageId],
+    queryFn: () => readSharedPageImage(token!, imageId),
+  }));
+  const viewer = usePageDocument(content);
   const title = shared.data?.title;
   useEffect(() => {
     if (title) document.title = title;

@@ -8,7 +8,7 @@ import { RoutineSchema } from "../routines/routine.js";
 import { GroupSchema } from "../spaces/groups.js";
 import { SpaceSchema } from "../spaces/space.js";
 import { ThreadSnapshotSchema } from "../threads/thread.js";
-import { AvatarStyleSchema, ChatPreferencesSchema } from "./preferences.js";
+import { AccountChatPreferencesSchema, AvatarStyleSchema } from "./preferences.js";
 
 export const MeSchema = z.object({
   meetingsEnabled: z.boolean().optional(),
@@ -51,7 +51,7 @@ export const MeSchema = z.object({
   /** The icon set new and unpinned bots wear. Absent from servers that predate it. */
   botAvatarSet: BotAvatarSetSchema.optional(),
   /** Absent from servers that predate account-level chat preferences. */
-  chatPreferences: ChatPreferencesSchema.optional(),
+  chatPreferences: AccountChatPreferencesSchema.optional(),
   /**
    * The user's IANA timezone, or null when unset (bots then see UTC only).
    * Absent from servers that predate it.

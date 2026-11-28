@@ -100,6 +100,7 @@ export const TR_MESSAGES: Record<string, string> = {
   "Almost ready…": "Neredeyse hazır…",
   "Rakazo is ready.": "Rakazo hazır.",
   "{size} downloaded": "{size} indirildi",
+  "{done} of {total}": "{total} içinden {done}",
   "Connecting…": "Bağlanıyor…",
   "Checking…": "Denetleniyor…",
   "Rakazo answered at {url}.": "Rakazo {url} adresinde yanıt verdi.",
@@ -234,4 +235,14 @@ export const TR_MESSAGES: Record<string, string> = {
   "Restart Rakazo": "Rakazo’yu yeniden başlat",
   "Not Now": "Şimdi değil",
   "Restart Rakazo to finish setup": "Kurulumu tamamlamak için Rakazo’yu yeniden başlatın",
+  // Page apps
+  "Keep on Top": "Hep Üstte",
+  "Open in Rakazo": "Rakazo'da Aç",
+  "Uninstall…": "Kaldır…",
+  "Uninstall {name}?": "{name} kaldırılsın mı?",
+  Uninstall: "Kaldır",
+  "Allow {name} to ask its bot?": "{name} botuna soru sorabilsin mi?",
+  "Allow {name} to show notifications?": "{name} bildirim gösterebilsin mi?",
+  "{name} was removed.": "{name} kaldırıldı.",
+  "Move to Trash": "Çöp Sepetine Taşı",
 };

@@ -230,6 +230,22 @@ export class FakeComposioClient implements ComposioClient {
 
   getClient(): ReturnType<ComposioClient["getClient"]> {
     return {
+      toolkits: {
+        list: async ({ limit, cursor }) => {
+          const offset = Number(cursor ?? 0);
+          const end = offset + limit;
+          return {
+            items: this.directory.slice(offset, end).map((entry) => ({
+              slug: entry.slug,
+              meta: { description: entry.description },
+              no_auth: entry.noAuth,
+              composio_managed_auth_schemes:
+                entry.needsSignInSetup || entry.noAuth ? [] : ["OAUTH2"],
+            })),
+            next_cursor: end < this.directory.length ? String(end) : null,
+          };
+        },
+      },
       tools: {
         list: async (query) => {
           const tools = toolsFor(query.toolkit_slug.toUpperCase());
@@ -288,15 +304,6 @@ export class FakeComposioClient implements ComposioClient {
     },
   };
 
-  readonly toolkits: ComposioClient["toolkits"] = {
-    get: async () =>
-      this.directory.map((entry) => ({
-        slug: entry.slug,
-        noAuth: entry.noAuth,
-        composioManagedAuthSchemes: entry.needsSignInSetup || entry.noAuth ? [] : ["OAUTH2"],
-      })),
-  };
-
   readonly authConfigs: ComposioClient["authConfigs"] = {
     list: async () => ({ items: [], nextCursor: null }),
   };
@@ -331,6 +338,9 @@ export class FakeComposioClient implements ComposioClient {
           return refused(`Toolkit for ${tool} is not enabled in this session`);
         }
         const pinned = toolkit ? (config.connectedAccounts?.[toolkit] ?? []) : [];
+        if (options?.account && config.multiAccount?.enable !== true) {
+          return refused("The 'account' parameter is not supported for this project");
+        }
         if (options?.account && !pinned.includes(options.account)) {
           return refused(`Account ${options.account} is not available in this session`);
         }

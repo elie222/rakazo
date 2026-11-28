@@ -100,6 +100,7 @@ export const KO_MESSAGES: Record<string, string> = {
   "Almost ready…": "거의 완료…",
   "Rakazo is ready.": "Rakazo가 준비되었습니다.",
   "{size} downloaded": "{size} 다운로드됨",
+  "{done} of {total}": "{total} 중 {done}",
   "Connecting…": "연결 중…",
   "Checking…": "확인 중…",
   "Rakazo answered at {url}.": "Rakazo가 {url}에서 응답했습니다.",
@@ -235,4 +236,14 @@ export const KO_MESSAGES: Record<string, string> = {
   "Restart Rakazo": "Rakazo 재시동",
   "Not Now": "나중에",
   "Restart Rakazo to finish setup": "Rakazo를 재시동하여 설정 완료",
+  // Page apps
+  "Keep on Top": "항상 위에 표시",
+  "Open in Rakazo": "Rakazo에서 열기",
+  "Uninstall…": "제거…",
+  "Uninstall {name}?": "{name}을(를) 제거하시겠습니까?",
+  Uninstall: "제거",
+  "Allow {name} to ask its bot?": "{name}이(가) 봇에게 질문하도록 허용하시겠습니까?",
+  "Allow {name} to show notifications?": "{name}이(가) 알림을 표시하도록 허용하시겠습니까?",
+  "{name} was removed.": "{name}이(가) 제거되었습니다.",
+  "Move to Trash": "휴지통으로 이동",
 };

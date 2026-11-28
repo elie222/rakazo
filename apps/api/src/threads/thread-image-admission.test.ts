@@ -1,6 +1,8 @@
-import type { Actor } from "@rakazo/contracts";
+import type { Actor, MessageBlock } from "@rakazo/contracts";
+import { MODEL_IMAGE_INPUT_UNKNOWN } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { assertThreadImageInput } from "./thread-image-admission.js";
 import type { ThreadTarget } from "./thread-target.js";
 import { sendThreadMessage } from "./thread-target.js";
 
@@ -10,6 +12,7 @@ function fixture(group = false) {
   const model = { modelProvider: "openrouter", modelId: "deepseek/deepseek-v4-pro" };
   const tx = {
     space: { findUnique: vi.fn(async () => null) },
+    spaceMember: { findUnique: vi.fn(async () => null) },
     user: { findMany: vi.fn().mockResolvedValue([]) },
     secret: { findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "synthetic" }) },
     $executeRaw: vi.fn(async () => 0),
@@ -711,5 +714,66 @@ describe("current image send admission", () => {
       send(undefined, "confirm", { text: "Here it is", replyToMessageId: "ask-pending" }),
     ).rejects.toMatchObject({ code: "CONFLICT", status: 409 });
     expect(tx.message.create).not.toHaveBeenCalled();
+  });
+});
+
+const actor = { userId: "member", spaceId: "space" } as Actor;
+const image = [{ kind: "image" }] as MessageBlock[];
+
+function organizationModel(supportsImages: boolean | null) {
+  return {
+    bot: {
+      findFirst: async () => ({ modelProvider: null, modelId: null, thinkingLevel: null }),
+    },
+    spaceMember: {
+      findUnique: async () => ({
+        organizationModelConnectionId: "shared",
+        organizationModelProvider: "openai-compatible",
+        organizationModelId: "fixture-vision-model",
+      }),
+    },
+    organizationModelConnection: {
+      findFirst: vi.fn(async () => ({ secretId: "fixture", ciphertext: "sealed", supportsImages })),
+    },
+    deploymentSettings: { findUnique: async () => null },
+  };
+}
+
+it("uses the organization image setting without runtime configuration", async () => {
+  const prisma = organizationModel(true);
+  await expect(
+    assertThreadImageInput(prisma as unknown as PrismaClient, actor, "bot", image),
+  ).resolves.toBeUndefined();
+  expect(prisma.organizationModelConnection.findFirst).toHaveBeenCalledOnce();
+});
+
+it("uses the selected connection's per-model image setting when secrets are available", async () => {
+  const prisma = organizationModel(true);
+  await expect(
+    assertThreadImageInput(prisma as unknown as PrismaClient, actor, "bot", image, undefined, {
+      deployment: null,
+      secrets: {
+        load: async () =>
+          JSON.stringify({
+            kind: "openai_compatible",
+            baseUrl: "https://models.example.test",
+            apiKey: "fixture-key",
+            models: { "fixture-vision-model": { images: false } },
+          }),
+      },
+    }),
+  ).rejects.toMatchObject({ code: "CONFLICT" });
+});
+
+it("reports unknown image capability when the selected organization key cannot be read", async () => {
+  const prisma = organizationModel(null);
+  await expect(
+    assertThreadImageInput(prisma as unknown as PrismaClient, actor, "bot", image, undefined, {
+      deployment: null,
+      secrets: { load: vi.fn().mockRejectedValue(new Error("fixture key unavailable")) },
+    }),
+  ).rejects.toMatchObject({
+    code: "CONFLICT",
+    message: MODEL_IMAGE_INPUT_UNKNOWN,
   });
 });

@@ -1,19 +1,29 @@
 import { useLingui } from "@lingui/react/macro";
 import { useNativeLinkConfirm } from "@rakazo/chat-ui/native";
 import type { PageDetail } from "@rakazo/contracts";
-import { pageCopyRequest, pageCopyResult, pageLinkRequest, pageReplyText } from "@rakazo/core";
+import {
+  pageAskAnswer,
+  pageAskRequest,
+  pageCopyRequest,
+  pageCopyResult,
+  pageLinkRequest,
+  pageReplyText,
+  pageStateRequest,
+} from "@rakazo/core";
 import { webTokensForAppearance } from "@rakazo/ui-tokens";
 import * as Clipboard from "expo-clipboard";
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SandboxedHtmlPreview } from "../components/media/sandboxed-html-preview";
 import { NativeActionButton } from "../components/native/native-action-button";
 import { currentApiBase } from "../lib/api/api";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native/native";
 import { HEADER_CONTROL_SIZE } from "../lib/native/native-controls";
+import { askPageBot } from "../lib/pages/page-ask";
 import { PageLoadFailure } from "../lib/pages/page-load-failure";
+import { usePageStateSaver } from "../lib/pages/page-state";
 import {
   getLatestPage,
   offerPageReply,
@@ -63,10 +73,14 @@ export default function PageScreen() {
       .then(async (page) => {
         const document = await pageDocument(
           currentApiBase(),
-          page.code,
+          { ...page, pageId: page.id },
           theme,
           t`This page couldn't be shown.`,
-          { reply: pageChat(page) !== null },
+          {
+            reply: pageChat(page) !== null,
+            ask: pageAsks(page),
+            state: page.readerState,
+          },
         );
         if (!active) return;
         setLoaded({ status: "ready", page, document });
@@ -79,17 +93,47 @@ export default function PageScreen() {
     };
   }, [pageId, theme, t, attempt]);
 
+  // Questions a page is still waiting on end when it reloads or closes.
+  const asking = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    asking.current = controller;
+    return () => controller.abort();
+  }, [pageId, attempt]);
+
   const openLink = useNativeLinkConfirm();
   // The app sees every touch on the WebView too (React Native's root handler, on iOS and Android),
   // and the page can't fake one.
   const tapStart = useRef<ReturnType<typeof pageTapStart>>(null);
   const tappedAt = useRef<number | null>(null);
+  const stateSaver = usePageStateSaver(pageId);
+  // A page still on screen while another loads saves nothing under the new page.
+  const saving =
+    loaded.status === "ready" && loaded.page.id === pageId && loaded.page.readerState !== undefined;
   const receive = useCallback(
     (data: string, answer: (message: object) => void) => {
-      if (!pageActionAllowed(tappedAt.current, Date.now())) return;
+      const values = saving ? pageStateRequest(pageMessage(data)) : null;
+      if (values) {
+        stateSaver.save(values);
+        return;
+      }
+      const allowed = pageActionAllowed(tappedAt.current, Date.now());
       const message = pageMessage(data) as { type?: unknown; text?: unknown } | null;
-      const reply = message?.type === "rakazo-page:reply" ? pageReplyText(message.text) : null;
       const page = loaded.status === "ready" ? loaded.page : null;
+      const ask = pageAskRequest(message);
+      if (ask) {
+        // A page waits on every question, so one it may not send is answered at once.
+        if (!allowed || !page || !pageAsks(page)) {
+          answer(pageAskAnswer(ask.id, null));
+          return;
+        }
+        tappedAt.current = null;
+        const signal = asking.current?.signal ?? AbortSignal.abort();
+        void askPageBot(page, ask.text, signal).then((text) => answer(pageAskAnswer(ask.id, text)));
+        return;
+      }
+      if (!allowed) return;
+      const reply = message?.type === "rakazo-page:reply" ? pageReplyText(message.text) : null;
       const chat = reply && page ? pageChat(page) : null;
       const url = pageLinkRequest(message);
       const copy = pageCopyRequest(message);
@@ -115,7 +159,7 @@ export default function PageScreen() {
           .then((ok) => answer(pageCopyResult(copy.id, ok !== false)));
       }
     },
-    [openLink, loaded, navigation, router],
+    [openLink, loaded, navigation, router, saving, stateSaver],
   );
 
   return (
@@ -159,6 +203,21 @@ export default function PageScreen() {
           <ActivityIndicator color={tokens.mutedForeground} />
         </View>
       )}
+      {saving && stateSaver.failed ? (
+        <Text
+          accessibilityRole="alert"
+          style={[
+            styles.saveFailed,
+            {
+              top: insets.top + HEADER_CONTROL_SIZE + 10,
+              color: tokens.destructive,
+              backgroundColor: pageBackground,
+            },
+          ]}
+        >
+          {t`Your changes aren't saved. Check your connection.`}
+        </Text>
+      ) : null}
       <View pointerEvents="box-none" style={[styles.controls, { top: insets.top + 6 }]}>
         <NativeActionButton
           accessibilityLabel={t`Close`}
@@ -190,6 +249,11 @@ export default function PageScreen() {
   );
 }
 
+/** A page that uses askBot and has a chat to ask in; an older server may not say what it uses. */
+function pageAsks(page: PageDetail): boolean {
+  return pageChat(page) !== null && page.abilities?.includes("ask") === true;
+}
+
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
@@ -201,6 +265,16 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   actions: { flexDirection: "row", gap: 8 },
+  saveFailed: {
+    position: "absolute",
+    alignSelf: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    overflow: "hidden",
+    textAlign: "center",
+    fontSize: 13,
+  },
   round: {
     width: HEADER_CONTROL_SIZE,
     minHeight: HEADER_CONTROL_SIZE,

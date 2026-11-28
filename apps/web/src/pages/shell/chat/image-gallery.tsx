@@ -1,11 +1,14 @@
+import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
+import { Button, cn, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ArtifactTarget } from "../../../lib/pages/artifact-open";
-import { useArtifactImage } from "../../../lib/pages/use-artifact-image";
+import type { ArtifactImageKeeper } from "../../../lib/pages/use-artifact-image";
+import { useArtifactImage, useArtifactImageKeeper } from "../../../lib/pages/use-artifact-image";
 import { useEventListener } from "../../../lib/use-event-listener";
+import { useNearViewport } from "../../../lib/use-near-viewport";
 import { isEditableTarget } from "../shell-shortcuts";
 
 export type GalleryImage = {
@@ -25,6 +28,70 @@ export function galleryImageKey(image: GalleryImage) {
   const owner =
     "botId" in image.target ? `bot:${image.target.botId}` : `group:${image.target.groupId}`;
   return `${owner}:${image.artifactId}`;
+}
+
+/**
+ * The pictures one message carries, as one row. The first two stay whole and the third carries a
+ * count of the rest; every tile opens the chat's lightbox at its own picture.
+ */
+export function MessageImageRow({ images }: { images: GalleryImage[] }) {
+  const { t } = useLingui();
+  const openImage = useOpenImage();
+  const row = useRef<HTMLDivElement>(null);
+  const visible = useNearViewport(row);
+  const shown = images.slice(0, 3);
+  const rest = images.length - 2;
+  return (
+    <div
+      ref={row}
+      className={cn("flex max-w-full gap-2", shown.length > 2 ? "w-[32.5rem]" : "w-[21.5rem]")}
+    >
+      {shown.map((image, position) => {
+        const counts = images.length > 3 && position === shown.length - 1;
+        return (
+          <button
+            key={`${galleryImageKey(image)}-${position}`}
+            type="button"
+            aria-label={
+              counts
+                ? t`${plural(images.length, { one: "Show all # picture", other: "Show all # pictures" })}`
+                : t`Show ${image.name}`
+            }
+            onClick={() => openImage?.(image)}
+            className="relative aspect-[2/3] min-w-0 shrink basis-[10.5rem] overflow-hidden rounded-xl bg-muted"
+          >
+            <TileImage image={image} name={counts ? "" : image.name} visible={visible} />
+            {counts ? (
+              <span className="absolute inset-0 flex items-center justify-center bg-black/50 text-heading1 font-medium text-white tabular-nums">
+                {`+${rest}`}
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** A tile shows its file name until its picture arrives, as a lone picture does. */
+function TileImage({
+  image,
+  name,
+  visible,
+}: {
+  image: GalleryImage;
+  name: string;
+  visible: boolean;
+}) {
+  const src = useArtifactImage(image.target, image.artifactId, visible);
+  if (!src) {
+    return (
+      <span className="flex size-full items-end bg-muted p-2 text-label break-words text-muted-foreground">
+        {name}
+      </span>
+    );
+  }
+  return <img src={src} alt={name} loading="lazy" className="size-full object-contain" />;
 }
 
 /** Holds the chat's images and the one lightbox they all open in, in message order. */
@@ -90,8 +157,8 @@ function GalleryThumb({
 }
 
 // Keyed by image, so switching never shows the previous picture under the new name.
-function LightboxPicture({ image }: { image: GalleryImage }) {
-  const src = useArtifactImage(image.target, image.artifactId);
+function LightboxPicture({ image, keeper }: { image: GalleryImage; keeper: ArtifactImageKeeper }) {
+  const src = useArtifactImage(image.target, image.artifactId, true, keeper);
   return src ? (
     <img
       src={src}
@@ -122,6 +189,7 @@ export function ImageLightbox({
   const index = images.findIndex((image) => galleryImageKey(image) === selectedKey);
   const current = images[index];
   const close = useRef<HTMLButtonElement>(null);
+  const keeper = useArtifactImageKeeper(images);
   const single = images.length < 2;
   const step = (delta: number) => {
     const next = images[(index + delta + images.length) % images.length];
@@ -158,7 +226,7 @@ export function ImageLightbox({
       >
         <DialogTitle className="sr-only">{current.name}</DialogTitle>
         <div className="relative flex min-h-0 flex-1 items-center justify-center">
-          <LightboxPicture key={selectedKey} image={current} />
+          <LightboxPicture key={selectedKey} image={current} keeper={keeper} />
           <DialogClose
             ref={close}
             render={
@@ -204,7 +272,7 @@ export function ImageLightbox({
                 if (distance > 3) return null;
                 return (
                   <div
-                    key={galleryImageKey(image)}
+                    key={`${galleryImageKey(image)}-${position}`}
                     className="absolute left-1/2 top-1/2 transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none"
                     style={{
                       transform: `translate(-50%, -50%) translateX(${offset * 88}px) translateZ(${-distance * 28}px) scale(${1 - distance * 0.2})`,
@@ -223,8 +291,11 @@ export function ImageLightbox({
                 );
               })}
             </div>
-            <div className="mt-1 text-center text-label text-muted-foreground tabular-nums">
-              {index + 1} / {images.length}
+            <div className="mt-1 flex justify-center gap-2 text-label text-muted-foreground">
+              <span className="max-w-[60%] truncate">{current.name}</span>
+              <span className="tabular-nums">
+                {index + 1} / {images.length}
+              </span>
             </div>
           </div>
         )}

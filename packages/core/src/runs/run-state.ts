@@ -1,4 +1,4 @@
-import type { RunStatus } from "@rakazo/contracts";
+import type { RunStatus, RunTrigger } from "@rakazo/contracts";
 
 /** Runs the bot is working on, which the chat shows as working. */
 export const WORKING_RUN_STATUSES = [
@@ -19,6 +19,14 @@ export const ACTIVE_RUN_STATUSES = [
 export const QUEUE_HOLDING_RUN_STATUSES = ACTIVE_RUN_STATUSES.filter(
   (status) => status !== "waiting_input",
 );
+export const APP_CONNECTION_FOLLOW_UP_NONCE_PREFIX = "app-connected:";
+
+export function isAppConnectionFollowUp(run: { trigger: string; clientNonce: string | null }) {
+  return (
+    run.trigger === "follow_up" &&
+    run.clientNonce?.startsWith(APP_CONNECTION_FOLLOW_UP_NONCE_PREFIX) === true
+  );
+}
 const TERMINAL: RunStatus[] = ["completed", "failed", "cancelled"];
 /**
  * These turns carry their own prompt and must not take a user message as steering.
@@ -47,6 +55,14 @@ const BACKGROUND_RUN_TRIGGER_SET = new Set<string>(BACKGROUND_RUN_TRIGGERS);
 export function isBackgroundRunTrigger(trigger: string | null | undefined): boolean {
   return BACKGROUND_RUN_TRIGGER_SET.has(trigger ?? "");
 }
+
+/** Turns started by a person talking to the bot right now, who is waiting for its answer. */
+export const PERSON_RUN_TRIGGERS = [
+  "user",
+  "follow_up",
+  "reaction",
+  "messaging",
+] as const satisfies readonly RunTrigger[];
 
 const allowed: Record<RunStatus, RunStatus[]> = {
   queued: ["leased", "cancelled"],

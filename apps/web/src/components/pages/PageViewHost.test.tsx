@@ -18,7 +18,10 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("../../lib/query/query", () => ({
   useSave: () => ({ pending: false, error: null }),
   useSpaceQueries: () => ({
-    pageReviews: { grants: { key: () => ["grants"] } },
+    pageReviews: {
+      grants: { key: () => ["grants"] },
+      state: { queryOptions: () => ({ queryKey: ["state"], queryFn: async () => ({}) }) },
+    },
     pages: {
       list: { key: () => ["pages"] },
       get: {
@@ -30,6 +33,7 @@ vi.mock("../../lib/query/query", () => ({
             id: "p1",
             title: "Plan",
             code: "",
+            abilities: [],
             owner: { name: "" },
             visibility: "link",
             shareUrl: input.link === true ? "https://rakazo.example/p/1" : null,

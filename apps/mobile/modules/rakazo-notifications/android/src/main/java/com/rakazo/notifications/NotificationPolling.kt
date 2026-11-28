@@ -152,7 +152,6 @@ internal class PollCadence {
     if (hasFailures) {
       minOf(120_000L, 30_000L * (1L shl failures)) + jitterMs
     } else {
-      // A reopened app or a bounded page filling with new completions polls quickly.
       if (recentPageBusy || elapsedMs < 60_000L) 8_000L else 30_000L
     }
 }

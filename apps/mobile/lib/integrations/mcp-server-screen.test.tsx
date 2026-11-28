@@ -462,3 +462,22 @@ it("waits for edited settings to be saved before testing the connection", async 
   await act(flush);
   expect(writes()).toEqual([]);
 });
+
+it("shows a server the member cannot manage without a way to change it", async () => {
+  server = { ...remote, organization: true, manageable: false };
+  await render();
+  expect(container.textContent).toContain("Status: Connected");
+  expect(container.textContent).toContain("https://tracker.example.test/mcp");
+  expect(container.querySelectorAll("input")).toHaveLength(0);
+  for (const label of ["Test connection", "Advanced", "All bots", "Delete"]) {
+    expect(container.textContent).not.toContain(label);
+  }
+  expect(navigation.options.headerRight).toBeUndefined();
+});
+
+it("offers no bot choice for an organization's server its admin manages", async () => {
+  server = { ...remote, organization: true, manageable: true, allBots: false };
+  await render();
+  expect(container.textContent).toContain("Advanced");
+  expect(container.textContent).not.toContain("All bots");
+});

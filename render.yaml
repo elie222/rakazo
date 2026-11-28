@@ -1,0 +1,49 @@
+# Deploy to Render Blueprint. See infra/render/README.md.
+databases:
+  - name: rakazo-db
+    databaseName: rakazo
+    user: rakazo
+    plan: 0.5c-1g
+    postgresMajorVersion: "16"
+    # Reachable only from services on this account's private network.
+    ipAllowList: []
+
+services:
+  - type: web
+    name: rakazo
+    runtime: docker
+    plan: 1c-2g
+    dockerfilePath: ./infra/render/Dockerfile
+    dockerContext: .
+    # The API, worker and web share one disk, so there is exactly one instance.
+    numInstances: 1
+    healthCheckPath: /
+    autoDeployTrigger: "off"
+    disk:
+      name: rakazo-data
+      mountPath: /data
+      sizeGB: 10
+    envVars:
+      - key: OWNER_EMAIL
+        sync: false
+      - key: OWNER_PASSWORD
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: rakazo-db
+          property: connectionString
+      - key: BETTER_AUTH_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      - key: SCREEN_PROXY_SECRET
+        generateValue: true
+      - key: DATA_DIR
+        value: /data
+      - key: PORT
+        value: "5173"
+      # The published release the image builds from; pin a vX.Y.Z tag to hold a version.
+      - key: RAKAZO_IMAGE_TAG
+        value: latest
+      - key: SANDBOX_MAX_COMPUTERS_PER_USER
+        value: "3"

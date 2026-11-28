@@ -51,6 +51,8 @@ export const th: Messages = {
   photos: { other: "รูปภาพ {count} รูป" },
   slideOf: "{n} จาก {total}",
   showPhoto: "แสดงรูปภาพที่ {n}",
+  previousPhoto: "รูปก่อนหน้า",
+  nextPhoto: "รูปถัดไป",
   view: "ดู",
   viewTitle: "ดู {title}",
   rated: "ให้คะแนน {rating} จาก 5",

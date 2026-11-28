@@ -258,6 +258,40 @@ describe("bounded context selection", () => {
     // A protected summary at the start is not where the current request starts.
     expect(select(100_000, [0])).toEqual(history);
   });
+  it("does not count a note that rides along with an exchange as an exchange", () => {
+    const history = Array.from({ length: 10 }, (_, index) => [
+      user(`note ${index}`),
+      user(`exchange ${index}`),
+    ]).flat();
+    const kept = selectContext(history, {
+      budget,
+      strategy: "retrieval",
+      recentExchanges: 2,
+      notAnExchange: (message) => String(message.content).startsWith("note"),
+    }).messages;
+    expect(kept).toEqual(history.slice(-4));
+  });
+  it("starts kept history at an anchor, so it holds while the conversation grows", () => {
+    const starts: string[] = [];
+    for (let length = 30; length < 50; length += 1) {
+      const history = Array.from({ length }, (_, index) => user(`exchange ${index}`));
+      const kept = selectContext(history, {
+        budget,
+        strategy: "retrieval",
+        recentExchanges: 2,
+        earlier: {
+          before: length - 1,
+          tokens: 200,
+          anchor: (message) => /[05]$/.test(String(message.content)),
+        },
+      }).messages;
+      expect(kept).toEqual(history.slice(-kept.length));
+      starts.push(String(kept[0]!.content));
+    }
+    // Without anchors the start moves with each new exchange; with them, once every five.
+    expect(new Set(starts).size).toBeLessThanOrEqual(5);
+    expect(starts.every((start) => /[05]$/.test(start))).toBe(true);
+  });
   it("retains a warm useful prefix when budget allows, cold selection performs no summary work", () => {
     const history = Array.from({ length: 20 }, (_, index) => user(`exchange ${index}`));
     expect(
@@ -642,6 +676,34 @@ describe("bounded context selection", () => {
         expect(conversation.description).toContain("Tool result truncated");
       }
     }
+  });
+  it("keeps available budget when shortening an MCP envelope with large structuredContent", () => {
+    const body = Array.from(
+      { length: 600 },
+      (_, index) => `Paragraph ${index} with page evidence.`,
+    ).join("\n");
+    const inner = {
+      id: "page-1",
+      url: "https://example.test/page-1",
+      title: "Architecture notes",
+      text: body,
+    };
+    const source = JSON.stringify({
+      content: [{ type: "text", text: JSON.stringify(inner) }],
+      structuredContent: { ...inner, revision: 2 },
+      isError: false,
+    });
+    const out = shortenToolResultText(source, 12_000);
+    const envelope = JSON.parse(out);
+    const textCopy = JSON.parse(envelope.content[0].text);
+    expect(out.length).toBeLessThanOrEqual(12_000);
+    expect(envelope.contextTruncated).toBe(true);
+    expect(textCopy.id).toBe("page-1");
+    expect(envelope.structuredContent.id).toBe("page-1");
+    // Previously `wrap(emptyJsonShell)` still included full structuredContent, collapsing the
+    // budget to 128 characters and cutting both copies' text to tiny stubs.
+    expect(textCopy.text.length).toBeGreaterThan(2_000);
+    expect(envelope.structuredContent.text.length).toBeGreaterThan(2_000);
   });
   it("does not mark an MCP envelope truncated when both copies already fit", () => {
     const inner = { id: "conversation-1", name: "Conversation", note: "brief" };

@@ -87,18 +87,20 @@ export function ComposerModelPicker({
   const modelPending = pendingModel !== undefined;
   const {
     selectedModelKey,
+    shownKey,
     selectedName,
     selectedMark,
     choices,
     thinkingLevels,
     defaultThinkingLevel,
+    savedModelKey,
+    savedThinkingLevel,
     nothingConnected,
   } = botModelState({
     credentials,
     catalog: catalog.map(localizeModelEntry),
     me,
     modelKey: pendingModel ?? savedKey,
-    spaceDefaultLabel: t`Space default`,
   });
   // A new model starts on its default level, so the saved one shows only while the model stays.
   const thinking: ThinkingLevel | null = modelPending
@@ -106,10 +108,9 @@ export function ComposerModelPicker({
     : saveThinking.pending
       ? (saveThinking.input ?? null)
       : bot.thinkingLevel;
-  const shownThinking = thinkingLevels.length
-    ? thinkingLevelLabel(thinking ?? defaultThinkingLevel)
-    : undefined;
-  const defaultLabel = thinkingLevelLabel(defaultThinkingLevel);
+  // The level in use: the saved one, or the model's default while none is saved.
+  const level = thinking ?? defaultThinkingLevel;
+  const shownThinking = thinkingLevels.length ? thinkingLevelLabel(level) : undefined;
   const busy = disabled || saveModel.pending || saveThinking.pending;
   // A pick made mid-save would be dropped, so the key opens the list only when a click could.
   saving.current = busy;
@@ -118,12 +119,10 @@ export function ComposerModelPicker({
   thinkingStep.current =
     thinkingLevels.length && !busy
       ? () => {
-          const current = thinkingLevels.findIndex(
-            (level) => level === (thinking ?? defaultThinkingLevel),
-          );
+          const current = thinkingLevels.findIndex((option) => option === level);
           const next = thinkingLevels[(current + 1) % thinkingLevels.length];
           if (next === undefined) return false;
-          const value = next === defaultThinkingLevel ? null : next;
+          const value = savedThinkingLevel(next);
           // A model with one level has nowhere to step.
           if (value === thinking) return false;
           saveThinking.run(value);
@@ -137,9 +136,8 @@ export function ComposerModelPicker({
     <ChatModelPicker
       compact
       choices={choices}
-      value={selectedModelKey}
-      // The button names the model alone (the one behind the Space default when the bot follows
-      // it); the list keeps each row's full name.
+      value={shownKey}
+      // The button names the model alone; the list keeps each row's full name.
       selectedLabel={selectedName}
       mark={selectedMark}
       detail={shownThinking}
@@ -160,7 +158,8 @@ export function ComposerModelPicker({
         </>
       }
       onChange={(key) => {
-        if (key !== selectedModelKey) saveModel.run(key);
+        const saved = savedModelKey(key);
+        if (saved !== selectedModelKey) saveModel.run(saved);
       }}
       // A model with thinking levels keeps the panel open, so its level can be set next.
       // With no provider connected there is nothing to switch to, so the list offers a connection.
@@ -171,7 +170,6 @@ export function ComposerModelPicker({
           catalog: catalog.map(localizeModelEntry),
           me,
           modelKey: key,
-          spaceDefaultLabel: "",
         }).thinkingLevels.length > 0
       }
       aside={
@@ -180,19 +178,20 @@ export function ComposerModelPicker({
               <Command className="h-auto rounded-none bg-popover">
                 <CommandList className="max-h-none">
                   <CommandGroup heading={t`Thinking`}>
-                    {[null, ...thinkingLevels].map((level) => (
+                    {thinkingLevels.map((option) => (
                       <CommandItem
-                        key={level ?? "default"}
-                        value={level ?? "default"}
-                        data-checked={level === thinking}
+                        key={option}
+                        value={option}
+                        data-checked={option === level}
                         // A model save resets thinking, so a level picked meanwhile would be lost.
                         disabled={saveModel.pending}
                         onSelect={() => {
-                          if (level !== thinking) saveThinking.run(level);
+                          const saved = savedThinkingLevel(option);
+                          if (saved !== thinking) saveThinking.run(saved);
                           close();
                         }}
                       >
-                        {level ? thinkingLevelLabel(level) : t`Default (${defaultLabel})`}
+                        {thinkingLevelLabel(option)}
                       </CommandItem>
                     ))}
                   </CommandGroup>

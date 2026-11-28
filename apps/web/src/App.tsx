@@ -2,7 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { LinkFavicons } from "@rakazo/chat-ui/web";
 import { LinkFaviconsContext, RemoteImagesContext } from "@rakazo/chat-ui/web";
-import { mobileMcpOAuthReturnUrl } from "@rakazo/contracts";
+import { mobileMcpOAuthReturnUrl, PAGE_WEB_APP_SPACE_PARAM } from "@rakazo/contracts";
 import { analyticsScreen } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import {
@@ -33,6 +33,7 @@ import {
 import {
   MCP_OAUTH_CALLBACK_PATH,
   newAccountDestination,
+  PAGE_APP_SPACE_ID,
   SLACK_INSTALL_CALLBACK_PATH,
   signInNext,
 } from "./lib/auth/sign-in-next";
@@ -57,6 +58,9 @@ import { SharedPagePage } from "./pages/SharedPage";
 import { ShellPage } from "./pages/Shell";
 import { AppRailLayout } from "./pages/shell/app-rail";
 
+const PageAppPage = lazyComponent(() =>
+  import("./pages/PageAppPage").then((module) => module.default),
+);
 const PageReviewHost = lazyComponent(() =>
   import("./components/pages/PageReviewHost").then((module) => module.default),
 );
@@ -85,6 +89,9 @@ const AdminAccessPage = lazyComponent(() =>
 const NavLinkPage = lazyComponent(() =>
   import("./pages/NavLinkPage").then((module) => module.NavLinkPage),
 );
+const RedeemPage = lazyComponent(() =>
+  import("./pages/auth/Redeem").then((module) => module.RedeemPage),
+);
 const InvitePage = lazyComponent(() =>
   import("./pages/auth/Invite").then((module) => module.InvitePage),
 );
@@ -103,6 +110,26 @@ function SsoCallbackPage() {
 const linkFavicons: LinkFavicons = {
   load: (origin) => rpc.links.favicon({ origin }),
 };
+
+/** A page app's own address, whichever of its sign-in steps is showing. */
+function pageAppPath(pathname: string): string {
+  return pathname.replace(/\/email$/, "");
+}
+
+/** Where sign-in returns a page app: its own address, with the Space it is pinned to. */
+function pageAppNext(pathname: string, search: string): string {
+  const pinned = new URLSearchParams(search).get(PAGE_WEB_APP_SPACE_PARAM);
+  // Only a Space id sign-in will hand back, so the redirect never loops on a malformed one.
+  const space = pinned && PAGE_APP_SPACE_ID.test(pinned) ? pinned : null;
+  return `${pageAppPath(pathname)}${space ? `?${PAGE_WEB_APP_SPACE_PARAM}=${space}` : ""}`;
+}
+
+/** The page app's own address with itself as where sign-in returns, keeping its Space. */
+function pageAppSignIn(pathname: string, search: string): string {
+  const params = new URLSearchParams(search);
+  params.set("next", pageAppNext(pathname, search));
+  return `${pathname}?${params}`;
+}
 
 export function App() {
   const loadRemoteImages = remoteImagesPreference.use();
@@ -240,6 +267,30 @@ function SessionApp() {
               />
               <Route path="/reset-password" element={<PasswordResetPage />} />
               <Route path="/p/:slugToken" element={<SharedPagePage />} />
+              {["/page/:pageId", "/page/:pageId/email"].map((path) => (
+                <Route
+                  key={path}
+                  path={path}
+                  element={
+                    user ? (
+                      pathname.endsWith("/email") ? (
+                        <Navigate to={`${pageAppPath(pathname)}${search}`} replace />
+                      ) : (
+                        <PageAppPage />
+                      )
+                    ) : !signInNext(pageAppNext(pathname, search)) ? (
+                      // An address sign-in cannot return to is signed in to the ordinary way.
+                      <Navigate to="/sign-in" replace />
+                    ) : next === pageAppNext(pathname, search) ? (
+                      // Signed out, sign-in happens right here: an installed page app's window
+                      // keeps only its own page in scope, and the sign-in page is outside it.
+                      <AuthPage key="page-app" mode="in" at={pageAppPath(pathname)} />
+                    ) : (
+                      <Navigate to={pageAppSignIn(pathname, search)} replace />
+                    )
+                  }
+                />
+              ))}
               <Route
                 path="/review/:pageId?"
                 element={
@@ -314,6 +365,19 @@ function SessionApp() {
                     <InvitePage />
                   ) : (
                     <Navigate to={`/sign-in?next=${encodeURIComponent(pathname)}`} replace />
+                  )
+                }
+              />
+              <Route
+                path="/redeem/:code?"
+                element={
+                  user ? (
+                    <RedeemPage key={pathname} />
+                  ) : (
+                    <Navigate
+                      to={`${hasSignedInBefore() ? "/sign-in" : "/sign-up"}?next=${encodeURIComponent(pathname)}`}
+                      replace
+                    />
                   )
                 }
               />

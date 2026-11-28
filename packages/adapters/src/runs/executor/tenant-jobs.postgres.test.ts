@@ -131,7 +131,7 @@ describePostgres("tenant-scoped background jobs (PostgreSQL)", () => {
             "threadId",
           ),
           connections: ours(
-            connections.map((row) => row.spaceId),
+            connections.flatMap((row) => (row.spaceId ? [row.spaceId] : [])),
             "spaceId",
           ),
         });

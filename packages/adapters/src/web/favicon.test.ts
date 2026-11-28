@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -198,8 +199,8 @@ describe("favicon origins", () => {
 });
 
 describe("icon candidates", () => {
-  it("reads icon links in order, touch icons last, and skips SVG and mask icons", () => {
-    const candidates = iconCandidates(
+  it("reads icon links in order, touch icons last, and skips SVG and mask icons", async () => {
+    const candidates = await iconCandidates(
       `<link rel="apple-touch-icon" href="/touch.png">
        <LINK REL='shortcut icon' HREF='/a.ico?v=1&amp;b=2'>
        <link rel="icon" type="image/svg+xml" href="/vector">
@@ -219,9 +220,9 @@ describe("icon candidates", () => {
 });
 
 describe("document base", () => {
-  it("resolves relative icon links against the first base href", () => {
+  it("resolves relative icon links against the first base href", async () => {
     expect(
-      iconCandidates(
+      await iconCandidates(
         `<base href="https://cdn.example.test/assets/"><base href="https://other.example.test/">
          <link rel="icon" href="fav.png"><link rel="icon" href="/root.png">`,
         "https://site.example.test/home",
@@ -229,15 +230,15 @@ describe("document base", () => {
     ).toEqual(["https://cdn.example.test/assets/fav.png", "https://cdn.example.test/root.png"]);
   });
 
-  it("resolves a relative base against the page and ignores a base that is not http(s)", () => {
+  it("resolves a relative base against the page and ignores a base that is not http(s)", async () => {
     expect(
-      iconCandidates(
+      await iconCandidates(
         '<base href="/static/"><link rel="icon" href="i.png">',
         "https://site.example.test/home",
       ),
     ).toEqual(["https://site.example.test/static/i.png"]);
     expect(
-      iconCandidates(
+      await iconCandidates(
         '<base href="javascript:alert(1)"><link rel="icon" href="i.png">',
         "https://site.example.test/home",
       ),
@@ -482,10 +483,24 @@ describe("favicon resolver", () => {
     expect(await iconOf(resolver, "https://long.test")).toMatch(/^data:image\/png/);
   });
 
-  it("refuses an icon larger than 64 KB", async () => {
+  it("uses a large PNG icon of about 100 KB", async () => {
+    const bytes = await sharp(randomBytes(160 * 160 * 4), {
+      raw: { width: 160, height: 160, channels: 4 },
+    })
+      .png()
+      .toBuffer();
+    expect(bytes.length).toBeGreaterThan(64 * 1024);
+    routes.set("big.test/", html('<link rel="icon" href="/i.png">'));
+    routes.set("big.test/i.png", image(bytes));
+    const resolver = createFaviconResolver({ fetch: testFetch, resolveHostname: publicResolver });
+
+    expect(await iconOf(resolver, "https://big.test")).toMatch(/^data:image\/png/);
+  });
+
+  it("refuses an icon larger than 256 KB", async () => {
     routes.set("huge.test/", html('<link rel="icon" href="/i.png">'));
-    routes.set("huge.test/i.png", image(new Uint8Array(70 * 1024)));
-    routes.set("huge.test/favicon.ico", image(new Uint8Array(70 * 1024)));
+    routes.set("huge.test/i.png", image(new Uint8Array(257 * 1024)));
+    routes.set("huge.test/favicon.ico", image(new Uint8Array(257 * 1024)));
     const resolver = createFaviconResolver({ fetch: testFetch, resolveHostname: publicResolver });
 
     expect(await iconOf(resolver, "https://huge.test")).toBeNull();

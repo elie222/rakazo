@@ -35,8 +35,7 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 vi.mock("@rakazo/ui-web", async (importOriginal) => {
-  const { Disclosure, OptionSelect, SwitchField, useCopyText } =
-    await importOriginal<typeof UiWeb>();
+  const { Disclosure, OptionSelect, Switch, useCopyText } = await importOriginal<typeof UiWeb>();
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
     Spinner: (props: ComponentProps<"svg">) => <svg role="status" {...props} />,
@@ -55,7 +54,7 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     ),
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     OptionSelect,
-    SwitchField,
+    Switch,
     Disclosure,
     useCopyText,
   };
@@ -121,7 +120,7 @@ describe("a save that succeeded stays a success when the read after it fails", (
     });
   };
   const errorShown = (container: HTMLElement) =>
-    container.querySelector("p.text-destructive")?.textContent ?? null;
+    container.querySelector('[role="alert"]')?.textContent ?? null;
 
   beforeEach(() => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -175,7 +174,7 @@ describe("a save that succeeded stays a success when the read after it fails", (
       await vi.waitFor(() => expect(voice.credentials).toHaveBeenCalledTimes(2));
       // The test catalog leaves the provider name out of "Connected {name}.".
       await vi.waitFor(() =>
-        expect(container.querySelector("p.text-success")?.textContent).toBe("Connected ."),
+        expect(container.querySelector('div[role="status"]')?.textContent).toBe("Connected ."),
       );
       expect(errorShown(container)).not.toBe("Could not connect this voice provider");
     } finally {
