@@ -78,6 +78,7 @@ import {
   settleJobAt,
   settleJobDueAt,
 } from "./intake/settle-job.js";
+import { sendLinkHint } from "./link-hint.js";
 import type { MessagingReceipts } from "./messaging-receipts.js";
 
 export interface MessagingInboundDeps {
@@ -419,10 +420,15 @@ async function prepareDirectEvent(
     if (await tryRedeemLinkCode(deps, event)) return null;
   } else {
     // Unlinked senders: a valid link code binds this address to its issuer's
-    // account and bot; otherwise the line is silent unless the deployment
-    // explicitly runs as an open Poke-style signup line.
+    // account and bot. Otherwise, unless the deployment runs as an open
+    // Poke-style signup line, a person (not a bot, not an empty event) is told
+    // how to link, once a day.
     if (await tryRedeemLinkCode(deps, event)) return null;
-    if (!deps.openSignup || event.installationSpaceId) return null;
+    if (event.installationSpaceId) return null;
+    if (!deps.openSignup) {
+      if (!event.senderIsBot && (text || attachments.length > 0)) await sendLinkHint(deps, event);
+      return null;
+    }
     // Media-only delivery is for linked identities; retain text-based signup.
     if (!text) return null;
   }
@@ -1081,8 +1087,8 @@ export async function teamChatSenderCanWakeMessageRoutines(
  * Returns true when the message was exactly a link code that redeemed:
  * the address is now bound to the issuer's chosen bot and a confirmation
  * DM is on its way. An invalid or expired code falls through silently —
- * for linked senders it reads as a normal message, for strangers nothing
- * happens (no oracle, no reply spam).
+ * for linked senders it reads as a normal message, for strangers it gets the
+ * same daily link hint as any other text (no oracle, no reply spam).
  */
 async function tryRedeemLinkCode(
   deps: MessagingInboundDeps,
@@ -1512,7 +1518,10 @@ async function handleChannelEvent(
           idempotencyKey: `intro:${channel.id}`,
           kind: "intro",
           threadId: channel.threadId,
-          body: "Hi. This line hosts Rakazo personal agents. Some people in this group haven't messaged it yet; send any message to this line first if you want your own agent here.",
+          // Without open signup a message to the line creates nothing, so point at linking.
+          body: deps.openSignup
+            ? "Hi. This line hosts Rakazo personal agents. Some people in this group haven't messaged it yet; send any message to this line first if you want your own agent here."
+            : "Hi. This line hosts Rakazo personal agents. To bring yours here, message this line directly and link it in Rakazo under Settings → Messaging.",
         },
       ]);
       await tx.messagingChannel.update({
