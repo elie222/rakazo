@@ -674,7 +674,12 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               <>
                 <ThreadFetchErrorNotice error={error} showingSaved={showingSaved} />
                 {showWorkingPill && stopTarget ? (
-                  <WorkingPill label={workingLabel} target={stopTarget} />
+                  <WorkingPill
+                    label={workingLabel}
+                    target={stopTarget}
+                    // Stop ends every run in a group, including a bot's open question to you.
+                    canStop={workingGroupBots.length === activeGroupBots.length}
+                  />
                 ) : null}
               </>
             }
