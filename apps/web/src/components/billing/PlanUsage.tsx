@@ -22,13 +22,17 @@ function useFormatUsd() {
     new Intl.NumberFormat(i18n.locale, { style: "currency", currency: "USD" }).format(value);
 }
 
+function formatUsagePercent(value: number): number {
+  return Math.round(Math.min(100, Math.max(0, value)));
+}
+
 /** What the account menu shows beside Usage, or null when there is nothing to watch. */
 export function useUsageHint(): string | null {
   const { t } = useLingui();
   const { plans, creditsUsd } = usePlanUsage();
   const usd = useFormatUsd();
   const used = planUsagePercent(plans);
-  if (used !== null) return t`${Math.round(used)}% used`;
+  if (used !== null) return t`${formatUsagePercent(used)}% used`;
   if (creditsUsd !== null) return t`${usd(creditsUsd)} left`;
   return null;
 }
@@ -36,7 +40,7 @@ export function useUsageHint(): string | null {
 function WindowUsage({ window }: { window: PlanLimitWindow }) {
   const { t, i18n } = useLingui();
   const label = { session: t`Session`, week: t`Weekly`, month: t`Monthly` }[window.period];
-  const used = Math.round(window.usedPercent);
+  const used = formatUsagePercent(window.usedPercent);
   const reset = formatTimeUntil(window.resetsAt, i18n.locale);
   return (
     <div className="min-w-0">

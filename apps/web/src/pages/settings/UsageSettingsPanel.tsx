@@ -324,6 +324,44 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
         </p>
       )}
 
+      {botId === "all" && modelKey === "all" && fresh && fresh.bots.length > 0 ? (
+        <div data-testid="usage-bots" className="rounded-xl border border-border px-4 py-3">
+          <SectionHeading variant="label" className="mb-2">
+            <Trans>By bot</Trans>
+          </SectionHeading>
+          <ul className="divide-y divide-border">
+            {fresh.bots.map((bot) => {
+              const botLabel =
+                bot.name == null
+                  ? t`Deleted bot`
+                  : bot.deleted
+                    ? t`${bot.name} (deleted)`
+                    : bot.name;
+              return (
+                <li key={bot.id}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBot(bot)}
+                    className="flex w-full items-center justify-between gap-3 py-2 text-start text-body hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                  >
+                    <span className="min-w-0 truncate font-medium text-foreground" dir="auto">
+                      {botLabel}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-4 text-body-sm tabular-nums text-muted-foreground">
+                      <span>{t`${number(bot.runs)} runs`}</span>
+                      <span>{t`${number(bot.totalTokens)} tokens`}</span>
+                      <span className="min-w-14 text-right font-medium text-foreground">
+                        {cost(bot.costUsd)}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
+
       {routines.length > 0 ? (
         <div className="rounded-xl border border-border px-2">
           <Table className="text-body">

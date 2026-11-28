@@ -24,15 +24,43 @@ export function applyPiModelCompatibility(models: MutableModels): MutableModels 
     models.setProvider({ ...provider, getModels: () => sendable });
   }
   const provider = models.getProvider?.("amazon-bedrock");
+  const bedrockModelsByBase = new Map<string, Model<Api>>();
   if (provider) {
     const guardedId = "in.anthropic.claude-haiku-4-5-20251001-v1:0";
-    const guardedModels = provider
-      .getModels()
-      .map((model) =>
+    const providerCostByVendorSlug = new Map<string, Model<Api>["cost"]>();
+    for (const candidateProvider of models.getProviders?.() ?? []) {
+      if (candidateProvider.id === "amazon-bedrock") continue;
+      for (const candidate of candidateProvider.getModels()) {
+        if (!hasPositiveCost(candidate.cost)) continue;
+        const key = `${candidateProvider.id}:${stripModelVersion(candidate.id.toLowerCase())}`;
+        if (!providerCostByVendorSlug.has(key)) providerCostByVendorSlug.set(key, candidate.cost);
+      }
+    }
+    const rawBedrockModels = provider.getModels();
+    const bedrockCostByBase = new Map<string, Model<Api>["cost"]>();
+    for (const model of rawBedrockModels) {
+      if (!hasPositiveCost(model.cost)) continue;
+      const base = bedrockBaseModelId(model.id);
+      if (!bedrockCostByBase.has(base)) bedrockCostByBase.set(base, model.cost);
+    }
+    const guardedModels = rawBedrockModels.map((model) => {
+      const withGuard =
         model.id === guardedId
           ? { ...model, compat: { ...model.compat, supportsStrictMode: false } }
-          : model,
-      );
+          : model;
+      if (hasPositiveCost(withGuard.cost)) return withGuard;
+      const base = bedrockBaseModelId(withGuard.id);
+      const fallbackCost =
+        bedrockCostByBase.get(base) ?? vendorCostForBedrockBase(base, providerCostByVendorSlug);
+      return fallbackCost ? { ...withGuard, cost: fallbackCost } : withGuard;
+    });
+    for (const model of guardedModels) {
+      const base = bedrockBaseModelId(model.id);
+      const existing = bedrockModelsByBase.get(base);
+      if (!existing || (!hasPositiveCost(existing.cost) && hasPositiveCost(model.cost))) {
+        bedrockModelsByBase.set(base, model);
+      }
+    }
     models.setProvider({ ...provider, getModels: () => guardedModels });
   }
   // Only OpenAI's own endpoints, and OpenRouter (which translates per model), accept the
@@ -50,10 +78,55 @@ export function applyPiModelCompatibility(models: MutableModels): MutableModels 
     models.setProvider({ ...compatible, getModels: () => systemModels });
   }
   const getModel = models.getModel.bind(models);
-  models.getModel = (provider, id) => getModel(canonicalPiProviderId(provider), id);
+  models.getModel = (providerId, id) => {
+    const canonical = canonicalPiProviderId(providerId);
+    const exact = getModel(canonical, id);
+    if (exact) return exact;
+    if (canonical === "amazon-bedrock" && id) {
+      const sibling = bedrockModelsByBase.get(bedrockBaseModelId(id));
+      if (sibling) {
+        return {
+          ...sibling,
+          id,
+          compat:
+            id === "in.anthropic.claude-haiku-4-5-20251001-v1:0"
+              ? { ...sibling.compat, supportsStrictMode: false }
+              : sibling.compat,
+        };
+      }
+    }
+    return undefined;
+  };
   const getProvider = models.getProvider?.bind(models);
-  if (getProvider) models.getProvider = (provider) => getProvider(canonicalPiProviderId(provider));
+  if (getProvider)
+    models.getProvider = (providerId) => getProvider(canonicalPiProviderId(providerId));
   return models;
+}
+
+const BEDROCK_REGION_PREFIX = /^(?:global|us|eu|ap|au|in|jp|ca|sa)\./;
+
+function stripModelVersion(id: string): string {
+  return id.replace(/(?:-v\d+)?(?::\d+)?$/, "");
+}
+
+function bedrockBaseModelId(id: string): string {
+  return stripModelVersion(id.trim().toLowerCase().replace(BEDROCK_REGION_PREFIX, ""));
+}
+
+function hasPositiveCost(cost: Model<Api>["cost"] | undefined): boolean {
+  if (!cost) return false;
+  return [cost.input, cost.output, cost.cacheRead, cost.cacheWrite].some((rate) => rate > 0);
+}
+
+function vendorCostForBedrockBase(
+  base: string,
+  providerCostByVendorSlug: ReadonlyMap<string, Model<Api>["cost"]>,
+): Model<Api>["cost"] | undefined {
+  const dot = base.indexOf(".");
+  if (dot <= 0) return undefined;
+  const vendor = base.slice(0, dot);
+  const slug = base.slice(dot + 1);
+  return providerCostByVendorSlug.get(`${vendor}:${slug}`);
 }
 
 const DEVELOPER_ROLE_PROVIDERS = new Set(["openai", "azure", "openrouter"]);
