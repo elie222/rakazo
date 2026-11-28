@@ -66,7 +66,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     meetingsEnabled,
     inboundOrigin: deps.env.publishedInboundOrigin,
     phoneCallsEnabled: deps.env.phoneCallsEnabled === true,
-    navLinks: deps.env.navLinks ?? [],
+    navLinks: (deps.env.navLinks ?? []).filter((link) => admin || !link.adminOnly),
     maxUploadSizeBytes: attachmentMaxBytes(deps.env),
     maxAttachmentsPerMessage: attachmentMaxCount(deps.env),
     userId: actor.userId,

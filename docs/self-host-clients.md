@@ -241,4 +241,7 @@ Pages open sandboxed with an opaque origin, so they cannot read Rakazo's pages o
 signed-in user's session; that also blocks their own cookies and storage. Add `"trusted": true` to a
 link only for a service you control: a trusted page runs with the signed-in user's access, like a
 script allowed by `RAKAZO_CSP_SCRIPT_SRC`. The page must allow framing by the app
-(`frame-ancestors 'self'`). Links appear in the web app only; the desktop and mobile apps hide them.
+(`frame-ancestors 'self'`). Add `"adminOnly": true` to list a link only for admins
+(`RAKAZO_ADMIN_EMAILS`); it is hidden from the menu, not blocked, so protect the path in your proxy
+too. Add `"newTab": true` to open the path in a new browser tab instead of inside the app. Links
+appear in the web app only; the desktop and mobile apps hide them.

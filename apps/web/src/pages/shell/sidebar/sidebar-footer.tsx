@@ -244,18 +244,32 @@ export function SidebarFooter({
                 <Trans>Board</Trans>
               </Button>
             ) : null}
-            {links.map((link) => (
-              <Button
-                key={link.id}
-                variant="ghost"
-                size="lg"
-                className="w-full justify-start gap-2.5 font-normal"
-                onClick={() => onLink?.(link)}
-              >
-                <Link2 className="text-muted-foreground" strokeWidth={1.75} />
-                {link.label}
-              </Button>
-            ))}
+            {links.map((link) =>
+              link.newTab ? (
+                <a
+                  key={link.id}
+                  className={`${buttonVariants({ variant: "ghost", size: "lg" })} w-full justify-start gap-2.5 font-normal`}
+                  href={link.path}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => onOpenChange(false)}
+                >
+                  <Link2 className="text-muted-foreground" strokeWidth={1.75} />
+                  {link.label}
+                </a>
+              ) : (
+                <Button
+                  key={link.id}
+                  variant="ghost"
+                  size="lg"
+                  className="w-full justify-start gap-2.5 font-normal"
+                  onClick={() => onLink?.(link)}
+                >
+                  <Link2 className="text-muted-foreground" strokeWidth={1.75} />
+                  {link.label}
+                </Button>
+              ),
+            )}
             <div className="my-1 border-t border-border" />
             <a
               className={`${buttonVariants({ variant: "ghost", size: "lg" })} w-full justify-start gap-2.5 font-normal`}

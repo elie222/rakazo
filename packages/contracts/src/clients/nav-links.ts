@@ -43,6 +43,10 @@ export const NavLinkSchema = z.object({
   path: z.string().max(400).refine(isSameOriginPath),
   /** Lets the page use its own origin, and so the signed-in user's access to Rakazo. */
   trusted: z.boolean().default(false),
+  /** Listed only for admins (RAKAZO_ADMIN_EMAILS). */
+  adminOnly: z.boolean().default(false),
+  /** Opens the path in a new browser tab instead of inside the app. */
+  newTab: z.boolean().default(false),
 });
 export type NavLink = z.infer<typeof NavLinkSchema>;
 

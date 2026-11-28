@@ -101,7 +101,16 @@ describe("loadEnv", () => {
         ...base,
         RAKAZO_NAV_LINKS: '[{"id":"clients","label":"Clients","path":"/ext/clients/"}]',
       }).navLinks,
-    ).toEqual([{ id: "clients", label: "Clients", path: "/ext/clients/", trusted: false }]);
+    ).toEqual([
+      {
+        id: "clients",
+        label: "Clients",
+        path: "/ext/clients/",
+        trusted: false,
+        adminOnly: false,
+        newTab: false,
+      },
+    ]);
     expect(() =>
       loadEnv({ ...base, RAKAZO_NAV_LINKS: '[{"id":"x","label":"X","path":"/api/me"}]' }),
     ).toThrow("RAKAZO_NAV_LINKS");

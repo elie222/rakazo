@@ -817,6 +817,55 @@ describe("billing", () => {
   });
 });
 
+describe("me nav links", () => {
+  function meAs(email: string) {
+    const prisma = {
+      user: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          email,
+          name: "Test User",
+          avatarStyle: "robot",
+          signupSurvey: null,
+          secrets: [],
+        }),
+        findUnique: vi.fn().mockResolvedValue({ email, emailVerified: true }),
+      },
+      userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
+      deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaClient;
+    const link = { trusted: false, newTab: false };
+    const deps = {
+      prisma,
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+        adminEmails: ["admin@rakazo.test"],
+        navLinks: [
+          { ...link, id: "clients", label: "Clients", path: "/ext/clients/", adminOnly: false },
+          { ...link, id: "console", label: "Console", path: "/ext/console/", adminOnly: true },
+        ],
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const actor = {
+      spaceId: "workspace-1",
+      userId: "user-1",
+      email,
+      isDeploymentOwner: false,
+    } satisfies Actor;
+    return createRouterClient(createRouter(deps), { context: { actor } }).me();
+  }
+
+  it("sends admin-only links to admins alone", async () => {
+    const ids = async (email: string) => (await meAs(email)).navLinks.map((link) => link.id);
+    expect(await ids("admin@rakazo.test")).toEqual(["clients", "console"]);
+    expect(await ids("member@rakazo.test")).toEqual(["clients"]);
+  });
+});
+
 describe("updater owner gate", () => {
   function updaterDeps() {
     const prisma = {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { DesktopUpdateState } from "@rakazo/contracts";
+import type { DesktopUpdateState, NavLink } from "@rakazo/contracts";
 import { Toaster } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -34,6 +34,11 @@ async function render(
   onIntegrations = vi.fn(),
   onBoard?: () => void,
   logos?: Array<{ name: string; logo?: string }>,
+  menu: {
+    links?: NavLink[];
+    onLink?: (link: NavLink) => void;
+    onOpenChange?: (open: boolean) => void;
+  } = {},
 ) {
   const email = "account@rakazo.test";
   await act(async () =>
@@ -51,7 +56,9 @@ async function render(
           image={image}
           email={email}
           open
-          onOpenChange={() => {}}
+          onOpenChange={menu.onOpenChange ?? (() => {})}
+          links={menu.links}
+          onLink={menu.onLink}
           onIntegrations={onIntegrations}
           onSkills={vi.fn()}
           onBoard={onBoard}
@@ -157,6 +164,33 @@ it("omits Board when unavailable", async () => {
   expect(document.querySelector('[data-slot="popover-content"]')?.textContent).not.toContain(
     "Board",
   );
+});
+
+it("opens a new-tab menu link in its own tab and others inside the app", async () => {
+  const onLink = vi.fn();
+  const onOpenChange = vi.fn();
+  const link = { trusted: false, adminOnly: false };
+  await render("Demo User", undefined, vi.fn(), undefined, undefined, {
+    links: [
+      { ...link, id: "clients", label: "Clients", path: "/ext/clients/", newTab: false },
+      { ...link, id: "console", label: "Console", path: "/ext/console/", newTab: true },
+    ],
+    onLink,
+    onOpenChange,
+  });
+  const menu = document.querySelector('[data-slot="popover-content"]')!;
+  const newTab = [...menu.querySelectorAll("a")].find((row) => row.textContent === "Console")!;
+  expect(newTab.getAttribute("href")).toBe("/ext/console/");
+  expect(newTab.target).toBe("_blank");
+  expect(newTab.rel).toBe("noopener noreferrer");
+  newTab.addEventListener("click", (event) => event.preventDefault());
+  await act(async () => newTab.click());
+  expect(onOpenChange).toHaveBeenCalledWith(false);
+  expect(onLink).not.toHaveBeenCalled();
+
+  const framed = [...menu.querySelectorAll("button")].find((row) => row.textContent === "Clients")!;
+  await act(async () => framed.click());
+  expect(onLink).toHaveBeenCalledWith(expect.objectContaining({ id: "clients" }));
 });
 
 it("offers Google Play on Android", async () => {
