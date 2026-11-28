@@ -7,6 +7,7 @@ import { useMemo } from "react";
 import { Text, View } from "react-native";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
+import { announceToScreenReader } from "../../lib/native/announce";
 import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
 import { MenuPicker } from "../ui/menu-picker";
 
@@ -38,15 +39,16 @@ export function SpaceAvailabilityPicker({
 }) {
   const { t } = useLingui();
   const spaces = useOwnSpaces();
+  const saveFailure = (failure: Error) =>
+    errorText(failure, t`Could not change where this is available`);
   // A refused choice, such as a name already used in another space, says why; choosing again retries.
   const change = useSave({
     save: (next: { allSpaces: boolean; spaceIds: string[] }, send) =>
       send("availability/set", { kind, id, ...next }),
     stale,
+    onFailed: (failure) => announceToScreenReader(saveFailure(failure)),
   });
-  const error = change.error
-    ? errorText(change.error, t`Could not change where this is available`)
-    : null;
+  const error = change.error ? saveFailure(change.error) : null;
   if (spaces.length < 2 || !availability) return null;
   const several = !availability.allSpaces && availability.spaceIds.length > 1;
   const value = availability.allSpaces ? "all" : several ? "several" : availability.spaceIds[0]!;

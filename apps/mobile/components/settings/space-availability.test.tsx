@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type { AvailabilityKind } from "@rakazo/contracts";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import { notifyManager } from "@tanstack/react-query";
@@ -8,10 +9,12 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { announceToScreenReader } from "../../lib/native/announce";
 import { queryClient } from "../../lib/query/query";
 import { SpaceAvailabilityPicker } from "./space-availability";
 
 const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }));
+vi.mock("../../lib/native/announce", () => ({ announceToScreenReader: vi.fn() }));
 vi.mock("../../lib/api/api", () => ({
   rpc,
   currentApiBase: () => "http://api.test",
@@ -77,11 +80,11 @@ afterEach(async () => {
 });
 const button = (label: string) =>
   [...container.querySelectorAll("button")].find((item) => item.textContent === label)!;
-const render = () =>
+const render = (kind: AvailabilityKind = "install") =>
   act(async () =>
     root.render(
       <SpaceAvailabilityPicker
-        kind="install"
+        kind={kind}
         id="install-1"
         availability={{ allSpaces: true, spaceIds: ["space-1"] }}
         stale={stale}
@@ -106,6 +109,7 @@ it("sends one change at a time and reads the item again after it", async () => {
   ]);
   await act(async () => saved.resolve({}));
   expect(invalidate).toHaveBeenCalledWith({ queryKey: stale[0] });
+  expect(announceToScreenReader).not.toHaveBeenCalled();
 });
 
 const renderSeveral = () =>
@@ -125,9 +129,54 @@ it("labels several spaces as a count in English", async () => {
   expect(container.textContent).toContain("2 spaces");
 });
 
-it("says why a choice was refused", async () => {
+it.each(["install", "skill"] as const)(
+  "announces why a %s choice was refused once, including a repeated failure",
+  async (kind) => {
+    await render(kind);
+    expect(announceToScreenReader).not.toHaveBeenCalled();
+    for (const attempt of [1, 2]) {
+      saved = deferred();
+      await act(async () => button("Work").click());
+      expect(announceToScreenReader).toHaveBeenCalledTimes(attempt - 1);
+      await act(async () => saved.reject(new Error("Name already used in Work")));
+      const reason = container.querySelector('[role="alert"]')?.textContent;
+      expect(reason).toBe("Name already used in Work");
+      expect(announceToScreenReader).toHaveBeenCalledTimes(attempt);
+      expect(announceToScreenReader).toHaveBeenNthCalledWith(attempt, reason);
+    }
+    expect(changes()).toHaveLength(2);
+  },
+);
+
+it("announces the displayed fallback when a refusal has no message", async () => {
+  await render();
+  await act(async () => button("Work").click());
+  await act(async () => saved.reject(new Error("")));
+  const reason = container.querySelector('[role="alert"]')?.textContent;
+  expect(reason).toBe("Could not change where this is available");
+  expect(announceToScreenReader).toHaveBeenCalledExactlyOnceWith(reason);
+});
+
+it("does not announce success after a refused choice", async () => {
   await render();
   await act(async () => button("Work").click());
   await act(async () => saved.reject(new Error("Name already used in Work")));
-  expect(container.textContent).toContain("Name already used in Work");
+  expect(announceToScreenReader).toHaveBeenCalledTimes(1);
+  saved = deferred();
+  await act(async () => button("Home").click());
+  await act(async () => saved.resolve({}));
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(announceToScreenReader).toHaveBeenCalledTimes(1);
+});
+
+it.each(["success", "failure"])("does not announce a late %s after leaving", async (outcome) => {
+  await render();
+  await act(async () => button("Work").click());
+  expect(changes()).toHaveLength(1);
+  await act(async () => root.render(null));
+  await act(async () => {
+    if (outcome === "failure") saved.reject(new Error("Name already used in Work"));
+    else saved.resolve({});
+  });
+  expect(announceToScreenReader).not.toHaveBeenCalled();
 });
