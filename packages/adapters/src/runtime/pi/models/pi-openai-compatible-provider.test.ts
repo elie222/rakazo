@@ -1277,6 +1277,45 @@ describe("built-in public compatible host", () => {
     ).resolves.toEqual(["chat-model", "untagged-model"]);
     expect(String(transport.mock.calls[0]?.[0])).toBe("https://api.deepinfra.com/v1/me");
   });
+
+  it("verifies bf16.ai keys against /v1/models and rejects 401", async () => {
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 }));
+    await expect(
+      verifyOpenAiCompatibleApiKey(
+        { baseUrl: "https://api.bf16.ai/v1", apiKey: "sk-bf16-v1-invalid" },
+        transport,
+      ),
+    ).rejects.toThrow();
+    expect(String(transport.mock.calls[0]?.[0])).toBe("https://api.bf16.ai/v1/models");
+  });
+
+  it("allows keyless model discovery for public bf16.ai catalog while rejecting invalid keys", async () => {
+    const publicTransport = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [{ id: "deepseek/deepseek-v4.1-flash-uncensored" }, { id: "bf16/auto" }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: "https://api.bf16.ai/v1" }, publicTransport),
+    ).resolves.toEqual(["deepseek/deepseek-v4.1-flash-uncensored", "bf16/auto"]);
+    expect(publicTransport).toHaveBeenCalledTimes(1);
+    expect(String(publicTransport.mock.calls[0]?.[0])).toBe("https://api.bf16.ai/v1/models");
+
+    const invalidKeyTransport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 }));
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "https://api.bf16.ai/v1", apiKey: "sk-bf16-v1-invalid" },
+        invalidKeyTransport,
+      ),
+    ).rejects.toThrow("API key was rejected");
+  });
   it("does not verify unrelated compatible servers and rejects missing keys", async () => {
     const transport = vi.fn();
     await verifyOpenAiCompatibleApiKey({ baseUrl: "https://other.test/v1" }, transport);

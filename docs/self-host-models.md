@@ -321,7 +321,7 @@ switched to it, and its runs fail with a clear error. An unset or empty list mea
 exactly the behavior without it.
 
 Hosted OpenAI-compatible presets include Ollama Cloud (`ollama-cloud`), Concentrate AI
-(`concentrate`) and DeepInfra (`deepinfra`). Choose one in **Settings → Models**, enter its API key, and select
+(`concentrate`), DeepInfra (`deepinfra`), and bf16.ai (`bf16`). Choose one in **Settings → Models**, enter its API key, and select
 a model. Rakazo loads the list automatically. Their HTTPS hosts remain available with `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`.
 If you set a provider allowlist, include `openai-compatible` and the ids of the presets you
 want to keep. Leaving out a preset id hides it and removes its host exemption.

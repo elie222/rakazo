@@ -34,6 +34,7 @@ import {
   assertAllowedOpenAiCompatibleRequestUrl,
   assertAllowedOpenAiCompatibleUrl,
   assertHttpsForKeyedOpenAiCompatibleUrl,
+  compatibleEndpointPreset,
   isPrivateOpenAiCompatibleHostname,
   loopbackOnHost,
   normalizeOpenAiCompatibleBaseUrl,
@@ -603,6 +604,7 @@ async function readBoundedJson(
 const KEY_CHECK_URLS: Record<string, string> = {
   "ollama.com": "https://ollama.com/api/balance",
   "api.deepinfra.com": "https://api.deepinfra.com/v1/me",
+  "api.bf16.ai": "https://api.bf16.ai/v1/models",
 };
 
 /** Some compatible servers expose their model list without authenticating. */
@@ -708,7 +710,12 @@ async function listOpenAiCompatibleModels(
     input.apiKey,
     Object.keys(input.headers ?? {}).length > 0,
   );
-  if (!details) await verifyOpenAiCompatibleApiKey(input, fetchImpl, signal);
+  if (!details) {
+    const preset = compatibleEndpointPreset(baseUrl.href);
+    if (!preset?.publicModels || input.apiKey?.trim()) {
+      await verifyOpenAiCompatibleApiKey(input, fetchImpl, signal);
+    }
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5_000);
   const merged = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
