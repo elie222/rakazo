@@ -184,8 +184,8 @@ export async function prepareChildBotUpdate(
     lines.push("", "Team chat rules:", settings.teamChatRules);
   const summary = { title: `Change ${cardName(child.name)}’s settings?`, lines };
   if (
-    redactSecrets(summary.title, [...secrets]).length > MAX_APPROVAL_SUMMARY_LENGTH ||
-    redactSecrets(lines.join("\n"), [...secrets]).length > approvalDetailLength("update_bot")
+    redactSecrets(summary.title, secrets).length > MAX_APPROVAL_SUMMARY_LENGTH ||
+    redactSecrets(lines.join("\n"), secrets).length > approvalDetailLength("update_bot")
   )
     return { error: "This request is too long to show on the approval card. Shorten it." };
   return {

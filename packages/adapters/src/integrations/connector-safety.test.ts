@@ -33,6 +33,52 @@ describe("redactConnectorPayload", () => {
       redactConnectorPayload({ number: 123, boolean: true, empty: null }, ["123", "true", "null"]),
     ).toEqual({ number: "[redacted]", boolean: "[redacted]", empty: "[redacted]" });
   });
+
+  it("redacts a value toJSON adds after the secrets array was already cached", () => {
+    const secrets = ["known-secret"];
+    expect(redactConnectorPayload({ first: "known-secret" }, secrets)).toEqual({
+      first: "[redacted]",
+    });
+    const payload = {
+      toJSON() {
+        secrets.push("added-after-warm");
+        return { first: "known-secret", second: "added-after-warm" };
+      },
+    };
+    expect(redactConnectorPayload(payload, secrets)).toEqual({
+      first: "[redacted]",
+      second: "[redacted]",
+    });
+  });
+
+  it("resolves the secret matcher once per payload instead of once per leaf", () => {
+    const raw = ["secret-alpha-0001", "secret-beta-0002", "secret-gamma-0003"];
+    let indexZeroReads = 0;
+    const secrets = new Proxy(raw, {
+      get(target, prop, receiver) {
+        if (prop === "0") indexZeroReads += 1;
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+    const payload = {
+      items: Array.from({ length: 40 }, (_, index) => ({
+        id: `item-${index}`,
+        label: index === 15 ? `contains ${raw[1]} inside` : `Element description ${index}`,
+        href: `https://example.test/items/${index}`,
+        active: index % 2 === 0,
+      })),
+    };
+
+    // Warm the WeakMap entry, then verify a multi-leaf payload validates the secrets array once.
+    redactConnectorPayload({ warm: raw[0] }, secrets);
+    indexZeroReads = 0;
+
+    const redacted = redactConnectorPayload(payload, secrets) as {
+      items: Array<{ label: string }>;
+    };
+    expect(redacted.items[15]?.label).toBe("contains [redacted] inside");
+    expect(indexZeroReads).toBe(1);
+  });
 });
 
 describe("sanitizeConnectorError", () => {

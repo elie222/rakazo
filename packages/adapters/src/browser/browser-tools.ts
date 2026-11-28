@@ -499,7 +499,15 @@ export function parseBrowserActions(value: unknown): BrowserActInput[] {
  * quoted strings, so a secret with a quote, a backslash or a line break reads differently there:
  * hide it in that form too.
  */
-export function redactBrowserResult<T>(result: T, secrets: string[]): unknown {
+export function redactBrowserResult<T>(result: T, secrets: readonly string[]): unknown {
+  let needsEscaped = false;
+  for (const secret of secrets) {
+    if (JSON.stringify(secret).slice(1, -1) !== secret) {
+      needsEscaped = true;
+      break;
+    }
+  }
+  if (!needsEscaped) return redactConnectorPayload(result, secrets);
   const forms = secrets.flatMap((secret) => {
     const quoted = JSON.stringify(secret).slice(1, -1);
     return quoted === secret ? [secret] : [secret, quoted];

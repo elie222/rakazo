@@ -13,6 +13,13 @@ export type SecretMatcher = {
 
 const ROOT = 0;
 
+let indexedMatcherBuilds = 0;
+
+/** Total one-pass matchers built in this process; used by tests to verify matcher reuse. */
+export function indexedMatcherBuildCount(): number {
+  return indexedMatcherBuilds;
+}
+
 /**
  * The most states the one-pass matcher builds. Its states grow with the values' combined length,
  * which very long values (keys of thousands of characters, each in several encodings) could push
@@ -104,6 +111,7 @@ export function createIndexedMatcher(
     }
   }
   const empty = depth.length === 1;
+  if (!empty) indexedMatcherBuilds += 1;
 
   /** Calls `found(end, length)` with the longest value ending at each offset that ends one. */
   const scan = (text: string, found: (end: number, length: number) => boolean | undefined) => {
@@ -128,8 +136,9 @@ export function createIndexedMatcher(
       // Of the matches ending at one offset only the longest counts: the others lie inside it,
       // so they overlap it and can't change a stretch. Ends only grow, so a match that starts
       // before the current stretch ends joins it; one that only touches it starts another.
-      const ranges: Array<[number, number]> = [];
+      let ranges: Array<[number, number]> | undefined;
       scan(text, (end, length) => {
+        ranges ??= [];
         const start = end - length;
         const last = ranges.at(-1);
         if (last && start < last[1]) last[0] = Math.min(last[0], start);
@@ -145,7 +154,7 @@ export function createIndexedMatcher(
         current[1] = end;
         return undefined;
       });
-      return ranges;
+      return ranges ?? [];
     },
     test(text) {
       if (empty) return false;
@@ -196,4 +205,78 @@ function scanningMatcher(values: readonly string[]): SecretMatcher {
       return present.some((value) => text.includes(value));
     },
   };
+}
+
+/** Shorter lines, or lines with spaces such as a key's BEGIN header, also appear in ordinary text. */
+const MIN_SECRET_LINE_LENGTH = 16;
+
+export type CachedSecretMatcher = {
+  matcher: SecretMatcher;
+  maxLength: number;
+};
+
+type ArrayCacheEntry = {
+  from: string[];
+  cached: CachedSecretMatcher;
+};
+
+const EMPTY_CACHED_MATCHER: CachedSecretMatcher = {
+  matcher: createSecretMatcher([]),
+  maxLength: 0,
+};
+
+/** The cached matcher and snapshot of elements it was built from, for each live secrets array. */
+const arrayMatchers = new WeakMap<readonly string[], ArrayCacheEntry>();
+
+function sameArrayContents(previous: readonly string[], current: readonly string[]): boolean {
+  if (previous.length !== current.length) return false;
+  for (let index = 0; index < previous.length; index += 1) {
+    if (previous[index] !== current[index]) return false;
+  }
+  return true;
+}
+
+function collectProtectedSecrets(secrets: Iterable<string>, snapshot?: string[]): Set<string> {
+  const valueSet = new Set<string>();
+  for (const secret of secrets) {
+    if (snapshot) snapshot.push(secret);
+    if (!secret) continue;
+    valueSet.add(secret);
+    if (!/[\r\n]/.test(secret)) continue;
+    for (const line of secret.split(/\r\n?|\n/)) {
+      const trimmed = line.trim();
+      if (trimmed.length >= MIN_SECRET_LINE_LENGTH && !/\s/.test(trimmed)) valueSet.add(trimmed);
+    }
+  }
+  return valueSet;
+}
+
+/**
+ * Returns the matcher and longest protected value length for `secrets`: each non-empty value plus
+ * each long unspaced line of a multi-line value (such as a private key's body). Reuses one entry
+ * per unchanged live array via WeakMap so compiled matchers are collected as soon as the caller's
+ * array goes out of scope.
+ */
+export function cachedSecretMatcher(secrets: Iterable<string>): CachedSecretMatcher {
+  const isArray = Array.isArray(secrets);
+  if (isArray) {
+    const hit = arrayMatchers.get(secrets);
+    if (hit && sameArrayContents(hit.from, secrets)) {
+      return hit.cached;
+    }
+  }
+  const snapshot = isArray ? ([] as string[]) : undefined;
+  const valueSet = collectProtectedSecrets(secrets, snapshot);
+  let maxLength = 0;
+  for (const value of valueSet) {
+    if (value.length > maxLength) maxLength = value.length;
+  }
+  const cached =
+    valueSet.size === 0
+      ? EMPTY_CACHED_MATCHER
+      : { matcher: createSecretMatcher([...valueSet]), maxLength };
+  if (snapshot) {
+    arrayMatchers.set(secrets as readonly string[], { from: snapshot, cached });
+  }
+  return cached;
 }

@@ -1,7 +1,18 @@
 import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
-import { createStreamingRedactor, redactedRanges, redactSecrets } from "./events.js";
-import { createIndexedMatcher, createSecretMatcher } from "./secret-matcher.js";
+import {
+  containsSecret,
+  createStreamingRedactor,
+  redactedRanges,
+  redactSecrets,
+  secretRedactor,
+} from "./events.js";
+import {
+  cachedSecretMatcher,
+  createIndexedMatcher,
+  createSecretMatcher,
+  indexedMatcherBuildCount,
+} from "./secret-matcher.js";
 
 /** The per-value scan the matcher replaced, kept to check it finds the same stretches. */
 function scannedRanges(value: string, secrets: string[]): Array<[number, number]> {
@@ -119,5 +130,66 @@ describe("redacting with a growing list", () => {
     expect(redactor.push("pass hunter2-") + redactor.push("secret done") + redactor.finish()).toBe(
       "pass [redacted] done",
     );
+  });
+
+  it("reuses one compiled matcher across helpers for a live secrets array without retaining copies globally", () => {
+    const secrets = Array.from(
+      { length: 500 },
+      (_, index) => `shared-cache-secret-${index.toString().padStart(4, "0")}-abcdef123456`,
+    );
+    const target = secrets[250]!;
+    const text = `${"plain text ".repeat(3_000)}${target} end`;
+    const before = indexedMatcherBuildCount();
+
+    const redact = secretRedactor(secrets);
+    for (const result of [
+      redact(text),
+      redactSecrets(text, secrets),
+      secretRedactor(secrets)(text),
+    ]) {
+      expect(result).not.toContain(target);
+      expect(result.endsWith("[redacted] end")).toBe(true);
+    }
+    expect(redactedRanges(text, secrets)).toEqual([
+      [text.indexOf(target), text.indexOf(target) + target.length],
+    ]);
+    expect(containsSecret({ body: text }, secrets)).toBe(true);
+    const stream = createStreamingRedactor(secrets);
+    const streamed = stream.push(text) + stream.finish();
+    expect(streamed).not.toContain(target);
+    expect(streamed.endsWith("[redacted] end")).toBe(true);
+
+    expect(indexedMatcherBuildCount() - before).toBe(1);
+
+    // Distinct array copies never share a global process-wide cache entry, so short-lived
+    // credentials cannot outlive their caller's scope.
+    expect(cachedSecretMatcher([...secrets]).matcher).not.toBe(
+      cachedSecretMatcher(secrets).matcher,
+    );
+  });
+
+  it("rebuilds when a live array mutates, snapshots secretRedactor, and returns fresh empty ranges", () => {
+    const live = ["live-initial-secret"];
+    const snapshotRedact = secretRedactor(live);
+    expect(snapshotRedact("live-initial-secret live-added-secret")).toBe(
+      "[redacted] live-added-secret",
+    );
+    live.push("live-added-secret");
+    expect(redactSecrets("live-initial-secret live-added-secret", live)).toBe(
+      "[redacted] [redacted]",
+    );
+    expect(snapshotRedact("live-initial-secret live-added-secret")).toBe(
+      "[redacted] live-added-secret",
+    );
+
+    // Mutating an empty result returned by redactedRanges on an indexed miss must not affect later calls.
+    const missSecrets = Array.from({ length: 20 }, (_, index) => `miss-secret-${index}-abcdef`);
+    const indexedMiss = redactedRanges("clean text without any match".repeat(200), missSecrets);
+    expect(indexedMiss).toEqual([]);
+    indexedMiss.push([0, 5]);
+    expect(redactSecrets("clean text without any match", ["other-secret-value"])).toBe(
+      "clean text without any match",
+    );
+    expect(redactedRanges("clean text without any match", missSecrets)).toEqual([]);
   });
 });

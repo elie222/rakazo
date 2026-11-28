@@ -233,7 +233,7 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
   if (blocked) return call.finish({ error: blocked });
   if (name !== "browser_snapshot") ctx.computer.checkpoint.markDirty();
   // Pages can echo a filled login (e.g. a username field), so scrub every page result.
-  const redactions = () => [...ctx.secrets];
+  const redactions = () => ctx.secrets;
   const desktopTools =
     ctx.computer.graphicalToolsAllowed && builtinOffered(ctx.tools.disabled, "computer_act");
   // A file the page downloads goes to the bot's own Downloads folder. Its name is redacted like any

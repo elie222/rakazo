@@ -125,9 +125,8 @@ export async function prepareFleetRequest(
   // is refused instead.
   if (
     prepared.ok &&
-    (redactSecrets(prepared.summary.title, [...secrets]).length > MAX_APPROVAL_SUMMARY_LENGTH ||
-      redactSecrets(prepared.summary.lines.join("\n"), [...secrets]).length >
-        approvalDetailLength(name))
+    (redactSecrets(prepared.summary.title, secrets).length > MAX_APPROVAL_SUMMARY_LENGTH ||
+      redactSecrets(prepared.summary.lines.join("\n"), secrets).length > approvalDetailLength(name))
   ) {
     return refuse("This request is too long to show on the approval card. Shorten it.");
   }
@@ -1253,7 +1252,7 @@ export function credentialField(
   secrets: readonly string[],
 ): string | undefined {
   const field = Object.entries(fields).find(
-    ([, value]) => typeof value === "string" && redactSecrets(value, [...secrets]) !== value,
+    ([, value]) => typeof value === "string" && redactSecrets(value, secrets) !== value,
   )?.[0];
   return field ? `${field} cannot contain credentials.` : undefined;
 }

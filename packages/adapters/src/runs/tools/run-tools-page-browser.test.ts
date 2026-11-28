@@ -112,7 +112,7 @@ async function runPageTool(name: string, args: Record<string, unknown> = {}) {
     },
     tools: { disabled: new Set<string>() },
     providers: { browser },
-    secrets: new Set([secret]),
+    secrets: [secret],
     state: { screen: freshScreen() },
   };
   const call = { name, args, finish: async (result: unknown) => result };
@@ -185,7 +185,7 @@ describe("page tools save a page's file downloads in the calling bot's own folde
       },
       tools: { disabled: new Set<string>() },
       providers: { browser },
-      secrets: new Set([nameSecret]),
+      secrets: [nameSecret],
       state: { screen: freshScreen() },
     };
     const args =
@@ -289,7 +289,7 @@ describe("screen tools keep off the screen while a takeover holds it or teaching
         get,
       },
       state: { screen },
-      secrets: new Set<string>(),
+      secrets: [] as string[],
     };
     const call = {
       name,
@@ -1161,7 +1161,7 @@ describe("a saved login's authenticator key in what a run reads", () => {
       },
       tools: { disabled: new Set<string>() },
       providers: { browser },
-      secrets: new Set(secrets),
+      secrets: [...secrets],
       state: { screen: freshScreen() },
     };
     const result = JSON.stringify(
