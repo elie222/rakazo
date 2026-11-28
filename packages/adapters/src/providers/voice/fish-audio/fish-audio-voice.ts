@@ -79,14 +79,15 @@ export class FishAudioVoiceProvider implements VoiceProvider {
         fetchModels(apiKey, listContext, false, language),
         fetchModels(apiKey, listContext, true, undefined),
       ]);
-      const seen = new Set<string>();
-      return [...ownModels, ...publicModels]
-        .map(modelToVoice)
-        .filter((voice): voice is VoiceInfo => {
-          if (!voice || seen.has(voice.id)) return false;
-          seen.add(voice.id);
-          return true;
-        });
+      // A voice can be in both listings; keep the first record but not at the cost of its languages.
+      const byId = new Map<string, VoiceInfo>();
+      for (const voice of [...ownModels, ...publicModels].map(modelToVoice)) {
+        if (!voice) continue;
+        const first = byId.get(voice.id);
+        if (!first) byId.set(voice.id, voice);
+        else if (!first.languages && voice.languages) first.languages = voice.languages;
+      }
+      return [...byId.values()];
     } finally {
       // Stop sibling or speculative requests when the listing finishes or fails.
       controller.abort();
@@ -375,7 +376,8 @@ function modelToVoice(model: Record<string, unknown>): VoiceInfo | null {
   const description =
     [asText(model.description), languageLabel(model.languages)].filter(Boolean).join(" · ") ||
     undefined;
-  return { id, label, description };
+  const languages = languageCodes(model.languages);
+  return { id, label, description, ...(languages.length ? { languages } : {}) };
 }
 
 function asText(value: unknown): string {
@@ -387,6 +389,16 @@ function languageLabel(value: unknown): string {
   return value
     .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
     .join(", ");
+}
+
+/** Lowercase primary language codes ("de-DE" → "de"), without repeats. */
+function languageCodes(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const codes = value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim().split(/[-_]/)[0]?.toLowerCase() ?? "")
+    .filter(Boolean);
+  return [...new Set(codes)];
 }
 
 export const fishAudioVoice: VoiceProviderDefinition = {

@@ -997,6 +997,8 @@ export interface VoiceInfo {
   id: string;
   label: string;
   description?: string;
+  /** Lowercase language codes the voice speaks, such as "en" or "de", when the provider says. */
+  languages?: string[];
 }
 
 export interface VoiceModelInfo {

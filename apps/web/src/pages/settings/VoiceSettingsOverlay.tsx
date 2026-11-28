@@ -43,6 +43,7 @@ import { useModelOAuthSignIn } from "../../lib/models/use-model-oauth-signin";
 import { useSpaceQueries } from "../../lib/query/query";
 import { useBoundSpaceId, useSpaceRpc } from "../../lib/query/space-rpc";
 import { errorText } from "../../lib/query/user-error";
+import { VoiceSelect } from "./VoicePicker";
 import { VoiceModelConnectionActions } from "./voice-model-connection-actions";
 
 export function VoiceSettingsOverlay({
@@ -837,17 +838,12 @@ export function VoiceSettingsOverlay({
                         </datalist>
                       </>
                     ) : (
-                      <OptionSelect
+                      <VoiceSelect
                         id={voiceSelectId}
+                        voices={voiceOptions}
                         value={voiceId}
                         disabled={busy}
-                        options={voiceOptions.map((voice) => ({
-                          value: voice.id,
-                          label: voice.description
-                            ? `${voice.label} (${voice.description})`
-                            : voice.label,
-                        }))}
-                        onValueChange={(next) => void chooseVoice(next)}
+                        onChange={(next) => void chooseVoice(next)}
                       />
                     )}
                   </div>

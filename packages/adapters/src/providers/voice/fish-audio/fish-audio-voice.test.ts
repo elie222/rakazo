@@ -311,6 +311,43 @@ function delay(ms: number, signal?: AbortSignal | null): Promise<void> {
 }
 
 describe("Fish Audio language filter", () => {
+  it("reports each voice's language codes in lowercase without repeats", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (new URL(String(input)).searchParams.has("self")) return Response.json({ items: [] });
+        return Response.json({
+          total: 2,
+          items: [
+            { _id: "multi", title: "Multi", languages: ["en", "de-DE", "DE", " "] },
+            { _id: "none", title: "None" },
+          ],
+        });
+      }),
+    );
+    const voices = await new FishAudioVoiceProvider().listVoices("fake-fish-key", context);
+    expect(voices.find((voice) => voice.id === "multi")?.languages).toEqual(["en", "de"]);
+    expect(voices.find((voice) => voice.id === "none")).not.toHaveProperty("languages");
+  });
+
+  it("keeps a voice's languages when its own record lacks them but the public one has them", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (new URL(String(input)).searchParams.has("self")) {
+          return Response.json({ total: 1, items: [{ _id: "shared", title: "Mine" }] });
+        }
+        return Response.json({
+          total: 1,
+          items: [{ _id: "shared", title: "Public", languages: ["de-DE"] }],
+        });
+      }),
+    );
+    const voices = await new FishAudioVoiceProvider().listVoices("fake-fish-key", context);
+    expect(voices).toHaveLength(1);
+    expect(voices[0]).toMatchObject({ id: "shared", label: "Mine", languages: ["de"] });
+  });
+
   it("advertises catalog language support", () => {
     expect(new FishAudioVoiceProvider().describe().capabilities.languages).toBe(true);
   });
