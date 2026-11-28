@@ -1,8 +1,74 @@
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import type { RawExec } from "./exec-computer.js";
 import { ExecComputer, encodeTarEntry, TarReader } from "./exec-computer.js";
+
+describe("command request env", () => {
+  it("lets the command's own cache dir win over the computer's default, as on main", async () => {
+    // Runs the argv the adapter builds with the real bash and env, from a host directory in
+    // place of the sandbox workspace; the request's env arrives on stdin as the adapter sends it.
+    const exec: RawExec = async function* (_computer, command, _signal, _timeout, stdin) {
+      const input: Buffer[] = [];
+      for await (const chunk of stdin ?? []) input.push(Buffer.from(chunk));
+      const argv = [...command];
+      argv[4] = tmpdir();
+      const run = spawnSync(argv[0]!, argv.slice(1), {
+        input: Buffer.concat(input),
+        env: {},
+        encoding: "buffer",
+      });
+      yield { type: "stdout", data: run.stdout };
+      yield { type: "exit", code: run.status ?? 1 };
+    };
+    const computer = new ExecComputer(exec, "test");
+    const context = { signal: new AbortController().signal } as AdapterContext;
+    const ref = { id: "computer-1" } as ComputerRef;
+    let stdout = "";
+    for await (const event of computer.execute(
+      ref,
+      {
+        argv: ["sh", "-c", 'printf %s "$XDG_CACHE_HOME"'],
+        env: { XDG_CACHE_HOME: "/work/own-cache" },
+      },
+      context,
+    )) {
+      if (event.type === "stdout") stdout += Buffer.from(event.data).toString();
+    }
+    expect(stdout).toBe("/work/own-cache");
+  });
+
+  it("loads request env from stdin and keeps cache env and timeout in argv", async () => {
+    const secret = "super-secret-key";
+    let seen: string[] = [];
+    const exec: RawExec = async function* (_computer, command, _signal, _timeout, stdin) {
+      seen = command;
+      expect(stdin).toBeDefined();
+      const chunks: string[] = [];
+      for await (const chunk of stdin!) chunks.push(chunk.toString());
+      expect(chunks.join("")).toContain("FAKE_TOKEN=");
+      expect(chunks.join("")).toContain(secret);
+      yield { type: "exit", code: 0 };
+    };
+    const computer = new ExecComputer(exec, "test");
+    const context = { signal: new AbortController().signal } as AdapterContext;
+    const ref = { id: "computer-1" } as ComputerRef;
+    for await (const _event of computer.execute(
+      ref,
+      { argv: ["true"], env: { FAKE_TOKEN: secret } },
+      context,
+    )) {
+      // drain
+    }
+    const joined = seen.join(" ");
+    expect(joined).not.toContain(secret);
+    expect(joined).toContain("XDG_CACHE_HOME=/tmp/rakazo-cache/xdg");
+    expect(joined).toContain("timeout");
+    expect(joined).toContain("true");
+  });
+});
 
 describe("reading a file with a size limit", () => {
   it("refuses a file that grew past the limit after its size was checked, by type", async () => {

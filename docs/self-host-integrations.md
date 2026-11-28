@@ -384,6 +384,27 @@ The stored credential binding fails closed if the key or provider changes. Cance
 
 The emulator models run creation, unknown run statuses, archived or expired agents, removed agents and runs, rejected keys, and rate limits without network calls. The conformance suite runs against it, and `pnpm test:integration` exercises the database lifecycle against the Cursor emulator: lost responses, stale run metadata, queue outages, ownership boundaries, cleared chats, worker restart, overlapping polls, and cancellation races.
 
+## Computer coding CLI
+
+The `coding_cli_run` tool runs a coding CLI that you install on the bot computer image, inside the bot's workspace. It is separate from hosted cloud agents and from the bot's normal shell tool: approval, credentials, and output handling are tailored to that CLI. Install the CLI in your computer image yourself; Rakazo does not install it.
+
+The default is `CODING_CLI_PROVIDER=none`. Core workflows do not require a computer coding CLI.
+
+### Enable Cursor on the bot computer
+
+Configure the API and worker with the same values:
+
+```dotenv
+CODING_CLI_PROVIDER=cursor
+CURSOR_API_KEY=replace-with-your-key
+```
+
+`CURSOR_API_KEY` is the same variable used for hosted Cursor cloud agents when those are enabled; you may use one key for both or only enable one feature. `CODING_CLI_PROVIDER=cursor` does not enable `CLOUD_AGENT_PROVIDER`. Optionally set `CODING_CLI_BIN` to the executable name (one token, default `agent`).
+
+The key is bound to the Space in `CLOUD_AGENT_SPACE_ID`, the same variable that scopes cloud agents: only that Space can run the coding CLI. Without `CLOUD_AGENT_SPACE_ID` the feature stays off. Set it on the API and the worker.
+
+The tool participates in the existing action-approval rules and auto-review policy, like `cloud_agent_launch`.
+
 ## Payments
 
 Bots can buy things with their user's wallet. Each user connects their own wallet, and every purchase asks them to approve it in the wallet provider's app or page before any card or token exists. Card numbers, security codes and payment tokens go straight to the merchant; they never reach the model, chat history, tool results, or logs.

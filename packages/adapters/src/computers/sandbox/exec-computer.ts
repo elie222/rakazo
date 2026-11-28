@@ -25,6 +25,7 @@ import {
 } from "../screens/computer-support.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { abortedCommandEvents } from "./sandbox-command-events.js";
+import { shellExportScript } from "./sandbox-shell-environment.js";
 
 /** The published computer image's user home, which is also the portable workspace. */
 export const COMPUTER_IMAGE_WORKSPACE = "/home/rakazo";
@@ -202,7 +203,7 @@ export class ExecComputer {
       return;
     }
     const timeoutMs = boundedSandboxCommandTimeoutMs(request.timeoutMs);
-    const command = commandRequestArgv(request, timeoutMs);
+    const { argv: command, stdin } = commandRequestArgv(request, timeoutMs);
     const decoders = {
       stdout: new TextDecoder(),
       stderr: new TextDecoder(),
@@ -212,7 +213,7 @@ export class ExecComputer {
       command,
       context.signal,
       timeoutMs,
-      undefined,
+      stdin,
       request.pty === true,
     )) {
       if (event.type === "exit") {
@@ -501,24 +502,46 @@ export class ExecComputer {
   }
 }
 
-function commandRequestArgv(request: CommandRequest, timeoutMs: number): string[] {
+function commandRequestArgv(
+  request: CommandRequest,
+  timeoutMs: number,
+): { argv: string[]; stdin?: Readable } {
   const cwd = workspaceCwd(WORKSPACE, request.cwd);
-  const environment = Object.entries({ ...COMPUTER_CACHE_ENV, ...request.env }).map(
-    ([name, value]) => {
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name))
-        throw new Error(`invalid environment name ${name}`);
-      return `${name}=${value}`;
-    },
-  );
-  return [
-    "bash",
-    "-c",
-    'cd -- "$1" && shift && exec env "$@"',
-    "rakazo-exec",
-    cwd,
-    ...environment,
-    ...withTimeout(sandboxCommandArgv(request), timeoutMs),
-  ];
+  const requested = request.env ?? {};
+  const cacheEnv = Object.entries(COMPUTER_CACHE_ENV).flatMap(([name, value]) => {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`invalid environment name ${name}`);
+    // The request's own value wins, as on main. It travels in the export script, which runs
+    // before `env`, so a cache argument would otherwise overwrite it.
+    if (Object.hasOwn(requested, name)) return [];
+    return [`${name}=${value}`];
+  });
+  const exportScript = shellExportScript(requested);
+  const timed = withTimeout(sandboxCommandArgv(request), timeoutMs);
+  if (!exportScript) {
+    return {
+      argv: [
+        "bash",
+        "-c",
+        'cd -- "$1" && shift && exec env "$@"',
+        "rakazo-exec",
+        cwd,
+        ...cacheEnv,
+        ...timed,
+      ],
+    };
+  }
+  return {
+    argv: [
+      "bash",
+      "-c",
+      'cd -- "$1" && shift && eval "$(cat)" && exec env "$@"',
+      "rakazo-exec",
+      cwd,
+      ...cacheEnv,
+      ...timed,
+    ],
+    stdin: Readable.from([exportScript]),
+  };
 }
 
 function withTimeout(command: string[], timeoutMs: number): string[] {

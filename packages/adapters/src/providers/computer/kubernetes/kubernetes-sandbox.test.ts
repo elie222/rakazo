@@ -41,6 +41,13 @@ const computer: ComputerRef = {
   providerRef: "pod",
 };
 
+async function stdinText(stream: NodeJS.ReadableStream | null | undefined): Promise<string> {
+  if (!stream) return "";
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 function successfulExec(stdoutText = "", stderrText = "", code = 0) {
   return vi.fn(async (...args: Parameters<Exec["exec"]>) => {
     const stdout = args[4];
@@ -211,7 +218,9 @@ describe("KubernetesSandboxProvider", () => {
   });
 
   it("streams stdout and stderr and preserves the remote exit code", async () => {
+    let requestEnv = "";
     const exec = vi.fn(async (...args: Parameters<Exec["exec"]>) => {
+      requestEnv = await stdinText(args[6]);
       const stdout = args[4];
       const stderr = args[5];
       const status = args[8];
@@ -257,14 +266,20 @@ describe("KubernetesSandboxProvider", () => {
       { type: "stderr", data: "err" },
       { type: "exit", code: 7 },
     ]);
+    const command = exec.mock.calls[0]?.[3] as string[];
+    expect(command).toEqual(
+      expect.arrayContaining(["bash", "-c", "env", "-u", "OLD_VALUE", "printf", "done"]),
+    );
+    expect(command.join(" ")).not.toContain("TEST_VALUE=value");
+    expect(requestEnv).toContain("TEST_VALUE=");
     expect(exec).toHaveBeenCalledWith(
       "rakazo-sandboxes",
       "pod",
       "computer",
-      expect.arrayContaining(["TEST_VALUE=value", "OLD_VALUE", "printf", "done"]),
+      command,
       expect.anything(),
       expect.anything(),
-      null,
+      expect.anything(),
       false,
       expect.any(Function),
     );
@@ -696,7 +711,12 @@ describe("KubernetesSandboxProvider", () => {
   });
 
   it("normalizes working directories, validates env names, and wraps timeouts", async () => {
-    const exec = successfulExec();
+    let requestEnv = "";
+    const runner = successfulExec();
+    const exec = vi.fn(async (...args: Parameters<Exec["exec"]>) => {
+      requestEnv = await stdinText(args[6]);
+      return runner(...args);
+    });
     const provider = providerFor({}, exec);
     for await (const _event of provider.execute(
       computer,
@@ -705,14 +725,16 @@ describe("KubernetesSandboxProvider", () => {
     )) {
       /* consume */
     }
-    const command = exec.mock.calls[0]?.[3];
+    const command = exec.mock.calls[0]?.[3] as string[];
     expect(command).toContain("/home/rakazo/nested/dir");
-    expect(command).toContain("OK_1=yes");
     expect(command).toContain("2s");
+    expect(command.join(" ")).not.toContain("OK_1=yes");
+    expect(requestEnv).toContain("OK_1=");
+    expect(requestEnv).toContain("yes");
     const invalid = provider
       .execute(computer, { argv: ["true"], env: { "BAD-NAME": "no" } }, context)
       [Symbol.asyncIterator]();
-    await expect(invalid.next()).rejects.toThrow("invalid environment name");
+    await expect(invalid.next()).rejects.toThrow("invalid environment variable name: BAD-NAME");
   });
 
   it("passes TTY mode and leaves stderr detached", async () => {

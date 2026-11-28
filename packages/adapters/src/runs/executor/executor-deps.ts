@@ -20,6 +20,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { LabFeature } from "@rakazo/contracts";
 import type { PrismaClient, RunLease, ThreadEvents } from "@rakazo/db";
+import type { CodingCliConnection } from "../../cli-models/coding-cli-factory.js";
 import type {
   CloudAgentConnection,
   UserCloudAgents,
@@ -92,6 +93,8 @@ export interface ExecutorDeps {
   mcpAllowPrivateEndpoint?: boolean;
   /** Remote cloud coding agents. Null/omit means tools stay uninjected. */
   cloudAgent?: CloudAgentConnection | null;
+  /** Coding CLI on the bot computer. Null/omit keeps coding_cli_run uninjected. */
+  codingCli?: CodingCliConnection | null;
   /** Environments users connected themselves; a run uses its user's before the deployment's. */
   userCloudAgents?: UserCloudAgents;
   /** The deployment's payment wallet. Null/omit means purchase tools stay uninjected. */

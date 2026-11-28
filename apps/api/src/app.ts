@@ -121,6 +121,7 @@ import { mountBillingRoutes } from "./billing/billing-webhook.js";
 import { mountBotAccess } from "./bot-access/public-api-routes.js";
 import { createSpeechSummarizer } from "./calls/speech-summary.js";
 import { mountVoiceHttpRoutes } from "./calls/voice.js";
+import { createCodingCliFromEnv } from "./coding-cli-wiring.js";
 import { homeRetentionSweep } from "./computers/home-retention.js";
 import { localSignupAdmitter, mountLocalComputerHost } from "./computers/local-settings.js";
 import { mountScreenTarget } from "./computers/screen-proxy.js";
@@ -521,6 +522,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     CURSOR_API_KEY: env.cursorApiKey,
     CLOUD_AGENT_SPACE_ID: env.cloudAgentSpaceId,
   });
+  const codingCli = createCodingCliFromEnv(env);
   const paymentWallet = await createPaymentWalletProvider({
     PAYMENT_WALLET_PROVIDER: env.paymentWalletProvider,
     PAYMENT_WALLET_CLIENT_ID: env.paymentWalletClientId,
@@ -577,6 +579,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         ? (id: string) => messagingInstallations.isActive(id)
         : undefined,
       cloudAgent,
+      codingCli,
       userDevices: botUserDevices,
       paymentWallet,
       web,

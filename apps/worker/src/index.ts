@@ -19,6 +19,7 @@ import {
   createAgentHomeStore,
   createArtifactStore,
   createCloudAgentConnection,
+  createCodingCliConnection,
   createConnectorRuntime,
   createDeadJobPruner,
   createLifecycleEmailSender,
@@ -175,6 +176,7 @@ async function main() {
   });
   // One provider instance so emulator launches and polls share the same Map.
   const cloudAgent = createCloudAgentConnection();
+  const codingCli = createCodingCliConnection();
   const paymentWallet = await createPaymentWalletProvider();
   const mediaGeneration = createMediaGenerationProvider();
   // Shared with the reconciler so a stuck wait uses the same push path as a finish notice.
@@ -244,6 +246,7 @@ async function main() {
       ? (id: string) => messagingInstallations.isActive(id)
       : undefined,
     cloudAgent,
+    codingCli,
     // Device sockets live in an API process; the worker forwards to whichever one holds it.
     userDevices: withHostComputerScreen(
       parseEnvFlag("USER_DEVICES_ENABLED", process.env.USER_DEVICES_ENABLED, true)
