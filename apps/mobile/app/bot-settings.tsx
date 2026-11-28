@@ -26,6 +26,10 @@ import { Alert, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } fr
 import { BotAvatar } from "../components/bots/bot-avatar";
 import { BotContextCards } from "../components/bots/bot-context-cards";
 import { BotLookPicker } from "../components/bots/bot-look-picker";
+import {
+  PrimaryRuntimeSettings,
+  usePrimaryRuntimeSettings,
+} from "../components/bots/primary-runtime-settings";
 import { ProfileEditDialog } from "../components/bots/profile-edit-dialog";
 import { useComputerHomeVersionRows } from "../components/computers/computer-home-versions";
 import { useComputerMaintenanceRows } from "../components/computers/computer-maintenance-actions";
@@ -50,7 +54,7 @@ import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computers/computer";
 import { useDateLocale } from "../lib/i18n/i18n";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { native, useMobileTokens } from "../lib/native/native";
-import { formRead, rpcQuery, useSave } from "../lib/query/query";
+import { formRead, queryClient, rpcQuery, useSave } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
 import { notifyConversationCleared } from "../lib/thread/conversation-cleared";
 import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/voice/bot-voices";
@@ -145,7 +149,7 @@ function BotSettings() {
   const fleet = useBotSetting(botId, "fleetManagement", bot?.fleetManagement ?? true, {
     onFailed: saveFailed,
   });
-  // Save leaves the screen, so it waits for the settings that save at once.
+  // Profile save may leave the screen, so wait for settings that save at once.
   const settingsSaving =
     nameSetting.pending ||
     notify.pending ||
@@ -206,6 +210,20 @@ function BotSettings() {
     connectionModelKey,
     connections: eligibleConnections,
   } = modelState;
+
+  const modelBindingEdited = Boolean(
+    bot &&
+      (modelCredentialId !== (bot.modelCredentialId ?? "") ||
+        modelKey !==
+          (bot.modelProvider && bot.modelId
+            ? modelOptionKey(bot.modelProvider, bot.modelId)
+            : "") ||
+        (modelMetaReady &&
+          ((selectedModel?.provider ?? null) !== (bot.modelProvider ?? null) ||
+            (selectedModel?.modelId ?? null) !== (bot.modelId ?? null)))),
+  );
+  // Keep the runtime draft mounted when Advanced is collapsed.
+  const runtime = usePrimaryRuntimeSettings(botId, advancedOpen && Boolean(bot));
 
   const connectionChoices: MenuPickerChoice[] = [
     { key: "", label: t`Automatic` },
@@ -339,7 +357,7 @@ function BotSettings() {
     onFailed: (failure) => setError(errorText(failure)),
   });
   const saving = useSave({
-    save: async (_, send) => {
+    save: async (_keepOpen: boolean, send) => {
       const reads = botReadsIn(botId);
       if (!bot) return;
       const selected = selectedModel;
@@ -394,17 +412,21 @@ function BotSettings() {
         // Saved edits and their history become the baseline, so a retry does not resend them.
         const { botId: _botId, expectedInstructions: _expected, ...saved } = update;
         reads.patch({ ...saved, ...updated });
+        if (modelChanged || "modelCredentialId" in update) {
+          await queryClient.invalidateQueries({ queryKey: runtime.readKey, exact: true });
+        }
       }
     },
-    onSaved: () => router.back(),
+    onSaved: (_, keepOpen) => {
+      if (!keepOpen) router.back();
+    },
     onFailed: (failure) => setError(errorText(failure, t`Could not save bot`)),
-    closesScreen: true,
   });
   const pending = saving.pending || restoring.pending;
   function save() {
-    if (!botId || !bot || pending || settingsSaving) return;
+    if (!botId || !bot || pending || settingsSaving || runtime.pending) return;
     setError(null);
-    saving.run();
+    saving.run(Boolean(runtime.draft));
   }
   const exportBot = useSave({
     save: async (_, send) => {
@@ -578,8 +600,11 @@ function BotSettings() {
                 choices={modelChoices}
                 label={t`Model`}
                 showLabel={false}
+                disabled={runtime.pending || saving.pending}
                 onChange={selectModel}
                 onPress={
+                  !runtime.pending &&
+                  !saving.pending &&
                   modelChoices.length > MODEL_SEARCH_THRESHOLD
                     ? () =>
                         router.push({
@@ -594,6 +619,7 @@ function BotSettings() {
                 <MenuPicker
                   choices={connectionChoices}
                   label={t`Model connection`}
+                  disabled={runtime.pending || saving.pending}
                   onChange={(id) => {
                     setModelKey(connectionModelKey(id));
                     setModelCredentialId(id);
@@ -613,6 +639,11 @@ function BotSettings() {
                 />
               ) : null}
             </SettingsGroup>
+            <PrimaryRuntimeSettings
+              runtime={runtime}
+              modelBindingEdited={modelBindingEdited}
+              profilePending={pending}
+            />
             <SettingsGroup>
               <SettingsSwitch
                 label={t`Own computer`}
@@ -796,7 +827,9 @@ function BotSettings() {
         ) : null}
         {dirty ? (
           <NativeActionButton
-            disabled={!nameSetting.value.trim() || pending || settingsSaving || !bot}
+            disabled={
+              !nameSetting.value.trim() || pending || settingsSaving || runtime.pending || !bot
+            }
             label={pending ? t`Saving…` : t`Save`}
             onPress={save}
             style={{ marginTop: 24 }}

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { i18n } from "@lingui/core";
+import type { RpcOutput } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import { notifyManager } from "@tanstack/react-query";
 import type { CSSProperties, ReactNode, Ref } from "react";
@@ -63,6 +64,7 @@ const mocks = vi.hoisted(() => ({
   listProps: {} as Record<string, unknown>,
   params: {} as Record<string, string | undefined>,
   update: vi.fn(),
+  runtimeSettings: null as RpcOutput<"bots/primaryRuntime"> | null,
   push: vi.fn(),
   back: vi.fn(),
   replace: vi.fn(),
@@ -153,6 +155,11 @@ vi.mock("../api/api", () => ({
             routingFields: ["accountId"],
           }
         : undefined;
+    if (procedure === "bots/primaryRuntime") {
+      if (!mocks.runtimeSettings)
+        throw Object.assign(new Error("Bot settings not found"), { status: 404 });
+      return mocks.runtimeSettings;
+    }
     const result = mocks.rpc(procedure, input);
     if (procedure === "models/connect") {
       await result;
@@ -235,7 +242,13 @@ vi.mock("../api/api", () => ({
     }
     if (procedure === "models/setDefault") return result;
     if (procedure === "bots/get")
-      return { id: "bot-fixture", name: "Fixture", title: "", computerMode: "team" };
+      return {
+        id: "bot-fixture",
+        name: "Fixture",
+        title: "",
+        computerMode: "team",
+        ...mocks.runtimeSettings?.model,
+      };
     if (procedure === "me")
       return {
         userId: "user-fixture",
@@ -685,6 +698,7 @@ beforeEach(() => {
   mocks.secondConnection = false;
   mocks.backups = [];
   mocks.primary = null;
+  mocks.runtimeSettings = null;
   mocks.disconnectPreview = { mainModel: false, otherChoice: false, usedBy: [], usedByTotal: 0 };
   mocks.rpc.mockReset();
   mocks.menus.clear();
@@ -737,6 +751,64 @@ describe("chat settings model row", () => {
     expect(mocks.update).toHaveBeenCalledWith(
       expect.objectContaining({ botId: "bot-fixture", modelCredentialId: WORK_CREDENTIAL_ID }),
     );
+  });
+
+  it("keeps Advanced open after saving a staged connection and requires runtime review", async () => {
+    mocks.secondConnection = true;
+    mocks.params = { botId: "bot-fixture", focus: "model" };
+    mocks.runtimeSettings = {
+      preference: null,
+      revision: 5,
+      direct: "pi",
+      group: "pi",
+      canSelectClaude: false,
+      connectionLabel: "OpenRouter",
+      model: {
+        modelProvider: "openrouter",
+        modelId: "vendor/model-1a",
+        modelCredentialId: CREDENTIAL_ID,
+      },
+    };
+    mocks.update.mockImplementationOnce(async (input: { modelCredentialId: string }) => {
+      const current = mocks.runtimeSettings!;
+      const model = { ...current.model, modelCredentialId: input.modelCredentialId };
+      mocks.runtimeSettings = { ...current, model, connectionLabel: "Work" };
+      return model;
+    });
+    mocks.rpc.mockImplementation((procedure) =>
+      procedure === "bots/setPrimaryRuntime"
+        ? { status: "changed", committedRevision: 6, settings: mocks.runtimeSettings }
+        : undefined,
+    );
+    await act(async () => root.render(<BotSettingsScreen />));
+    const row = (label: string) =>
+      container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+    const writes = () => mocks.rpc.mock.calls.filter(([proc]) => proc === "bots/setPrimaryRuntime");
+    const pick = (menu: string, key: string) =>
+      act(async () => {
+        mocks.menus.get(menu)!.onPressAction({ nativeEvent: { event: `choice:${key}` } });
+      });
+    await pick("Model connection", WORK_CREDENTIAL_ID);
+    await pick("Runtime preference", "pi");
+    expect(row("Save runtime").disabled).toBe(true);
+    await act(async () => row("Save runtime").click());
+    expect(writes()).toHaveLength(0);
+    const saveProfile = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Save",
+    );
+    await act(async () => saveProfile!.click());
+    expect(mocks.back).not.toHaveBeenCalled();
+    expect(row("Saved model connection").textContent).toContain("Work");
+    expect(row("Save runtime").disabled).toBe(true);
+    await act(async () => row("Keep my selection").click());
+    await act(async () => row("Save runtime").click());
+    expect(writes()).toHaveLength(1);
+    expect(writes()[0]?.[1]).toEqual({
+      botId: "bot-fixture",
+      preference: "pi",
+      expectedRevision: 5,
+      expectedModel: mocks.runtimeSettings.model,
+    });
   });
 
   it("stages the model the list hands back until Save", async () => {

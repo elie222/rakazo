@@ -71,6 +71,8 @@ vi.mock("../api/api", () => ({
     headers: { "x-rakazo-space-id": "space-a" },
   }),
   rpc: async (procedure: string, input?: unknown) => {
+    if (procedure === "bots/primaryRuntime")
+      throw Object.assign(new Error("Bot settings not found"), { status: 404 });
     if (procedure === "bots/update") {
       const answer = await mocks.rpc(procedure, input);
       // The server keeps what a write saved, so the next read returns it.
