@@ -10,6 +10,7 @@ import type { MobileBot, MobileGroup } from "../../lib/api/mobile-types";
 import { formatActivityRelativeTime } from "../../lib/inbox/activity";
 import type { InboxRowAction } from "../../lib/inbox/inbox-swipe";
 import { inboxRowActionList } from "../../lib/inbox/inbox-swipe";
+import { useOpenDecisions } from "../../lib/inbox/open-decisions";
 import type { SpaceActivityStatus } from "../../lib/inbox/use-space-activity";
 import { useThemedStyles } from "../../lib/native/native";
 import { BotAvatar } from "../bots/bot-avatar";
@@ -59,6 +60,13 @@ export function ActivitySection({
     bots,
     groups,
   });
+  // A waiting run counts only while its question is still open: runs can be left waiting after
+  // the chat moved on. Failed and stuck work keeps its place here.
+  const decisions = useOpenDecisions(sections.attention);
+  const questions = new Map(decisions?.map((decision) => [decision.run.runId, decision.text]));
+  const attention = sections.attention.filter(
+    (run) => run.status !== "waiting_input" || questions.has(run.runId),
+  );
   // The inbox's swipe actions and menu.
   const swipeable = (target: SwipeTarget, row: (actions?: RowActions) => ReactElement) => {
     if (!swipe) return row();
@@ -104,6 +112,7 @@ export function ActivitySection({
           key={run.runId}
           run={run}
           bot={botsById.get(run.botId)}
+          question={questions.get(run.runId)}
           detailed={detailed}
           onPress={() => openRun(run)}
           {...actions}
@@ -118,10 +127,7 @@ export function ActivitySection({
   });
   const unreadCount = sections.unreadGroups.length + sections.unreadBots.length;
 
-  if (
-    sections.attention.length + sections.working.length + unreadCount + sections.recent.length ===
-    0
-  ) {
+  if (attention.length + sections.working.length + unreadCount + sections.recent.length === 0) {
     if (status === "loading") return null;
     return (
       <Text style={styles.empty}>
@@ -131,9 +137,9 @@ export function ActivitySection({
   }
   return (
     <View style={styles.activitySection}>
-      {sections.attention.length > 0 ? (
-        <Fold {...fold("attention", t`Needs attention`, sections.attention.length, true)}>
-          {runRows(sections.attention)}
+      {attention.length > 0 ? (
+        <Fold {...fold("attention", t`Needs attention`, attention.length, true)}>
+          {runRows(attention)}
         </Fold>
       ) : null}
       {sections.working.length > 0 ? (
@@ -223,6 +229,7 @@ function Fold({
 function ActivityRow({
   run,
   bot,
+  question,
   detailed,
   onPress,
   actions,
@@ -230,12 +237,14 @@ function ActivityRow({
 }: Partial<RowActions> & {
   run: RunActivityRow;
   bot?: MobileBot;
+  /** The open question a waiting run asks, shown in place of the last message. */
+  question?: string;
   /** Recent mixes outcomes, so its rows say how each run ended and when. */
   detailed: boolean;
   onPress: () => void;
 }) {
   const status = runStatusLabel(run.status);
-  const snippet = activityPreview(run);
+  const snippet = question || activityPreview(run);
   const preview = detailed ? (snippet ? `${status}: ${snippet}` : status) : snippet;
   // Compact rows hide tags, so the group stays in the title.
   const title = [run.botName, run.groupName].filter(Boolean).join(", ");
@@ -243,7 +252,7 @@ function ActivityRow({
     <ConversationRow
       title={title}
       preview={preview}
-      time={detailed ? formatActivityRelativeTime(run.updatedAt) : ""}
+      time={formatActivityRelativeTime(run.updatedAt)}
       accessibilityLabel={`${title}, ${status}`}
       onPress={onPress}
       actions={actions}

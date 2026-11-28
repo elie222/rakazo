@@ -28,6 +28,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BotOrganizeModal } from "../../components/inbox/bot-organize-modal";
+import { GiveTask } from "../../components/inbox/give-task";
 import { ActivitySection } from "../../components/inbox/inbox-activity";
 import { InboxErrorState } from "../../components/inbox/inbox-error-state";
 import { InboxFooter } from "../../components/inbox/inbox-footer";
@@ -41,6 +42,7 @@ import {
 import { CompactRowsContext, SelectedChatContext } from "../../components/inbox/inbox-rows";
 import { createInboxStyles } from "../../components/inbox/inbox-styles";
 import { NativeInboxList } from "../../components/inbox/native-inbox-list";
+import { NeedsYou } from "../../components/inbox/needs-you";
 import { OrganizationTitleMenu } from "../../components/inbox/organization-menu";
 import { PickChatPane } from "../../components/inbox/pick-chat-pane";
 import { useUnreadJumpPills } from "../../components/inbox/unread-jump-overlay";
@@ -83,6 +85,7 @@ import {
   spaceInboxItems,
 } from "../../lib/inbox/inbox-spaces";
 import { applyUnreadOverrides, withoutArchiving } from "../../lib/inbox/inbox-swipe";
+import { useInboxDecisions } from "../../lib/inbox/open-decisions";
 import { inboxChats, preloadChats } from "../../lib/inbox/preload-chats";
 import { loadSavedInbox } from "../../lib/inbox/saved-chats";
 import type { OrganizeTarget } from "../../lib/inbox/sections/organize-target";
@@ -317,7 +320,8 @@ function Home({
   const { activity, activityStatus, clearActivity, activityRequestId, loadActivity } =
     useSpaceActivity({
       hasSession,
-      activityMode,
+      // The chat list shows what needs you, so it reads activity too.
+      enabled: !onShareSelect,
       inSight: embedded || isFocused,
       spaceActionRef,
     });
@@ -331,6 +335,13 @@ function Home({
       withoutArchiving("group", applyUnreadOverrides("group", groups, unreadOverrides), archiving),
     [groups, unreadOverrides, archiving],
   );
+  // Decisions only the person can make, confirmed against each waiting chat's newest messages.
+  const decisions = useInboxDecisions({
+    enabled: !activityMode && !onShareSelect,
+    active: activity.active,
+    bots: visible,
+    groups: visibleGroups,
+  });
   const shownSpaces = useMemo(
     () =>
       archiving.size === 0
@@ -783,7 +794,19 @@ function Home({
   const activityView = !onShareSelect && activityMode && Boolean(userId);
   const showActivity = activityView && !showLoadFailure;
   const rows = activityView || showLoadFailure ? [] : listData;
-  const hasListHeader = Boolean(inlineError || spaceRecoveryId || showActivity);
+  // Shown only while some chat has a question still waiting on the person.
+  const showNeedsYou = !activityView && !showLoadFailure && (decisions?.length ?? 0) > 0;
+  // Once the check finds nothing waiting, the same place offers to hand out the next task.
+  const showGiveTask =
+    !activityView &&
+    !showLoadFailure &&
+    !onShareSelect &&
+    decisions !== null &&
+    decisions.length === 0 &&
+    visible.length > 0;
+  const hasListHeader = Boolean(
+    inlineError || spaceRecoveryId || showActivity || showNeedsYou || showGiveTask,
+  );
   const listHeader = (
     <>
       {inlineError ? <Text style={styles.error}>{inlineError}</Text> : null}
@@ -797,6 +820,10 @@ function Home({
           <Text style={styles.spaceTitle}>{t`Try again.`}</Text>
         </Pressable>
       ) : null}
+      {showNeedsYou ? (
+        <NeedsYou decisions={decisions ?? []} bots={visible} openChat={openChat} />
+      ) : null}
+      {showGiveTask ? <GiveTask bots={visible} openChat={openChat} /> : null}
       {showActivity ? (
         <ActivitySection
           activity={activity}
