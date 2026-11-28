@@ -110,7 +110,7 @@ jobs:
       - uses: ./.github/actions/setup-trivy
       - name: Scan published image
         env:
-          IMAGE_REF: ghcr.io/${{ github.repository }}/${{ matrix.image }}:${{ matrix.tag }}
+          IMAGE_REF: ghcr.io/kb01111/rakazo/${{ matrix.image }}:${{ matrix.tag }}
           IMAGE_PLATFORM: linux/${{ matrix.arch }}
         run: |
           trivy image --image-src remote --platform "$IMAGE_PLATFORM" --scanners vuln --format json --output image-vulnerabilities.json "$IMAGE_REF"
