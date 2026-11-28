@@ -44,6 +44,7 @@ SANDBOX_PROVIDER=docker   # none, docker, e2b, novita, daytona, createos, boat, 
 AGENT_RUNTIME=pi          # Keep scripted only for pnpm test.
 WAKEUP_DRIVER=graphile
 SANDBOX_IDLE_MS=600000    # pause or stop after 10 minutes idle; 0 disables idle sleep
+SANDBOX_SCREEN_IDLE_MS=1800000 # close a warm bot browser screen unused this long on a computer that stays up; 0 keeps screens warm forever
 # Set 0 when self-hosting with Docker, where an idle computer costs nothing, to keep long-running apps and sessions up.
 # E2B, CreateOS and Boat still apply their own timeouts.
 COMPUTER_MAX_ACTIVE_MS=7200000 # uptime cap for providers that bill while running; minimum 60000; 0 disables
