@@ -133,7 +133,7 @@ import { lifecycleEmailScheduler } from "./email/lifecycle-email.js";
 import { marketingEmailRoutes, sendWelcomeEmail } from "./email/marketing-email.js";
 import { sendReferralEmails } from "./email/referral-email.js";
 import type { AppEnv } from "./env.js";
-import { loadEnv, withEnvOverrides } from "./env.js";
+import { loadEnv, userComputerAccess, withEnvOverrides } from "./env.js";
 import { mountAppAssociation } from "./http/app-association.js";
 import type { AppLifecycle } from "./http/app-lifecycle.js";
 import {
@@ -578,6 +578,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         : undefined,
       cloudAgent,
       userDevices: botUserDevices,
+      userComputerAccess: userComputerAccess(env),
       paymentWallet,
       web,
       browser,

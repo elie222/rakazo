@@ -1025,6 +1025,8 @@ describe("createMessagingInboundHandler DM routing", () => {
           { kind, artifactId: "artifact-1", name, mimeType },
         ],
       });
+      // A chat-app wake is not an outside event that may start a chain to the owner's computer.
+      expect(deliveries[0]![0].blocks[0]).toEqual({ kind: "delivery" });
       expect(deliveries[0]![0].clientNonce).toBe(deliveries[1]![0].clientNonce);
       expect(deps.enqueue).toHaveBeenCalledTimes(2);
     },

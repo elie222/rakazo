@@ -419,26 +419,39 @@ describe("messagingPlatformsFromEnv", () => {
     expect(mounted.sendblue?.outbound).toBeUndefined();
   });
 
-  it("declares group support, the receipt and file support for each platform", () => {
+  it("declares group support, the receipt, file support and sender checks for each platform", () => {
     const platforms = messagingPlatformsFromEnv(fullEnv);
     const capabilities = Object.fromEntries(
       platforms.map((platform) => [platform.provider, platform.capabilities]),
     );
     expect(capabilities.sendblue).toEqual({ direct: true, groups: true, receipt: "typing" });
-    expect(capabilities.slack).toEqual({ direct: true, groups: true, receipt: "reaction" });
+    expect(capabilities.slack).toEqual({
+      direct: true,
+      groups: true,
+      receipt: "reaction",
+      verifiedSender: true,
+    });
     expect(capabilities.whatsapp).toEqual({
       direct: true,
       groups: false,
       receipt: null,
       files: true,
+      verifiedSender: true,
     });
     expect(capabilities.telegram).toEqual({
       direct: true,
       groups: true,
       receipt: null,
       files: true,
+      verifiedSender: true,
     });
-    expect(capabilities.lark).toEqual({ direct: true, groups: false, receipt: null });
+    expect(capabilities.lark).toEqual({
+      direct: true,
+      groups: false,
+      receipt: null,
+      verifiedSender: true,
+    });
+    // Its SMS/RCS fallback is not reported per message, so no sender is taken as verified.
     expect(capabilities.photon).toEqual({ direct: true, groups: false, receipt: "typing" });
   });
 });
