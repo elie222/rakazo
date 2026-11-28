@@ -56,25 +56,14 @@ tags:
     timeout: 10000
 - takeScreenshot: "05-activity"
 
-- tapOn:
-    id: "home-search-button"
-    optional: true
-- runFlow:
-    when:
-      notVisible:
-        id: "search-sheet-field"
-    commands:
-      - tapOn: "Search"
-- tapOn:
-    id: "search-sheet-field"
+# The Search tab focuses its field (the system field on iOS 26, the screen's own before it).
+- tapOn: "Search"
 - inputText: "fixture"
 - hideKeyboard
 - extendedWaitUntil:
     visible: "Weekly fixture review"
     timeout: 10000
 - takeScreenshot: "06-search-results"
-- tapOn:
-    id: "search-sheet-close"
 
 - openLink: "rakazo:///new-group"
 - assertVisible: "Search bots"

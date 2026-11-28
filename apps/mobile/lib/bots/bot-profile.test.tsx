@@ -13,7 +13,7 @@ import ArtifactsScreen from "../../app/artifacts";
 import BotProfile from "../../app/bot-profile";
 import RoutineDetail from "../../app/routine";
 import RoutineRuns from "../../app/routine-runs";
-import RoutinesScreen from "../../app/routines";
+import RoutinesScreen from "../../components/screens/routines-screen";
 import type * as NativeControls from "../native/native-controls";
 import { queryClient } from "../query/query";
 import type * as RoutineHelpers from "../routines/routine";
@@ -389,7 +389,7 @@ describe("bot profile", () => {
     expect(rows.slice(0, 6)).toEqual([
       "Edit",
       "Computer",
-      "Routines0 on",
+      "Routines",
       "Pages",
       "Artifacts",
       "Meetings",
@@ -403,8 +403,8 @@ describe("bot profile", () => {
     expect(push.mock.calls).toEqual([
       [{ pathname: "/bot-settings", params: { botId: "bot-fixture" } }],
       [{ pathname: "/computer", params: { botId: "bot-fixture", name: "Fixture" } }],
-      [{ pathname: "/routines", params: { botId: "bot-fixture", name: "Fixture" } }],
-      [{ pathname: "/pages", params: { botId: "bot-fixture" } }],
+      [{ pathname: "/bot-routines", params: { botId: "bot-fixture", name: "Fixture" } }],
+      [{ pathname: "/bot-pages", params: { botId: "bot-fixture" } }],
       [{ pathname: "/artifacts", params: { botId: "bot-fixture" } }],
       [{ pathname: "/meetings", params: { botId: "bot-fixture" } }],
     ]);
@@ -465,7 +465,8 @@ describe("bot profile", () => {
   });
 
   it.each([
-    ["no routines", [], "0 on"],
+    ["no routines", [], ""],
+    ["all paused", [routine("r1", "Morning digest", { active: false })], "1 paused"],
     [
       "two of three on",
       [
@@ -475,7 +476,7 @@ describe("bot profile", () => {
       ],
       "2 on",
     ],
-  ])("counts the routines that are on (%s)", async (_, rows, count) => {
+  ])("counts the routines that are on, or paused when none are (%s)", async (_, rows, count) => {
     profileRpc(async () => rows);
     await render(createElement(BotProfile));
     expect(routinesRow().textContent).toBe(`Routines${count}`);
@@ -510,7 +511,7 @@ describe("bot profile", () => {
     expect(container.textContent).not.toContain("offline");
     routinesRow().click();
     expect(push).toHaveBeenCalledWith({
-      pathname: "/routines",
+      pathname: "/bot-routines",
       params: { botId: "bot-fixture", name: "Fixture" },
     });
   });
@@ -892,7 +893,7 @@ describe("routines screen", () => {
     root = createRoot(container);
     profileRpc(() => new Promise(() => undefined));
     await render(createElement(BotProfile));
-    expect(routinesRow().textContent).toBe("Routines0 on");
+    expect(routinesRow().textContent).toBe("Routines2 paused");
   });
 
   it("sends a save with the account and space of the tap", async () => {

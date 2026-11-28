@@ -21,6 +21,7 @@ type HeaderOptions = {
   headerShown?: boolean;
   headerTransparent?: boolean;
   headerStyle?: { backgroundColor: string };
+  unstable_headerLeftItems?: () => HeaderItem[];
   unstable_headerRightItems?: () => HeaderItem[];
 };
 
@@ -63,7 +64,6 @@ vi.mock("../../components/thread/header/chat-route-header", () => ({
   ShowChatsButton: () => createElement("button", { type: "button", "aria-label": "Show chats" }),
 }));
 
-const toggleActivityMode = vi.fn();
 const runCreateAction = vi.fn();
 
 function Inbox({ embedded = false }: { embedded?: boolean }) {
@@ -71,8 +71,6 @@ function Inbox({ embedded = false }: { embedded?: boolean }) {
     nativeHeader: !embedded,
     ready: true,
     hasSession: true,
-    activityMode: false,
-    toggleActivityMode,
     runCreateAction,
   });
   return <p>{embedded ? "Embedded inbox" : "Compact inbox"}</p>;
@@ -122,14 +120,11 @@ it.each([false, true])(
       if (!split) {
         expect(home.options.headerTransparent).toBe(true);
         expect(home.options.headerStyle).toEqual({ backgroundColor: "transparent" });
+        // Account leads; activity and search moved to the bottom bar.
+        const left = home.options.unstable_headerLeftItems?.() ?? [];
+        expect(left.map((item) => item.accessibilityLabel)).toEqual(["Account"]);
         const right = home.options.unstable_headerRightItems?.() ?? [];
-        expect(right.map((item) => item.accessibilityLabel)).toEqual([
-          "Activity",
-          "Search",
-          "Create",
-        ]);
-        // Activity and search share a capsule; create has its own glass.
-        expect(right.map((item) => item.sharesBackground)).toEqual([undefined, undefined, false]);
+        expect(right.map((item) => item.accessibilityLabel)).toEqual(["Create"]);
       }
     }
   },
@@ -143,12 +138,11 @@ it("leaves the navigation bar alone from the embedded inbox", () => {
 
 it("wires the compact header items to their actions", () => {
   act(() => root.render(<Inbox />));
-  const [activity, search, create] = home.options.unstable_headerRightItems?.() ?? [];
-  search?.onPress();
-  activity?.onPress();
+  const [account] = home.options.unstable_headerLeftItems?.() ?? [];
+  const [create] = home.options.unstable_headerRightItems?.() ?? [];
+  account?.onPress();
   for (const item of create?.menu?.items ?? []) item.onPress();
-  expect(home.push.mock.calls).toEqual([["/search"]]);
-  expect(toggleActivityMode).toHaveBeenCalledOnce();
+  expect(home.push.mock.calls).toEqual([["/account"]]);
   expect(runCreateAction.mock.calls).toEqual([["bot"], ["group"], ["space"]]);
 });
 

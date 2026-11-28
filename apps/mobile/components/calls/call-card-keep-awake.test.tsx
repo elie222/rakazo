@@ -5,9 +5,9 @@ import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { rpc } from "../../lib/api/api";
 import type { CallDeps } from "../../lib/calls/call-session";
 import { endCall, startCall, toggleTranscript, useCallActive } from "../../lib/calls/call-session";
+import { showCall } from "../../lib/calls/header-call";
 import { hapticImpact } from "../../lib/native/haptics";
 import { CallCard } from "./CallCard";
 
@@ -80,6 +80,8 @@ vi.mock("react-native", () => {
       timing: vi.fn(),
       delay: vi.fn(),
     },
+    Modal: ({ visible, children }: { visible: boolean; children?: ReactNode }) =>
+      visible ? createElement("section", null, children) : null,
     Platform: platform,
     StyleSheet: { create: <T,>(styles: T) => styles, hairlineWidth: 1 },
   };
@@ -272,31 +274,37 @@ describe("CallCard background lifetime", () => {
     expect(activeTags.has("rakazo-call")).toBe(true);
   });
 
-  it("shows the signed-in account's initial after a session change", async () => {
-    const me = vi.mocked(rpc);
-    me.mockResolvedValueOnce({ name: "Alicja" } as never);
-    me.mockClear();
-    // The card stays mounted in the app layout; earlier tests left another session's initial.
+  it("fills the screen until minimized, then waits in a bar that brings it back", async () => {
     act(() => root.render(<CallCard />));
-    act(() => sessionChange.fire());
-
     await act(async () => {
       startCall({ botId: "bot-1", botName: "Rex" }, deps);
     });
-    await vi.waitFor(() => expect(container.textContent).toContain("A"));
-    expect(me).toHaveBeenCalledWith("me", undefined, expect.anything());
-    expect(me).toHaveBeenCalledTimes(1);
-
+    expect(container.querySelector("section")).not.toBeNull();
+    act(() => (container.querySelector('[aria-label="Minimize call"]') as HTMLElement).click());
+    expect(container.querySelector("section")).toBeNull();
+    const back = container.querySelector('[aria-label="Return to call with Rex"]') as HTMLElement;
+    expect(back).not.toBeNull();
+    act(() => back.click());
+    expect(container.querySelector("section")).not.toBeNull();
     await act(async () => endCall());
-    // A different account signs in without an app restart; the card stays mounted.
-    me.mockResolvedValueOnce({ name: "Bartek" } as never);
-    act(() => sessionChange.fire());
+  });
 
+  it("opens a call that replaces a minimized one full screen, and Call brings a call back", async () => {
+    act(() => root.render(<CallCard />));
     await act(async () => {
-      startCall({ botId: "bot-2", botName: "Nova" }, deps);
+      startCall({ botId: "bot-1", botName: "Rex" }, deps);
     });
-    await vi.waitFor(() => expect(container.textContent).toContain("B"));
-    expect(me).toHaveBeenCalledTimes(2);
-    expect(container.textContent).not.toContain("A");
+    act(() => (container.querySelector('[aria-label="Minimize call"]') as HTMLElement).click());
+    expect(container.querySelector("section")).toBeNull();
+    // The new call replaces the old one without a render in between.
+    await act(async () => {
+      startCall({ botId: "bot-1", botName: "Rex" }, deps);
+    });
+    expect(container.querySelector("section")).not.toBeNull();
+
+    act(() => (container.querySelector('[aria-label="Minimize call"]') as HTMLElement).click());
+    act(() => showCall());
+    expect(container.querySelector("section")).not.toBeNull();
+    await act(async () => endCall());
   });
 });

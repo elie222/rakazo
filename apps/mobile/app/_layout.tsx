@@ -38,6 +38,7 @@ import { MessageMenuHost } from "../components/messages/message-action-menu";
 import { MessageActionSheetHost } from "../components/messages/message-action-sheet-host";
 import { floatingHeaderOptions, glassHeaderOptions } from "../components/native/glass-title";
 import { NativeSymbol } from "../components/native/native-symbol";
+import { InboxPane } from "../components/screens/inbox-pane";
 import { chatRouteHeader } from "../components/thread/header/chat-route-header";
 import { AppErrorBoundary } from "../components/ui/app-error-boundary";
 import {
@@ -80,6 +81,7 @@ import {
   loadInboxWidth,
   useSplitView,
 } from "../lib/layout/split-view";
+import { useTabBarHoldsBottomBars } from "../lib/layout/tab-accessory";
 import { loadLinkFavicon } from "../lib/messages/link-favicons";
 import { OpenPageContext } from "../lib/messages/message-mentions";
 import { loadHapticsPreference } from "../lib/native/haptics";
@@ -114,7 +116,6 @@ import {
   useTrustedLinkSites,
 } from "../lib/settings/trusted-link-sites";
 import { startUnsentSends } from "../lib/thread/send/unsent-sends";
-import { InboxPane } from "./index";
 
 // Before anything renders: text grows with the iOS text size only up to a fixed maximum.
 capTextScaling();
@@ -281,12 +282,13 @@ function ChatContentProviders({
   );
 }
 
-export const unstable_settings = { anchor: "index" };
+export const unstable_settings = { anchor: "(tabs)" };
 
 function LayoutContent() {
   const call = useCallActive();
   const { t } = useLingui();
   const insets = useSafeAreaInsets();
+  const tabBarHoldsBars = useTabBarHoldsBottomBars();
   // Beside the list a chat swaps in place, the way it does when picked from a sidebar.
   const { split, inboxHidden, foldActive } = useSplitView();
   const canInvite = Boolean(useReferral());
@@ -439,8 +441,14 @@ function LayoutContent() {
           <ChatContentProviders loadRemoteImages={loadRemoteImages}>
             <ThemeProvider value={navigationTheme}>
               <StatusBar style={resolved === "light" ? "dark" : "light"} />
-              <CallKeyboardContext.Provider value={call}>
-                <KeyboardAvoidingView enabled={call} behavior="padding" style={{ flex: 1 }}>
+              {/* With the call in the tab bar, nothing at the bottom has to clear the keyboard,
+                  so the tab bar is not lifted with it. */}
+              <CallKeyboardContext.Provider value={call && !tabBarHoldsBars}>
+                <KeyboardAvoidingView
+                  enabled={call && !tabBarHoldsBars}
+                  behavior="padding"
+                  style={{ flex: 1 }}
+                >
                   <SplitFrame>
                     <Stack
                       screenLayout={({ navigation, options, children }) => (
@@ -469,18 +477,8 @@ function LayoutContent() {
                       }}
                     >
                       <Stack.Screen
-                        name="index"
+                        name="(tabs)"
                         options={{ headerShown: false, title: "Rakazo" }}
-                      />
-                      <Stack.Screen
-                        name="search"
-                        options={{
-                          headerShown: false,
-                          presentation: Platform.OS === "ios" ? "formSheet" : "card",
-                          sheetAllowedDetents: [1],
-                          sheetGrabberVisible: false,
-                          sheetExpandsWhenScrolledToEdge: false,
-                        }}
                       />
                       <Stack.Screen name="share" options={{ headerShown: false }} />
                       <Stack.Screen name="sign-in" options={{ headerShown: false }} />
@@ -571,8 +569,9 @@ function LayoutContent() {
                       />
                       <Stack.Screen name="artifacts" options={glassHeaderOptions(t`Artifacts`)} />
                       <Stack.Screen name="artifact" options={{ title: t`Artifact` }} />
-                      <Stack.Screen name="pages" options={glassHeaderOptions(t`Pages`)} />
                       <Stack.Screen name="shared-pages" />
+                      <Stack.Screen name="bot-pages" options={glassHeaderOptions(t`Pages`)} />
+                      <Stack.Screen name="bot-routines" options={glassHeaderOptions(t`Routines`)} />
                       <Stack.Screen name="page-review" options={glassHeaderOptions(t`Page`)} />
                       <Stack.Screen
                         name="page"
@@ -649,7 +648,6 @@ function LayoutContent() {
                           ),
                         })}
                       />
-                      <Stack.Screen name="routines" options={glassHeaderOptions(t`Routines`)} />
                       <Stack.Screen name="routine" options={glassHeaderOptions(t`Routine`)} />
                       <Stack.Screen
                         name="routine-runs"
@@ -670,10 +668,20 @@ function LayoutContent() {
                   </SplitFrame>
                   <ScrollView
                     keyboardShouldPersistTaps="handled"
-                    style={{ flexGrow: 0, flexShrink: 1, maxHeight: "50%" }}
+                    // The page colour, so the call bar and player sit on the screen above them
+                    // rather than on the window's black.
+                    style={{
+                      flexGrow: 0,
+                      flexShrink: 1,
+                      maxHeight: "50%",
+                      backgroundColor: String(native.page),
+                    }}
                   >
-                    <CallCard />
-                    <VoicePlayerBar style={{ marginTop: 8, marginBottom: insets.bottom + 8 }} />
+                    <CallCard showReturnBar={!tabBarHoldsBars} />
+                    {/* A call speaks through its own screen, so the voice player waits. */}
+                    {tabBarHoldsBars || call ? null : (
+                      <VoicePlayerBar style={{ marginTop: 8, marginBottom: insets.bottom + 8 }} />
+                    )}
                   </ScrollView>
                 </KeyboardAvoidingView>
               </CallKeyboardContext.Provider>

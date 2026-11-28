@@ -1,29 +1,31 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import { accountDisplay } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
-import { useQuery } from "@tanstack/react-query";
 import { AudioModule } from "expo-audio";
 import { useKeepAwake } from "expo-keep-awake";
 import { useRouter } from "expo-router";
 import type { ComponentProps } from "react";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Animated, Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { currentSessionGeneration, subscribeSessionGeneration } from "../../lib/api/session";
 import { startCallBackground, stopCallBackground } from "../../lib/calls/call-background";
 import type { CallPhase } from "../../lib/calls/call-session";
 import { hangUp, toggleMute, toggleTranscript, useCallSession } from "../../lib/calls/call-session";
+import {
+  callClock,
+  minimizeCall,
+  restoreCall,
+  useCallElapsed,
+  useCallMinimized,
+} from "../../lib/calls/call-view";
 import { useMobileTokens } from "../../lib/native/native";
-import { accountRpcQuery, queryClient } from "../../lib/query/query";
-import { getVoicePlaybackState, subscribeVoicePlayback } from "../../lib/voice/voice";
 import { BotAvatar } from "../bots/bot-avatar";
 import { GlassIconButton } from "../native/glass-icon-button";
-import { GlassSurface } from "../native/glass-surface";
 import type { NativeSymbol } from "../native/native-symbol";
+import { CallReturnBar } from "./call-return-bar";
 
-const BARS = [9, 15, 21, 15, 9];
+const BARS = [12, 22, 32, 22, 12];
 const TRANSCRIPT_LINES = 4;
 const START_RETRY_MS = 3000;
 const START_ATTEMPTS = 20;
@@ -34,21 +36,20 @@ function KeepCallAwake() {
   return null;
 }
 
-export function CallCard() {
+export function CallCard({ showReturnBar = true }: { showReturnBar?: boolean }) {
   const call = useCallSession();
-  const playback = useSyncExternalStore(subscribeVoicePlayback, getVoicePlaybackState);
   const { t } = useLingui();
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  // The card stays mounted across account switches; the next account reads its own initial.
-  useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
+  // The call fills the screen, as on desktop; minimized, a bar brings it back: above the composer,
+  // or in the tab bar's accessory, which then shows it instead of this card.
+  const minimized = useCallMinimized();
+  const setMinimized = (on: boolean) => (on ? minimizeCall() : restoreCall());
   const [serviceStarted, setServiceStarted] = useState(false);
   const serviceStartedFor = useRef<string | null>(null);
   const startSeq = useRef(0);
   const onCall = Boolean(call);
-  const me = useQuery({ ...accountRpcQuery("me"), enabled: onCall }, queryClient).data;
-  const initial = me ? (accountDisplay(me, t`You`).initial ?? "") : "";
   // A crash inside the call UI unmounts this card without ending the call, so the
   // service and its wake lock are released here rather than on the next call change.
   const mountedCall = useRef(false);
@@ -105,138 +106,194 @@ export function CallCard() {
     };
   }, [call?.botId, call?.botName, call?.phase]);
 
+  const elapsed = useCallElapsed();
   if (!call) return null;
   const recentExchanges = call.exchanges.slice(-TRANSCRIPT_LINES);
+  const activity =
+    call.phase === "speaking"
+      ? t`Speaking`
+      : call.phase === "thinking"
+        ? t`Thinking`
+        : call.muted
+          ? t`Muted`
+          : t`Listening`;
+  const openChat = () => {
+    setMinimized(true);
+    router.push({ pathname: "/thread", params: { botId: call.botId, name: call.botName } });
+  };
   return (
-    <GlassSurface
-      shape="roundedRectangle"
-      style={[styles.card, { marginBottom: playback.status === "idle" ? insets.bottom + 8 : 0 }]}
-      fallbackStyle={[
-        styles.cardFallback,
-        {
-          backgroundColor: tokens.glassFill,
-          borderColor: tokens.glassStroke,
-          shadowColor: tokens.foreground,
-        },
-      ]}
-    >
+    <>
       {Platform.OS !== "android" || !serviceStarted ? <KeepCallAwake /> : null}
-      <View style={styles.row}>
-        <BotAvatar
-          color={call.botColor}
-          avatarSet={call.botAvatarSet}
-          identity={call.botId}
-          size={28}
-          motion="live"
-        />
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t`On a call with ${ph({ name: call.botName })}`}
-          onPress={() =>
-            router.push({ pathname: "/thread", params: { botId: call.botId, name: call.botName } })
-          }
+      {minimized && showReturnBar ? <CallReturnBar /> : null}
+      <Modal
+        visible={!minimized}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setMinimized(true)}
+      >
+        <View
+          accessibilityViewIsModal
+          accessibilityLabel={t`Call with ${ph({ name: call.botName })}`}
+          style={[
+            styles.screen,
+            {
+              backgroundColor: tokens.background,
+              paddingTop: insets.top + 8,
+              paddingBottom: Math.max(insets.bottom, 12) + 20,
+            },
+          ]}
         >
-          <Text numberOfLines={1} style={[styles.name, { color: tokens.foreground }]}>
-            {call.botName}
-          </Text>
-        </Pressable>
-        <Waveform phase={call.phase} />
-        <View style={[styles.initial, { backgroundColor: tokens.muted }]}>
-          <Text style={[styles.initialText, { color: tokens.mutedForeground }]}>{initial}</Text>
-        </View>
-      </View>
-      <View style={styles.actions}>
-        <RoundButton
-          label={t`Settings`}
-          ios="gearshape"
-          android="settings-outline"
-          color={tokens.foreground}
-          border={tokens.border}
-          onPress={() => router.push("/voice")}
-        />
-        <RoundButton
-          label={t`Transcript`}
-          ios="captions.bubble"
-          android="chatbox-outline"
-          selected={call.transcriptOpen}
-          color={tokens.foreground}
-          border={tokens.border}
-          onPress={toggleTranscript}
-        />
-        <RoundButton
-          label={call.muted ? t`Unmute` : t`Mute`}
-          ios={call.muted ? "mic.slash" : "mic"}
-          android={call.muted ? "mic-off-outline" : "mic-outline"}
-          selected={call.muted}
-          color={call.muted ? tokens.mutedForeground : tokens.foreground}
-          border={tokens.border}
-          onPress={toggleMute}
-        />
-        <RoundButton
-          label={t`Hang up`}
-          ios="phone.down.fill"
-          android={{ material: "phone-hangup" }}
-          color={tokens.destructiveForeground}
-          border={tokens.destructiveFill}
-          background={tokens.destructiveFill}
-          onPress={hangUp}
-        />
-      </View>
-      {call.transcriptOpen ? (
-        <View style={[styles.transcript, { borderTopColor: tokens.border }]}>
-          {Array.from({ length: TRANSCRIPT_LINES }, (_, index) => {
-            const exchange = recentExchanges[index];
-            return (
-              <Text
-                key={`transcript-${index + 1}`}
-                numberOfLines={1}
-                style={[
-                  styles.line,
-                  { color: exchange?.role === "bot" ? tokens.foreground : tokens.mutedForeground },
-                ]}
-              >
-                {exchange?.text || " "}
+          <View style={styles.topRow}>
+            <RoundButton
+              label={t`Minimize call`}
+              ios="chevron.down"
+              android="chevron-down"
+              color={tokens.foreground}
+              border={tokens.border}
+              onPress={() => setMinimized(true)}
+            />
+            <View style={{ flex: 1 }} />
+            <RoundButton
+              label={t`Transcript`}
+              ios="captions.bubble"
+              android="chatbox-outline"
+              selected={call.transcriptOpen}
+              color={tokens.foreground}
+              border={tokens.border}
+              onPress={toggleTranscript}
+            />
+            <RoundButton
+              label={t`Settings`}
+              ios="gearshape"
+              android="settings-outline"
+              color={tokens.foreground}
+              border={tokens.border}
+              onPress={() => {
+                setMinimized(true);
+                router.push("/voice");
+              }}
+            />
+          </View>
+          <View style={styles.center}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t`Open chat with ${ph({ name: call.botName })}`}
+              onPress={openChat}
+            >
+              <BotAvatar
+                color={call.botColor}
+                avatarSet={call.botAvatarSet}
+                identity={call.botId}
+                size={128}
+                motion="live"
+              />
+            </Pressable>
+            <Text numberOfLines={1} style={[styles.name, { color: tokens.foreground }]}>
+              {call.botName}
+            </Text>
+            <View style={styles.status}>
+              <Text style={[styles.statusText, styles.clock, { color: tokens.mutedForeground }]}>
+                {callClock(elapsed)}
               </Text>
-            );
-          })}
-          <Text numberOfLines={1} style={[styles.line, { color: tokens.mutedForeground }]}>
-            {call.caption || call.heard || " "}
-          </Text>
+              <Text
+                accessibilityLiveRegion="polite"
+                style={[styles.statusText, { color: tokens.mutedForeground }]}
+              >
+                {activity}
+              </Text>
+            </View>
+            <Waveform phase={call.phase} />
+          </View>
+          {call.transcriptOpen ? (
+            <View style={[styles.transcript, { borderTopColor: tokens.border }]}>
+              {Array.from({ length: TRANSCRIPT_LINES }, (_, index) => {
+                const exchange = recentExchanges[index];
+                return (
+                  <Text
+                    key={`transcript-${index + 1}`}
+                    numberOfLines={1}
+                    style={[
+                      styles.line,
+                      {
+                        color:
+                          exchange?.role === "bot" ? tokens.foreground : tokens.mutedForeground,
+                      },
+                    ]}
+                  >
+                    {exchange?.text || " "}
+                  </Text>
+                );
+              })}
+              <Text numberOfLines={1} style={[styles.line, { color: tokens.mutedForeground }]}>
+                {call.caption || call.heard || " "}
+              </Text>
+            </View>
+          ) : call.caption ? (
+            <Text style={[styles.caption, { color: tokens.mutedForeground }]}>{call.caption}</Text>
+          ) : null}
+          <View style={styles.controls}>
+            <RoundButton
+              caption={call.muted ? t`Unmute` : t`Mute`}
+              label={call.muted ? t`Unmute` : t`Mute`}
+              ios={call.muted ? "mic.slash.fill" : "mic.fill"}
+              android={call.muted ? "mic-off" : "mic"}
+              selected={call.muted}
+              size={68}
+              color={call.muted ? tokens.primaryForeground : tokens.foreground}
+              border={tokens.border}
+              background={call.muted ? tokens.primary : undefined}
+              onPress={toggleMute}
+            />
+            <RoundButton
+              caption={t`End`}
+              label={t`Hang up`}
+              ios="phone.down.fill"
+              android={{ material: "phone-hangup" }}
+              size={68}
+              color={tokens.destructiveForeground}
+              border={tokens.destructiveFill}
+              background={tokens.destructiveFill}
+              onPress={hangUp}
+            />
+          </View>
         </View>
-      ) : call.phase === "listening" && call.caption ? (
-        <Text style={[styles.line, { color: tokens.mutedForeground, marginTop: 12 }]}>
-          {call.caption}
-        </Text>
-      ) : null}
-    </GlassSurface>
+      </Modal>
+    </>
   );
 }
 
 function RoundButton({
   label,
+  caption,
   ios,
   android,
   color,
   border,
   background,
   selected,
+  size = 44,
   onPress,
 }: {
   label: string;
+  /** A word under the button, as on a phone call; the button keeps `label` for VoiceOver. */
+  caption?: string;
   ios: string;
   android: ComponentProps<typeof NativeSymbol>["android"];
   color: string;
   border: string;
   background?: string;
   selected?: boolean;
+  size?: number;
   onPress: () => void;
 }) {
-  return (
+  const tokens = useMobileTokens();
+  const button = (
     <GlassIconButton
       accessibilityLabel={label}
       ios={ios}
       android={android}
-      size={44}
+      size={size}
+      iconSize={size > 44 ? 28 : 20}
       color={color}
       tint={background}
       selected={selected}
@@ -247,6 +304,19 @@ function RoundButton({
       ]}
     />
   );
+  if (!caption) return button;
+  return (
+    <View style={styles.captioned}>
+      {button}
+      <Text
+        importantForAccessibility="no"
+        accessibilityElementsHidden
+        style={[styles.buttonCaption, { color: tokens.mutedForeground }]}
+      >
+        {caption}
+      </Text>
+    </View>
+  );
 }
 
 function Waveform({ phase }: { phase: CallPhase }) {
@@ -254,7 +324,6 @@ function Waveform({ phase }: { phase: CallPhase }) {
   const reduceMotion = useReducedMotion();
   const values = useRef(BARS.map(() => new Animated.Value(0.35))).current;
   const still = phase === "thinking" || reduceMotion;
-
   useEffect(() => {
     if (still) {
       for (const value of values) value.setValue(0.35);
@@ -275,17 +344,16 @@ function Waveform({ phase }: { phase: CallPhase }) {
       for (const loop of loops) loop.stop();
     };
   }, [phase, still, values]);
-
   return (
     <View accessible={false} style={styles.waveform}>
       {BARS.map((height, index) => (
         <Animated.View
           key={`bar-${index + 1}`}
           style={{
-            width: 3,
+            width: 4,
             height,
             borderRadius: 2,
-            backgroundColor: still ? tokens.mutedForeground : tokens.foreground,
+            backgroundColor: phase === "speaking" ? tokens.foreground : tokens.mutedForeground,
             transform: [{ scaleY: values[index] ?? 1 }],
           }}
         />
@@ -295,40 +363,24 @@ function Waveform({ phase }: { phase: CallPhase }) {
 }
 
 const styles = StyleSheet.create({
-  card: {
-    alignSelf: "center",
-    width: 320,
-    maxWidth: "100%",
-    marginTop: 8,
-    padding: 12,
+  screen: { flex: 1, paddingHorizontal: 20 },
+  topRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 14 },
+  name: { fontSize: 30, lineHeight: 36, fontWeight: "600", marginTop: 8, writingDirection: "auto" },
+  status: { flexDirection: "row", gap: 8 },
+  statusText: { ...typeScale.body },
+  clock: { fontVariant: ["tabular-nums"] },
+  waveform: { height: 36, flexDirection: "row", alignItems: "center", gap: 5, marginTop: 6 },
+  transcript: {
+    marginBottom: 20,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 6,
   },
-  cardFallback: {
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
-  },
-  row: { flexDirection: "row", alignItems: "center", gap: 10 },
-  name: { ...typeScale.cardTitle, maxWidth: 110, writingDirection: "auto" },
-  waveform: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 3,
-  },
-  initial: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  initialText: { fontSize: 13, fontWeight: "600" },
-  actions: { flexDirection: "row", justifyContent: "center", gap: 12, marginTop: 12 },
-  buttonFallback: { borderWidth: StyleSheet.hairlineWidth },
-  transcript: { marginTop: 12, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, gap: 5 },
   line: { ...typeScale.secondary, writingDirection: "auto" },
+  caption: { ...typeScale.secondary, textAlign: "center", marginBottom: 20 },
+  controls: { flexDirection: "row", justifyContent: "center", gap: 36 },
+  captioned: { alignItems: "center", gap: 8 },
+  buttonCaption: { ...typeScale.caption },
+  buttonFallback: { borderWidth: StyleSheet.hairlineWidth },
 });

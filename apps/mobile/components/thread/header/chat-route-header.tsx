@@ -2,6 +2,7 @@ import { t } from "@lingui/core/macro";
 import type { ImperativeRouter, NativeStackNavigationOptions } from "expo-router";
 import { Pressable } from "react-native";
 import { mobileTokens } from "../../../lib/appearance/appearance";
+import { requestCall } from "../../../lib/calls/header-call";
 import { setInboxHidden } from "../../../lib/layout/split-view";
 import { iosAtLeast } from "../../../lib/native/native-controls";
 import { threadEdgeOptions } from "../../../lib/thread/scroll/thread-edges";
@@ -44,6 +45,7 @@ export function chatRouteHeader(
       color,
       onGroupSettings: () =>
         router.push({ pathname: "/group-settings", params: { groupId: groupId ?? "" } }),
+      onCall: botId ? () => requestCall(botId) : undefined,
       onInvite: canInvite && botId ? () => openInvite(router) : undefined,
     }),
     ...threadHeaderLeft({ split, inboxHidden, foldActive, color }),

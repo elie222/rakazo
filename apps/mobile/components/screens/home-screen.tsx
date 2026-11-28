@@ -27,50 +27,49 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BotOrganizeModal } from "../components/inbox/bot-organize-modal";
-import { ActivitySection } from "../components/inbox/inbox-activity";
-import { InboxErrorState } from "../components/inbox/inbox-error-state";
-import { InboxFooter } from "../components/inbox/inbox-footer";
-import { InboxHeader } from "../components/inbox/inbox-header";
+import { BotOrganizeModal } from "../../components/inbox/bot-organize-modal";
+import { ActivitySection } from "../../components/inbox/inbox-activity";
+import { InboxErrorState } from "../../components/inbox/inbox-error-state";
+import { InboxFooter } from "../../components/inbox/inbox-footer";
+import { InboxHeader } from "../../components/inbox/inbox-header";
 import {
   InboxListFooter,
   InboxNewBot,
   SWIPE_ROWS,
   useInboxRenderItem,
-} from "../components/inbox/inbox-render-item";
-import { CompactRowsContext, SelectedChatContext } from "../components/inbox/inbox-rows";
-import { createInboxStyles } from "../components/inbox/inbox-styles";
-import { INBOX_TOOLBAR_ROOM, InboxToolbar } from "../components/inbox/inbox-toolbar";
-import { NativeInboxList } from "../components/inbox/native-inbox-list";
-import { OrganizationTitleMenu } from "../components/inbox/organization-menu";
-import { PickChatPane } from "../components/inbox/pick-chat-pane";
-import { useUnreadJumpPills } from "../components/inbox/unread-jump-overlay";
-import { currentApiBase } from "../lib/api/api";
-import { selectSpace } from "../lib/api/api-server";
-import type { MobileBot, MobileGroup } from "../lib/api/mobile-types";
-import { useRosterSignals } from "../lib/api/roster-signals";
+} from "../../components/inbox/inbox-render-item";
+import { CompactRowsContext, SelectedChatContext } from "../../components/inbox/inbox-rows";
+import { createInboxStyles } from "../../components/inbox/inbox-styles";
+import { NativeInboxList } from "../../components/inbox/native-inbox-list";
+import { OrganizationTitleMenu } from "../../components/inbox/organization-menu";
+import { PickChatPane } from "../../components/inbox/pick-chat-pane";
+import { useUnreadJumpPills } from "../../components/inbox/unread-jump-overlay";
+import { currentApiBase } from "../../lib/api/api";
+import { selectSpace } from "../../lib/api/api-server";
+import type { MobileBot, MobileGroup } from "../../lib/api/mobile-types";
+import { useRosterSignals } from "../../lib/api/roster-signals";
 import {
   currentReadySessionGeneration,
   currentSessionGeneration,
   loadSessionToken,
   subscribeSessionGeneration,
-} from "../lib/api/session";
-import { errorText } from "../lib/api/user-error";
-import { mobileTokens, resolveMobileAppearance } from "../lib/appearance/appearance";
-import { signOut } from "../lib/auth/api-auth";
-import { explicitSignInRoute } from "../lib/auth/auth-routing";
-import { offerPasskeyOnce } from "../lib/auth/passkey";
-import { hasSignedInBefore, rememberSignedIn } from "../lib/auth/returning-user";
-import { offerSelfHostedSupportOnce } from "../lib/billing/self-hosted-support";
-import { AvatarViewportScope, createAvatarViewport } from "../lib/bots/avatar-life";
-import { mobileLogoAvatarActivity } from "../lib/bots/logo-avatar-activity";
-import { useUiLocale } from "../lib/i18n/i18n";
-import { useArchivedCount } from "../lib/inbox/archived/use-archived-count";
-import { chatRpc } from "../lib/inbox/chat-rpc";
-import type { CreateAction } from "../lib/inbox/create-chooser";
-import { onInboxChanged, onOpenChatFromInbox } from "../lib/inbox/inbox-changes";
-import { retainInboxValue } from "../lib/inbox/inbox-retention";
-import type { InboxItem, InboxSpace, PinnedChat } from "../lib/inbox/inbox-spaces";
+} from "../../lib/api/session";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens, resolveMobileAppearance } from "../../lib/appearance/appearance";
+import { signOut } from "../../lib/auth/api-auth";
+import { explicitSignInRoute } from "../../lib/auth/auth-routing";
+import { offerPasskeyOnce } from "../../lib/auth/passkey";
+import { hasSignedInBefore, rememberSignedIn } from "../../lib/auth/returning-user";
+import { offerSelfHostedSupportOnce } from "../../lib/billing/self-hosted-support";
+import { AvatarViewportScope, createAvatarViewport } from "../../lib/bots/avatar-life";
+import { mobileLogoAvatarActivity } from "../../lib/bots/logo-avatar-activity";
+import { useUiLocale } from "../../lib/i18n/i18n";
+import { useArchivedCount } from "../../lib/inbox/archived/use-archived-count";
+import { chatRpc } from "../../lib/inbox/chat-rpc";
+import type { CreateAction } from "../../lib/inbox/create-chooser";
+import { onInboxChanged, onOpenChatFromInbox } from "../../lib/inbox/inbox-changes";
+import { retainInboxValue } from "../../lib/inbox/inbox-retention";
+import type { InboxItem, InboxSpace, PinnedChat } from "../../lib/inbox/inbox-spaces";
 import {
   canDeleteInboxSpace,
   deleteSpaceTitle,
@@ -82,38 +81,41 @@ import {
   retryInboxSpaceFallback,
   selectInboxSpace,
   spaceInboxItems,
-} from "../lib/inbox/inbox-spaces";
-import { applyUnreadOverrides, withoutArchiving } from "../lib/inbox/inbox-swipe";
-import { inboxChats, preloadChats } from "../lib/inbox/preload-chats";
-import { loadSavedInbox } from "../lib/inbox/saved-chats";
-import type { OrganizeTarget } from "../lib/inbox/sections/organize-target";
-import { findOrganizeTarget } from "../lib/inbox/sections/organize-target";
-import { useCollapsedSections } from "../lib/inbox/sections/use-collapsed-sections";
-import { useInbox } from "../lib/inbox/use-inbox";
-import { useInboxChatActions } from "../lib/inbox/use-inbox-chat-actions";
-import { useInboxDay } from "../lib/inbox/use-inbox-day";
-import { useInboxHeader } from "../lib/inbox/use-inbox-header";
-import { useSnoozeClock } from "../lib/inbox/use-snooze-clock";
-import { useSpaceActivity } from "../lib/inbox/use-space-activity";
-import { readableGutters } from "../lib/layout/adaptive-layout";
-import { useContentBottomInset } from "../lib/layout/content-bottom-inset";
-import { useTopBarInset } from "../lib/layout/floating-header";
-import { useSplitView } from "../lib/layout/split-view";
-import { hapticImpact, hapticSelection } from "../lib/native/haptics";
-import { native, useThemedStyles } from "../lib/native/native";
-import { iosAtLeast } from "../lib/native/native-controls";
-import { forgetAppBadge, syncInboxAppBadge, unreadChatCount } from "../lib/notifications/app-badge";
-import { registerPushToken } from "../lib/notifications/push";
-import { askForReviewIfDue } from "../lib/platform/store-review";
-import { loadActivityMode, saveActivityMode } from "../lib/preferences/activity-mode";
-import { usePublishSearchInbox } from "../lib/search/use-publish-search-inbox";
+} from "../../lib/inbox/inbox-spaces";
+import { applyUnreadOverrides, withoutArchiving } from "../../lib/inbox/inbox-swipe";
+import { inboxChats, preloadChats } from "../../lib/inbox/preload-chats";
+import { loadSavedInbox } from "../../lib/inbox/saved-chats";
+import type { OrganizeTarget } from "../../lib/inbox/sections/organize-target";
+import { findOrganizeTarget } from "../../lib/inbox/sections/organize-target";
+import { useCollapsedSections } from "../../lib/inbox/sections/use-collapsed-sections";
+import { useInbox } from "../../lib/inbox/use-inbox";
+import { useInboxChatActions } from "../../lib/inbox/use-inbox-chat-actions";
+import { useInboxDay } from "../../lib/inbox/use-inbox-day";
+import { useInboxHeader } from "../../lib/inbox/use-inbox-header";
+import { useSnoozeClock } from "../../lib/inbox/use-snooze-clock";
+import { useSpaceActivity } from "../../lib/inbox/use-space-activity";
+import { readableGutters } from "../../lib/layout/adaptive-layout";
+import { useContentBottomInset } from "../../lib/layout/content-bottom-inset";
+import { useTopBarInset } from "../../lib/layout/floating-header";
+import { useSplitView } from "../../lib/layout/split-view";
+import { hapticImpact, hapticSelection } from "../../lib/native/haptics";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { iosAtLeast } from "../../lib/native/native-controls";
+import {
+  forgetAppBadge,
+  syncInboxAppBadge,
+  unreadChatCount,
+} from "../../lib/notifications/app-badge";
+import { registerPushToken } from "../../lib/notifications/push";
+import { askForReviewIfDue } from "../../lib/platform/store-review";
+import { usePublishSearchInbox } from "../../lib/search/use-publish-search-inbox";
 import {
   organizationSwitchActions,
   organizationSwitchEpoch,
   subscribeOrganizationSwitch,
   useOrganizations,
-} from "../lib/spaces/organizations";
-import { confirmUnsentSendLoss } from "../lib/thread/send/unsent-send-warning";
+} from "../../lib/spaces/organizations";
+import { confirmUnsentSendLoss } from "../../lib/thread/send/unsent-send-warning";
 
 /** A row counts as on screen as soon as any of it shows. */
 const AVATAR_VIEWABILITY = { itemVisiblePercentThreshold: 1 };
@@ -133,21 +135,21 @@ export default function HomeRoute() {
   return split ? <PickChatPane /> : <HomeSession />;
 }
 
+/** Chats lists every conversation; Activity lists runs by what they need. */
+export type InboxView = "chats" | "activity";
+
 /** The chat list beside the open chat on a wide window. */
-type InboxPaneProps = {
+export type InboxPaneProps = {
   onSelectSpace?: (spaceId: string) => void;
   onShareSelect?: (bot: MobileBot | SpaceBot) => void;
 };
 
-export function InboxPane({ onSelectSpace, onShareSelect }: InboxPaneProps) {
-  return <HomeSession embedded onSelectSpace={onSelectSpace} onShareSelect={onShareSelect} />;
-}
-
 export function HomeSession({
   embedded = false,
+  view = "chats",
   onSelectSpace,
   onShareSelect,
-}: InboxPaneProps & { embedded?: boolean }) {
+}: InboxPaneProps & { embedded?: boolean; view?: InboxView }) {
   const generation = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
   const ready = useSyncExternalStore(subscribeSessionGeneration, currentReadySessionGeneration);
   const organizationEpoch = useSyncExternalStore(
@@ -158,13 +160,19 @@ export function HomeSession({
     <Home
       key={`${generation}:${ready}:${organizationEpoch}`}
       embedded={embedded}
+      view={view}
       onSelectSpace={onSelectSpace}
       onShareSelect={onShareSelect}
     />
   );
 }
 
-function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { embedded: boolean }) {
+function Home({
+  embedded,
+  view,
+  onSelectSpace,
+  onShareSelect,
+}: InboxPaneProps & { embedded: boolean; view: InboxView }) {
   const tokens = mobileTokens();
   const appearance = resolveMobileAppearance();
   const styles = useThemedStyles(createInboxStyles);
@@ -204,21 +212,13 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   const [returningUser, setReturningUser] = useState(false);
   const [organizeTarget, setOrganizeTarget] = useState<OrganizeTarget | null>(null);
   const organizeRequestId = useRef(0);
-  const [activityMode, setActivityMode] = useState(false);
-  const [activityModeLoaded, setActivityModeLoaded] = useState(false);
+  const activityMode = view === "activity";
   const [spaceBusy, setSpaceBusy] = useState(false);
   const [spaceRecoveryId, setSpaceRecoveryId] = useState<string | null>(null);
   const userId = me?.userId;
   const { collapsed, toggleCollapsed, loaded: collapsedLoaded } = useCollapsedSections(userId);
-  // Collapsed sections and the view load before the inbox first renders, so neither jumps on launch.
-  const ready = sessionLoaded && collapsedLoaded && activityModeLoaded;
-
-  useEffect(() => {
-    void loadActivityMode().then((on) => {
-      setActivityMode(on);
-      setActivityModeLoaded(true);
-    });
-  }, []);
+  // Collapsed sections load before the inbox first renders, so they don't jump on launch.
+  const ready = sessionLoaded && collapsedLoaded;
 
   // Only while the inbox is in front, so the offer waits until signup setup is done.
   useFocusEffect(
@@ -240,14 +240,12 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     }, [userId]),
   );
 
+  const tabRouter = useRouter();
+  // Headers without the tab bar (the list beside a chat) still switch between the two views.
   const toggleActivityMode = useCallback(() => {
     hapticSelection();
-    setActivityMode((on) => {
-      const next = !on;
-      void saveActivityMode(next);
-      return next;
-    });
-  }, []);
+    tabRouter.navigate(activityMode ? "/" : "/activity");
+  }, [activityMode, tabRouter]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
@@ -461,7 +459,6 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   // Liquid Glass uses the native bar: glass bar items and a native menu.
   // The list beside a chat and the share picker have no navigation bar of their own.
   const nativeHeader = iosAtLeast(26) && !embedded && !onShareSelect;
-  const showToolbar = nativeHeader && ready && hasSession;
   const topBarInset = useTopBarInset();
   const listRef = useRef<FlatList<InboxItem>>(null);
   const jumpSignals = useSyncExternalStore(
@@ -675,8 +672,6 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     nativeHeader,
     ready,
     hasSession,
-    activityMode,
-    toggleActivityMode,
     runCreateAction,
     headerTitle,
   });
@@ -855,7 +850,6 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
 
   return (
     <View style={styles.screen}>
-      {showToolbar ? <InboxToolbar /> : null}
       {nativeHeader || onShareSelect ? null : (
         <InboxHeader
           embedded={embedded}
@@ -895,7 +889,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                   onRefresh={refreshInbox}
                   signals={jumpSignals}
                   showJumpPills={!onShareSelect && !refreshing && !inboxHasNoChats(rows)}
-                  bottomBar={showToolbar ? INBOX_TOOLBAR_ROOM : 0}
+                  bottomBar={0}
                 />
               ) : (
                 <FlatList<InboxItem>

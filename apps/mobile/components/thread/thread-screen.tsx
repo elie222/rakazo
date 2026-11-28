@@ -454,7 +454,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     mentionBots,
   });
 
-  const { startVoiceCall, openBotChat } = useThreadVoiceCall({
+  const { openBotChat } = useThreadVoiceCall({
     botId,
     readOnly,
     displayName,
@@ -711,14 +711,12 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               attachmentIds={attachments.activePendingAttachments.map(
                 (attachment) => attachment.id,
               )}
-              botId={botId}
               onCall={onCall}
               sending={attachments.shareImporting}
               styles={styles}
               attachActions={attachments.attachActions}
               attachFrom={attachments.attachFrom}
               send={composer.send}
-              startVoiceCall={startVoiceCall}
               onSlashAction={composer.runSlashAction}
               onEmptied={composer.composerEmptied}
               model={composerModel}

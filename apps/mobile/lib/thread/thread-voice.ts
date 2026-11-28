@@ -22,6 +22,7 @@ import {
   startCall,
 } from "../calls/call-session";
 import { loadCallGreetingEnabled } from "../calls/call-sounds";
+import { onCallRequest, showCall } from "../calls/header-call";
 import {
   loadCallCallerName,
   probeProviderTranscribe,
@@ -315,9 +316,18 @@ export function useThreadVoiceCall({
   // A read-only chat leaves the request waiting until it is restored.
   useEffect(() => {
     if (!botId || readOnly) return;
-    const unsubscribe = onShortcutVoiceChat(() => {
+    const unsubscribeShortcut = onShortcutVoiceChat(() => {
       if (takeShortcutVoiceChat(botId)) void startVoiceCallRef.current();
     });
+    // During a call, Call brings it back instead of hanging up to dial again.
+    const unsubscribeHeader = onCallRequest(botId, () => {
+      if (getCallSnapshot()) showCall();
+      else void startVoiceCallRef.current();
+    });
+    const unsubscribe = () => {
+      unsubscribeShortcut();
+      unsubscribeHeader();
+    };
     const session = currentSessionGeneration();
     if (takeRingOnArrival(botId, session)) {
       void startVoiceCall(true, session);
