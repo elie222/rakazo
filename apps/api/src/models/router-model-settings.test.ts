@@ -1062,12 +1062,23 @@ describe("bot model auth on save", () => {
 
   function saveDeps(options: {
     modelId: string;
+    modelCredentialId?: string | null;
+    credentialOwner?: string;
     preferences: (args: { where: { modelId?: string; credential?: { provider?: string } } }) => {
       credential: ReturnType<typeof credentialRow>;
       modelId: string;
     } | null;
   }) {
-    const bot = storedBot(options.modelId);
+    const bot = {
+      ...storedBot(options.modelId),
+      modelCredentialId: options.modelCredentialId ?? null,
+    };
+    const credentialFindFirst = vi.fn(
+      async ({ where }: { where: { id: string; userId: string } }) =>
+        where.id === "cred-api" && where.userId === (options.credentialOwner ?? actor.userId)
+          ? { ...credentialRow("cred-api", "secret-api"), userPreferences: [] }
+          : null,
+    );
     const preferenceFindFirst = vi.fn(options.preferences);
     const secretFindFirst = vi.fn(async (args: { where: { id?: string } }) => {
       if (args.where.id === "secret-api") {
@@ -1078,7 +1089,7 @@ describe("bot model auth on save", () => {
       }
       return null;
     });
-    const botUpdate = vi.fn(async () => ({
+    const botUpdate = vi.fn(async (_input: unknown) => ({
       id: bot.id,
       name: "Ada renamed",
       title: bot.title,
@@ -1098,7 +1109,7 @@ describe("bot model auth on save", () => {
         update: botUpdate,
       },
       userModelPreference: { findFirst: preferenceFindFirst },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findFirst: credentialFindFirst },
       secret: { findFirst: secretFindFirst },
       $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
     };
@@ -1123,6 +1134,54 @@ describe("bot model auth on save", () => {
       handler: appHandler(deps),
     };
   }
+
+  it("pins the exact owned connection without changing the model pair", async () => {
+    const { botUpdate, handler } = saveDeps({ modelId: luna, preferences: () => null });
+    expect(
+      (await call(handler, "bots/update", { botId: "bot-1", modelCredentialId: "cred-api" }))
+        .status,
+    ).toBe(200);
+    expect(botUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ modelId: luna, modelCredentialId: null }),
+        data: expect.objectContaining({ modelCredentialId: "cred-api" }),
+      }),
+    );
+  });
+
+  it("refuses a connection belonging to another user", async () => {
+    const { botUpdate, secretFindFirst, handler } = saveDeps({
+      modelId: luna,
+      credentialOwner: "other-user",
+      preferences: () => null,
+    });
+    expect(
+      (await call(handler, "bots/update", { botId: "bot-1", modelCredentialId: "cred-api" }))
+        .status,
+    ).toBe(400);
+    expect(botUpdate).not.toHaveBeenCalled();
+    expect(secretFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("leaves an omitted pin alone and clears only an explicit null", async () => {
+    const { botUpdate, handler } = saveDeps({
+      modelId: luna,
+      modelCredentialId: "cred-api",
+      preferences: () => null,
+    });
+    expect((await call(handler, "bots/update", { botId: "bot-1", name: "Renamed" })).status).toBe(
+      200,
+    );
+    expect(botUpdate.mock.lastCall?.[0]).toEqual(
+      expect.objectContaining({ data: expect.not.objectContaining({ modelCredentialId: null }) }),
+    );
+    expect(
+      (await call(handler, "bots/update", { botId: "bot-1", modelCredentialId: null })).status,
+    ).toBe(200);
+    expect(botUpdate.mock.lastCall?.[0]).toEqual(
+      expect.objectContaining({ data: expect.objectContaining({ modelCredentialId: null }) }),
+    );
+  });
 
   it("persists the daily check-in preference through the bot update route", async () => {
     const { botUpdate, handler } = saveDeps({ modelId: spark, preferences: () => null });

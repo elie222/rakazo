@@ -75,8 +75,10 @@ function rosterUpdatedAt(newestMessage: { createdAt: Date } | undefined, botUpda
 }
 
 function mapBot(
+  viewerUserId: string,
   bot: {
     id: string;
+    userId: string;
     spaceId: string;
     name: string;
     description: string;
@@ -97,6 +99,7 @@ function mapBot(
     autoSpeak?: boolean;
     modelProvider?: string | null;
     modelId?: string | null;
+    modelCredentialId?: string | null;
     thinkingLevel?: string | null;
     teamChatAmbientEnabled?: boolean;
     teamChatRules?: string;
@@ -145,6 +148,7 @@ function mapBot(
     autoSpeak: bot.autoSpeak ?? false,
     modelProvider: bot.modelProvider ? canonicalPiProviderId(bot.modelProvider) : null,
     modelId: bot.modelId ?? null,
+    modelCredentialId: bot.userId === viewerUserId ? (bot.modelCredentialId ?? null) : null,
     thinkingLevel: (bot.thinkingLevel as Bot["thinkingLevel"]) ?? null,
     teamChatAmbientEnabled: bot.teamChatAmbientEnabled ?? false,
     teamChatRules: bot.teamChatRules ?? "",
@@ -286,6 +290,7 @@ export function createRepos(
       const threadId = bot.thread?.id;
       const activeRun = primaryActiveRun(bot.runs);
       const mapped = mapBot(
+        actor.userId,
         bot,
         (threadId && previews.get(threadId)) || "",
         activeRun?.status ?? "idle",
@@ -666,7 +671,7 @@ export function createRepos(
           }
         }
       }
-      return { ...mapBot(bot), ...botHistory(bot) };
+      return { ...mapBot(actor.userId, bot), ...botHistory(bot) };
     },
 
     async reorderBots(actor: Actor, botIds: string[]): Promise<void> {
@@ -719,7 +724,10 @@ export function createRepos(
           });
         }),
       );
-      return { ...mapBot(updated), ...botHistory(updated) };
+      return {
+        ...mapBot(actor.userId, updated),
+        ...botHistory(updated),
+      };
     },
   };
 }

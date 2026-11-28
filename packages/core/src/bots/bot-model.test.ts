@@ -112,6 +112,36 @@ describe("botModelState", () => {
     expect(following.savedThinkingLevel("low")).toBe("low");
   });
 
+  it("explicitly pins a Space-default model when a named connection is picked", () => {
+    const connections = [
+      { id: "personal-a", provider: "acme", label: "Account A", hasKey: true },
+      { id: "personal-b", provider: "acme", label: "Account B", hasKey: true },
+    ] as ModelCredential[];
+    const common = { credentials: connections, catalog };
+    const before = botModelState({ ...common, me, modelKey: "" });
+    expect(before.connections.map(({ id }) => id)).toEqual(["personal-a", "personal-b"]);
+    expect(before.savedModelKey(before.shownKey)).toBe("");
+    for (const modelCredentialId of ["personal-a", "personal-b"]) {
+      const modelKey = before.connectionModelKey(modelCredentialId);
+      expect(modelKey).toBe("acme::fast");
+      const reload = botModelState({
+        ...common,
+        modelKey,
+        modelCredentialId,
+        me: { defaultProvider: "acme", defaultModel: "plain" },
+      });
+      expect(reload.shownKey).toBe("acme::fast");
+      expect(reload.connectionModelKey("")).toBe("acme::fast");
+    }
+    const after = botModelState({
+      ...common,
+      me,
+      modelKey: "acme::fast",
+      modelCredentialId: "personal-a",
+    });
+    expect(after.connectionModelKey("")).toBe("");
+  });
+
   it("turns a pick into the bot update, starting the new model on its default thinking", () => {
     expect(botModelPick("acme::fast")).toEqual({
       modelProvider: "acme",
