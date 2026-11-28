@@ -441,8 +441,14 @@ function LayoutContent() {
           <ChatContentProviders loadRemoteImages={loadRemoteImages}>
             <ThemeProvider value={navigationTheme}>
               <StatusBar style={resolved === "light" ? "dark" : "light"} />
-              <CallKeyboardContext.Provider value={call}>
-                <KeyboardAvoidingView enabled={call} behavior="padding" style={{ flex: 1 }}>
+              {/* With the call in the tab bar, nothing at the bottom has to clear the keyboard,
+                  so the tab bar is not lifted with it. */}
+              <CallKeyboardContext.Provider value={call && !tabBarHoldsBars}>
+                <KeyboardAvoidingView
+                  enabled={call && !tabBarHoldsBars}
+                  behavior="padding"
+                  style={{ flex: 1 }}
+                >
                   <SplitFrame>
                     <Stack
                       screenLayout={({ navigation, options, children }) => (
@@ -671,8 +677,9 @@ function LayoutContent() {
                       backgroundColor: String(native.page),
                     }}
                   >
-                    <CallCard />
-                    {tabBarHoldsBars ? null : (
+                    <CallCard showReturnBar={!tabBarHoldsBars} />
+                    {/* A call speaks through its own screen, so the voice player waits. */}
+                    {tabBarHoldsBars || call ? null : (
                       <VoicePlayerBar style={{ marginTop: 8, marginBottom: insets.bottom + 8 }} />
                     )}
                   </ScrollView>

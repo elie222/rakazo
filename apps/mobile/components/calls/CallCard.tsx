@@ -1,51 +1,34 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import { useNow } from "@rakazo/chat-ui/hooks";
 import { typeScale } from "@rakazo/ui-tokens";
 import { AudioModule } from "expo-audio";
 import { useKeepAwake } from "expo-keep-awake";
 import { useRouter } from "expo-router";
 import type { ComponentProps } from "react";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Animated, Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { startCallBackground, stopCallBackground } from "../../lib/calls/call-background";
 import type { CallPhase } from "../../lib/calls/call-session";
+import { hangUp, toggleMute, toggleTranscript, useCallSession } from "../../lib/calls/call-session";
 import {
-  getCallId,
-  hangUp,
-  toggleMute,
-  toggleTranscript,
-  useCallSession,
-} from "../../lib/calls/call-session";
-import { onShowCall } from "../../lib/calls/header-call";
+  callClock,
+  minimizeCall,
+  restoreCall,
+  useCallElapsed,
+  useCallMinimized,
+} from "../../lib/calls/call-view";
 import { useMobileTokens } from "../../lib/native/native";
-import { getVoicePlaybackState, subscribeVoicePlayback } from "../../lib/voice/voice";
 import { BotAvatar } from "../bots/bot-avatar";
 import { GlassIconButton } from "../native/glass-icon-button";
 import type { NativeSymbol } from "../native/native-symbol";
+import { CallReturnBar } from "./call-return-bar";
 
 const BARS = [12, 22, 32, 22, 12];
 const TRANSCRIPT_LINES = 4;
 const START_RETRY_MS = 3000;
 const START_ATTEMPTS = 20;
-
-function callClock(seconds: number): string {
-  const minutes = Math.floor(seconds / 60);
-  return `${String(minutes).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
-}
-
-/** Whole seconds since this call opened, ticking while it is on; a replacing call starts at 0. */
-function useCallElapsed(callKey: string | null): number {
-  const [opened, setOpened] = useState<{ callKey: string; at: number } | null>(null);
-  if (callKey && opened?.callKey !== callKey) setOpened({ callKey, at: Date.now() });
-  if (!callKey && opened) setOpened(null);
-  const now = useNow(callKey ? 1000 : null);
-  return opened && opened.callKey === callKey
-    ? Math.max(0, Math.floor((now - opened.at) / 1000))
-    : 0;
-}
 
 /** Fallback until the native call service owns the call. */
 function KeepCallAwake() {
@@ -53,20 +36,16 @@ function KeepCallAwake() {
   return null;
 }
 
-export function CallCard() {
+export function CallCard({ showReturnBar = true }: { showReturnBar?: boolean }) {
   const call = useCallSession();
-  const playback = useSyncExternalStore(subscribeVoicePlayback, getVoicePlaybackState);
   const { t } = useLingui();
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  // The call fills the screen, as on desktop; minimized, it waits in a bar above the composer.
-  // Minimizing belongs to one call, so a call that replaces it opens full screen.
-  const callKey = call ? (getCallId() ?? call.botId) : null;
-  const [minimizedFor, setMinimizedFor] = useState<string | null>(null);
-  const minimized = callKey !== null && minimizedFor === callKey;
-  const setMinimized = (on: boolean) => setMinimizedFor(on ? callKey : null);
-  useEffect(() => onShowCall(() => setMinimizedFor(null)), []);
+  // The call fills the screen, as on desktop; minimized, a bar brings it back: above the composer,
+  // or in the tab bar's accessory, which then shows it instead of this card.
+  const minimized = useCallMinimized();
+  const setMinimized = (on: boolean) => (on ? minimizeCall() : restoreCall());
   const [serviceStarted, setServiceStarted] = useState(false);
   const serviceStartedFor = useRef<string | null>(null);
   const startSeq = useRef(0);
@@ -127,7 +106,7 @@ export function CallCard() {
     };
   }, [call?.botId, call?.botName, call?.phase]);
 
-  const elapsed = useCallElapsed(callKey);
+  const elapsed = useCallElapsed();
   if (!call) return null;
   const recentExchanges = call.exchanges.slice(-TRANSCRIPT_LINES);
   const activity =
@@ -145,28 +124,7 @@ export function CallCard() {
   return (
     <>
       {Platform.OS !== "android" || !serviceStarted ? <KeepCallAwake /> : null}
-      {minimized ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t`Return to call with ${ph({ name: call.botName })}`}
-          onPress={() => setMinimized(false)}
-          style={({ pressed }) => [
-            styles.returnBar,
-            {
-              backgroundColor: tokens.success,
-              marginBottom: playback.status === "idle" ? insets.bottom + 8 : 0,
-            },
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text numberOfLines={1} style={[styles.returnText, { color: tokens.background }]}>
-            {t`Return to call with ${ph({ name: call.botName })}`}
-          </Text>
-          <Text style={[styles.returnText, styles.clock, { color: tokens.background }]}>
-            {callClock(elapsed)}
-          </Text>
-        </Pressable>
-      ) : null}
+      {minimized && showReturnBar ? <CallReturnBar /> : null}
       <Modal
         visible={!minimized}
         animationType="slide"
@@ -425,17 +383,4 @@ const styles = StyleSheet.create({
   captioned: { alignItems: "center", gap: 8 },
   buttonCaption: { ...typeScale.caption },
   buttonFallback: { borderWidth: StyleSheet.hairlineWidth },
-  returnBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    minHeight: 44,
-    marginTop: 8,
-    marginHorizontal: 16,
-    paddingHorizontal: 16,
-    borderRadius: 22,
-  },
-  returnText: { ...typeScale.secondary, fontWeight: "600", flexShrink: 1 },
-  pressed: { opacity: 0.8 },
 });
