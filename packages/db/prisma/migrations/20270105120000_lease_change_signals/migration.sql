@@ -7,11 +7,21 @@ LANGUAGE sql AS $signal$
 $signal$;
 
 -- A running attempt stops when its run is cancelled, recovered by another attempt, or its
--- takeover is released.
+-- takeover is released. A run that asked for its bot's computer and stops running may have
+-- been the one other runs of the bot yield to, so they look again too.
 CREATE OR REPLACE FUNCTION signal_run_lease_change() RETURNS trigger
 LANGUAGE plpgsql AS $run$
+DECLARE
+  bot_computer text;
 BEGIN
   PERFORM signal_lease_topic('run-lease:' || OLD.id);
+  IF OLD.status = 'running' AND OLD."computerUseStartedAt" IS NOT NULL
+     AND (TG_OP = 'DELETE' OR NEW.status IS DISTINCT FROM 'running') THEN
+    SELECT "computerId" INTO bot_computer FROM bots WHERE id = OLD."botId";
+    IF bot_computer IS NOT NULL THEN
+      PERFORM signal_lease_topic('computer-lease:' || bot_computer);
+    END IF;
+  END IF;
   RETURN NULL;
 END;
 $run$;

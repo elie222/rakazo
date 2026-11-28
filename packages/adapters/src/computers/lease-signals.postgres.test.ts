@@ -67,7 +67,7 @@ describePostgres("lease change signals", () => {
     return signals.filter((payload) => payload !== "end");
   }
 
-  it("signals a run's lease topic when it is cancelled, not when its lease renews", async () => {
+  async function runningRun(extra: { computerUseStartedAt?: Date } = {}) {
     const thread = await prisma.thread.upsert({
       where: { botId: identity.botId },
       create: { spaceId: identity.spaceId, userId: identity.userId, botId: identity.botId },
@@ -95,8 +95,14 @@ describePostgres("lease change signals", () => {
         leaseOwner: "worker",
         leaseFence: 1,
         leaseExpiresAt: new Date(Date.now() + 300_000),
+        ...extra,
       },
     });
+    return run;
+  }
+
+  it("signals a run's lease topic when it is cancelled, not when its lease renews", async () => {
+    const run = await runningRun();
     const signals = await signalsDuring(runLeaseTopic(run.id), async () => {
       expect(await renewRunLease({ prisma } as never, run.id, "worker", 1)).toBe(true);
       await prisma.run.update({ where: { id: run.id }, data: { status: "cancelled" } });
@@ -114,6 +120,16 @@ describePostgres("lease change signals", () => {
     const signals = await signalsDuring(computerLeaseTopic(computerId), async () => {
       expect(await renewComputerExecutionLease(prisma, lease)).toBe(true);
       await releaseComputerExecutionLease(prisma, lease);
+    });
+    expect(signals).toEqual([""]);
+  });
+
+  it("signals the bot's computer when a run waiting for it stops running", async () => {
+    const computerId = (await prisma.bot.findUniqueOrThrow({ where: { id: identity.botId } }))
+      .computerId!;
+    const run = await runningRun({ computerUseStartedAt: new Date() });
+    const signals = await signalsDuring(computerLeaseTopic(computerId), async () => {
+      await prisma.run.update({ where: { id: run.id }, data: { status: "cancelled" } });
     });
     expect(signals).toEqual([""]);
   });
