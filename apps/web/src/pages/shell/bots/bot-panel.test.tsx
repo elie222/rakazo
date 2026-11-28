@@ -20,6 +20,8 @@ vi.mock("../../../lib/query/rpc", () => {
       get: vi.fn(),
       update: vi.fn(),
       restoreInstructions: vi.fn(),
+      primaryRuntime: vi.fn(),
+      setPrimaryRuntime: vi.fn(),
       // Saved instructions mark the roster stale; nothing here reads it.
       list: vi.fn(async () => []),
       // This server receives no email, so the panel offers no address.
@@ -282,6 +284,8 @@ beforeEach(() => {
   onExport.mockReset().mockResolvedValue(undefined);
   vi.mocked(rpc.bots.update).mockReset();
   vi.mocked(rpc.bots.get).mockReset().mockResolvedValue(bot());
+  vi.mocked(rpc.bots.primaryRuntime).mockReset().mockRejectedValue(new ORPCError("NOT_FOUND"));
+  vi.mocked(rpc.bots.setPrimaryRuntime).mockReset();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -471,6 +475,97 @@ describe("BotSettings model connection", () => {
     );
     await act(async () => automatic!.click());
     expect(onSave.mock.lastCall?.[0]).toMatchObject({ modelCredentialId: null });
+  });
+});
+
+describe("the owner runtime setting", () => {
+  const model = {
+    modelProvider: "anthropic",
+    modelId: "claude-sonnet-4-6",
+    modelCredentialId: "one-private-id",
+  };
+  const runtime = {
+    preference: null,
+    revision: 1,
+    direct: "pi",
+    group: "pi",
+    canSelectClaude: true,
+    model,
+    connectionLabel: "Work",
+  } satisfies Awaited<ReturnType<typeof rpc.bots.primaryRuntime>>;
+  const trigger = () => {
+    const label = [...container.querySelectorAll("label")].find(
+      (l) => l.textContent === "Execution runtime",
+    )!;
+    return document.getElementById(label.htmlFor)!;
+  };
+  const button = (label: string) =>
+    [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (b) => b.textContent === label,
+    )!;
+  const runtimeKey = () =>
+    spaceQueries(null, null).bots.primaryRuntime.queryKey({ input: { botId: "bot-1" } });
+
+  it("reflects a newer selection without editing or exposing the named account ID", async () => {
+    vi.mocked(rpc.bots.primaryRuntime).mockResolvedValue(runtime);
+    await render();
+    await openSettings();
+    await act(flush);
+    expect(trigger().textContent).toBe("Use default");
+    expect(container.textContent).toContain("Saved model connection: Work");
+    expect(container.textContent).not.toContain(model.modelCredentialId);
+    await act(async () => {
+      queryClient.setQueryData(runtimeKey(), { ...runtime, preference: "pi", revision: 2 });
+    });
+    await act(flush);
+    expect(trigger().textContent).toBe("Pi");
+    expect(rpc.bots.setPrimaryRuntime).not.toHaveBeenCalled();
+  });
+
+  it("preserves a dirty choice when another device changes model settings and requires review", async () => {
+    vi.mocked(rpc.bots.primaryRuntime).mockResolvedValue(runtime);
+    await render();
+    await openSettings();
+    await act(flush);
+    const native = (await openOptions(trigger())).find(
+      (entry) => entry.textContent === "Claude Code",
+    )!;
+    await act(async () => native.click());
+    const current = {
+      ...runtime,
+      model: { ...model, modelCredentialId: "second-private" },
+      connectionLabel: "Personal",
+    };
+    await act(async () => {
+      queryClient.setQueryData(runtimeKey(), current);
+    });
+    await act(flush);
+    expect(trigger().textContent).toBe("Claude Code");
+    expect(button("Save runtime").disabled).toBe(true);
+    expect(container.textContent).toContain("Saved model connection: Personal");
+    await act(async () => button("Keep my selection").click());
+    expect(button("Save runtime").disabled).toBe(false);
+    vi.mocked(rpc.bots.setPrimaryRuntime).mockResolvedValue({
+      status: "conflict",
+      committedRevision: null,
+      settings: { ...current, revision: 2, preference: "pi" },
+    });
+    vi.mocked(rpc.bots.primaryRuntime).mockResolvedValue({
+      ...current,
+      revision: 2,
+      preference: "pi",
+    });
+    await act(async () => button("Save runtime").click());
+    await act(flush);
+    expect(rpc.bots.setPrimaryRuntime).toHaveBeenCalledWith({
+      botId: "bot-1",
+      preference: "claude-agent",
+      expectedRevision: 1,
+      expectedModel: current.model,
+    });
+    expect(trigger().textContent).toBe("Claude Code");
+    expect(button("Save runtime").disabled).toBe(true);
+    expect(onSave).not.toHaveBeenCalled();
   });
 });
 

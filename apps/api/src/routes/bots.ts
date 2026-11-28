@@ -56,6 +56,7 @@ import {
   isRecordNotFound,
   recordSecurityEvent,
   restoreBotUnderComputerQuota,
+  setBotPrimaryRuntimePreference,
   settingsTarget,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
@@ -73,6 +74,7 @@ import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "../bots/age
 import { loadBotForRemoval } from "../bots/bot-removal.js";
 import { createBotFromTemplate, listBotTemplates } from "../bots/bot-templates.js";
 import { botIntroPrompt } from "../bots/hidden-turns.prompt.js";
+import { primaryRuntimeSettings } from "../bots/primary-runtime-settings.js";
 import {
   botEmailAddress,
   botEmailAddresses,
@@ -344,6 +346,41 @@ export function botsRoutes(ctx: RouterContext) {
       get: authed.bots.get.handler(async ({ context, input }) => {
         const found = await repos.getBotView(context.actor, input.botId);
         return { ...found, meetingsEnabled: await deps.meetings?.visible(context.actor, found.id) };
+      }),
+      primaryRuntime: authed.bots.primaryRuntime.handler(({ context, input }) =>
+        primaryRuntimeSettings(deps, context.actor, input.botId),
+      ),
+      setPrimaryRuntime: authed.bots.setPrimaryRuntime.handler(async ({ context, input }) => {
+        const { actor } = context;
+        const current = await primaryRuntimeSettings(deps, actor, input.botId);
+        if (
+          current.revision !== input.expectedRevision ||
+          current.model.modelProvider !== input.expectedModel.modelProvider ||
+          current.model.modelId !== input.expectedModel.modelId ||
+          current.model.modelCredentialId !== input.expectedModel.modelCredentialId
+        )
+          return { status: "conflict" as const, committedRevision: null, settings: current };
+        if (
+          input.preference === "claude-agent" &&
+          current.preference !== input.preference &&
+          !current.canSelectClaude
+        )
+          throw new ClientError(
+            "BAD_REQUEST",
+            "Claude Code needs an available runtime and a named Anthropic API-key connection.",
+          );
+        const result = await setBotPrimaryRuntimePreference(deps.prisma, {
+          ...input,
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+        });
+        if (result.status === "not_found")
+          throw new ClientError("NOT_FOUND", "Bot settings not found.");
+        return {
+          status: result.status,
+          committedRevision: result.status === "conflict" ? null : result.revision,
+          settings: await primaryRuntimeSettings(deps, actor, input.botId),
+        };
       }),
       create: authed.bots.create.handler(async ({ context, input }) => {
         // Older apps always send Original, which would pin every new bot to it.

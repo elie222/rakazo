@@ -53,11 +53,45 @@ import {
   ScratchpadItemTitle,
 } from "./scratchpad.js";
 
+const RuntimePreference = z.enum(["pi", "claude-agent"]).nullable();
+const RuntimeRevision = z.number().int().min(0).max(2_147_483_646);
+const RuntimeModel = z.object({
+  modelProvider: z.string().nullable(),
+  modelId: z.string().nullable(),
+  modelCredentialId: z.string().nullable(),
+});
+const PrimaryRuntimeSettings = z.object({
+  preference: z.string().nullable(),
+  revision: z.number().int().nonnegative(),
+  direct: z.enum(["pi", "claude-agent", "unavailable"]),
+  group: z.enum(["pi", "claude-agent", "unavailable"]),
+  canSelectClaude: z.boolean(),
+  model: RuntimeModel,
+  connectionLabel: z.string().nullable(),
+});
+
 export const botsRpc = {
   bots: {
     list: oc.output(z.array(ListedBotSchema)),
     listArchived: oc.output(z.array(ListedBotSchema)),
     get: oc.input(botId).output(BotSchema),
+    primaryRuntime: oc.input(botId).output(PrimaryRuntimeSettings),
+    setPrimaryRuntime: oc
+      .input(
+        z.object({
+          botId: Id,
+          preference: RuntimePreference,
+          expectedRevision: RuntimeRevision,
+          expectedModel: RuntimeModel,
+        }),
+      )
+      .output(
+        z.object({
+          status: z.enum(["changed", "unchanged", "conflict"]),
+          committedRevision: z.number().int().nonnegative().nullable(),
+          settings: PrimaryRuntimeSettings,
+        }),
+      ),
     create: oc.input(CreateBotInput).output(BotSchema),
     importPreview: oc.input(AgentImportPreviewInput).output(AgentImportPlanSchema),
     importCreate: oc.input(AgentImportCreateInput).output(BotSchema),

@@ -14,9 +14,14 @@ export async function setBotPrimaryRuntimePreference(
     userId: string;
     preference: string | null;
     expectedRevision: number;
+    expectedModel?: {
+      modelProvider: string | null;
+      modelId: string | null;
+      modelCredentialId: string | null;
+    };
   },
 ) {
-  const { botId, spaceId, userId, preference, expectedRevision } = input;
+  const { botId, spaceId, userId, preference, expectedRevision, expectedModel } = input;
   return prisma.$transaction(async (tx) => {
     const [thread] = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT id FROM threads
@@ -27,16 +32,29 @@ export async function setBotPrimaryRuntimePreference(
     const where = { id: botId, spaceId, userId, archivedAt: null };
     const current = await tx.bot.findFirst({
       where,
-      select: { primaryRuntimePreference: true, primaryRuntimeRevision: true },
+      select: {
+        primaryRuntimePreference: true,
+        primaryRuntimeRevision: true,
+        modelProvider: true,
+        modelId: true,
+        modelCredentialId: true,
+      },
     });
     if (!current) return { status: "not_found" as const };
     if (current.primaryRuntimeRevision !== expectedRevision) return { status: "conflict" as const };
+    if (
+      expectedModel &&
+      (current.modelProvider !== expectedModel.modelProvider ||
+        current.modelId !== expectedModel.modelId ||
+        current.modelCredentialId !== expectedModel.modelCredentialId)
+    )
+      return { status: "conflict" as const };
     if (current.primaryRuntimePreference === preference)
       return { status: "unchanged" as const, revision: expectedRevision };
 
     const revision = expectedRevision + 1;
     const changed = await tx.bot.updateMany({
-      where: { ...where, primaryRuntimeRevision: expectedRevision },
+      where: { ...where, ...expectedModel, primaryRuntimeRevision: expectedRevision },
       data: { primaryRuntimePreference: preference, primaryRuntimeRevision: revision },
     });
     if (changed.count !== 1) return { status: "conflict" as const };

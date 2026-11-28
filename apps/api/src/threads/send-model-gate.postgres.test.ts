@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import { pilotRuntimeForBot } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
@@ -17,6 +18,7 @@ import {
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
 import { createRouter } from "../router.js";
+import { handleRpcError } from "../rpc-errors.js";
 import type { ThreadTarget } from "./thread-target.js";
 import { resolveThreadTarget, sendThreadMessage } from "./thread-target.js";
 
@@ -29,8 +31,9 @@ describe.skipIf(!enabled)("send model gate with a bot's own model (PostgreSQL)",
   let close: () => Promise<void>;
   let actor: Actor;
   let botId: string;
-  let call: (path: string, input: Record<string, unknown>) => Promise<Response>;
+  let call: (path: string, input: Record<string, unknown>, viewer?: Actor) => Promise<Response>;
   const enqueue = vi.fn().mockResolvedValue(undefined);
+  const loadSecret = vi.fn();
 
   beforeAll(() => {
     const db = createDb(databaseUrl!);
@@ -43,6 +46,7 @@ describe.skipIf(!enabled)("send model gate with a bot's own model (PostgreSQL)",
   });
   beforeEach(async () => {
     vi.clearAllMocks();
+    loadSecret.mockReset();
     const identity = await runAsSystem("test fixture", () =>
       provisionMessagingIdentity(prisma, {
         provider: "test",
@@ -59,19 +63,21 @@ describe.skipIf(!enabled)("send model gate with a bot's own model (PostgreSQL)",
       prisma,
       events: createThreadEvents(prisma),
       jobs: { enqueue, cancel: vi.fn(), close: async () => undefined },
-      secrets: { load: vi.fn() },
+      secrets: { load: loadSecret },
       sandbox: {},
       env: { agentRuntime: "pi", deploymentModelConfigured: false },
     } as unknown as RouterDeps;
-    const handler = new RPCHandler(createRouter(deps));
-    call = async (path, input) => {
+    const handler = new RPCHandler(createRouter(deps), {
+      clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
+    });
+    call = async (path, input, viewer = actor) => {
       const { response } = await handler.handle(
-        new Request(`http://127.0.0.1/rpc/threads/${path}`, {
+        new Request(`http://127.0.0.1/rpc/${path.includes("/") ? path : `threads/${path}`}`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ json: input }),
         }),
-        { prefix: "/rpc", context: { actor } },
+        { prefix: "/rpc", context: { actor: viewer } },
       );
       return response!;
     };
@@ -276,6 +282,150 @@ describe.skipIf(!enabled)("send model gate with a bot's own model (PostgreSQL)",
         modelCredentialId: credential.id,
       });
       expect(await userMessages(prior.threadId)).toBe(2);
+    },
+  );
+
+  it("limits runtime settings and account details to the bot owner", async () => {
+    const readerId = randomUUID();
+    const space = await system.space.findUniqueOrThrow({ where: { id: actor.spaceId } });
+    await system.user.create({
+      data: { id: readerId, name: "Reader", email: `${readerId}@rakazo.test`, emailVerified: true },
+    });
+    try {
+      const membership = {
+        userId: readerId,
+        organizationId: space.organizationId,
+        role: "member",
+        createdAt: new Date(),
+      };
+      await system.member.create({ data: { id: randomUUID(), ...membership } });
+      await system.spaceMember.upsert({
+        where: { spaceId_userId: { spaceId: space.id, userId: readerId } },
+        update: {},
+        create: { id: randomUUID(), spaceId: space.id, ...membership },
+      });
+      const viewer = { ...actor, userId: readerId };
+      const read = await call("bots/primaryRuntime", { botId }, viewer);
+      expect(read.status).toBe(404);
+      expect(await read.text()).not.toContain("connectionLabel");
+      const write = await call(
+        "bots/setPrimaryRuntime",
+        {
+          botId,
+          preference: "pi",
+          expectedRevision: 0,
+          expectedModel: { modelProvider: null, modelId: null, modelCredentialId: null },
+        },
+        viewer,
+      );
+      expect(write.status).toBe(404);
+      expect(await system.bot.findUniqueOrThrow({ where: { id: botId } })).toMatchObject({
+        primaryRuntimePreference: null,
+        primaryRuntimeRevision: 0,
+      });
+    } finally {
+      await system.user.delete({ where: { id: readerId } });
+    }
+  });
+
+  it.skipIf(process.platform !== "linux")(
+    "returns committed versions and refuses an old runtime or a changed account",
+    async () => {
+      vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", botId);
+      vi.stubEnv("PRIMARY_RUNTIME_PILOT_LAUNCHER", process.execPath);
+      loadSecret.mockResolvedValue(JSON.stringify({ kind: "api_key", key: "fixture-native-key" }));
+      const connection = async (label: string) => {
+        const secret = await system.secret.create({
+          data: { userId: actor.userId, kind: "model", ciphertext: "fixture-only" },
+        });
+        return system.userModelCredential.create({
+          data: { userId: actor.userId, provider: "anthropic", label, secretId: secret.id },
+        });
+      };
+      const [a, b] = await Promise.all([connection("Work"), connection("Personal")]);
+      const binding = (id: string) => ({
+        modelProvider: "anthropic",
+        modelId: "claude-sonnet-4-6",
+        modelCredentialId: id,
+      });
+      await system.bot.update({ where: { id: botId }, data: binding(a.id) });
+      const read = await call("bots/primaryRuntime", { botId });
+      expect(read.status).toBe(200);
+      const readBody = await read.json();
+      expect(readBody).toMatchObject({
+        json: {
+          preference: null,
+          revision: 0,
+          direct: "claude-agent",
+          group: "pi",
+          connectionLabel: "Work",
+          model: binding(a.id),
+          canSelectClaude: true,
+        },
+      });
+      expect(JSON.stringify(readBody)).not.toContain("fixture-native-key");
+      expect(JSON.stringify(readBody)).not.toContain(a.secretId);
+      const write = async (preference: string | null, expectedRevision: number, id = a.id) => {
+        const r = await call("bots/setPrimaryRuntime", {
+          botId,
+          preference,
+          expectedRevision,
+          expectedModel: binding(id),
+        });
+        expect(r.status).toBe(200);
+        return r.json();
+      };
+      expect(await write("pi", 0)).toMatchObject({
+        json: {
+          status: "changed",
+          committedRevision: 1,
+          settings: { preference: "pi", revision: 1 },
+        },
+      });
+      expect(await write("pi", 1)).toMatchObject({
+        json: { status: "unchanged", committedRevision: 1 },
+      });
+      expect(await write("claude-agent", 0)).toMatchObject({
+        json: {
+          status: "conflict",
+          committedRevision: null,
+          settings: { preference: "pi", revision: 1 },
+        },
+      });
+      await system.bot.update({ where: { id: botId }, data: binding(b.id) });
+      expect(await write("claude-agent", 1)).toMatchObject({
+        json: {
+          status: "conflict",
+          committedRevision: null,
+          settings: { connectionLabel: "Personal", model: binding(b.id) },
+        },
+      });
+      expect(await write("claude-agent", 1, b.id)).toMatchObject({
+        json: {
+          status: "changed",
+          committedRevision: 2,
+          settings: { direct: "claude-agent", group: "unavailable" },
+        },
+      });
+      expect(await write(null, 2, b.id)).toMatchObject({
+        json: {
+          status: "changed",
+          committedRevision: 3,
+          settings: { preference: null, model: binding(b.id) },
+        },
+      });
+      loadSecret.mockResolvedValue(JSON.stringify({ kind: "oauth", reconnectRequired: true }));
+      const unavailable = await call("bots/primaryRuntime", { botId });
+      expect(await unavailable.json()).toMatchObject({
+        json: { direct: "unavailable", group: "pi", canSelectClaude: false },
+      });
+      const denied = await call("bots/setPrimaryRuntime", {
+        botId,
+        preference: "claude-agent",
+        expectedRevision: 3,
+        expectedModel: binding(b.id),
+      });
+      expect(denied.status).toBe(400);
     },
   );
 

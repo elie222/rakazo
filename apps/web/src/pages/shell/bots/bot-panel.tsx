@@ -43,6 +43,7 @@ import {
   VoiceRow,
 } from "./bot-settings-sections";
 import { InstructionSettings } from "./instruction-settings";
+import { PrimaryRuntimeSettings } from "./primary-runtime-settings";
 
 const ScratchpadSection = lazyComponent(() =>
   import("../../space/ScratchpadSection").then((module) => module.ScratchpadSection),
@@ -726,6 +727,12 @@ export function BotSettings({
                   />
                 </label>
               ) : null}
+              <PrimaryRuntimeSettings
+                key={bot.id}
+                botId={bot.id}
+                updatedAt={bot.updatedAt}
+                enabled={settingsOpen}
+              />
               <SwitchRow
                 id={`${ids}-notify-finish`}
                 label={<Trans>Notifications</Trans>}
