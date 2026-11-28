@@ -57,6 +57,7 @@ function ownBotUpdateCall() {
     heldForApproval: false,
     settingsChange: false,
     ignoresAllowRules: false,
+    requiresOwnerApproval: false,
     purchase: undefined,
     cardUse: undefined,
     loginUse: undefined,
@@ -247,11 +248,16 @@ describe("schedule tools on another bot's routines", () => {
         ...(name === "schedule_update" ? { active: false } : {}),
       });
       await expect(prepared).resolves.toBeUndefined();
-      expect(request).toMatchObject({ heldForApproval: true, ignoresAllowRules: true });
+      expect(request).toMatchObject({
+        heldForApproval: true,
+        ignoresAllowRules: true,
+        requiresOwnerApproval: true,
+      });
     }
     const list = call("schedule_list", { bot_id: "child" });
     await expect(list.prepared).resolves.toBeUndefined();
     expect(list.request.heldForApproval).toBeUndefined();
+    expect(list.request.requiresOwnerApproval).toBeUndefined();
   });
 
   it.each(["webhook", "bot_message", "spawn", "tickets"])(
@@ -261,10 +267,23 @@ describe("schedule tools on another bot's routines", () => {
       for (const name of ["schedule_cancel", "schedule_list"]) {
         const { prepared, request } = call(name, { bot_id: "child", routineId: "r" });
         await expect(prepared).resolves.toBeUndefined();
-        expect(request).toMatchObject({ heldForApproval: true, ignoresAllowRules: true });
+        expect(request).toMatchObject({
+          heldForApproval: true,
+          ignoresAllowRules: true,
+          requiresOwnerApproval: true,
+        });
       }
     },
   );
+
+  it("does not hold listing this bot's own routines by bot_name on an unattended run", async () => {
+    const call = managedRoutineCall({ ownerStartedRun: false, trigger: "bot_message" });
+    const { prepared, request } = call("schedule_list", { bot_name: "Me" });
+    await expect(prepared).resolves.toBeUndefined();
+    expect(request.args).toEqual({});
+    expect(request.heldForApproval).toBeUndefined();
+    expect(request.requiresOwnerApproval).toBeUndefined();
+  });
 });
 
 describe("prepareToolRequest: a saved login that asks first", () => {
@@ -342,6 +361,7 @@ describe("prepareToolRequest: a saved login that asks first", () => {
       heldForApproval: false,
       settingsChange: false,
       ignoresAllowRules: false,
+      requiresOwnerApproval: false,
       purchase: undefined,
       cardUse: undefined,
       loginUse: undefined,

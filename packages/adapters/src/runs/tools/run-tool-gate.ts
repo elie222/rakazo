@@ -316,7 +316,11 @@ export async function gateToolCall(
   // A reviewed call still fails closed when its review errors, and keeps its approval key.
   const gated = requiresApprovalByDefault || reviewOnly;
   // In Ask and Auto these ask a person every time, whatever started the run.
-  const mandatoryInAnyRun = paying || unattendedWatch || toolRequiresExplicitApproval(name);
+  const mandatoryInAnyRun =
+    paying ||
+    unattendedWatch ||
+    toolRequiresExplicitApproval(name) ||
+    request.requiresOwnerApproval;
   // Outside text may have asked for these, so an Always allow rule saved for calls the owner asked
   // for does not skip them; they still go through the approval mode.
   const ignoresAllowRules = routineWrittenAfterOutside || request.ignoresAllowRules;
@@ -325,8 +329,11 @@ export async function gateToolCall(
   const asksEveryTime =
     (unattendedWatch || scheduleNamesNewSite || routineAddsEvents || ignoresAllowRules) &&
     !toolRequiresApproval(name, viaConnector);
-  // Never ask runs everything else: only another owner's connection could have been steered into it.
-  const guardedInNeverAsk = name === "respond_agent_connection";
+  // Never ask runs everything else: only another owner's connection or a fresh owner-only
+  // bot-management call could have been steered into it (an already-approved replay runs as in Ask/Auto).
+  const guardedInNeverAsk =
+    name === "respond_agent_connection" ||
+    (request.requiresOwnerApproval && nextApprovedTool !== name && !approvedEffectKey);
   const resolvedRules = resolveActionApprovalForTools({
     tools: approvalToolNames.map((toolName) => ({
       name: toolName,
@@ -388,7 +395,9 @@ export async function gateToolCall(
         mandatory: mandatoryInAnyRun,
         steerable:
           guardedInNeverAsk && mode === "never"
-            ? !ctx.source.ownerStartedRun || (await isRunTainted(ctx))
+            ? request.requiresOwnerApproval ||
+              !ctx.source.ownerStartedRun ||
+              (await isRunTainted(ctx))
             : undefined,
         consequential: requiresApprovalByDefault,
         reviewOnly,
