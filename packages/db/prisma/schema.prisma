@@ -214,6 +214,9 @@ model WorkActivityStartToken {
   ciphertext String
   /// The last card started on this phone, so each stretch of work starts at most one.
   startedAt DateTime?
+  /// A card started here by push whose token has not come back, so the server can neither update
+  /// nor end it; no other is started while it may still show.
+  unfollowedStartAt DateTime?
   createdAt DateTime @default(now())
 
   @@index([userId])
