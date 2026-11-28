@@ -2511,6 +2511,114 @@ describe("own instructions through update_bot", () => {
   });
 });
 
+describe("own run settings wait for the owner like instructions", () => {
+  beforeEach(() => {
+    reviewMock.mockReset();
+    reviewMock.mockResolvedValue({ decision: "pass", reason: "Asked for", model: "mock" });
+  });
+  it("holds a thinking change with a card naming it, and writes nothing", async () => {
+    const f = fixture({ name: "update_bot", builtin: true });
+    f.setCalls([{ args: { thinkingLevel: "high" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.effects).toEqual([
+      expect.objectContaining({
+        kind: "update_bot",
+        status: "intended",
+        request: { thinkingLevel: "high", heldSettings: true },
+      }),
+    ]);
+    expect(askDetail(f)).toContain("Thinking: high");
+    expect(f.prisma.bot.update).not.toHaveBeenCalled();
+  });
+  it("applies the stored change once approved, not what the model sends again", async () => {
+    const f = fixture({ name: "update_bot", builtin: true });
+    f.setCalls([{ args: { readAloud: true }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.prisma.bot.update).not.toHaveBeenCalled();
+    f.effects[0]!.status = "approved";
+    f.setCalls([{ args: { voice: "Rachel" }, executionId: "call-2" }]);
+    await f.run();
+    expect(f.prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { autoSpeak: true } }),
+    );
+    expect(f.effects).toHaveLength(1);
+    expect(f.effects[0]!.status).toBe("completed");
+  });
+  it("applies without a card once Auto Review passes it", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, autoReview: true });
+    f.setCalls([{ args: { readAloud: true }, executionId: "call-1" }]);
+    await f.run();
+    expect(reviewMock).toHaveBeenCalledWith(
+      expect.objectContaining({ toolName: "update_bot" }),
+      expect.anything(),
+    );
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.results).toEqual([{ ok: true, readAloud: true }]);
+  });
+  it("follows an always-allow rule for update_bot", async () => {
+    const f = fixture({
+      name: "update_bot",
+      builtin: true,
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "update_bot" }],
+    });
+    f.setCalls([{ args: { readAloud: true }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.results).toEqual([{ ok: true, readAloud: true }]);
+  });
+  it("applies at once when the owner skips approvals", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
+    f.setCalls([{ args: { thinkingLevel: "high" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { thinkingLevel: "high" } }),
+    );
+  });
+  it("holds turning daily check-ins on, but not turning them off", async () => {
+    const on = fixture({ name: "update_bot", builtin: true });
+    on.setCalls([{ args: { dailyCheckIns: true }, executionId: "call-1" }]);
+    await on.run();
+    expect(on.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(askDetail(on)).toContain("Daily check-ins: on");
+
+    const off = fixture({ name: "update_bot", builtin: true });
+    off.setCalls([{ args: { dailyCheckIns: false }, executionId: "call-1" }]);
+    await off.run();
+    expect(off.pauseRunForInput).not.toHaveBeenCalled();
+  });
+  it("holds the settings of a mixed call before the instructions are looked at", async () => {
+    const f = fixture({ name: "update_bot", builtin: true });
+    f.setCalls([
+      { args: { readAloud: true, instructions: "Be very brief." }, executionId: "call-1" },
+    ]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.prisma.bot.update).not.toHaveBeenCalled();
+    expect(f.effects).toEqual([
+      expect.objectContaining({
+        kind: "update_bot",
+        request: { readAloud: true, heldSettings: true },
+      }),
+    ]);
+  });
+  it("ignores a held marker the model sends", async () => {
+    const f = fixture({ name: "update_bot", builtin: true });
+    f.setCalls([{ args: { readAloud: true, heldSettings: true }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.prisma.bot.update).not.toHaveBeenCalled();
+  });
+  it("leaves name and description changes immediate", async () => {
+    const f = fixture({ name: "update_bot", builtin: true });
+    f.setCalls([{ args: { name: "Scout" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.results).toEqual([expect.objectContaining({ ok: true, name: "Scout" })]);
+  });
+});
+
 describe("own settings through update_bot", () => {
   it("never widens its own powers", async () => {
     const f = fixture({ name: "update_bot", builtin: true });
@@ -2584,7 +2692,7 @@ describe("own settings through update_bot", () => {
     expect(f.instructionState.instructions).toBe("Draft only");
   });
   it("changes read-aloud only while it is unchanged and posts the undo card", async () => {
-    const f = fixture({ name: "update_bot", builtin: true });
+    const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
     f.setCalls([{ args: { readAloud: true }, executionId: "call-1" }]);
     await f.run();
     expect(f.results).toEqual([{ ok: true, readAloud: true }]);
@@ -2634,10 +2742,14 @@ describe("own settings through update_bot", () => {
     });
     f.setCalls([{ args: { readAloud: true }, executionId: "call-1" }]);
     await f.run();
-    expect(f.results).toEqual([{ ok: true, readAloud: true }]);
-    expect(f.prisma.bot.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { autoSpeak: true } }),
-    );
+    // Held for the owner, not refused as outside content.
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.effects[0]).toMatchObject({
+      kind: "update_bot",
+      status: "intended",
+      request: { readAloud: true, heldSettings: true },
+    });
+    expect(f.prisma.bot.update).not.toHaveBeenCalled();
   });
   it("refuses reflection when a channel run emits a tool it was not offered", async () => {
     const reflect = vi.fn(async () => ({ ok: true as const, value: "Private bot context" }));
@@ -2663,12 +2775,13 @@ describe("own settings through update_bot", () => {
     expect(reflect).not.toHaveBeenCalled();
     expect(f.results[0]).toMatchObject({ error: expect.any(String) });
   });
-  it("changes a setting after outside content in Ask; outside text only informs Auto", async () => {
+  it("holds a run setting for the owner after outside content in Ask; outside text only informs Auto", async () => {
     const f = fixture({ name: "update_bot", builtin: true });
     f.claimedOutsideSteering(true);
     f.setCalls([{ args: { readAloud: true }, executionId: "call-1" }]);
     await f.run();
-    expect(f.results).toEqual([{ ok: true, readAloud: true }]);
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.prisma.bot.update).not.toHaveBeenCalled();
   });
   it("lets the approval model check a setting change after outside content in Auto", async () => {
     reviewMock.mockResolvedValue({ decision: "ask", reason: "Unasked", model: "mock" });
@@ -2712,7 +2825,7 @@ describe("own settings through update_bot", () => {
     expect(f.prisma.bot.update).not.toHaveBeenCalled();
   });
   it("treats its own id in bot_id as its own settings", async () => {
-    const f = fixture({ name: "update_bot", builtin: true });
+    const f = fixture({ name: "update_bot", builtin: true, skipApprovals: true });
     f.setCalls([
       { args: { bot_id: " bot-1 ", name: "Scout" }, executionId: "call-1" },
       { args: { bot_id: "bot-1", readAloud: true }, executionId: "call-2" },

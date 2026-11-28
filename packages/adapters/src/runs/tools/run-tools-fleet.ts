@@ -307,6 +307,12 @@ export const fleetTools: ToolHandlers = {
         }),
       );
     }
+    // A held settings change (see prepareOwnBotUpdate) runs only once the owner or Auto Review approves it.
+    if (
+      args.heldSettings === true &&
+      ((call.nextApprovedTool !== call.name && !call.bypassApproval) || !call.claimedEffect)
+    )
+      return call.finish({ error: "This settings change needs the owner's approval." });
     const {
       instructions,
       model,
@@ -318,6 +324,7 @@ export const fleetTools: ToolHandlers = {
       teamChatRules,
       memoryScope,
       disableTools,
+      heldSettings: _held,
       ...profile
     } = args;
     const modelDeps = await fleetPrepareDeps(deps, run);
