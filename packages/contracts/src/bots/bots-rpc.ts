@@ -114,6 +114,14 @@ export const botsRpc = {
         webhookConfigured: z.literal(true),
       }),
     ),
+    /** Makes the bot's webhook key if it has none; `secret` is set only when this call made it. */
+    ensureWebhookSecret: oc.input(botId).output(
+      z.object({
+        secret: z.string().optional(),
+        path: z.string(),
+        webhookConfigured: z.literal(true),
+      }),
+    ),
     revealWebhookSecret: oc
       .input(botId)
       // `url` is set when the deployment publishes its webhooks at a public address.

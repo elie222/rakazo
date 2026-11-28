@@ -2,7 +2,12 @@ import { t } from "@lingui/core/macro";
 import type { Routine, RoutineWatch, RoutineWatchInput } from "@rakazo/contracts";
 import { ROUTINE_WATCH_DEFAULT_MINUTES, RoutineWatchSchema } from "@rakazo/contracts";
 import type { RoutineDraft } from "@rakazo/core";
-import { draftFromRoutine, emptyRoutineDraft, isOneShotRoutineCrons } from "@rakazo/core";
+import {
+  draftFromRoutine,
+  emptyRoutineDraft,
+  isOneShotRoutineCrons,
+  routineEventTriggered,
+} from "@rakazo/core";
 import { modelOptionKey } from "../models/model-catalog";
 
 function toDatetimeLocalValue(date: Date): string {
@@ -38,9 +43,7 @@ export type RoutineDraftState = RoutineDraft & {
 
 /** Whether outside events start it (webhook, Git, chat app or email), so it can't use the computer. */
 export function routineDraftEventTriggered(draft: RoutineDraftState): boolean {
-  return Boolean(
-    draft.webhookEnabled || draft.githubEnabled || draft.messageProvider || draft.emailSenders,
-  );
+  return routineEventTriggered(draft);
 }
 
 /** The change trigger as the editor holds it: free text until saved. */

@@ -317,7 +317,7 @@ export interface ScheduleToolDeps {
   /** Where this server receives mail, if it does; an email trigger needs it. */
   inboundEmailDomain?: string;
   /** Holds the bot's webhook key, made when a routine first needs one. */
-  secretStore?: Pick<SecretStore, "put">;
+  secretStore?: Pick<SecretStore, "put" | "delete" | "isRemote">;
 }
 
 const ONE_SHOT_FIELDS = ["runAt", "delayMinutes", "delaySeconds"] as const;
@@ -351,7 +351,7 @@ async function routineEventsFor(
 function webhookKeyStore(
   deps: Pick<ScheduleToolDeps, "secretStore">,
   events: RoutineEvents,
-): { store?: Pick<SecretStore, "put"> } | { error: string } {
+): { store?: NonNullable<ScheduleToolDeps["secretStore"]> } | { error: string } {
   if (!events.webhookEnabled && !events.githubEnabled) return {};
   if (!deps.secretStore) return { error: "Webhook keys are not available on this server." };
   return { store: deps.secretStore };

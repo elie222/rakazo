@@ -4,7 +4,7 @@ import { formatCron, formatRoutineEnd } from "@rakazo/core";
 import { cronLabels } from "@rakazo/i18n/cron";
 import { dateLocaleForUi, getActiveUiLocale } from "../i18n/i18n";
 
-/** Triggers set up on web. Mobile lists them and can remove them, but not add or edit them. */
+/** Triggers set up on web. Mobile lists them and can remove them; of these it adds only a webhook. */
 export type RoutineWebTrigger = "webhookEnabled" | "githubEnabled" | "messageProvider" | "watch";
 
 /** The routine's web-only triggers with their names, in the order the routine lists them. */

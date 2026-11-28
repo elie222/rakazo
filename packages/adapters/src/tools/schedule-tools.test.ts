@@ -22,6 +22,16 @@ import {
   updateScheduleFromTool,
 } from "./schedule-tools.js";
 
+// Cleanup of an unheld key is covered against PostgreSQL in webhook-key.postgres.test.ts.
+vi.mock("../secrets/secret-persistence.js", () => ({
+  persistPreparedSecret: (
+    _prisma: unknown,
+    _store: unknown,
+    _written: unknown,
+    commit: () => unknown,
+  ) => commit(),
+}));
+
 const noRoutines = async () => [];
 const impossibleOffsetDates = ["2030-02-30T10:00Z", "2030-04-31T10:00+05:30"];
 

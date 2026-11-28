@@ -628,6 +628,58 @@ export function botsRoutes(ctx: RouterContext) {
           webhookConfigured: true as const,
         };
       }),
+      ensureWebhookSecret: authed.bots.ensureWebhookSecret.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        const existing = {
+          path: botInboundPath(bot.id, "webhook"),
+          webhookConfigured: true as const,
+        };
+        if (bot.userId !== context.actor.userId) {
+          // Any member can add a webhook to their routine on a bot that has a key; only making one
+          // is the creator's.
+          const current = await deps.prisma.bot.findUnique({
+            where: { id: bot.id },
+            select: { webhookSecretId: true },
+          });
+          if (current?.webhookSecretId) return existing;
+          throw new ClientError("FORBIDDEN", "Only the bot's creator can set its webhook key.");
+        }
+        // Without `replace`, a key the bot already has is kept, and of two calls at once only one
+        // saves its key, so a device that asks again never revokes one in use.
+        const created = await storeBotWebhookKey(
+          { prisma: deps.prisma, secretStore: deps.secrets },
+          bot,
+          {
+            operationId: "bots.ensureWebhookSecret",
+            traceId: "bots.ensureWebhookSecret",
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+            signal: context.signal ?? new AbortController().signal,
+          },
+          { replace: false },
+        );
+        if (created) {
+          // Audited here rather than in the table, so a call that keeps the key records nothing.
+          await recordSecurityEvent({
+            type: "credential.created",
+            userId: context.actor.userId,
+            spaceId: context.actor.spaceId,
+            metadata: { procedure: "bots.ensureWebhookSecret", kind: "webhook", botId: bot.id },
+          });
+        } else {
+          // Nothing saved: the bot kept its key, or was deleted while the new one was sealed.
+          const current = await deps.prisma.bot.findUnique({
+            where: { id: bot.id },
+            select: { webhookSecretId: true },
+          });
+          if (!current?.webhookSecretId) throw new ClientError("NOT_FOUND", "Not Found");
+        }
+        return {
+          ...(created ? { secret: created } : {}),
+          path: botInboundPath(bot.id, "webhook"),
+          webhookConfigured: true as const,
+        };
+      }),
       revealWebhookSecret: authed.bots.revealWebhookSecret.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         // Only the creator can issue the secret, so only the creator can read it back. Checked

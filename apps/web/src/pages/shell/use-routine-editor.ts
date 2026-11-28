@@ -86,21 +86,29 @@ export function useRoutineEditor({
   const [runningRoutine, setRunningRoutine] = useState(false);
   const [routineError, setRoutineError] = useState<string | null>(null);
   const routineSavePending = useRef(false);
-  const webhookSecretProvisionRef = useRef(new Map<string, Promise<string>>());
+  const webhookSecretProvisionRef = useRef(new Map<string, Promise<void>>());
   // Bumped when a bot's key rotates or the person hides it, so a reveal that started before
   // never shows a revoked key or brings back one they hid.
   const webhookKeyGenerations = useRef(new Map<string, number>());
   const bumpWebhookKeyGeneration = (botId: string) =>
     webhookKeyGenerations.current.set(botId, (webhookKeyGenerations.current.get(botId) ?? 0) + 1);
-  const ensureWebhookSecret = (botId: string) =>
-    sharedInflight(webhookSecretProvisionRef.current, botId, async () => {
-      const result = await rpc.bots.rotateWebhookSecret({ botId });
-      bumpWebhookKeyGeneration(botId);
-      showWebhookSecret(botId, result.secret);
+  // `replace` is the Rotate action; otherwise the server keeps a key the bot already has, and
+  // only a new key comes back to show.
+  const requestWebhookSecret = (botId: string, replace: boolean) =>
+    sharedInflight(webhookSecretProvisionRef.current, `${replace}:${botId}`, async () => {
+      const generation = webhookKeyGenerations.current.get(botId) ?? 0;
+      const { secret } = replace
+        ? await rpc.bots.rotateWebhookSecret({ botId })
+        : await rpc.bots.ensureWebhookSecret({ botId });
+      // A key made before a rotation that already landed is revoked, so it is never shown.
+      const superseded = !replace && (webhookKeyGenerations.current.get(botId) ?? 0) !== generation;
+      if (secret && !superseded) {
+        bumpWebhookKeyGeneration(botId);
+        showWebhookSecret(botId, secret);
+      }
       setBots((current) =>
         current.map((bot) => (bot.id === botId ? { ...bot, webhookConfigured: true } : bot)),
       );
-      return result.secret;
     });
   // A key on screen, new or read back, hides again after a while, as the Vault's values do.
   // Each bot's key keeps its own hide time, on a clock a system time change cannot move, and one
@@ -123,6 +131,15 @@ export function useRoutineEditor({
       ? t`Only the bot's creator can set its webhook key.`
       : errorText(error, fallback);
   const routineSaveRequest = useRef(0);
+  async function changeWebhookSecret(targetBotId: string, replace: boolean) {
+    const request = routineSaveRequest.current;
+    try {
+      await requestWebhookSecret(targetBotId, replace);
+    } catch (error) {
+      if (routineSaveRequest.current !== request || activeBotId.current !== targetBotId) return;
+      setRoutineError(webhookErrorText(error, t`Could not create the webhook key`));
+    }
+  }
   const routineRunPending = useRef(false);
   const addSkillRoutine = useCallback((name: string, prompt: string) => {
     setRoutineDraft({ ...emptyRoutineDraftState(), name, prompt });
@@ -175,18 +192,8 @@ export function useRoutineEditor({
         error: routineError,
         onBack: () => setPanel("settings"),
         onClose: () => setPanel(null),
-        onEnsureWebhook: async () => {
-          const targetBotId = active.id;
-          const request = routineSaveRequest.current;
-          try {
-            await ensureWebhookSecret(targetBotId);
-          } catch (error) {
-            if (routineSaveRequest.current !== request || activeBotId.current !== targetBotId) {
-              return;
-            }
-            setRoutineError(webhookErrorText(error, t`Could not create the webhook key`));
-          }
-        },
+        onEnsureWebhook: () => changeWebhookSecret(active.id, false),
+        onRotateWebhook: () => changeWebhookSecret(active.id, true),
         onRevealWebhook: async () => {
           const targetBotId = active.id;
           const request = routineSaveRequest.current;
@@ -247,7 +254,7 @@ export function useRoutineEditor({
               !active.webhookConfigured &&
               !routineWebhookSecret
             ) {
-              await ensureWebhookSecret(targetBotId).catch((error: unknown) => {
+              await requestWebhookSecret(targetBotId, false).catch((error: unknown) => {
                 throw new Error(webhookErrorText(error, t`Could not create the webhook key`));
               });
             }

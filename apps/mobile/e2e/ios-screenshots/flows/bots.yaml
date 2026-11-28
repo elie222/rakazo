@@ -42,9 +42,10 @@ name: Bots
 - takeScreenshot: 05-peer-chat
 - openLink: "rakazo:///routine?botId=${RAKAZO_SCREENSHOT_BOT_ID}&botName=Researcher"
 - extendedWaitUntil:
-    visible: "Add schedule"
+    visible: "Add trigger"
     timeout: 15000
-- tapOn: "Add schedule"
+- tapOn: "Add trigger"
+- tapOn: "On a schedule"
 - extendedWaitUntil:
     visible: ".*How often.*"
     timeout: 5000

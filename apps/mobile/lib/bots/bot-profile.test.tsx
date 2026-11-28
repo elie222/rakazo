@@ -209,6 +209,7 @@ vi.mock("../native/native", () => ({
   native: color,
   useMobileTokens: () => color,
   useThemedStyles: (createStyles: () => unknown) => createStyles(),
+  useResolvedAppearance: () => "light",
 }));
 vi.mock("../appearance/appearance", () => ({ mobileTokens: () => color }));
 vi.mock("../routines/routine", async (importOriginal) => ({
@@ -244,6 +245,7 @@ vi.mock("../../components/cards/run-error-sheet", () => ({
     details ? createElement("dialog", { open: true }, details) : null,
 }));
 vi.mock("../../components/native/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../../components/thread/routine-event-row", () => ({ WebhookKeyButton: () => null }));
 vi.mock("../../components/native/native-segmented-control", () => ({
   NativeSegmentedControl: ({
     options,

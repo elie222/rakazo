@@ -58,6 +58,7 @@ export function RoutineEditor({
   onTestRun,
   onDelete,
   onEnsureWebhook,
+  onRotateWebhook,
   onRevealWebhook,
   onHideWebhook,
 }: {
@@ -82,6 +83,7 @@ export function RoutineEditor({
   onTestRun: () => void;
   onDelete: () => void;
   onEnsureWebhook: () => Promise<void>;
+  onRotateWebhook: () => Promise<void>;
   onRevealWebhook: () => Promise<void>;
   onHideWebhook: () => void;
 }) {
@@ -257,7 +259,7 @@ export function RoutineEditor({
                 secret={webhook.secret}
                 configured={webhook.configured}
                 onRemove={() => onChange({ ...draft, webhookEnabled: false })}
-                onRotate={() => void onEnsureWebhook()}
+                onRotate={() => void onRotateWebhook()}
                 onReveal={revealWebhook}
                 onHide={onHideWebhook}
               />
@@ -271,7 +273,7 @@ export function RoutineEditor({
                 secret={webhook.secret}
                 configured={webhook.configured}
                 onRemove={() => onChange({ ...draft, githubEnabled: false })}
-                onRotate={() => void onEnsureWebhook()}
+                onRotate={() => void onRotateWebhook()}
                 onReveal={revealWebhook}
                 onHide={onHideWebhook}
               />

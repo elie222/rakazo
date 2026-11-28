@@ -55,6 +55,16 @@ describe("routineSaveRequest", () => {
     expect("create" in created && created.create.endsAt).toBe("2031-12-24T22:59:59.999Z");
   });
 
+  it("gives a new routine with a webhook no end", () => {
+    const created = routineSaveRequest(
+      { ...draftFromRoutine(routine), webhookEnabled: true, endsOn: "2031-12-24" },
+      null,
+      "bot-1",
+      "UTC",
+    );
+    expect("create" in created && created.create.endsAt).toBeUndefined();
+  });
+
   it("sends Use my computer only when the owner flips it, and never to a copy", () => {
     const own = { ...routine, useComputer: false };
     const draft = draftFromRoutine(own);
@@ -96,6 +106,18 @@ describe("routineSaveRequest", () => {
       useComputer: true,
     });
     expect("create" in copy && copy.create).not.toHaveProperty("useComputer");
+  });
+
+  it("never sends Use my computer for a routine whose webhook was already saved", () => {
+    const hooked = { ...routine, useComputer: false, webhookEnabled: true };
+    expect(
+      routineSaveRequest(
+        { ...draftFromRoutine(hooked), useComputer: true },
+        hooked,
+        "bot-1",
+        "UTC",
+      ),
+    ).toEqual({ unchanged: true });
   });
 
   it("approves again the prompt shown when a save edits it while Use my computer is on", () => {
@@ -163,6 +185,28 @@ describe("routineSaveRequest", () => {
         timezone: "Asia/Tokyo",
         active: true,
         notify: true,
+      },
+    });
+  });
+
+  it("creates a routine whose only trigger is a webhook added here", () => {
+    const draft = {
+      ...emptyRoutineDraft(),
+      name: "Deploys",
+      prompt: "Check.",
+      webhookEnabled: true,
+    };
+    expect(routineDraftChanged({ ...emptyRoutineDraft(), webhookEnabled: true }, null)).toBe(true);
+    expect(routineSaveRequest(draft, null, "bot-1", "UTC")).toEqual({
+      create: {
+        botId: "bot-1",
+        name: "Deploys",
+        prompt: "Check.",
+        crons: [],
+        timezone: "UTC",
+        active: true,
+        notify: true,
+        webhookEnabled: true,
       },
     });
   });

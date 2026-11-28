@@ -8,13 +8,14 @@ import {
   routineComputerUpdate,
   routineDraftEndsAt,
   routineEndUpdate,
+  routineEventTriggered,
 } from "@rakazo/core";
 import type { RoutineWebTrigger } from "./routine";
-import { routineTriggerNames } from "./routine";
+import { routineWebTriggers } from "./routine";
 
 /**
- * The editor's draft. A web-only trigger is left out until the person removes it here, so a
- * draft only ever turns one off.
+ * The editor's draft. A web-only trigger is left out until the person changes it here: a draft
+ * turns any of them off, and can turn a webhook on.
  */
 export type MobileRoutineDraft = RoutineDraft &
   Partial<Pick<Routine, RoutineWebTrigger>> & {
@@ -22,25 +23,44 @@ export type MobileRoutineDraft = RoutineDraft &
     useComputer?: boolean;
   };
 
-/** The routine as this draft would leave it, for the triggers mobile can only remove. */
-export function routineWithDraftTriggers(routine: Routine, draft: MobileRoutineDraft): Routine {
+/** The routine as this draft would leave it, for the triggers mobile can't edit. */
+export function routineWithDraftTriggers<R extends Pick<Routine, RoutineWebTrigger>>(
+  routine: R,
+  draft: MobileRoutineDraft,
+): R {
   return {
     ...routine,
-    ...(draft.webhookEnabled === false ? { webhookEnabled: false } : {}),
+    ...(draft.webhookEnabled !== undefined ? { webhookEnabled: draft.webhookEnabled } : {}),
     ...(draft.githubEnabled === false ? { githubEnabled: false } : {}),
     ...(draft.messageProvider === null ? { messageProvider: null } : {}),
     ...(draft.watch === null ? { watch: null } : {}),
   };
 }
 
+const NO_WEB_TRIGGERS: Pick<Routine, RoutineWebTrigger> = {
+  webhookEnabled: false,
+  githubEnabled: false,
+  messageProvider: null,
+  watch: null,
+};
+
+/** The web-only triggers a draft would save: those of the routine it edits or copies, if any. */
+export function draftWebTriggers(
+  source: Routine | null,
+  draft: MobileRoutineDraft,
+): Pick<Routine, RoutineWebTrigger> {
+  return routineWithDraftTriggers(source ?? NO_WEB_TRIGGERS, draft);
+}
+
+/** Whether something outside starts the routine the draft would save. */
 export function routineDraftEventTriggered(
   draft: MobileRoutineDraft,
   source: Routine | null,
 ): boolean {
-  const kept = source ? routineWithDraftTriggers(source, draft) : null;
-  return Boolean(
-    draft.emailSenders || kept?.webhookEnabled || kept?.githubEnabled || kept?.messageProvider,
-  );
+  return routineEventTriggered({
+    ...draftWebTriggers(source, draft),
+    emailSenders: draft.emailSenders,
+  });
 }
 
 /** A one-shot is set up from chat with its run time; its schedule can't change here. */
@@ -54,7 +74,7 @@ function sameCrons(a: string[], b: string[]): boolean {
 
 /**
  * What an update would change, compared as the editor writes it. Web-only triggers are sent
- * only when removed here, and the routine's own model never is, so the server keeps them.
+ * only when changed here, and the routine's own model never is, so the server keeps them.
  */
 function routineChanges(draft: MobileRoutineDraft, routine: Routine) {
   const crons = draft.schedules.map(cronFromPreset);
@@ -68,7 +88,9 @@ function routineChanges(draft: MobileRoutineDraft, routine: Routine) {
     ...(!routineScheduleLocked(routine) && !sameCrons(crons, savedCrons) ? { crons } : {}),
     ...(draft.emailSenders !== routine.emailSenders ? { emailSenders: draft.emailSenders } : {}),
     ...(draft.active !== routine.active ? { active: draft.active } : {}),
-    ...(draft.webhookEnabled === false && routine.webhookEnabled ? { webhookEnabled: false } : {}),
+    ...(draft.webhookEnabled !== undefined && draft.webhookEnabled !== routine.webhookEnabled
+      ? { webhookEnabled: draft.webhookEnabled }
+      : {}),
     ...(draft.githubEnabled === false && routine.githubEnabled ? { githubEnabled: false } : {}),
     ...(draft.messageProvider === null && routine.messageProvider ? { messageProvider: null } : {}),
     ...(draft.watch === null && routine.watch ? { watch: null } : {}),
@@ -85,7 +107,7 @@ function routineChanges(draft: MobileRoutineDraft, routine: Routine) {
       useComputer: draft.useComputer,
       name: name ?? routine.name,
       prompt: prompt ?? routine.prompt,
-      eventTriggered: Boolean(draft.emailSenders),
+      eventTriggered: routineDraftEventTriggered(draft, routine),
     }),
   };
 }
@@ -94,7 +116,11 @@ function routineChanges(draft: MobileRoutineDraft, routine: Routine) {
 export function routineDraftChanged(draft: MobileRoutineDraft, routine: Routine | null): boolean {
   if (!routine) {
     return Boolean(
-      draft.name.trim() || draft.prompt.trim() || draft.schedules.length || draft.emailSenders,
+      draft.name.trim() ||
+        draft.prompt.trim() ||
+        draft.schedules.length ||
+        draft.emailSenders ||
+        draft.webhookEnabled,
     );
   }
   return Object.keys(routineChanges(draft, routine)).length > 0;
@@ -130,9 +156,7 @@ export function routineSaveRequest(
   // Triggers this editor doesn't show still count; the email one counts as the draft has it.
   const source = routine ?? copyOf;
   const kept = source ? routineWithDraftTriggers(source, draft) : null;
-  const otherTriggers = kept
-    ? routineTriggerNames({ ...kept, emailSenders: null }).length > 0
-    : false;
+  const otherTriggers = routineWebTriggers(draftWebTriggers(source, draft)).length > 0;
   if (!crons.length && !draft.emailSenders && !otherTriggers) return { error: "trigger" };
   if (!routine) {
     const zone = draft.timezone ?? timezone;
@@ -160,7 +184,9 @@ export function routineSaveRequest(
               watch: kept.watch,
               inChat: kept.inChat,
             }
-          : {}),
+          : draft.webhookEnabled
+            ? { webhookEnabled: true }
+            : {}),
       },
     };
   }

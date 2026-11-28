@@ -873,9 +873,25 @@ describe("shared space bot permissions", () => {
   });
 
   it("keeps a bot's webhook secret with its creator", async () => {
-    const { client, secrets } = sharedBotClient("owner");
+    const { client, prisma, secrets } = sharedBotClient("owner");
+    Object.assign(prisma.bot, { findUnique: vi.fn(async () => ({ webhookSecretId: null })) });
     await expect(client.bots.rotateWebhookSecret({ botId: "bot-1" })).rejects.toMatchObject({
       code: "FORBIDDEN",
+    });
+    await expect(client.bots.ensureWebhookSecret({ botId: "bot-1" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    expect(secrets.put).not.toHaveBeenCalled();
+  });
+
+  it("lets another member add a webhook on a bot whose key exists, making none", async () => {
+    const { client, prisma, secrets } = sharedBotClient("member");
+    Object.assign(prisma.bot, {
+      findUnique: vi.fn(async () => ({ webhookSecretId: "secret-1" })),
+    });
+    await expect(client.bots.ensureWebhookSecret({ botId: "bot-1" })).resolves.toEqual({
+      path: expect.any(String),
+      webhookConfigured: true,
     });
     expect(secrets.put).not.toHaveBeenCalled();
   });

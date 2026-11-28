@@ -9,7 +9,9 @@ import RoutineDetail from "../../app/routine";
 
 const state = vi.hoisted(() => ({
   useBotRoutines: vi.fn(),
+  saveBotRoutine: vi.fn(),
   removeBotRoutine: vi.fn(),
+  rpc: vi.fn(),
   back: vi.fn(),
   alert: vi.fn(),
   blur: undefined as (() => void) | undefined,
@@ -23,15 +25,20 @@ const element =
 
 vi.mock("./routine-store", () => ({
   useBotRoutines: state.useBotRoutines,
-  saveBotRoutine: vi.fn(),
+  saveBotRoutine: state.saveBotRoutine,
   removeBotRoutine: state.removeBotRoutine,
   setRoutineActive: vi.fn(),
 }));
 vi.mock("../native/native-controls", () => ({ iosAtLeast: () => false }));
 vi.mock("../api/api", () => ({
-  rpc: vi.fn(),
+  rpc: state.rpc,
   currentApiBase: () => "http://api.test",
   selectedSpaceId: () => "space-1",
+  captureApiRequestContext: async () => ({
+    apiBase: "http://api.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": "space-1" },
+  }),
 }));
 vi.mock("../api/session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("../native/native", () => ({ native: {}, useMobileTokens: () => ({}) }));
@@ -40,8 +47,12 @@ vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("../api/user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
 vi.mock("./routine", () => ({
   deviceTimeZone: () => "UTC",
-  routineTriggerRows: () => ["Every day at 9:00 AM"],
-  routineWebTriggers: () => [],
+  routineTriggerRows: (routine: { webhookEnabled?: boolean }) => [
+    "Every day at 9:00 AM",
+    ...(routine.webhookEnabled ? ["Webhook"] : []),
+  ],
+  routineWebTriggers: (routine: { webhookEnabled?: boolean }) =>
+    routine.webhookEnabled ? [{ key: "webhookEnabled", label: "Webhook" }] : [],
 }));
 vi.mock("../../components/settings/settings-group", () => ({
   SettingsGroup: ({ children, footer }: { children?: ReactNode; footer?: string }) =>
@@ -52,14 +63,55 @@ vi.mock("../../components/settings/settings-group", () => ({
     title,
     value,
     onPress,
+    accessibilityState,
+    trailing,
   }: {
     title: string;
     value?: string;
     onPress?: () => void;
-  }) => createElement("button", { type: "button", onClick: onPress }, title, value),
+    accessibilityState?: { disabled?: boolean };
+    trailing?: ReactNode;
+  }) => [
+    createElement(
+      "button",
+      {
+        key: "row",
+        type: "button",
+        onClick: onPress,
+        "aria-disabled": accessibilityState?.disabled,
+      },
+      title,
+      value,
+    ),
+    trailing,
+  ],
   SettingsSwitch: () => null,
 }));
-vi.mock("../../components/ui/menu-picker", () => ({ MenuPickerMenu: () => null }));
+vi.mock("../../components/ui/menu-picker", () => ({
+  MenuPickerMenu: ({
+    choices,
+    disabled,
+    onChange,
+    children,
+  }: {
+    choices: Array<{ key: string; label: string }>;
+    disabled?: boolean;
+    onChange: (key: string) => void;
+    children?: ReactNode;
+  }) => [
+    children,
+    ...choices.map((choice) =>
+      createElement(
+        "button",
+        { key: choice.key, type: "button", disabled, onClick: () => onChange(choice.key) },
+        choice.label,
+      ),
+    ),
+  ],
+}));
+vi.mock("../../components/thread/routine-event-row", () => ({
+  WebhookKeyButton: () => createElement("span", null, "Show webhook key"),
+}));
 vi.mock("../../components/ui/growing-text-input", () => ({ GrowingTextInput: () => null }));
 vi.mock("../../components/routines/routine-end-date", () => ({ RoutineEndDate: () => null }));
 vi.mock("../../components/routines/routine-email-trigger", () => ({
@@ -73,10 +125,23 @@ vi.mock("../../components/routines/routine-schedule-editor", () => ({
   RoutineScheduleEditor: () => null,
 }));
 vi.mock("../../components/native/glass-icon-button", () => ({ GlassIconButton: () => null }));
-vi.mock("../../components/native/native-action-button", () => ({ NativeActionButton: () => null }));
+vi.mock("../../components/native/native-action-button", () => ({
+  NativeActionButton: ({
+    label,
+    disabled,
+    onPress,
+  }: {
+    label: string;
+    disabled?: boolean;
+    onPress: () => void;
+  }) => createElement("button", { type: "button", disabled, onClick: onPress }, label),
+}));
 vi.mock("../../components/routines/routine-run-history", () => ({ RoutineRunHistory: () => null }));
 vi.mock("expo-router", () => ({
-  Stack: { Screen: () => null },
+  Stack: {
+    Screen: ({ options }: { options?: { headerRight?: () => ReactNode } }) =>
+      options?.headerRight?.() ?? null,
+  },
   useLocalSearchParams: () => state.params,
   useFocusEffect: (effect: () => () => void) =>
     useEffect(() => {
@@ -116,6 +181,8 @@ beforeEach(async () => {
   state.back.mockReset();
   state.alert.mockReset();
   state.removeBotRoutine.mockReset();
+  state.saveBotRoutine.mockReset().mockImplementation(async () => routine);
+  state.rpc.mockReset();
   state.params = { botId: "bot-1", routineId: "routine-1", origin: "profile" };
   state.useBotRoutines
     .mockReset()
@@ -166,16 +233,96 @@ it("uses the shared routine store with focus-scoped polling enabled", () => {
   expect(state.useBotRoutines).toHaveBeenCalledWith("bot-1");
 });
 
+async function press(label: string) {
+  const button = [...container.querySelectorAll("button")].find(
+    (node) => node.textContent === label,
+  );
+  expect(button).toBeDefined();
+  await act(async () => button?.click());
+}
+
+function button(label: string) {
+  return [...container.querySelectorAll("button")].find((node) => node.textContent === label);
+}
+
+it("adds a webhook, makes the bot's key first, then saves the trigger", async () => {
+  const key = deferred<{ secret: string }>();
+  state.rpc.mockReturnValue(key.promise);
+  await press("Edit routine");
+  await press("Webhook");
+  expect(state.rpc).toHaveBeenCalledTimes(1);
+  expect(state.rpc).toHaveBeenCalledWith(
+    "bots/ensureWebhookSecret",
+    { botId: "bot-1" },
+    expect.anything(),
+  );
+  expect(container.textContent).toContain("Remove Webhook");
+  expect(button("Save")?.disabled).toBe(true);
+  await act(async () => key.resolve({ secret: "fake-key" }));
+  expect(button("Save")?.disabled).toBe(false);
+  await press("Save");
+  expect(state.saveBotRoutine).toHaveBeenCalledWith("bot-1", {
+    update: { routineId: "routine-1", webhookEnabled: true },
+  });
+});
+
+it("turns Use my computer off when a webhook is added, revoking its approval", async () => {
+  const approved = { ...routine, useComputer: true };
+  state.useBotRoutines.mockReturnValue({ routines: [approved] });
+  await act(async () => root.render(createElement(RoutineDetail)));
+  state.rpc.mockResolvedValue({ secret: "fake-key" });
+  await press("Edit routine");
+  await press("Webhook");
+  await press("Save");
+  expect(state.saveBotRoutine).toHaveBeenCalledWith("bot-1", {
+    update: { routineId: "routine-1", webhookEnabled: true, useComputer: false },
+  });
+});
+
+it("takes the webhook back off when only the bot's creator can make its key", async () => {
+  state.rpc.mockRejectedValue(Object.assign(new Error("Forbidden"), { code: "FORBIDDEN" }));
+  await press("Edit routine");
+  await press("Webhook");
+  expect(container.textContent).toContain("Only the bot's creator can set its webhook key.");
+  expect(container.textContent).not.toContain("Remove Webhook");
+});
+
+it("asks for a newer server when the server cannot make webhook keys", async () => {
+  state.rpc.mockRejectedValue(Object.assign(new Error(""), { status: 404, code: undefined }));
+  await press("Edit routine");
+  await press("Webhook");
+  expect(container.textContent).toContain("Update your server to add webhooks from this app.");
+  expect(container.textContent).not.toContain("Remove Webhook");
+});
+
+it("offers the webhook key on another member's routine, for the bot's creator", async () => {
+  state.useBotRoutines.mockReturnValue({
+    routines: [{ ...routine, webhookEnabled: true, editable: false }],
+  });
+  await act(async () => root.render(createElement(RoutineDetail)));
+  expect(container.textContent).toContain("Show webhook key");
+});
+
+it("holds the triggers until a new webhook's key request settles", async () => {
+  const key = deferred();
+  state.rpc.mockReturnValue(key.promise);
+  await press("Edit routine");
+  await press("Webhook");
+  expect(button("Remove Webhook")?.disabled).toBe(true);
+  expect(button("On a schedule")?.disabled).toBe(true);
+  // The rows say so too, for screen readers.
+  const held = () =>
+    [...container.querySelectorAll('[aria-disabled="true"]')].map((row) => row.textContent);
+  expect(held()).toEqual(["Webhook", "Add trigger"]);
+  await act(async () => key.resolve(undefined));
+  expect(held()).toEqual([]);
+  expect(button("Remove Webhook")?.disabled).toBe(false);
+  expect(button("On a schedule")?.disabled).toBe(false);
+});
+
 async function startDelete() {
   const held = deferred();
   state.removeBotRoutine.mockReturnValue(held.promise);
-  const press = async (label: string) => {
-    const button = [...container.querySelectorAll("button")].find(
-      (node) => node.textContent === label,
-    );
-    expect(button).toBeDefined();
-    await act(async () => button?.click());
-  };
   await press("Edit routine");
   await press("Delete routine");
   await act(async () =>

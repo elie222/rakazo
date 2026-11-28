@@ -4,6 +4,7 @@ import type { RoutineEmailSenders } from "@rakazo/contracts";
 import { RoutineEmailSendersSchema } from "@rakazo/contracts";
 import { messagingProviderName, messagingProviderNamed } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { persistPreparedSecret } from "../secrets/secret-persistence.js";
 
 export const EMAIL_NOT_RECEIVED = "This server doesn't receive email.";
 
@@ -200,7 +201,7 @@ const WEBHOOK_KEY_KIND = "webhook";
  * but not saved (another one landed first) is removed by the store's write-ahead cleanup.
  */
 export async function storeBotWebhookKey(
-  deps: { prisma: PrismaClient; secretStore: Pick<SecretStore, "put"> },
+  deps: { prisma: PrismaClient; secretStore: Pick<SecretStore, "put" | "delete" | "isRemote"> },
   bot: { id: string; spaceId: string; userId: string },
   context: AdapterContext,
   options: { replace: boolean },
@@ -214,33 +215,36 @@ export async function storeBotWebhookKey(
   }
   const plaintext = randomBytes(32).toString("base64url");
   const stored = await deps.secretStore.put(plaintext, context);
-  const saved = await deps.prisma.$transaction(async (tx) => {
-    const [locked] = await tx.$queryRaw<Array<{ webhookSecretId: string | null }>>`
+  // A key another request saved first, or a bot gone meanwhile, leaves this one unheld: drop it.
+  const saved = await persistPreparedSecret(deps.prisma, deps.secretStore, stored, () =>
+    deps.prisma.$transaction(async (tx) => {
+      const [locked] = await tx.$queryRaw<Array<{ webhookSecretId: string | null }>>`
       SELECT "webhookSecretId" FROM "bots" WHERE id = ${bot.id} FOR UPDATE`;
-    if (!locked) return false;
-    const previousSecretId = locked.webhookSecretId;
-    if (previousSecretId && !options.replace) return false;
-    await tx.secret.create({
-      data: {
-        id: stored.id,
-        userId: bot.userId,
-        spaceId: bot.spaceId,
-        kind: WEBHOOK_KEY_KIND,
-        ciphertext: stored.ciphertext,
-      },
-    });
-    await tx.bot.update({ where: { id: bot.id }, data: { webhookSecretId: stored.id } });
-    if (previousSecretId) {
-      await tx.secret.deleteMany({
-        where: {
-          id: previousSecretId,
-          spaceId: bot.spaceId,
+      if (!locked) return false;
+      const previousSecretId = locked.webhookSecretId;
+      if (previousSecretId && !options.replace) return false;
+      await tx.secret.create({
+        data: {
+          id: stored.id,
           userId: bot.userId,
+          spaceId: bot.spaceId,
           kind: WEBHOOK_KEY_KIND,
+          ciphertext: stored.ciphertext,
         },
       });
-    }
-    return true;
-  });
+      await tx.bot.update({ where: { id: bot.id }, data: { webhookSecretId: stored.id } });
+      if (previousSecretId) {
+        await tx.secret.deleteMany({
+          where: {
+            id: previousSecretId,
+            spaceId: bot.spaceId,
+            userId: bot.userId,
+            kind: WEBHOOK_KEY_KIND,
+          },
+        });
+      }
+      return true;
+    }),
+  );
   return saved ? plaintext : null;
 }
