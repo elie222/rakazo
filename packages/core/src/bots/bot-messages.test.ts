@@ -153,17 +153,34 @@ describe("addressing", () => {
 describe("directory", () => {
   it("lists teammates with ids and says delivery is asynchronous", () => {
     const directory =
-      renderBotDirectory([
-        { ...bots[0]!, description: "Investigates source-backed questions" },
-        bots[1]!,
-      ]) ?? "";
+      renderBotDirectory(
+        [{ ...bots[0]!, description: "Investigates source-backed questions" }, bots[1]!],
+        [{ name: "message_bot" }, { name: "create_child_routine" }],
+      ) ?? "";
     expect(directory).toContain("Researcher (id: b_1): Investigates source-backed questions");
     expect(directory).toContain("Investigates source-backed questions");
     expect(directory).toContain("Analyst (id: b_2)");
     expect(directory).toContain("async");
     expect(directory).toContain("does not end your turn");
-    expect(directory).toContain("Later updates only if they add something new");
+    expect(directory).toContain("not each step");
   });
+
+  it.each([
+    { available: [], expected: [] },
+    { available: ["message_bot"], expected: ["message_bot"] },
+    { available: ["create_child_routine"], expected: ["create_child_routine"] },
+  ])(
+    "keeps the roster and names only tools the run can use ($available)",
+    ({ available, expected }) => {
+      const directory =
+        renderBotDirectory(
+          bots,
+          available.map((name) => ({ name })),
+        ) ?? "";
+      expect(directory).toContain("Researcher (id: b_1)");
+      expect([...new Set(directory.match(/message_bot|create_child_routine/g))]).toEqual(expected);
+    },
+  );
 
   it("treats directory fields as untrusted prompt data", () => {
     const directory =
