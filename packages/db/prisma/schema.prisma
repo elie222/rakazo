@@ -764,6 +764,7 @@ model Space {
   tasks                       Task[]
   runs                        Run[]
   routines                    Routine[]
+  routineRunRecords           RoutineRunRecord[]
   scratchpadItems             ScratchpadItem[]
   botEmailMessages            BotEmailMessage[]
   taughtSkills                TaughtSkill[]
@@ -1709,11 +1710,30 @@ model Routine {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   runs           Run[]
+  runRecords     RoutineRunRecord[]
 
   @@index([active, nextRunAt])
   @@index([spaceId, botId])
   // routines_ends_at_idx (routines with an end) is raw SQL: Prisma cannot express partial indexes.
   @@map("routines")
+}
+
+model RoutineRunRecord {
+  id          String   @id @default(cuid())
+  routineId   String
+  routine     Routine  @relation(fields: [routineId], references: [id], onDelete: Cascade)
+  spaceId     String
+  space       Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  ranAt       DateTime @default(now())
+  status      String
+  durationMs  Int?
+  messageSent Boolean  @default(false)
+  summary     String?
+  items       Json?
+  createdAt   DateTime @default(now())
+
+  @@index([routineId, ranAt])
+  @@map("routine_run_records")
 }
 
 /// A bot's inbound email name. The row outlives its bot, so a name is never handed out twice.
