@@ -122,6 +122,24 @@ export interface StreamedPortableFile {
 export interface WorkspaceExportLimits {
   maxBytes: number;
   maxFiles: number;
+  /**
+   * A regular file larger than this is left out of the export instead of failing it.
+   * Providers that do not support skipping ignore it.
+   */
+  maxFileBytes?: number;
+  /** Told about each file the export left out (path relative to the home only). */
+  onSkippedFile?: (file: SkippedWorkspaceFile) => void;
+}
+
+/** A workspace file an export left out, so the saved revision simply lacks it. */
+export interface SkippedWorkspaceFile {
+  /** Relative to the home. Never the contents. */
+  path: string;
+  reason: "too_large";
+  /** The file's size. */
+  bytes: number;
+  /** The per-file limit it exceeded. */
+  limit: number;
 }
 
 export interface ComputerRef {
