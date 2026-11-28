@@ -1,6 +1,10 @@
 import type { ConnectorTool, ToolSearchHit, ToolSearchRequest } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { READ_MEETING_TRANSCRIPT } from "../meetings/meeting-chat.tool-definition.js";
+import {
+  normalizeOpenAiToolParameters,
+  openAiToolParametersNeedNormalization,
+} from "../models/endpoints/openai-tool-parameters.js";
 import { BUILTIN_AGENT_TOOL_NAMES } from "../runs/tools/run-tool-selection.js";
 import { bridgeToolDefinitions } from "./builtin.tool-definition.js";
 import type { CatalogEntry } from "./lazy-tool-catalog.js";
@@ -190,10 +194,9 @@ export async function findTools(
   unavailableToolReasons?: Readonly<Record<string, string>>,
 ) {
   const { names, query } = findArguments(args);
-  const local = [
-    ...findBuiltinTools(tools.deferred, args),
-    ...findListedTools(tools.listed ?? [], args),
-  ];
+  const builtinHits = findBuiltinTools(tools.deferred, args);
+  const fromBuiltins = new Set<ToolSearchHit>(builtinHits);
+  const local = [...builtinHits, ...findListedTools(tools.listed ?? [], args)];
   const localIds = new Set(local.map((hit) => hit.id));
   const missing = names.filter((name) => !localIds.has(name));
   const hits = names.length
@@ -234,7 +237,9 @@ export async function findTools(
   return {
     hits,
     result: {
-      tools: hits.map(shownToolSearchHit),
+      tools: hits.map((hit) =>
+        fromBuiltins.has(hit) ? shownBuiltinTool(hit) : shownToolSearchHit(hit),
+      ),
       ...(unavailable ? { unavailable } : {}),
       ...(unknown.length ? { unknown } : {}),
       ...(hits.length || (unavailable && !unknown.length)
@@ -242,4 +247,15 @@ export async function findTools(
         : { hint: "Pass names from this tool's list or other words." }),
     },
   };
+}
+
+/**
+ * The schema find_tool shows for a deferred built-in. A root union is flattened here because
+ * this result never passes through the model request normalizer. Connector hits stay unchanged:
+ * flattening drops a field that only one branch requires, and execution still checks the original.
+ */
+function shownBuiltinTool(hit: ToolSearchHit) {
+  const shown = shownToolSearchHit(hit);
+  if (!shown.inputSchema || !openAiToolParametersNeedNormalization(shown.inputSchema)) return shown;
+  return { ...shown, inputSchema: normalizeOpenAiToolParameters(shown.inputSchema) };
 }
