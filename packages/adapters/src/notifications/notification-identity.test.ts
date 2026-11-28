@@ -28,6 +28,9 @@ it.each([
       const bytes = Buffer.from(identity[field]!, "base64");
       expect(bytes.length).toBeLessThanOrEqual(MAX_AVATAR_BYTES);
       expect(await sharp(bytes).metadata()).toMatchObject({ width, height: width, format: "png" });
+      // The corner outside the drawn body stays clear, not a white square on a dark lock screen.
+      const { data } = await sharp(bytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      expect(data[3]).toBe(0);
     }
   },
 );

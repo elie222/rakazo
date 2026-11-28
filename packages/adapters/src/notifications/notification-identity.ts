@@ -26,16 +26,14 @@ async function renderAvatar(bot: { id: string; color: string; avatarSet?: string
   const { default: sharp } = await import("sharp");
   const image = sharp(bytes, { limitInputPixels: 16_777_216 }).rotate();
   // A drawn avatar is two-tone art, which JPEG quality 30 softens around every edge. A small
-  // palette PNG stays sharp within the same payload budget; saved photos keep JPEG.
+  // palette PNG stays sharp within the same payload budget and keeps the art's transparent
+  // corners, which a dark lock screen would otherwise show as a white square; photos keep JPEG.
   const encode = (size: number) => {
-    const resized = image
-      .clone()
-      .resize(size, size, { fit: "cover" })
-      .flatten({ background: "white" });
+    const resized = image.clone().resize(size, size, { fit: "cover" });
     return (
       drawn
         ? resized.png({ palette: true, colours: 16, effort: 10 })
-        : resized.jpeg({ quality: 30, mozjpeg: true })
+        : resized.flatten({ background: "white" }).jpeg({ quality: 30, mozjpeg: true })
     ).toBuffer();
   };
   const fits = async (sizes: number[]) => {
