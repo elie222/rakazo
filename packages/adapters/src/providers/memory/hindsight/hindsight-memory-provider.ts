@@ -13,6 +13,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { byteLength, truncateUtf8 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
+import { warnMemoryAccountRefused } from "../../../memory/memory-failures.js";
 import { memoryConnectionIdentity } from "../../../memory/memory-provider-descriptor.js";
 import {
   assertLocalServiceBaseUrlSync,
@@ -23,7 +24,7 @@ import {
   pinLocalServiceHost,
 } from "../../../network/local-service-endpoint.js";
 import type { ResolveHostname } from "../../../network/network-address.js";
-import type { HindsightConnectionConfig } from "./hindsight-client.js";
+import type { HindsightConnectionConfig, HindsightWriteResponse } from "./hindsight-client.js";
 import {
   deleteHindsightDocument,
   HINDSIGHT_CLOUD_BASE_URL,
@@ -309,7 +310,7 @@ interface PendingOperation {
 }
 
 /** A submitted turn's operation id, or why the bank refused it. */
-type StoredTurn = { ok: true; value: string } | { ok: false; error: string; status?: number };
+type StoredTurn = { ok: true; value: string } | Extract<HindsightWriteResponse, { ok: false }>;
 
 const OPERATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -490,16 +491,12 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
       }),
     );
     const results: SemanticMemoryResult[] = [];
+    const failedSpaceBanks: { bank: string; error: string; accountRefused?: true }[] = [];
     for (const [index, bank] of banks.entries()) {
       const answer = found[index];
       if (!answer) continue;
       if (!answer.ok) {
-        if (index < written.length && !context.signal.aborted) {
-          getLogger().warn("Hindsight recall failed for a Space memory bank", {
-            bank,
-            error: answer.error,
-          });
-        }
+        if (index < written.length) failedSpaceBanks.push({ bank, ...answer });
         continue;
       }
       const external = !written.includes(bank);
@@ -514,7 +511,16 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
       }
     }
     const own = found[0];
-    if (!results.length && own && !own.ok) return own;
+    // The caller reports a failure handed back to it.
+    const returnsOwnFailure = !results.length && own !== undefined && !own.ok;
+    if (!context.signal.aborted) {
+      for (const { bank, error, accountRefused } of failedSpaceBanks) {
+        if (returnsOwnFailure && bank === banks[0]) continue;
+        if (accountRefused) warnMemoryAccountRefused("recall", error);
+        else getLogger().warn("Hindsight recall failed for a Space memory bank", { bank, error });
+      }
+    }
+    if (returnsOwnFailure) return own;
     // Stable sorting keeps the own bank first on ties. Rank before deduplication so a repeated
     // fact keeps its strongest match instead of its first bank's lower score.
     results.sort((left, right) => right.score - left.score);
@@ -640,11 +646,23 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     };
     const [own, ...extra] = writeBanks(context.spaceId, request.botId, request.scope);
     const first = await write(own!);
-    if (!first.ok) return { ok: false, error: first.error };
+    if (!first.ok) {
+      return {
+        ok: false,
+        error: first.error,
+        ...(first.accountRefused ? { accountRefused: true as const } : {}),
+      };
+    }
     const operations: PendingOperation[] = [{ bank: own!, operationId: first.value }];
     for (const bank of extra) {
       const written = await write(bank);
-      if (!written.ok) return { ok: false, error: written.error };
+      if (!written.ok) {
+        return {
+          ok: false,
+          error: written.error,
+          ...(written.accountRefused ? { accountRefused: true as const } : {}),
+        };
+      }
       operations.push({ bank, operationId: written.value, team: true });
     }
     return { ok: true, value: { pending: JSON.stringify(operations) } };

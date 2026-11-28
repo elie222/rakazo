@@ -41,6 +41,7 @@ import {
   touchRunningComputer,
   unbilledComputerMaxActiveMs,
 } from "./computer-idle.js";
+import { EXECUTION_LEASE_MS } from "./computer-lifecycle.js";
 import { BrowserStillRunningError } from "./screens/computer-screens.js";
 
 describe("sandbox idle", () => {
@@ -406,7 +407,7 @@ describe("sandbox idle", () => {
         id: harness.computer.id,
         state: "suspending",
         providerRef: harness.computer.providerRef,
-        updatedAt: expect.any(Date),
+        updatedAt: { gte: expect.any(Date) },
       },
       data: {
         diskUsedBytes: 91n * 1024n,
@@ -1037,7 +1038,7 @@ describe("sandbox idle", () => {
       harness.prisma.computer.updateMany.mockImplementation(async (args) => {
         if (args.data.homeRevision) {
           if (outcome === "failure") throw new Error("database unavailable");
-          harness.computer.updatedAt = new Date(harness.computer.updatedAt.getTime() + 1);
+          takeOver(harness);
         }
         return updateMany(args);
       });
@@ -1057,9 +1058,7 @@ describe("sandbox idle", () => {
     "preserves a newer lifecycle owner after %s",
     async (stage) => {
       const harness = idleHarness();
-      const invalidate = () => {
-        harness.computer.updatedAt = new Date(harness.computer.updatedAt.getTime() + 1);
-      };
+      const invalidate = () => takeOver(harness);
       if (stage === "checkpoint failure") {
         harness.home.commit.mockImplementationOnce(async () => {
           invalidate();
@@ -2104,7 +2103,13 @@ function idleHarness(
       })),
       findUnique: vi.fn(async () => ({ ...computer })),
       updateMany: vi.fn(async (args) => {
-        if (args.where.updatedAt && args.where.updatedAt.getTime() !== computer.updatedAt.getTime())
+        const stamp = args.where.updatedAt;
+        if (
+          stamp &&
+          (stamp instanceof Date
+            ? stamp.getTime() !== computer.updatedAt.getTime()
+            : computer.updatedAt < stamp.gte)
+        )
           return { count: 0 };
         Object.assign(computer, args.data);
         return { count: 1 };
@@ -2208,6 +2213,13 @@ function idleHarness(
       events: events as unknown as ThreadEvents,
     },
   };
+}
+
+/** Another owner can claim a suspending computer only once its claim is a lease TTL old. */
+function takeOver(harness: ReturnType<typeof idleHarness>) {
+  const later = Date.now() + EXECUTION_LEASE_MS;
+  vi.spyOn(Date, "now").mockReturnValue(later);
+  harness.computer.updatedAt = new Date(later);
 }
 
 function backgroundProbes(harness: ReturnType<typeof idleHarness>) {

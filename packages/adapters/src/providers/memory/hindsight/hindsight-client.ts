@@ -24,11 +24,15 @@ export interface HindsightConnectionConfig extends LocalServiceConnection {
   apiKey: string;
 }
 
-export type HindsightResponse<T> = { ok: true; value: T } | { ok: false; error: string };
+type HindsightFailure = { ok: false; error: string; accountRefused?: true };
+export type HindsightResponse<T> = { ok: true; value: T } | HindsightFailure;
 /** `status` is the HTTP status of a write the server refused. */
 export type HindsightWriteResponse =
   | { ok: true; value: undefined }
-  | { ok: false; error: string; status?: number };
+  | (HindsightFailure & { status?: number });
+
+/** A rejected key, an unpaid plan or a used-up quota: every request fails until the operator acts. */
+const ACCOUNT_REFUSED_STATUSES = new Set([401, 402, 403]);
 
 export interface HindsightRecallResult {
   text: string;
@@ -89,6 +93,9 @@ async function hindsightRequest(
       : {
           ok: false,
           error: `Hindsight request failed: ${response.status}`,
+          ...(ACCOUNT_REFUSED_STATUSES.has(response.status)
+            ? { accountRefused: true as const }
+            : {}),
           ...(options.reportStatus ? { status: response.status } : {}),
         };
   }

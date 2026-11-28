@@ -3,6 +3,7 @@ import { isPartialReplyClientNonce, storedMessageBlocks } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { loadAgentMemoryContext } from "../../memory/memory-context.js";
 import { latestEndedDate } from "../../memory/memory-expiry.js";
+import { reportRecallFailure } from "../../memory/memory-failures.js";
 import { PARTIAL_REPLY_NOTE } from "../../messaging/automated-messages.prompt.js";
 import {
   historyWindowSize,
@@ -307,7 +308,7 @@ export async function loadTurnContext(
           )
         : "";
     } else {
-      getLogger().error("semantic memory recall failed", recalled.error);
+      reportRecallFailure(recalled);
     }
   }
   if (!compactedHistory.usedLocalSummary) {
