@@ -12,6 +12,7 @@ const PRELOADS = {
   app: "preload/preload.cjs",
   appOrReplaced: "preload/preload.cjs",
   setup: "preload/setup-preload.cjs",
+  pageApp: "preload/page-app-preload.cjs",
 } as const satisfies Record<IpcWindow, string>;
 type Preload = (typeof PRELOADS)[IpcWindow];
 
@@ -48,18 +49,19 @@ describe("desktop IPC channels", () => {
     expect(handledChannels()).toEqual(channels.map(([name]) => name).sort());
   });
 
-  it.each(["preload/preload.cjs", "preload/setup-preload.cjs"] as const)(
-    "exposes in %s exactly its window's channels",
-    (file) => {
-      const mapped = (sync: boolean) =>
-        channels
-          .filter(
-            ([, channel]) => PRELOADS[channel.from] === file && (channel.sync === true) === sync,
-          )
-          .map(([name]) => name)
-          .sort();
-      expect(preloadChannels(file, "invoke")).toEqual(mapped(false));
-      expect(preloadChannels(file, "sendSync")).toEqual(mapped(true));
-    },
-  );
+  it.each([
+    "preload/preload.cjs",
+    "preload/setup-preload.cjs",
+    "preload/page-app-preload.cjs",
+  ] as const)("exposes in %s exactly its window's channels", (file) => {
+    const mapped = (sync: boolean) =>
+      channels
+        .filter(
+          ([, channel]) => PRELOADS[channel.from] === file && (channel.sync === true) === sync,
+        )
+        .map(([name]) => name)
+        .sort();
+    expect(preloadChannels(file, "invoke")).toEqual(mapped(false));
+    expect(preloadChannels(file, "sendSync")).toEqual(mapped(true));
+  });
 });

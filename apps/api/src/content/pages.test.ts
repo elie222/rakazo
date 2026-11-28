@@ -58,7 +58,7 @@ function fakeDeps(hooks: { onUpdate?: (attempt: number) => void } = {}) {
   };
   const prisma = {
     page: { findFirst: async () => (page ? summary(page) : null) },
-    pageVersion: { findUnique: async () => ({ code: "compiled" }) },
+    pageVersion: { findUnique: async () => ({ code: "compiled", abilities: [] }) },
     user: { findUnique: async () => ({ name: "Owner", image: null }) },
     pageReaderState: { findUnique: async () => null },
     secret: tx.secret,

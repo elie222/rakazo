@@ -160,6 +160,7 @@ export { dispatcherFetch } from "./network/undici-fetch.js";
 export * from "./notifications/expo-push.js";
 export * from "./notifications/push-token-store.js";
 export * from "./notifications/realtime.js";
+export * from "./pages/page-app-icon.js";
 export * from "./pages/page-revision.js";
 export * from "./payments/paid-services-factory.js";
 export * from "./payments/payment-wallet-factory.js";

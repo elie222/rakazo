@@ -1,6 +1,8 @@
 import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
+import { runLeaseTopic } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { InMemoryRealtimeFanout } from "../../notifications/realtime.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { createReplyState } from "../lifecycle/run-progress.js";
 import { consumeRunEvents } from "./run-turn.js";
@@ -11,8 +13,16 @@ vi.mock("../lifecycle/run-lifecycle.js", async (actual) => ({
   requeueComputerRun: requeued,
 }));
 
+/** The database signals the run's lease topic on every change, as its trigger does. */
+class SignalledRealtime extends InMemoryRealtimeFanout {
+  override describe() {
+    return { ...super.describe(), capabilities: { distributed: true, push: true } };
+  }
+}
+
 // Stop marks the run cancelled in the database, possibly from another server.
-async function context(row: { status: string }) {
+async function context(row: { status: string }, signalled = true) {
+  const realtime = signalled ? new SignalledRealtime() : undefined;
   const findUnique = vi.fn(async () => ({
     ...row,
     leaseOwner: "worker-1",
@@ -31,6 +41,7 @@ async function context(row: { status: string }) {
       },
     },
     events: { append: vi.fn(), finalizeRun: vi.fn() },
+    realtime,
   };
   const run = {
     id: "run-1",
@@ -70,7 +81,8 @@ async function context(row: { status: string }) {
     secrets: [],
     scripted: true,
   } as unknown as RunContext;
-  return { ctx, findUnique };
+  const signal = () => realtime?.publish(runLeaseTopic(run.id), "");
+  return { ctx, findUnique, signal };
 }
 
 /** A call that streams nothing until it finishes, or until the run's signal aborts it. */
@@ -92,37 +104,34 @@ describe("consumeRunEvents and Stop", () => {
     vi.useRealTimers();
   });
 
-  it("aborts a quiet model call within two seconds of Stop", async () => {
+  it("aborts a quiet model call as soon as Stop is signalled", async () => {
     const row = { status: "running" };
-    const { ctx } = await context(row);
+    const { ctx, signal } = await context(row);
     let outcome: string | undefined;
-    let stoppedAt = 0;
-    let endedAfterMs = 0;
     async function* runtime(): AsyncIterable<AgentRuntimeEvent> {
       yield { type: "thinking", active: true };
       row.status = "cancelled";
-      stoppedAt = Date.now();
+      void signal();
       outcome = await quietCall(ctx, 60_000);
-      endedAfterMs = Date.now() - stoppedAt;
       yield { type: "text", text: "late reply" };
       yield { type: "done", text: "late reply" };
     }
     const consumed = consumeRunEvents(ctx, runtime());
-    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(0);
     expect(outcome).toBe("aborted");
-    expect(endedAfterMs).toBeLessThanOrEqual(2_000);
     await expect(consumed).resolves.toBe(true);
     expect(ctx.state.reply.assembled).toBe("");
   });
 
   it("aborts a long tool and takes no tool call after Stop", async () => {
     const row = { status: "running" };
-    const { ctx } = await context(row);
+    const { ctx, signal } = await context(row);
     const appended = ctx.deps.events.append as ReturnType<typeof vi.fn>;
     async function* runtime(): AsyncIterable<AgentRuntimeEvent> {
       // The runtime runs a tool between events; nothing streams while it works.
       yield { type: "text", text: "Checking." };
       row.status = "cancelled";
+      void signal();
       await quietCall(ctx, 60_000);
       yield {
         type: "tool",
@@ -133,35 +142,78 @@ describe("consumeRunEvents and Stop", () => {
       yield { type: "done", text: "" };
     }
     const consumed = consumeRunEvents(ctx, runtime());
-    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(0);
     expect(ctx.abortController.signal.aborted).toBe(true);
     await expect(consumed).resolves.toBe(true);
     expect(JSON.stringify(appended.mock.calls)).not.toContain("next_tool");
   });
 
-  it("leaves a quiet call alone while the run is still running, and stops checking after", async () => {
-    const { ctx, findUnique } = await context({ status: "running" });
+  it("reads the run once on start and then only when signalled", async () => {
+    const { ctx, findUnique, signal } = await context({ status: "running" });
     let outcome: string | undefined;
     async function* runtime(): AsyncIterable<AgentRuntimeEvent> {
       yield { type: "thinking", active: true };
-      outcome = await quietCall(ctx, 5_000);
+      outcome = await quietCall(ctx, 120_000);
       yield { type: "text", text: "Done." };
       yield { type: "done", text: "Done." };
     }
     const consumed = consumeRunEvents(ctx, runtime());
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(findUnique).toHaveBeenCalledOnce();
+    await signal();
+    await vi.advanceTimersByTimeAsync(60_000);
     await expect(consumed).resolves.toBe(false);
     expect(outcome).toBe("finished");
     expect(ctx.abortController.signal.aborted).toBe(false);
-    // At most one read a second, shared with the per-event check.
-    const reads = findUnique.mock.calls.length;
-    expect(reads).toBeLessThanOrEqual(6);
-    await vi.advanceTimersByTimeAsync(5_000);
-    expect(findUnique.mock.calls.length).toBe(reads);
+    expect(findUnique).toHaveBeenCalledTimes(2);
+    await signal();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(findUnique).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads again after a read in flight when another change is signalled", async () => {
+    const row = { status: "running" };
+    const { ctx, findUnique, signal } = await context(row);
+    const read = deferred();
+    async function* runtime(): AsyncIterable<AgentRuntimeEvent> {
+      yield { type: "thinking", active: true };
+      await vi.advanceTimersByTimeAsync(0);
+      findUnique.mockImplementationOnce(async () => {
+        await read.promise;
+        return { status: "running", leaseOwner: "worker-1", leaseFence: 1, checkpoint: null };
+      });
+      await signal();
+      row.status = "cancelled";
+      await signal();
+      read.resolve();
+      await quietCall(ctx, 60_000);
+      yield { type: "done", text: "late" };
+    }
+    const consumed = consumeRunEvents(ctx, runtime());
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(consumed).resolves.toBe(true);
+    expect(ctx.abortController.signal.aborted).toBe(true);
+    expect(findUnique).toHaveBeenCalledTimes(3);
+  });
+
+  it("looks at the run once a second when nothing signals changes", async () => {
+    const row = { status: "running" };
+    const { ctx } = await context(row, false);
+    let outcome: string | undefined;
+    async function* runtime(): AsyncIterable<AgentRuntimeEvent> {
+      yield { type: "thinking", active: true };
+      row.status = "cancelled";
+      outcome = await quietCall(ctx, 60_000);
+      yield { type: "done", text: "late" };
+    }
+    const consumed = consumeRunEvents(ctx, runtime());
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(outcome).toBe("aborted");
+    await expect(consumed).resolves.toBe(true);
   });
 
   it("stops checking when the runtime fails", async () => {
-    const { ctx, findUnique } = await context({ status: "running" });
+    const { ctx, findUnique, signal } = await context({ status: "running" });
     async function* runtime(): AsyncIterable<AgentRuntimeEvent> {
       yield { type: "thinking", active: true };
       await quietCall(ctx, 1_500);
@@ -172,17 +224,18 @@ describe("consumeRunEvents and Stop", () => {
     await vi.advanceTimersByTimeAsync(1_500);
     await settled;
     const reads = findUnique.mock.calls.length;
-    await vi.advanceTimersByTimeAsync(5_000);
+    await signal();
+    await vi.advanceTimersByTimeAsync(0);
     expect(findUnique.mock.calls.length).toBe(reads);
   });
+
   it("ignores a lease read that resolves after the run ended", async () => {
-    const row = { status: "running" };
-    const { ctx, findUnique } = await context(row);
+    const { ctx, findUnique, signal } = await context({ status: "running" });
     let finishRead: (() => void) | undefined;
     async function* runtime(): AsyncIterable<AgentRuntimeEvent> {
       yield { type: "thinking", active: true };
       await quietCall(ctx, 1_500);
-      // The timer's read is now in flight; it answers only after the run has finished.
+      // This read is in flight; it answers only after the run has finished.
       findUnique.mockImplementationOnce(
         () =>
           new Promise((resolve) => {
@@ -195,7 +248,7 @@ describe("consumeRunEvents and Stop", () => {
               });
           }),
       );
-      await vi.advanceTimersByTimeAsync(1_000);
+      await signal();
       expect(finishRead).toBeDefined();
       yield { type: "done", text: "Done." };
     }
@@ -207,8 +260,9 @@ describe("consumeRunEvents and Stop", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(ctx.abortController.signal.aborted).toBe(false);
   });
+
   it("ignores a late lease read that finds a released takeover hold", async () => {
-    const { ctx, findUnique } = await context({ status: "running" });
+    const { ctx, findUnique, signal } = await context({ status: "running" });
     (ctx.computer as { heldForTakeover?: boolean }).heldForTakeover = true;
     requeued.mockClear();
     let finishRead: (() => void) | undefined;
@@ -227,7 +281,7 @@ describe("consumeRunEvents and Stop", () => {
               });
           }),
       );
-      await vi.advanceTimersByTimeAsync(1_000);
+      await signal();
       expect(finishRead).toBeDefined();
       yield { type: "done", text: "Done." };
     }
@@ -240,8 +294,9 @@ describe("consumeRunEvents and Stop", () => {
     expect(ctx.state.lease.valid).toBe(true);
     expect(ctx.abortController.signal.aborted).toBe(false);
   });
+
   it("does not abort when a takeover requeue finishes after the turn ended", async () => {
-    const { ctx, findUnique } = await context({ status: "running" });
+    const { ctx, findUnique, signal } = await context({ status: "running" });
     (ctx.computer as { heldForTakeover?: boolean }).heldForTakeover = true;
     const requeue = deferred();
     const heldRequeue = vi.fn(() => requeue.promise);
@@ -256,6 +311,7 @@ describe("consumeRunEvents and Stop", () => {
         leaseFence: 1,
         checkpoint: "takeover",
       });
+      await signal();
       await quietCall(ctx, 1_000);
       expect(heldRequeue).toHaveBeenCalled();
       yield { type: "done", text: "Done." };

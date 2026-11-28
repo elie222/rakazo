@@ -36,10 +36,17 @@ const loadDiagramScript = cachedScript(async () => {
   };
 });
 
-// Built once per process. Revalidated on every use, so a page never renders with a kit older
-// than the server that checked it.
+// Built with the server bundle, so no compiler runs in production; development builds it once per
+// process. Revalidated on every use, so a page never renders with a kit older than the server that
+// checked it.
+declare const __RAKAZO_PAGE_RUNTIME__: string;
+
 const loadPageRuntime = cachedScript(async () => {
-  const body = new TextEncoder().encode(await buildPageRuntime());
+  const runtime =
+    typeof __RAKAZO_PAGE_RUNTIME__ === "string"
+      ? __RAKAZO_PAGE_RUNTIME__
+      : await buildPageRuntime();
+  const body = new TextEncoder().encode(runtime);
   const hash = createHash("sha256").update(body).digest("base64url").slice(0, 22);
   return { body, etag: `"page-runtime-${hash}"`, cacheControl: "public, no-cache" };
 });

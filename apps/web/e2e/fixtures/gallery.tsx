@@ -627,6 +627,22 @@ const routines: Scenario = {
   ],
 };
 
+const feedback: Scenario = {
+  id: "feedback",
+  label: "Feedback receipt",
+  messages: [
+    user("Send a bug report about the blank preview."),
+    bot([
+      {
+        kind: "feedback_receipt",
+        reportId: "example-report-1",
+        reportKind: "bug",
+        description: "The preview stayed blank after I opened a file.",
+      },
+    ]),
+  ],
+};
+
 const rich: Scenario = {
   id: "rich",
   label: "Rich content",
@@ -802,6 +818,7 @@ const SCENARIOS: Scenario[] = [
   working,
   team,
   routines,
+  feedback,
   rich,
   calls,
 ];

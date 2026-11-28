@@ -51,6 +51,8 @@ export const tr: Messages = {
   photos: { other: "{count} fotoğraf" },
   slideOf: "{n} / {total}",
   showPhoto: "{n}. fotoğrafı göster",
+  previousPhoto: "Önceki fotoğraf",
+  nextPhoto: "Sonraki fotoğraf",
   view: "Görüntüle",
   viewTitle: "{title} öğesini görüntüle",
   rated: "5 üzerinden {rating} puan",

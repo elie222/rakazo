@@ -2,45 +2,15 @@ import type { TextDirection } from "@rakazo/core/text-direction";
 import { textDirectionForLocale } from "@rakazo/core/text-direction";
 import { translate } from "@rakazo/core/translate";
 import { matchUiLocale } from "@rakazo/core/ui-locale";
-import { DE_MESSAGES } from "./locales/de.js";
-import { ES_MESSAGES } from "./locales/es.js";
-import { FR_MESSAGES } from "./locales/fr.js";
-import { HE_MESSAGES } from "./locales/he.js";
-import { HI_MESSAGES } from "./locales/hi.js";
-import { JA_MESSAGES } from "./locales/ja.js";
-import { KO_MESSAGES } from "./locales/ko.js";
-import { NL_MESSAGES } from "./locales/nl.js";
-import { PL_MESSAGES } from "./locales/pl.js";
-import { PT_BR_MESSAGES } from "./locales/pt-BR.js";
-import { RU_MESSAGES } from "./locales/ru.js";
-import { TH_MESSAGES } from "./locales/th.js";
-import { TR_MESSAGES } from "./locales/tr.js";
-import { ZH_CN_MESSAGES } from "./locales/zh-CN.js";
-import { ZH_TW_MESSAGES } from "./locales/zh-TW.js";
+import type { DesktopCatalogTag, DesktopMessages } from "./locale-catalogs.js";
+import { desktopCatalogTags, loadDesktopCatalog } from "./locale-catalogs.js";
 
-/** Every language the app offers; English is the source text and needs no catalog. */
-export const CATALOGS = {
-  de: DE_MESSAGES,
-  es: ES_MESSAGES,
-  fr: FR_MESSAGES,
-  he: HE_MESSAGES,
-  hi: HI_MESSAGES,
-  ja: JA_MESSAGES,
-  ko: KO_MESSAGES,
-  nl: NL_MESSAGES,
-  pl: PL_MESSAGES,
-  "pt-BR": PT_BR_MESSAGES,
-  ru: RU_MESSAGES,
-  th: TH_MESSAGES,
-  tr: TR_MESSAGES,
-  "zh-CN": ZH_CN_MESSAGES,
-  "zh-TW": ZH_TW_MESSAGES,
-} as const satisfies Record<string, Readonly<Record<string, string>>>;
-export type DesktopLocale = "en" | keyof typeof CATALOGS;
-const DESKTOP_LOCALES = ["en", ...Object.keys(CATALOGS)] as DesktopLocale[];
+export type DesktopLocale = "en" | DesktopCatalogTag;
+const ENGLISH_MESSAGES: DesktopMessages = {};
 const LANGUAGE_TAG = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,3}$/;
 
 let activeLocale: DesktopLocale = "en";
+let activeMessages = ENGLISH_MESSAGES;
 let reportedLocale: string | null = null;
 /** The language last written to disk, so the same one is not written twice. */
 let writtenLocale: string | null = null;
@@ -55,8 +25,14 @@ export function desktopLocale(): DesktopLocale {
 }
 
 /** The active translations, keyed by the English text; empty for English. */
-export function desktopMessages(): Readonly<Record<string, string>> {
-  return activeLocale === "en" ? {} : CATALOGS[activeLocale];
+export function desktopMessages(): DesktopMessages {
+  return activeMessages;
+}
+
+function activateLocale(locale: DesktopLocale): void {
+  const messages = locale === "en" ? ENGLISH_MESSAGES : loadDesktopCatalog(locale);
+  activeLocale = messages === undefined ? "en" : locale;
+  activeMessages = messages ?? ENGLISH_MESSAGES;
 }
 
 export function desktopDirection(): TextDirection {
@@ -84,7 +60,7 @@ export function resolveDesktopLocale(
   reported: string | null,
   systemLanguage: string | undefined,
 ): DesktopLocale {
-  return matchUiLocale(reported ?? systemLanguage, DESKTOP_LOCALES);
+  return matchUiLocale(reported ?? systemLanguage, desktopCatalogTags);
 }
 
 /** Before any server page loads: the last language the app reported, else the system's. */
@@ -94,7 +70,7 @@ export function startDesktopLocale(
 ): DesktopLocale {
   reportedLocale = isLanguageTag(saved) ? saved : null;
   writtenLocale = reportedLocale;
-  activeLocale = resolveDesktopLocale(reportedLocale, systemLanguage);
+  activateLocale(resolveDesktopLocale(reportedLocale, systemLanguage));
   return activeLocale;
 }
 
@@ -106,11 +82,9 @@ export function createLocaleHandler(save: (locale: string) => Promise<void>, onC
   return (_event: unknown, locale: unknown): Promise<void> => {
     if (!isLanguageTag(locale)) return Promise.resolve();
     reportedLocale = locale;
-    const next = resolveDesktopLocale(locale, undefined);
-    if (next !== activeLocale) {
-      activeLocale = next;
-      onChange();
-    }
+    const previous = activeLocale;
+    activateLocale(resolveDesktopLocale(locale, undefined));
+    if (activeLocale !== previous) onChange();
     // One write at a time, and only of the latest report not on disk yet: a relaunch reads the
     // last language reported, and the next report retries a failed write.
     saving = saving

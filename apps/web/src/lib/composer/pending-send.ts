@@ -30,7 +30,10 @@ function messageText(message: ThreadMessage) {
 /** Rows built from live events carry an event seq, or none, rather than a message seq. */
 const LIVE_ROW_PREFIXES = ["progress:", "subagent:", PENDING_ID_PREFIX];
 
-/** The newest stored message seq in a chat, the baseline a pending send compares against. */
+/**
+ * The newest stored message seq in a chat, the baseline a pending send compares against. An empty
+ * chat is -1, because its first stored message is seq 0.
+ */
 export function newestMessageSeq(messages: readonly ThreadMessage[]) {
   return messages.reduce(
     (max, message) =>
@@ -38,7 +41,7 @@ export function newestMessageSeq(messages: readonly ThreadMessage[]) {
       !LIVE_ROW_PREFIXES.some((prefix) => message.id.startsWith(prefix))
         ? Math.max(max, message.seq)
         : max,
-    0,
+    -1,
   );
 }
 

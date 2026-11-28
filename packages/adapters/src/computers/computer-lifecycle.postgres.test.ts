@@ -1206,4 +1206,74 @@ describePostgres("Team Computer takeover recovery (PostgreSQL)", () => {
       runId: routine.id,
     });
   });
+
+  it.each(["saving", "stopping"] as const)(
+    "never leaves a computer suspending when another write lands while idle sleep is %s it",
+    async (phase) => {
+      await prisma.run.updateMany({
+        where: { botId: identity.botId, status: "running" },
+        data: { status: "completed" },
+      });
+      await prisma.computerExecutionLease.updateMany({
+        where: { computerId },
+        data: { expiresAt: new Date(0) },
+      });
+      const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-sleep-write-"));
+      const sandbox = new FakeSandboxProvider();
+      const deps = {
+        prisma,
+        sandbox,
+        home: new LocalAgentHomeStore(dataDir),
+        jobs: {
+          enqueue: vi.fn().mockResolvedValue(undefined),
+          cancel: vi.fn(),
+          cancelIn: vi.fn(),
+        } as unknown as JobPublisher,
+        events: { append: vi.fn() } as unknown as ThreadEvents,
+        dataDir,
+      };
+      const context = {
+        operationId: "run",
+        traceId: "run",
+        spaceId: identity.spaceId,
+        userId: identity.userId,
+        botId: identity.botId,
+        signal: new AbortController().signal,
+      } satisfies AdapterContext;
+      // A write that does not take the computer, as a person's control renewal does.
+      const unrelatedWrite = () =>
+        prisma.computer.updateMany({
+          where: { id: computerId },
+          data: { diskDismissedPercent: 90 },
+        });
+      try {
+        await prisma.computer.update({
+          where: { id: computerId },
+          data: { kind: "fake", state: "stopped", providerRef: null, restorePending: false },
+        });
+        await provisionComputer(deps, computerId, context);
+        if (phase === "saving") {
+          const exportWorkspace = sandbox.exportWorkspace.bind(sandbox);
+          vi.spyOn(sandbox, "exportWorkspace").mockImplementationOnce(async function* (ref, ctx) {
+            await unrelatedWrite();
+            yield* exportWorkspace(ref, ctx);
+          });
+        } else {
+          const stop = sandbox.stop.bind(sandbox);
+          vi.spyOn(sandbox, "stop").mockImplementationOnce(async (ref, ctx) => {
+            await unrelatedWrite();
+            await stop(ref, ctx);
+          });
+        }
+
+        await sleepComputerIfIdle(deps, computerId);
+
+        const { state } = await prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
+        expect(state).toBe(phase === "saving" ? "running" : "suspended");
+      } finally {
+        vi.restoreAllMocks();
+        await rm(dataDir, { recursive: true, force: true });
+      }
+    },
+  );
 });

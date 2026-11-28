@@ -119,6 +119,8 @@ Dates are "YYYY-MM-DD"; times are hours as numbers (13.5 is 1:30 PM). Mark an ev
 - useTheme(): the current theme as values for custom elements: {kind, bg {base, subtle, elevated}, text {primary, secondary, tertiary, accent, success, warning, danger, ...Deep}, fill, border, font, weight, radius, motion, dataviz {categorical, sequential, diverging, other, negative}}. It follows the reader's light or dark mode.
 - computeDAGLayout(nodes, edges, {direction?}): the Diagram's layout, for drawing your own flow.
 - usePageState(key, initial): useState the app keeps for each reader across reloads and devices, for notes, answers and choices. Give each a fixed key unique on the page (letters, digits, - _ . :; up to 64). Edits keep saved values: one replaces initial only while its type matches, so rename the key to start over. Up to 64 KB per reader; on a shared link it lasts until reload.
+- askBot(text): asks the page's bot in its chat, as the reader, and resolves with its reply's text (up to 2,000 characters in, 20,000 back). Call it from a click or key handler, once per click, and show a waiting state. It rejects where there is no chat, such as a shared page, so catch it.
+- notify(title, body?): a system notification where the page runs as an installed app; elsewhere it does nothing.
 - useSource(id): reads a snapshot declared in a comment that opens the file: "/* page-sources" on the first line, then a JSON object such as {"sales": {"snapshot": {...}, "asOf": "2026-10-30"}}, then "*/". useSource returns {value, asOf, fresh, updating}; nothing refreshes live yet, so fresh is always false. SourceStamp also takes a hand-written {asOf}.
 
 ## Example

@@ -1,11 +1,22 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import {
+  Id,
+  IsoDate,
+  PAGE_ICON_COLORS,
   PAGE_IMAGE_PREFIX,
   PAGE_IMAGES_MAX,
+  PAGE_LIST_MAX_LIMIT,
   PAGE_TITLE_MAX_LENGTH,
+  PageIconColorSchema,
   PageTitleSchema,
 } from "@rakazo/contracts";
-import { CARD_TITLE_ESCAPED_CHARACTERS, containsSecret, redactSecrets } from "@rakazo/core";
+import {
+  CARD_TITLE_ESCAPED_CHARACTERS,
+  containsSecret,
+  escapeSearchWildcards,
+  redactSecrets,
+} from "@rakazo/core";
+import type { Prisma } from "@rakazo/db";
 import {
   isUniqueViolation,
   pageImageNames,
@@ -17,9 +28,12 @@ import {
   signalPageUsers,
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
+import { isPageIcon } from "@rakazo/page-kit/icon-names";
 import { checkPageSource, PAGE_KIT_GUIDE } from "@rakazo/page-kit/validate";
+import { z } from "zod";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "../../approvals/approval-ask.js";
 import { argumentGiven } from "../../bots/update-bot-patch.js";
+import { TOOL_RESULT_TEXT_LIMIT } from "../../runtime/pi/pi-runtime-limits.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { markReadOutsideContent, neverAsks } from "../assembly/run-context.js";
 import { publishMessage } from "../assembly/run-messages.js";
@@ -79,13 +93,67 @@ function parseEdits(value: unknown): PageEdit[] | string {
  * A bot reaches its own pages and its group's pages, from any of its chats or routines; another
  * bot's page answers as if it did not exist, since its source may hold that chat's text.
  */
-function reachablePage(ctx: RunContext, pageId: string) {
+function reachablePages(ctx: RunContext) {
   const { run, bot, thread } = ctx;
   return {
-    id: pageId,
     spaceId: run.spaceId,
     userId: run.userId,
     OR: thread.groupId ? [{ botId: bot.id }, { groupId: thread.groupId }] : [{ botId: bot.id }],
+  };
+}
+
+function reachablePage(ctx: RunContext, pageId: string) {
+  return { id: pageId, ...reachablePages(ctx) };
+}
+
+const PageListCursor = z.object({ pageId: Id, updatedAt: IsoDate });
+
+async function listPages(ctx: RunContext, args: Record<string, unknown>) {
+  const query =
+    typeof args.query === "string" ? args.query.trim().slice(0, PAGE_TITLE_MAX_LENGTH) : "";
+  let afterCursor: Prisma.PageWhereInput | undefined;
+  if (argumentGiven(args.cursor)) {
+    const cursor = PageListCursor.safeParse(args.cursor);
+    if (!cursor.success) return { error: "Pass nextCursor from the previous page list." };
+    const updatedAt = new Date(cursor.data.updatedAt);
+    afterCursor = {
+      OR: [{ updatedAt: { lt: updatedAt } }, { updatedAt, id: { lt: cursor.data.pageId } }],
+    };
+  }
+  const rows = await ctx.deps.prisma.page.findMany({
+    where: {
+      ...reachablePages(ctx),
+      ...(query ? { title: { contains: escapeSearchWildcards(query), mode: "insensitive" } } : {}),
+      ...(afterCursor ? { AND: afterCursor } : {}),
+    },
+    select: { id: true, title: true, visibility: true, updatedAt: true },
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    take: PAGE_LIST_MAX_LIMIT + 1,
+  });
+  const pages = [];
+  let serializedPagesLength = 0;
+  for (const row of rows.slice(0, PAGE_LIST_MAX_LIMIT)) {
+    const pageId = row.id;
+    const updatedAt = row.updatedAt.toISOString();
+    const page = { pageId, title: row.title, updatedAt, ...pageSharingHint(row.visibility) };
+    const length = serializedPagesLength + JSON.stringify(page).length + Number(pages.length > 0);
+    // Reserve space for continuation, including when the result budget is what ends this batch.
+    const envelopeLength = JSON.stringify({ pages: [], nextCursor: { pageId, updatedAt } }).length;
+    if (length + envelopeLength > TOOL_RESULT_TEXT_LIMIT) break;
+    pages.push(page);
+    serializedPagesLength = length;
+  }
+  const last = pages.at(-1);
+  if (pages.length)
+    await markReadOutsideContent(
+      ctx,
+      pages.map((page) => page.title),
+    );
+  return {
+    ...(rows.length > pages.length && last
+      ? { nextCursor: { pageId: last.pageId, updatedAt: last.updatedAt } }
+      : {}),
+    pages,
   };
 }
 
@@ -175,7 +243,7 @@ export async function holdSharedPageSave(
   const { approvedVersion: _version, approvedVisibility: _visibility, ...args } = request.args;
   request.args = args;
   request.effectRequest = args;
-  if (args.help === true || !argumentGiven(args.pageId)) return undefined;
+  if (args.help === true || args.list === true || !argumentGiven(args.pageId)) return undefined;
   const hasTitle = argumentGiven(args.title);
   if (!argumentGiven(args.source) && !editsGiven(args) && !hasTitle && !imagesGiven(args))
     return undefined;
@@ -242,6 +310,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, thread } = ctx;
   const { args } = call;
   if (args.help === true) return { guide: PAGE_KIT_GUIDE };
+  if (args.list === true) return listPages(ctx, args);
   const pageId = argumentGiven(args.pageId) ? String(args.pageId) : undefined;
   const hasSource = argumentGiven(args.source);
   const hasEdits = editsGiven(args);
@@ -255,6 +324,8 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     if (!parsed.success) return { error: "title must be 1 to 200 characters." };
     title = redactSecrets(parsed.data, ctx.secrets).slice(0, PAGE_TITLE_MAX_LENGTH);
   }
+  const appIcon = parseAppIcon(args);
+  if (typeof appIcon === "string") return { error: appIcon, unchanged: true };
 
   const page = pageId
     ? await deps.prisma.page.findFirst({
@@ -277,6 +348,12 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   const current = currentVersion?.source ?? "";
   const previousImages = currentVersion ? pageVersionImages(currentVersion, "reject") : {};
 
+  if (page && !hasSource && !hasEdits && !title && !hasImages && Object.keys(appIcon).length) {
+    await deps.prisma.page.update({ where: { id: page.id }, data: appIcon });
+    if (deps.events?.publishSpaceChange)
+      await bestEffort("signal page icon", signalPage(deps.prisma, deps.events, page.id));
+    return { pageId: page.id, ...appIcon };
+  }
   if (page && !hasSource && !hasEdits && !title && !hasImages) {
     // The stored source may hold outside text an earlier run put in the page, so reading it
     // taints this run like any other outside content; saves only confirm this run's own write.
@@ -356,7 +433,16 @@ async function savePage(ctx: RunContext, call: ToolCall) {
             botId: bot.id,
             groupId: thread.groupId,
             title: title!,
-            versions: { create: { version: 1, title: title!, source, code: check.code } },
+            ...appIcon,
+            versions: {
+              create: {
+                version: 1,
+                title: title!,
+                source,
+                code: check.code,
+                abilities: check.abilities,
+              },
+            },
           },
         });
         const stored = await storePageImages(tx, created, {}, staged, source);
@@ -382,7 +468,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
               ? { visibility: { in: ["private", approvedVisibility] } }
               : {}),
         },
-        data: { currentVersion: version, title, updatedAt: new Date() },
+        data: { currentVersion: version, title, ...appIcon, updatedAt: new Date() },
       });
       if (moved.count === 0) throw new PageChangedError();
       let nextTitle =
@@ -403,7 +489,15 @@ async function savePage(ctx: RunContext, call: ToolCall) {
         source,
       );
       await tx.pageVersion.create({
-        data: { pageId: page.id, version, title: nextTitle, source, code: check.code, images },
+        data: {
+          pageId: page.id,
+          version,
+          title: nextTitle,
+          source,
+          code: check.code,
+          abilities: check.abilities,
+          images,
+        },
       });
       return { pageId: page.id, version, title: nextTitle, kept: keptImages };
     });
@@ -459,6 +553,21 @@ function missingImages(source: string, kept: string[]): string[] {
 }
 
 class PageChangedError extends Error {}
+
+function parseAppIcon(
+  args: Record<string, unknown>,
+): { icon?: string; iconColor?: string } | string {
+  const icon = argumentGiven(args.icon) ? args.icon : undefined;
+  const iconColor = argumentGiven(args.iconColor) ? args.iconColor : undefined;
+  if (icon !== undefined && !isPageIcon(icon))
+    return "icon must be one of the page kit's icon names.";
+  if (iconColor !== undefined && !PageIconColorSchema.safeParse(iconColor).success)
+    return `iconColor must be one of ${PAGE_ICON_COLORS.join(", ")}.`;
+  return {
+    ...(icon !== undefined ? { icon } : {}),
+    ...(iconColor !== undefined ? { iconColor: iconColor as string } : {}),
+  };
+}
 
 export const pageTools: ToolHandlers = {
   async save_page(ctx, call) {

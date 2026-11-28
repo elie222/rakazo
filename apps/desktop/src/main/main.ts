@@ -35,6 +35,7 @@ import { appWindowTargets, desktop, permissionTarget } from "./desktop-state.js"
 import { createLocaleHandler, errorDetail, startDesktopLocale, t, withDetail } from "./i18n.js";
 import type { IpcCaller } from "./ipc/ipc.js";
 import { handleIpc, sentFrom } from "./ipc/ipc.js";
+import { registerPageApps } from "./page-apps/page-apps-ipc.js";
 import { installServerHeaders } from "./setup/server-request-headers.js";
 import {
   DEFAULT_LOCAL_WEB_URL,
@@ -889,6 +890,7 @@ app.whenReady().then(async () => {
     createClipboardHandler(permissionTarget, (text) => clipboard.writeText(text)),
   );
   handleIpc("desktop.passkeys.rpIds", () => passkeyRpIds);
+  registerPageApps(userDataDir);
   handleIpc("desktop.monitoring.enabled", () => reportsErrors);
   handleIpc("desktop.server.change", () => {
     showSetupWindow();

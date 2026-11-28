@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { BackgroundJob } from "@rakazo/adapter-kit";
+import { APP_CONNECTION_FOLLOW_UP_NONCE_PREFIX } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   asSystem,
@@ -67,6 +68,7 @@ describePostgres("queued turns share a chat one at a time (PostgreSQL)", () => {
     startedAt?: Date;
     createdAt?: Date;
     routineId?: string;
+    clientNonce?: string;
   }) {
     const userId = data.userId ?? identity.userId;
     const task = await system.task.create({
@@ -84,6 +86,7 @@ describePostgres("queued turns share a chat one at a time (PostgreSQL)", () => {
         startedAt: data.startedAt,
         createdAt: data.createdAt,
         routineId: data.routineId,
+        clientNonce: data.clientNonce,
         leaseOwner: data.status === "running" ? "worker" : null,
         leaseFence: data.status === "running" ? 1 : 0,
       },
@@ -167,7 +170,7 @@ describePostgres("queued turns share a chat one at a time (PostgreSQL)", () => {
     }
   });
 
-  it.each(["routine", "bot_message"])(
+  it.each(["routine", "bot_message", "follow_up"])(
     "waits for the chat's working run, then starts a %s run when that run lets go",
     async (trigger) => {
       const working = await createRun({
@@ -175,7 +178,12 @@ describePostgres("queued turns share a chat one at a time (PostgreSQL)", () => {
         status: "running",
         startedAt: new Date(),
       });
-      const waiting = await createRun({ trigger, status: "queued" });
+      const waiting = await createRun({
+        trigger,
+        status: "queued",
+        clientNonce:
+          trigger === "follow_up" ? `${APP_CONNECTION_FOLLOW_UP_NONCE_PREFIX}card` : undefined,
+      });
 
       expect(await claimRun(deps, waiting, "worker-2")).toBeUndefined();
       await holdRunForChat(deps, waiting);
@@ -198,6 +206,33 @@ describePostgres("queued turns share a chat one at a time (PostgreSQL)", () => {
       expect(await claimRun(deps, waiting, "worker-2")).toBeDefined();
     },
   );
+
+  it("wakes a due app follow-up when the chat frees before its wait is recorded", async () => {
+    const working = await createRun({
+      trigger: "user",
+      status: "running",
+      startedAt: new Date(),
+    });
+    const waiting = await createRun({
+      trigger: "follow_up",
+      status: "queued",
+      clientNonce: `${APP_CONNECTION_FOLLOW_UP_NONCE_PREFIX}due-card`,
+    });
+    await system.run.update({
+      where: { id: waiting.id },
+      data: { wakeAt: new Date(Date.now() - 1_000) },
+    });
+    expect(await claimRun(deps, waiting, "worker-2")).toBeUndefined();
+
+    await system.run.update({ where: { id: working.id }, data: { status: "completed" } });
+    await startRunsWaitingOnChat(deps, working);
+    await holdRunForChat(deps, waiting);
+
+    expect(jobs.map((job) => [job.payload, job.availableAt])).toEqual([
+      [expect.objectContaining({ runId: waiting.id }), undefined],
+    ]);
+    expect(await claimRun(deps, waiting, "worker-2")).toBeDefined();
+  });
 
   it("starts replies from other bots that arrived during a run one at a time, in arrival order", async () => {
     const working = await createRun({

@@ -51,6 +51,8 @@ export const hi: Messages = {
   photos: { other: "{count} फ़ोटो" },
   slideOf: "{total} में से {n}",
   showPhoto: "फ़ोटो {n} दिखाएँ",
+  previousPhoto: "पिछली फ़ोटो",
+  nextPhoto: "अगली फ़ोटो",
   view: "देखें",
   viewTitle: "{title} देखें",
   rated: "5 में से {rating} रेटिंग",

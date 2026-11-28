@@ -1,4 +1,5 @@
 import type { Message } from "@earendil-works/pi-ai";
+import { modelImageLimitError } from "@rakazo/core";
 import {
   SCREENSHOT_REMOVED_NOTE,
   STALE_PAGE_STATE_NOTE,
@@ -90,9 +91,7 @@ export function pruneComputerScreenshotContext(
       0,
     );
     if (userImages > imageLimit) {
-      throw new ModelImageLimitError(
-        `The configured model image limit is ${imageLimit}, but the prompt contains ${userImages} user images.`,
-      );
+      throw new ModelImageLimitError(modelImageLimitError(imageLimit));
     }
     remaining = Math.min(remaining, imageLimit - userImages);
   }

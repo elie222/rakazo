@@ -372,7 +372,14 @@ describe("PipedreamConnector", () => {
         }
         if (url.includes("/v1/connect/apps?")) {
           return Response.json({
-            data: [{ id: "app-1", name_slug: "gmail", name: "Gmail" }],
+            data: [
+              {
+                id: "app-1",
+                name_slug: "gmail",
+                name: "Gmail",
+                description: "Read and send email.",
+              },
+            ],
             page_info: {},
           });
         }
@@ -406,6 +413,7 @@ describe("PipedreamConnector", () => {
       expect.objectContaining({
         connectorId: "pipedream",
         slug: "gmail",
+        description: "Read and send email.",
         connected: true,
       }),
     ]);
@@ -430,6 +438,32 @@ describe("PipedreamConnector", () => {
     expect(JSON.parse(String(connectRequest?.init?.body))).toEqual(
       expect.objectContaining({ external_user_id: externalId }),
     );
+  });
+
+  it("omits malformed descriptions from the app catalog", async () => {
+    const connector = new PipedreamConnector(FAKE_CONFIG, {
+      fetch: async (input) => {
+        const url = String(input);
+        if (url.endsWith("/v1/oauth/token")) {
+          return Response.json({ access_token: "fake-access-token", expires_in: 3_600 });
+        }
+        if (url.includes("/v1/connect/apps?")) {
+          return Response.json({
+            data: [{ id: "app-1", name_slug: "example", name: "Example", description: 42 }],
+            page_info: {},
+          });
+        }
+        if (url.includes("/accounts?")) {
+          return Response.json({ data: [], page_info: {} });
+        }
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+
+    const [app] = await connector.catalog(context);
+
+    expect(app?.slug).toBe("example");
+    expect(app).not.toHaveProperty("description");
   });
 
   it.each([403, 503])("handles HTTP %s from the mailbox profile", async (status) => {

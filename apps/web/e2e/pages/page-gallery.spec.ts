@@ -110,5 +110,46 @@ for (const { lang, label, next, previous } of [
       await expect.poll(() => shown(track)).toBe("Second");
       await expectMarked(page, 1);
     });
+
+    test("arrows on hover sit on the side they lead to and step the photos", async ({
+      page,
+    }, testInfo) => {
+      const track = await openGallery(page, lang);
+      const arrow = (way: string) => page.locator(`.rk-gallery-arrow[data-way="${way}"]`);
+      await track.hover();
+      await expect(arrow("previous")).toHaveCount(0);
+      const box = (await track.boundingBox())!;
+      const nextBox = (await arrow("next").boundingBox())!;
+      expect(nextBox.x > box.x + box.width / 2).toBe(lang !== "he");
+      await arrow("next").click();
+      await expect.poll(() => shown(track)).toBe("Second");
+      await arrow("next").click();
+      await expect.poll(() => shown(track)).toBe("Third");
+      await expect(arrow("next")).toHaveCount(0);
+      await arrow("previous").click();
+      await expect.poll(() => shown(track)).toBe("Second");
+      await expectMarked(page, 1);
+      const screenshot = testInfo.outputPath(`page-gallery-arrows-${lang}.png`);
+      await page.locator(".rk-gallery").screenshot({ path: screenshot, caret: "hide" });
+      await testInfo.attach(`page-gallery-arrows-${lang}`, {
+        contentType: "image/png",
+        path: screenshot,
+      });
+    });
   });
 }
+
+test("two quick Next clicks advance through two photos", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const track = await openGallery(page, "en");
+  await track.hover();
+  await page.getByRole("button", { name: "Next photo" }).dblclick({ delay: 50 });
+  await expect.poll(() => shown(track)).toBe("Third");
+});
+
+test("a photo opens when clicked beside the dots", async ({ page }) => {
+  const track = await openGallery(page, "en");
+  const box = (await track.boundingBox())!;
+  await page.mouse.click(box.x + 30, box.y + box.height - 15);
+  await expect(page.getByRole("dialog", { name: "First" })).toBeVisible();
+});

@@ -1,6 +1,7 @@
 import type { IpcMainInvokeEvent } from "electron";
 import { ipcMain } from "electron";
 import { desktop, permissionTarget, replacedAppTarget } from "../desktop-state.js";
+import { fromPageAppShell } from "../page-apps/app/page-app-shell.js";
 import { reportDesktopError } from "../system/monitoring.js";
 import { fromAppFrame } from "../windows/app-frame.js";
 import type {
@@ -31,6 +32,7 @@ export type IpcHandler<Name extends IpcChannelName> = (
  */
 export function sentFrom(window: IpcWindow, event: IpcCaller): boolean {
   try {
+    if (window === "pageApp") return fromPageAppShell(desktop.pageAppWindow, event);
     if (window !== "setup")
       return (
         fromAppFrame(permissionTarget(), event) ||
