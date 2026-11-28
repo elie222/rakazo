@@ -234,7 +234,7 @@ export function AskBlock({
   return (
     <View
       style={{
-        width: secretInput ? "100%" : "90%",
+        width: "100%",
         borderRadius: 18,
         backgroundColor: tokens.card,
         paddingHorizontal: 16,
@@ -311,6 +311,7 @@ export function AskBlock({
                 fill={false}
                 prominence="quiet"
                 onPress={() => void dismiss()}
+                style={{ alignSelf: "center" }}
               />
             ) : null}
             <NativeActionButton
@@ -319,6 +320,7 @@ export function AskBlock({
               busy={submitting}
               fill={false}
               onPress={() => void submit()}
+              style={{ alignSelf: "center" }}
             />
           </View>
         </>

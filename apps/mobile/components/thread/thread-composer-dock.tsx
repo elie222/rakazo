@@ -82,9 +82,14 @@ export function ThreadComposerDock({
     paddingBottom: interpolate(keyboardProgress.value, [0, 1], [composerRestingPadding, 12]),
   }));
 
-  // Ends about halfway up the input, following it as the keyboard moves.
-  const fadeHeight = useAnimatedStyle(() => ({
-    height: interpolate(keyboardProgress.value, [0, 1], [composerRestingPadding, 12]) + 22,
+  // Solid under the input, where the home indicator sits, then fades out about halfway up the
+  // input, following it as the keyboard moves.
+  const solidHeight = useAnimatedStyle(() => ({
+    height: interpolate(keyboardProgress.value, [0, 1], [composerRestingPadding, 12]),
+  }));
+  const fadeAbove = useAnimatedStyle(() => ({
+    height: 30,
+    bottom: interpolate(keyboardProgress.value, [0, 1], [composerRestingPadding, 12]),
   }));
 
   // A read-only chat has no composer, but its messages can still be chosen and copied.
@@ -106,7 +111,19 @@ export function ThreadComposerDock({
         columnPadding,
       ]}
     >
-      {controlsShown ? <ThreadEdgeFade edge="bottom" style={fadeHeight} /> : null}
+      {controlsShown ? (
+        <>
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              { position: "absolute", left: 0, right: 0, bottom: 0 },
+              { backgroundColor: tokens.background },
+              solidHeight,
+            ]}
+          />
+          <ThreadEdgeFade edge="bottom" style={fadeAbove} />
+        </>
+      ) : null}
       <View
         pointerEvents="box-none"
         onLayout={(event) => {

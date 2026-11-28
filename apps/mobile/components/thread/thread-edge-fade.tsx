@@ -4,7 +4,8 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { mobileTokens } from "../../lib/appearance/appearance";
 
 /**
- * Fades messages scrolling under the header or the composer into the thread background.
+ * Fades messages scrolling under the header or the composer into the thread background, solid
+ * at the screen edge so nothing reads under the status bar or the home indicator.
  * The caller sets the height, which may be animated.
  */
 export function ThreadEdgeFade({
@@ -31,7 +32,8 @@ export function ThreadEdgeFade({
             y2={edge === "top" ? "0" : "1"}
           >
             <Stop offset="0" stopColor={color} stopOpacity={0} />
-            <Stop offset="0.6" stopColor={color} stopOpacity={0.7} />
+            <Stop offset="0.4" stopColor={color} stopOpacity={0.9} />
+            <Stop offset="1" stopColor={color} stopOpacity={1} />
           </LinearGradient>
         </Defs>
         <Rect width="100%" height="100%" fill={`url(#${id})`} />

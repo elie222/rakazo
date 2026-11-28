@@ -652,11 +652,25 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
             />
           </NewestPageCards.Provider>
           {headerHeight > 0 ? (
-            // Ends halfway down the floating header's 44pt pills.
-            <ThreadEdgeFade
-              edge="top"
-              style={{ height: headerHeight - THREAD_HEADER_PILL_BOTTOM_INSET - 22 }}
-            />
+            // Solid down to the middle of the floating header's 44pt pills, then fading out just
+            // below them, so text never reads behind the pills or the status bar.
+            <>
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: headerHeight - THREAD_HEADER_PILL_BOTTOM_INSET - 22,
+                  backgroundColor: tokens.background,
+                }}
+              />
+              <ThreadEdgeFade
+                edge="top"
+                style={{ top: headerHeight - THREAD_HEADER_PILL_BOTTOM_INSET - 22, height: 34 }}
+              />
+            </>
           ) : null}
           {/* Shrinks (the suggestion lists scroll) so the input and Send stay above the keyboard. */}
           <ThreadComposerDock
