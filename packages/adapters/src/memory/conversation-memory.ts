@@ -4,7 +4,7 @@ import type {
   SemanticMemoryConversationTurn,
   SemanticMemoryProvider,
 } from "@rakazo/adapter-kit";
-import { memoryRetainTurnJob } from "@rakazo/adapter-kit";
+import { memoryRetainTurnJob, memoryRetainTurnRecoveryJobKey } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -15,12 +15,13 @@ import {
   partialReplyClientNonce,
   storedMessageBlocks,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { messageBlocksText } from "../runs/assembly/run-replies.prompt.js";
 import {
   isUserProgressClientNonce,
   USER_PROGRESS_CLIENT_NONCE_PREFIX,
 } from "../runs/lifecycle/user-progress.js";
+import { warnMemoryAccountRefused } from "./memory-account-refused.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 
 /** A person or another bot talking to the bot; routines, webhooks and channels are not. */
@@ -357,6 +358,15 @@ export async function retainRunConversation(
     },
     context,
   );
+  if (!result.ok && result.accountRefused) {
+    // Nothing was stored and no retry can store it, so the job ends here with nothing to clean up.
+    warnMemoryAccountRefused("retain", result.error);
+    await bestEffort(
+      "cancel memory.retain-turn recovery",
+      deps.jobs.cancel(memoryRetainTurnRecoveryJobKey(runId)),
+    );
+    return done;
+  }
   // Retrying is safe: the provider makes a repeated turn a no-op.
   if (!result.ok) throw new Error(result.error);
   if (result.value.pending) return { pending: { ...pending, token: result.value.pending } };

@@ -428,6 +428,7 @@ export interface SemanticMemoryProvider {
    * submitted. `pending` is an opaque token while the provider is still storing it: poll
    * `retainedConversationSettled` with it until settled, so a purgeHistory after that removes the
    * turn. A provider that can return `pending` must implement `retainedConversationSettled`.
+   * `accountRefused` means nothing of the turn was stored, so there is nothing to clean up.
    */
   retainConversation?(
     request: SemanticMemoryConversationRequest,

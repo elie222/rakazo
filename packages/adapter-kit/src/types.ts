@@ -536,7 +536,12 @@ export interface SemanticMemoryForgetRequest {
 
 export type SemanticMemoryResponse<T = void> =
   | { ok: true; value: T }
-  | { ok: false; error: string };
+  | {
+      ok: false;
+      error: string;
+      /** The provider refused the operator's account (key, billing or quota): no retry helps until someone fixes it. */
+      accountRefused?: true;
+    };
 
 export interface SemanticMemoryRecallRequest {
   query: string;

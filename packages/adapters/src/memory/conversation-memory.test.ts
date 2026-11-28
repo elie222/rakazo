@@ -4,7 +4,7 @@ import type {
   SemanticMemoryProvider,
   SemanticMemoryResponse,
 } from "@rakazo/adapter-kit";
-import { memoryRetainTurnJob } from "@rakazo/adapter-kit";
+import { memoryRetainTurnJob, memoryRetainTurnRecoveryJobKey } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { createHindsightProvider } from "../providers/memory/hindsight/hindsight-memory-provider.js";
@@ -893,6 +893,17 @@ describe("retainRunConversation", () => {
     if (guard.name !== "memory.retain-turn") throw new Error("Wrong cleanup job");
     expect(guard.payload.pending).toMatchObject({ unconfirmed: true });
     expect(deps.jobs.cancel).not.toHaveBeenCalled();
+  });
+
+  it("ends without a retry or cleanup when the provider refuses the account", async () => {
+    const { deps, provider } = harness();
+    provider.retainConversation.mockResolvedValueOnce({
+      ok: false,
+      error: "memory request failed: 402",
+      accountRefused: true,
+    });
+    await expect(retainRunConversation(deps, "run-1")).resolves.toEqual({});
+    expect(deps.jobs.cancel).toHaveBeenCalledWith(memoryRetainTurnRecoveryJobKey("run-1"));
   });
 });
 
