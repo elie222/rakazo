@@ -369,15 +369,64 @@ describe("account export archive", () => {
 describe("GET /api/account/export", () => {
   it("refuses a token that does not name a user", async () => {
     const app = new Hono();
-    const consumeAccountExportToken = vi.fn(async () => null);
+    const readAccountExportToken = vi.fn(async () => null);
+    const spendAccountExportToken = vi.fn(async () => null);
     mountAccountExportRoute(app, {
       ...stores(),
       prisma: {} as never,
-      auth: { consumeAccountExportToken },
+      auth: { readAccountExportToken, spendAccountExportToken },
     });
     const response = await app.request("/api/account/export?token=used");
     expect(response.status).toBe(410);
     expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(consumeAccountExportToken).toHaveBeenCalledWith("used");
+    expect(readAccountExportToken).toHaveBeenCalledWith("used");
+    expect(spendAccountExportToken).not.toHaveBeenCalled();
+  });
+
+  it("refuses a link for an account that no longer exists", async () => {
+    const app = new Hono();
+    const spendAccountExportToken = vi.fn(async () => "user-1");
+    mountAccountExportRoute(app, {
+      ...stores(),
+      prisma: { user: { findUnique: async () => null } } as never,
+      auth: {
+        readAccountExportToken: async () => "user-1",
+        spendAccountExportToken,
+      },
+    });
+    const response = await app.request("/api/account/export?token=abc");
+    expect(response.status).toBe(410);
+    expect(spendAccountExportToken).not.toHaveBeenCalled();
+  });
+
+  it("leaves the link unspent when the archive cannot be built", async () => {
+    const app = new Hono();
+    const spendAccountExportToken = vi.fn(async () => "user-1");
+    mountAccountExportRoute(app, {
+      ...stores(),
+      // The account is active, so the failure happens while the export source is read.
+      prisma: {
+        user: {
+          findUnique: async () => ({ deactivatedAt: null }),
+          findUniqueOrThrow: async () => ({
+            name: "Ada",
+            email: "ada@example.test",
+            timezone: "UTC",
+          }),
+        },
+        spaceMember: {
+          findMany: async () => {
+            throw new Error("export read failed");
+          },
+        },
+      } as never,
+      auth: {
+        readAccountExportToken: async () => "user-1",
+        spendAccountExportToken,
+      },
+    });
+    const response = await app.request("/api/account/export?token=abc");
+    expect(response.status).toBe(500);
+    expect(spendAccountExportToken).not.toHaveBeenCalled();
   });
 });

@@ -293,7 +293,10 @@ describePostgres("account export (PostgreSQL)", () => {
     const app = new Hono();
     mountAccountExportRoute(app, {
       prisma,
-      auth: { consumeAccountExportToken: async (token) => (token === "good" ? exporter : null) },
+      auth: {
+        readAccountExportToken: async (token) => (token === "good" ? exporter : null),
+        spendAccountExportToken: async (token) => (token === "good" ? exporter : null),
+      },
       artifacts: { get: async (key) => new TextEncoder().encode(`bytes:${key}`) },
       home: { exportHome: async function* () {} },
     });
@@ -313,7 +316,10 @@ describePostgres("account export (PostgreSQL)", () => {
     const app = new Hono();
     mountAccountExportRoute(app, {
       prisma,
-      auth: { consumeAccountExportToken: async (token) => (token === "good" ? exporter : null) },
+      auth: {
+        readAccountExportToken: async (token) => (token === "good" ? exporter : null),
+        spendAccountExportToken: async (token) => (token === "good" ? exporter : null),
+      },
       artifacts: { get: async (key) => new TextEncoder().encode(`bytes:${key}`) },
       home: { exportHome: async function* () {} },
     });
@@ -467,7 +473,10 @@ describePostgres("account export (PostgreSQL)", () => {
     const exportApp = new Hono();
     mountAccountExportRoute(exportApp, {
       prisma,
-      auth: { consumeAccountExportToken: async (token) => token },
+      auth: {
+        readAccountExportToken: async (token) => token,
+        spendAccountExportToken: async (token) => token,
+      },
       artifacts: { get: async (key) => blobs.get(key) ?? new TextEncoder().encode(`bytes:${key}`) },
       home: { exportHome: async function* () {} },
     });
