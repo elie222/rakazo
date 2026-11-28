@@ -34,7 +34,15 @@ export function createTextTurn(input: TextInput) {
 }
 
 /** Protocol-only test surface. The existing text bridge does not send or replay attachments. */
-export function createInlinePngTurn(input: TextInput & { png: Uint8Array }) {
+export function createInlinePngTurn(
+  input: TextInput & {
+    png: Uint8Array;
+    /** Admission result for the exact pinned model, not the native ACP handshake. */
+    modelImageCapability: "supported" | "unsupported" | "unverified";
+  },
+) {
+  // The ACP server may advertise image prompts even if the selected model was never verified.
+  if (input.modelImageCapability !== "supported") return fail();
   const { png } = input;
   if (png.byteLength < 33 || png.byteLength > MAX_PNG_BYTES) return fail();
   if (detectImageMimeType(png) !== "image/png") return fail();

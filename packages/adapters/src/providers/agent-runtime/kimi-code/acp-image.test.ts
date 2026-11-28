@@ -14,7 +14,12 @@ const start = (cap?: boolean) =>
       ...(cap === undefined ? {} : { agentCapabilities: { promptCapabilities: { image: cap } } }),
     },
   });
-const input = { cwd: "/isolated", prompt: "Describe the fixture", png };
+const input = {
+  cwd: "/isolated",
+  prompt: "Describe the fixture",
+  png,
+  modelImageCapability: "supported",
+} as const;
 
 describe("Unregistered single PNG ACP probe codec", () => {
   it("sends the PNG with its original bytes only after capability negotiation and session admission", () => {
@@ -81,6 +86,15 @@ describe("Unregistered single PNG ACP probe codec", () => {
       const turn = createInlinePngTurn(input);
       expect(() => turn.receive(start(cap))).toThrow("ACP turn rejected");
       expect(() => turn.receive(start(true))).toThrow("ACP turn rejected");
+    },
+  );
+
+  it.each(["unsupported", "unverified"] as const)(
+    "does not initialize for a selected model with %s image support",
+    (modelImageCapability) => {
+      expect(() => createInlinePngTurn({ ...input, modelImageCapability })).toThrow(
+        "ACP turn rejected",
+      );
     },
   );
 
