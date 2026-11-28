@@ -1,4 +1,5 @@
 """Offline tests for the page browser: the agent-browser wrapper and the saved-login, card and pay-token steps."""
+import fcntl
 import importlib.machinery
 import importlib.util
 import json
@@ -1484,6 +1485,7 @@ class NewTabTest(unittest.TestCase):
             chromium.ids[:0] = chromium.opening
             chromium.opening = []
             now, opened, flooded = tabs.end(own, ours=ours)
+            tabs.release()
         return [tab["id"] for tab in opened], tabs.note(now, opened, now[0]["url"]), flooded
 
     def test_names_the_tabs_opened_since_the_last_call(self):
@@ -1499,20 +1501,80 @@ class NewTabTest(unittest.TestCase):
         self.assertEqual(self.call(chromium, "d", ours="d")[0], [])
         # Another screen's browser is kept apart: its first call names every tab but its own.
         self.assertEqual(self.call(FakeTabs("x", "y"), "x", port=9223)[0], ["y"])
-        # Written whole: nothing is left beside it.
-        self.assertEqual(sorted(os.listdir(self.home)), ["tabs-9222.json", "tabs-9223.json"])
+        # Written whole: nothing is left beside it and its lock.
+        self.assertEqual(sorted(os.listdir(self.home)),
+                         ["tabs-9222.json", "tabs-9222.lock", "tabs-9223.json", "tabs-9223.lock"])
         Path(self.home, "tabs-9222.json").write_text("not json")
         self.assertEqual(self.call(chromium, "d")[0], ["c", "a"])
 
-    def test_after_the_browser_starts_every_tab_but_the_call_s_own_is_new_and_none_is_closed(self):
+    def test_one_page_call_on_a_screen_closes_tabs_at_a_time(self):
+        chromium = FakeTabs("own", *(f"r{index}" for index in range(12)))
+        first = helper.Tabs(self.home, 9222, "browser-1", chromium.select)
+        second = helper.Tabs(self.home, 9222, "browser-1", chromium.select)
+        with patch.object(helper, "page_tabs", chromium.list), \
+                patch.object(helper.urllib.request, "urlopen", chromium.urlopen):
+            first.begin()
+            self.assertEqual(chromium.closed, [f"r{index}" for index in range(11, 6, -1)])
+            # A flood, opened while the first call still reads its page: the call started then closes none.
+            chromium.ids[:0] = [f"q{index}" for index in range(60)]
+            second.begin()
+            self.assertEqual((first.turn, second.turn, chromium.closed),
+                             (True, False, [f"r{index}" for index in range(11, 6, -1)]))
+            first.end("own")
+            first.release()
+            third = helper.Tabs(self.home, 9222, "browser-1", chromium.select)
+            third.begin()
+            self.assertTrue(third.turn)
+
+    def test_a_call_reads_the_tabs_the_last_call_left_once_it_holds_the_screen_s_turn(self):
+        chromium = FakeTabs("own")
+        self.call(chromium, "own")
+        chromium.ids[:0] = ["a", "b"]
+        first = helper.Tabs(self.home, 9222, "browser-1", chromium.select)
+        second = helper.Tabs(self.home, 9222, "browser-1", chromium.select)
+        with patch.object(helper, "page_tabs", chromium.list), \
+                patch.object(helper.urllib.request, "urlopen", chromium.urlopen):
+            first.begin()
+            self.assertTrue(first.turn)
+            chromium.ids[:0] = ["c", "d"]
+            first.end("own")
+            first.release()
+            # Built before the first call: the second still judges the tabs against what it left.
+            second.begin()
+            self.assertTrue(second.turn)
+        self.assertEqual(chromium.ids, ["c", "d", "a", "b", "own"])
+
+    def test_a_call_still_sees_to_the_tabs_where_the_screen_s_lock_cannot_be_taken(self):
+        chromium = FakeTabs("own", *(f"r{index}" for index in range(12)))
+        tabs = helper.Tabs(self.home, 9222, "browser-1", chromium.select)
+        with patch.object(helper.fcntl, "flock", side_effect=OSError("no locks available")), \
+                patch.object(helper, "page_tabs", chromium.list), \
+                patch.object(helper.urllib.request, "urlopen", chromium.urlopen):
+            tabs.begin()
+            self.assertTrue(tabs.turn)
+        self.assertEqual(chromium.closed, [f"r{index}" for index in range(11, 6, -1)])
+
+    def test_after_the_browser_starts_every_tab_but_the_call_s_own_is_new(self):
         chromium = FakeTabs("a")
         self.call(chromium, "a")
-        # Started again, maybe with the person's own tabs restored: they are named, never closed.
+        # Started again, maybe with the person's own tabs restored: they are named, not closed as a flood.
         restored = FakeTabs("r1", "r2", "r3", "r4", "r5")
         opened, note, flooded = self.call(restored, "r1", browser="browser-2")
         self.assertEqual((opened, flooded, restored.closed), (["r2", "r3", "r4", "r5"], False, []))
         self.assertTrue(note.startswith('4 new tabs opened behind this one: "Report r2" at '))
         self.assertTrue(note.endswith("; and 1 more."))
+
+    def test_after_the_browser_starts_the_tabs_beyond_eight_are_closed_the_ones_in_the_background_longest_first(self):
+        self.call(FakeTabs("own"), "own")
+        restored = FakeTabs("own", *(f"r{index}" for index in range(12)))
+        opened, note, flooded = self.call(restored, "own", browser="browser-2")
+        self.assertEqual((restored.ids, flooded, restored.closed),
+                         (["own", *(f"r{index}" for index in range(7))], False,
+                          [f"r{index}" for index in range(11, 6, -1)]))
+        self.assertEqual(opened, [f"r{index}" for index in range(7)])
+        self.assertTrue(note.startswith("Closed the 5 tabs in the background longest, to keep at most 8 tabs open. "
+                                        '7 new tabs opened behind this one: "Report r0" at '))
+        self.assertTrue(note.endswith("; and 4 more."))
 
     def test_a_flood_of_tabs_is_closed_and_the_bot_s_own_tab_is_in_front_again(self):
         chromium = FakeTabs("own")
@@ -1560,7 +1622,16 @@ class NewTabTest(unittest.TestCase):
         chromium.ids = [f"x{index}" for index in range(5)]
         opened, _, _ = self.call(chromium, "x0")
         self.assertEqual((chromium.ids, opened), (["x0"], []))
-        self.assertEqual(json.loads(Path(self.home, "tabs-9222.json").read_text())["opened"], [])
+
+    def test_the_tab_in_front_and_the_call_s_own_tab_are_never_closed_to_keep_eight(self):
+        # The call's own tab is last in the background, where the tabs to close are taken from.
+        chromium = FakeTabs(*(f"p{index}" for index in range(9)), "own")
+        tabs = helper.Tabs(self.home, 9222, "browser-1", chromium.select)
+        with patch.object(helper, "page_tabs", chromium.list), \
+                patch.object(helper.urllib.request, "urlopen", chromium.urlopen):
+            tabs.trim(chromium.list(), "own")
+        self.assertEqual((chromium.ids, chromium.closed),
+                         (["p0", *(f"p{index}" for index in range(1, 7)), "own"], ["p8", "p7"]))
 
     def test_only_tabs_that_closed_are_counted_and_the_rest_are_tried_again(self):
         chromium = FakeTabs("own")
@@ -1590,29 +1661,35 @@ class NewTabTest(unittest.TestCase):
         self.assertEqual(note, "The page opened 10 tabs at once, more than 3, so they were closed.")
         self.assertEqual(json.loads(Path(self.home, "tabs-9222.json").read_text())["tabs"], ["own"])
 
-    def test_tabs_pages_open_a_few_at_a_time_are_kept_to_eight_and_the_person_s_never_closed(self):
-        # The browser started with the person's own tabs restored.
-        chromium = FakeTabs("own", *[f"mine{index}" for index in range(10)])
+    def test_tabs_pages_open_a_few_at_a_time_are_kept_to_eight_in_all_the_ones_in_the_background_longest_first(self):
+        chromium = FakeTabs("own", *(f"old{index}" for index in range(7)))
         self.call(chromium, "own")
         notes = []
-        for round in range(4):
-            own = chromium.ids[0]
+        for round in range(2):
             chromium.opening = [f"d{round}{index}" for index in range(3)]
-            notes.append(self.call(chromium, own)[1])
-        self.assertTrue(all(f"mine{index}" in chromium.ids for index in range(10)))
-        # Eight besides the tab the call read, which is never closed.
-        self.assertEqual([tab for tab in chromium.ids if tab.startswith("d") and tab != own],
-                         ["d30", "d31", "d32", "d21", "d22", "d10", "d11", "d12"])
-        # The ones longest out of sight went first.
-        self.assertEqual(sorted(chromium.closed), ["d00", "d01", "d02"])
-        self.assertNotIn("Closed", notes[2])
+            notes.append(self.call(chromium, chromium.ids[0])[1])
+        self.assertEqual(chromium.ids, ["d10", "d11", "d12", "d00", "d01", "d02", "own", "old0"])
+        self.assertEqual(chromium.closed, ["old6", "old5", "old4", "old3", "old2", "old1"])
+        self.assertEqual(notes[0], "Closed the 3 tabs in the background longest, to keep at most 8 tabs open. "
+                                   "3 new tabs opened, and page tools now read the one in front: "
+                                   '"Report d00" at https://portal.example.test/d00; the others are "Report d01" at '
+                                   'https://portal.example.test/d01; "Report d02" at https://portal.example.test/d02; '
+                                   "the tabs before them are still open.")
         one = helper.Tabs(self.home, 9222, "browser-1", print)
         one.trimmed = 1
-        self.assertEqual(one.note([], [], ""), "Closed the oldest tab a page had opened, to keep at most 8.")
-        self.assertTrue(notes[3].startswith("Closed the 3 oldest tabs pages had opened, to keep at most 8. "))
-        # The tab in front, listed again after the trim, is named once.
-        self.assertIn("page tools now read the one in front", notes[3])
-        self.assertEqual(notes[3].count('"Report d30"'), 1)
+        self.assertEqual(one.note([], [], ""), "Closed the tab in the background longest, to keep at most 8 tabs open.")
+
+    def test_tabs_the_bot_opened_between_calls_count_toward_the_cap(self):
+        chromium = FakeTabs("own", *(f"old{index}" for index in range(6)))
+        self.call(chromium, "own")
+        # Opened with the screen, a few at a time, so not a flood.
+        chromium.ids[:0] = [f"bot{index}" for index in range(3)]
+        opened, note, flooded = self.call(chromium, "bot0")
+        self.assertEqual((chromium.ids, flooded, chromium.closed),
+                         (["bot0", "bot1", "bot2", "own", "old0", "old1", "old2", "old3"], False, ["old5", "old4"]))
+        self.assertEqual(opened, ["bot0", "bot1", "bot2"])
+        self.assertTrue(note.startswith("Closed the 2 tabs in the background longest, to keep at most 8 tabs open. "
+                                        "3 new tabs opened, and page tools now read the one in front: "))
 
     def test_says_which_tab_page_tools_now_read_and_that_the_one_before_is_still_open(self):
         a, b, c = FakeTabs("a", "b", "c").list()
@@ -1639,7 +1716,7 @@ class NewTabTest(unittest.TestCase):
         self.assertLess(len(note), 1000)
         self.assertIn('\\"x', note)
 
-    def run_call(self, chromium, result, note=None, opens=(), command="snapshot", reread=None):
+    def run_call(self, chromium, result, note=None, opens=(), command="snapshot", reread=None, unreachable=None):
         browser = FakeAgentBrowser()
         browser.home = self.home
         reads = []
@@ -1668,6 +1745,7 @@ class NewTabTest(unittest.TestCase):
                 patch.object(helper.PageBrowser, "act", autospec=True,
                              side_effect=lambda current, _: {**snapshot(current), "completed": 1}), \
                 patch("builtins.print") as printed:
+            use_tab.side_effect = unreachable
             args = '{"actions": [{"kind": "click", "ref": "e1"}]}' if command == "act" else "{}"
             self.assertEqual(helper.run(["rakazo-page-browser", command, args]), 0)
         return json.loads(printed.call_args.args[0]), reads, use_tab
@@ -1741,6 +1819,82 @@ class NewTabTest(unittest.TestCase):
             self.run_call(chromium, {"ok": True, "title": "Report", "tree": "", "elements": []},
                           opens=[f"p{index}" for index in range(5)])
         self.assertEqual(chromium.closed, [])
+
+    def test_a_call_that_cannot_reach_its_page_still_closes_the_tabs_beyond_eight_and_says_so(self):
+        chromium = FakeTabs("own", *(f"r{index}" for index in range(12)))
+        # The session moves to the tab in front; then the call's own move to its tab fails.
+        result, reads, _ = self.run_call(chromium, {}, unreachable=[None, RuntimeError(helper.NO_ANSWER)])
+        self.assertEqual(result, {"ok": False, "error": helper.NO_ANSWER, "fallback": "computer_act",
+                                  "uncertain": False,
+                                  "note": "Closed the 5 tabs in the background longest, to keep at most 8 tabs open."})
+        self.assertEqual(reads, [])
+        self.assertEqual((chromium.ids, chromium.closed),
+                         (["own", *(f"r{index}" for index in range(7))], [f"r{index}" for index in range(11, 6, -1)]))
+
+    def test_the_tabs_beyond_eight_stay_while_the_session_cannot_move_to_the_tab_in_front(self):
+        chromium = FakeTabs(*(f"r{index}" for index in range(10)))
+        tabs = helper.Tabs(self.home, 9222, "browser-1", Mock(side_effect=RuntimeError(helper.NO_ANSWER)))
+        with patch.object(helper, "page_tabs", chromium.list), \
+                patch.object(helper.urllib.request, "urlopen", chromium.urlopen):
+            self.assertEqual([tab["id"] for tab in tabs.trim(chromium.list())], chromium.ids)
+        self.assertEqual((chromium.closed, tabs.note([], [], "")), ([], None))
+
+    def test_a_person_holds_the_screen_while_the_supervisor_s_control_token_file_exists(self):
+        with patch.dict(os.environ, {"DISPLAY": ":3"}), patch.object(helper.os.path, "exists", return_value=True) as exists:
+            self.assertTrue(helper.person_controls_screen())
+        exists.assert_called_once_with("/tmp/rakazo/control-token-3")
+
+    def test_nothing_closes_while_a_person_holds_the_screen(self):
+        chromium = FakeTabs("own", *(f"r{index}" for index in range(12)))
+        chromium.opening = [f"p{index}" for index in range(60)]
+        with patch.object(helper, "person_controls_screen", return_value=True):
+            opened, note, flooded = self.call(chromium, "own")
+        self.assertEqual((chromium.closed, chromium.events, flooded), ([], [], False))
+        self.assertEqual(len(opened), 72)
+        self.assertNotIn("Closed", note)
+        self.assertNotIn("were closed", note)
+
+    def test_a_failed_call_keeps_the_alert_notice_beside_the_tabs_it_closed(self):
+        chromium = FakeTabs("own", *(f"r{index}" for index in range(12)))
+        browser = FakeAgentBrowser()
+        browser.home, browser.dialog = self.home, {"type": "alert", "message": "Saved"}
+        with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "9222"}), \
+                patch.object(helper, "wait_for_cdp", return_value={"webSocketDebuggerUrl": "ws://b/1"}), \
+                patch.object(helper, "page_tabs", chromium.list), \
+                patch.object(helper.urllib.request, "urlopen", chromium.urlopen), \
+                patch.object(helper, "AgentBrowser", return_value=browser), \
+                patch.object(browser, "use_tab", create=True), patch("builtins.print") as printed:
+            self.assertEqual(helper.run(["rakazo-page-browser", "snapshot", "{}"]), 0)
+        result = json.loads(printed.call_args.args[0])
+        self.assertEqual(result["note"], 'The page showed an alert, now closed: "Saved". '
+                                         "Closed the 5 tabs in the background longest, to keep at most 8 tabs open.")
+        self.assertEqual((result["ok"], chromium.closed), (True, [f"r{index}" for index in range(11, 6, -1)]))
+
+    def test_a_tab_list_that_fails_after_tabs_closed_still_lets_the_call_say_so(self):
+        chromium = FakeTabs("own", *(f"r{index}" for index in range(12)))
+        listings = iter([False, True])
+
+        def listing(_port=None):
+            if next(listings, False):
+                raise OSError("no answer")
+            return FakeTabs.list(chromium)
+
+        chromium.list = listing
+        result, _, _ = self.run_call(chromium, {"ok": True, "title": "Report", "tree": "", "elements": []})
+        self.assertEqual(chromium.closed, [f"r{index}" for index in range(11, 6, -1)])
+        self.assertTrue(result["note"].startswith("Closed the 5 tabs in the background longest, to keep at most 8 "
+                                                  "tabs open. "))
+
+    def test_a_call_that_starts_while_another_sees_to_the_screen_s_tabs_closes_nothing_and_still_names_new_tabs(self):
+        chromium = FakeTabs("a")
+        with open(Path(self.home, "tabs-9222.lock"), "w") as other_call:
+            fcntl.flock(other_call, fcntl.LOCK_EX)
+            result, _, _ = self.run_call(chromium, {"ok": True, "title": "Report", "tree": "", "elements": []},
+                                         opens=[f"p{index}" for index in range(60)])
+        self.assertEqual((len(chromium.ids), chromium.closed), (61, []))
+        self.assertTrue(result["note"].startswith('60 new tabs opened, and page tools now read the one in front: '
+                                                 '"Report p0" at https://portal.example.test/p0; the others are '))
+        self.assertNotIn("closed", result["note"])
 
     def test_a_tab_list_that_fails_leaves_the_result_as_it_is(self):
         reports = {"ok": True, "title": "Report", "tree": "", "elements": []}
