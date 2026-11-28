@@ -1,11 +1,14 @@
 import { t } from "@lingui/core/macro";
 import {
   ANDROID_APK_URL,
+  ANDROID_APP_STORE_URL,
   buildIdAt,
   CLIENT_BUILD_HEADER,
   formatClientBuild,
   IOS_APP_STORE_URL,
 } from "@rakazo/contracts";
+import { bestEffort } from "@rakazo/logging/best-effort";
+import * as Application from "expo-application";
 import * as Updates from "expo-updates";
 import type { AppStateStatus } from "react-native";
 import { Alert, AppState, Linking, Platform } from "react-native";
@@ -42,6 +45,27 @@ async function downloadUpdate(): Promise<boolean> {
   return true;
 }
 
+async function androidUpdateUrl(): Promise<string> {
+  const referrer = await bestEffort(
+    "read Play install referrer",
+    Application.getInstallReferrerAsync(),
+  );
+  // Expo exposes Play's referrer, but Android's installer package name is unavailable.
+  if (referrer?.trim() && referrer !== "null") return ANDROID_APP_STORE_URL;
+
+  return new Promise((resolve) => {
+    Alert.alert(
+      t`Update required`,
+      undefined,
+      [
+        { text: t`Google Play`, onPress: () => resolve(ANDROID_APP_STORE_URL) },
+        { text: t`Download APK`, onPress: () => resolve(ANDROID_APK_URL) },
+      ],
+      { cancelable: false },
+    );
+  });
+}
+
 /** Apply an over-the-air update now if one exists; otherwise send the user to the store. */
 export async function applyRequiredUpdate(): Promise<void> {
   try {
@@ -52,9 +76,13 @@ export async function applyRequiredUpdate(): Promise<void> {
   } catch {
     // An unreachable update server falls through to the store.
   }
-  await Linking.openURL(Platform.OS === "ios" ? IOS_APP_STORE_URL : ANDROID_APK_URL).catch(
-    () => undefined,
-  );
+  const url =
+    Platform.OS === "android"
+      ? await androidUpdateUrl()
+      : Platform.OS === "ios"
+        ? IOS_APP_STORE_URL
+        : ANDROID_APK_URL;
+  await bestEffort("open required update", Linking.openURL(url));
 }
 
 let prompting = false;

@@ -8,6 +8,7 @@ const updates = vi.hoisted(() => ({
   fetchUpdateAsync: vi.fn(async () => ({ isNew: true })),
   reloadAsync: vi.fn(async () => {}),
 }));
+const getInstallReferrerAsync = vi.hoisted(() => vi.fn<() => Promise<string>>());
 const rn = vi.hoisted(() => {
   const listeners: Array<(state: string) => void> = [];
   return {
@@ -25,11 +26,12 @@ const rn = vi.hoisted(() => {
   };
 });
 
+vi.mock("expo-application", () => ({ getInstallReferrerAsync }));
 vi.mock("expo-updates", () => updates);
 vi.mock("react-native", () => rn);
 vi.mock("./api", () => ({ configureClientBuild: vi.fn() }));
 
-import { IOS_APP_STORE_URL } from "@rakazo/contracts";
+import { ANDROID_APK_URL, ANDROID_APP_STORE_URL, IOS_APP_STORE_URL } from "@rakazo/contracts";
 import {
   clientBuildHeaders,
   FOREGROUND_UPDATE_CHECK_MS,
@@ -39,6 +41,8 @@ import {
 } from "./client-update";
 
 afterEach(() => {
+  rn.Platform.OS = "ios";
+  updates.checkForUpdateAsync.mockReset().mockResolvedValue({ isAvailable: false });
   updates.isEnabled = true;
   updates.createdAt = new Date("2026-10-22T09:30:15Z");
   vi.clearAllMocks();
@@ -66,6 +70,7 @@ describe("mobile client build", () => {
 
 describe("update required", () => {
   it("shows one alert, then applies an available update and reloads", async () => {
+    rn.Platform.OS = "android";
     updates.checkForUpdateAsync.mockResolvedValueOnce({ isAvailable: true });
     noteClientUpdateRequired();
     noteClientUpdateRequired();
@@ -76,7 +81,48 @@ describe("update required", () => {
     await flush();
     expect(updates.fetchUpdateAsync).toHaveBeenCalledOnce();
     expect(updates.reloadAsync).toHaveBeenCalledOnce();
+    expect(getInstallReferrerAsync).not.toHaveBeenCalled();
     expect(rn.Linking.openURL).not.toHaveBeenCalled();
+  });
+
+  it("opens Google Play after an Android install with a Play referrer", async () => {
+    rn.Platform.OS = "android";
+    getInstallReferrerAsync.mockResolvedValueOnce("utm_source=google-play&utm_medium=organic");
+    noteClientUpdateRequired();
+    pressUpdate();
+    await flush();
+    expect(rn.Linking.openURL).toHaveBeenCalledExactlyOnceWith(ANDROID_APP_STORE_URL);
+  });
+
+  it("lets a sideloaded user with no Play referrer download the APK", async () => {
+    rn.Platform.OS = "android";
+    getInstallReferrerAsync.mockResolvedValueOnce("");
+    noteClientUpdateRequired();
+    pressUpdate();
+    await flush();
+
+    expect(rn.Linking.openURL).not.toHaveBeenCalled();
+    const buttons = rn.Alert.alert.mock.calls.at(-1)?.[2] as Array<{
+      text: string;
+      onPress: () => void;
+    }>;
+    expect(buttons.map(({ text }) => text)).toEqual(["Google Play", "Download APK"]);
+    buttons[1]?.onPress();
+    await flush();
+    expect(rn.Linking.openURL).toHaveBeenCalledExactlyOnceWith(ANDROID_APK_URL);
+  });
+
+  it("offers Google Play when the Android referrer lookup fails", async () => {
+    rn.Platform.OS = "android";
+    getInstallReferrerAsync.mockRejectedValueOnce(new Error("Referrer unavailable"));
+    noteClientUpdateRequired();
+    pressUpdate();
+    await flush();
+    expect(rn.Alert.alert).toHaveBeenCalledTimes(2);
+    expect(rn.Linking.openURL).not.toHaveBeenCalled();
+    pressUpdate();
+    await flush();
+    expect(rn.Linking.openURL).toHaveBeenCalledExactlyOnceWith(ANDROID_APP_STORE_URL);
   });
 
   it("opens the store when no over-the-air update can fix it, and asks again next time", async () => {
