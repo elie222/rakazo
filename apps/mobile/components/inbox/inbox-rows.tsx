@@ -54,6 +54,7 @@ export function ConversationRow({
   time,
   avatar,
   unread,
+  working,
   onPress,
   onLongPress,
   actions = [],
@@ -67,6 +68,8 @@ export function ConversationRow({
   time: string;
   avatar: ReactNode;
   unread?: boolean;
+  /** A bot at work shows that instead of its last message. */
+  working?: boolean;
   onPress: () => void;
   onLongPress?: () => void;
   actions?: InboxRowAction[];
@@ -75,7 +78,7 @@ export function ConversationRow({
   accessibilityHint?: string;
 }) {
   const styles = useThemedStyles(createInboxStyles);
-  const { i18n } = useLingui();
+  const { i18n, t } = useLingui();
   const compact = useContext(CompactRowsContext);
   const openChatId = useContext(SelectedChatContext);
   const selected = chatId !== undefined && openChatId === chatId;
@@ -119,9 +122,15 @@ export function ConversationRow({
             {unread ? <View accessibilityElementsHidden style={styles.unreadDot} /> : null}
           </View>
         </View>
-        <Text style={[styles.preview, unread && styles.unreadPreview]} numberOfLines={1}>
-          {preview}
-        </Text>
+        {working ? (
+          <Text style={[styles.preview, styles.workingPreview]} numberOfLines={1}>
+            {t`Working…`}
+          </Text>
+        ) : (
+          <Text style={[styles.preview, unread && styles.unreadPreview]} numberOfLines={1}>
+            {preview}
+          </Text>
+        )}
       </View>
     </DragSafePressable>
   );
@@ -497,6 +506,7 @@ export const BotRow = memo(function BotRow({
       preview={preview}
       time={time}
       unread={bot.unread}
+      working={working}
       accessibilityLabel={label}
       accessibilityHint={
         onLongPress || onAction ? t`Long press to pin, move, or silence notifications` : undefined
