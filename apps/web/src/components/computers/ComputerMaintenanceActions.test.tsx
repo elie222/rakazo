@@ -31,7 +31,11 @@ vi.mock("../ConfirmDialog", () => ({
       </div>
     ) : null,
 }));
-const computer = vi.hoisted(() => ({ recover: vi.fn(), reset: vi.fn() }));
+const computer = vi.hoisted(() => ({
+  recover: vi.fn(),
+  reset: vi.fn(),
+  restartScreen: vi.fn(),
+}));
 vi.mock("../../lib/query/rpc", () => {
   const rpc = { computer };
   return {
@@ -127,4 +131,38 @@ it("keeps the confirmation open with the reason when the reset fails", async () 
   expect(host.querySelector<HTMLButtonElement>('[data-testid="confirm"] button')?.disabled).toBe(
     false,
   );
+});
+
+it("offers Restart screen when allowRestartScreen is enabled on a running computer", async () => {
+  computer.restartScreen.mockResolvedValueOnce(status("bot-settings"));
+  const onChanged = vi.fn(async () => {});
+  await act(() =>
+    root.render(
+      <ComputerMaintenanceActions
+        botId="bot-settings"
+        computer={status("bot-settings")}
+        allowRestartScreen
+        onChanged={onChanged}
+      />,
+    ),
+  );
+  expect(labels()).toEqual(["Restart screen", "Recover computer"]);
+  await click("Restart screen");
+  expect(computer.restartScreen).toHaveBeenCalledExactlyOnceWith({ botId: "bot-settings" });
+  expect(onChanged).toHaveBeenCalledOnce();
+});
+
+it("omits Reset computer when allowReset is false on a running non-updatable computer", async () => {
+  await act(() =>
+    root.render(
+      <ComputerMaintenanceActions
+        botId="bot-settings"
+        computer={status("bot-settings", { canUpdate: false })}
+        allowRestartScreen
+        allowReset={false}
+        onChanged={async () => {}}
+      />,
+    ),
+  );
+  expect(labels()).toEqual(["Restart screen"]);
 });

@@ -475,6 +475,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["computer/heartbeat", { botId: "missing-bot" }],
       ["computer/recover"],
       ["computer/reset"],
+      ["computer/restartScreen"],
       ["computer/update"],
       ["computer/updates"],
       ["computer/releaseInterrupted"],

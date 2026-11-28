@@ -10,17 +10,26 @@ import { ConfirmDialog } from "../ConfirmDialog";
 type Action = "recover" | "reset";
 
 /**
- * The one repair a broken computer offers: rebuild its system where the computer can be updated
- * in place, and otherwise restore its last saved workspace. Shown only beside a failure.
+ * The repair controls for a computer: optionally restart just this bot's screen without resetting
+ * a shared Team computer, and rebuild or restore the workspace beside a failure.
  */
 export function ComputerMaintenanceActions({
   botId,
   computer,
   onChanged,
+  onScreenRestarted,
+  allowRestartScreen = false,
+  allowReset = true,
 }: {
   botId: string;
   computer: ComputerStatus | null;
   onChanged: () => Promise<void>;
+  /** Optional callback after Restart screen succeeds (e.g. clear screen retry gate and reconnect). */
+  onScreenRestarted?: () => Promise<void>;
+  /** Offers a non-destructive single-bot screen restart while the computer is running. */
+  allowRestartScreen?: boolean;
+  /** Set false on a running computer so screen failures never offer destructive Reset. */
+  allowReset?: boolean;
 }) {
   const [confirming, setConfirming] = useState(false);
   const { t } = useLingui();
@@ -33,7 +42,14 @@ export function ComputerMaintenanceActions({
       await onChanged();
     },
   });
-  const pending = repair.pending;
+  const restartScreen = useSave({
+    save: async (_: undefined, rpc) => {
+      await rpc.computer.restartScreen({ botId });
+      if (onScreenRestarted) await onScreenRestarted();
+      else await onChanged();
+    },
+  });
+  const pending = repair.pending || restartScreen.pending;
 
   // The shared status can belong to another bot's open computer; acting on this bot needs its own.
   if (computer?.botId !== botId) return null;
@@ -47,20 +63,44 @@ export function ComputerMaintenanceActions({
 
   const busy = Boolean(computer.busyBotName);
   const action: Action = computer.canUpdate ? "recover" : "reset";
+  const showRestart = allowRestartScreen && computer.state === "running";
+  const showRepair = action === "recover" || allowReset;
+  if (!showRestart && !showRepair) return null;
 
   return (
     <>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={busy || pending}
-        onClick={() => {
-          repair.reset();
-          setConfirming(true);
-        }}
-      >
-        {action === "recover" ? <Trans>Recover computer</Trans> : <Trans>Reset computer</Trans>}
-      </Button>
+      {showRestart ? (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy || pending}
+          onClick={() => void restartScreen.run(undefined)}
+        >
+          {restartScreen.pending ? (
+            <Trans>Restarting screen…</Trans>
+          ) : (
+            <Trans>Restart screen</Trans>
+          )}
+        </Button>
+      ) : null}
+      {showRepair ? (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy || pending}
+          onClick={() => {
+            repair.reset();
+            setConfirming(true);
+          }}
+        >
+          {action === "recover" ? <Trans>Recover computer</Trans> : <Trans>Reset computer</Trans>}
+        </Button>
+      ) : null}
+      {restartScreen.error ? (
+        <p role="alert" className="text-body-sm text-destructive">
+          {errorText(restartScreen.error, t`Could not restart screen`)}
+        </p>
+      ) : null}
       <ConfirmDialog
         open={confirming}
         onCancel={() => setConfirming(false)}

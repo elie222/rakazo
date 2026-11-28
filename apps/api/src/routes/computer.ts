@@ -3,7 +3,9 @@ import { ORPCError } from "@orpc/server";
 import type { AgentHomeStore, SandboxProvider } from "@rakazo/adapter-kit";
 import { computerControlExpireJobKey, SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import {
+  acquireComputerExecutionLease,
   applyTeachingDesktopInput,
+  ComputerBusyError,
   ComputerScreenUnavailableError,
   checkpointAndStopComputer,
   computerUpdateView,
@@ -299,6 +301,61 @@ export function computerRoutes(ctx: RouterContext) {
           action: "reset",
         });
         return status;
+      }),
+      restartScreen: authed.computer.restartScreen.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        const computer = bot.computer;
+        if (!computer) throw new IsolationError();
+        assertNotAnotherPersonsControl(computer, context.actor);
+        if (computer.state !== "running" || !computer.providerRef) {
+          throw new ClientError("CONFLICT", "Start the computer first.");
+        }
+        const manualRunId = `restart-screen:${randomUUID()}`;
+        const lease = await acquireComputerExecutionLease(deps.prisma, {
+          computerId: computer.id,
+          runId: manualRunId,
+          botId: bot.id,
+        });
+        try {
+          if (computer.scope !== "team") {
+            const activeRun = await deps.prisma.run.findFirst({
+              where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
+              select: { id: true },
+            });
+            if (activeRun) throw new ComputerBusyError();
+          }
+          // Re-read control ownership under the lease before releasing the screen so a concurrent
+          // takeover by another Space member is never cut off, and only release the caller's own
+          // control once the restart is guaranteed to proceed.
+          const latest = await deps.prisma.computer.findUnique({
+            where: { id: computer.id },
+          });
+          const current = latest ?? computer;
+          assertNotAnotherPersonsControl(current, context.actor);
+          if (holdsComputerControl(current, bot.id, context.actor)) {
+            await releaseComputerControl(deps, context.actor, current, bot.id, "released");
+          }
+          if (deps.sandbox.releaseScreen) {
+            try {
+              // Omit screenLeaseId so lease-aware providers retire an earlier run's stuck screen
+              // now that this manual restart holds the bot's execution lease.
+              await deps.sandbox.releaseScreen(await wakeableComputerRef(deps.prisma, current), {
+                ...computerContext(context.actor, bot.id, "restart-screen"),
+                keepScreenWarm: false,
+              });
+            } catch (error) {
+              await clearGoneSandbox(deps, current, error);
+            }
+          }
+          await deps.prisma.bot.update({
+            where: { id: bot.id },
+            data: { screenGeneration: { increment: 1 } },
+          });
+          scheduleComputerSleep(deps.jobs, computer.id);
+        } finally {
+          await releaseComputerExecutionLease(deps.prisma, lease);
+        }
+        return computerStatus(deps, context.actor, input.botId);
       }),
       update: authed.computer.update.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
