@@ -163,15 +163,21 @@ export function paymentWalletConnectedEvent(actor: {
   };
 }
 
-/** The event for a procedure that just succeeded, or undefined when it is not audited. */
+/**
+ * The event for a procedure that just succeeded, or undefined when it is not audited.
+ * A success whose output says nothing was removed is not a deletion, so it records nothing.
+ * Procedures that do not report `removed` keep the event they record today.
+ */
 export function procedureSecurityEvent(
   path: readonly string[],
   input: unknown,
   actor: { userId: string; spaceId: string },
+  output?: unknown,
 ): SecurityEventInput | undefined {
   const procedure = path.join(".");
   const audited = AUDITED_PROCEDURES[procedure];
   if (!audited) return undefined;
+  if (isRecord(output) && output.removed === false) return undefined;
   const fields = isRecord(input) ? input : {};
   const metadata: NonNullable<SecurityEventInput["metadata"]> = { procedure };
   if (audited.kind) metadata.kind = audited.kind;

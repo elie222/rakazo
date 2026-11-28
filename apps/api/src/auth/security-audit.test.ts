@@ -88,6 +88,81 @@ describe("procedureSecurityEvent", () => {
   it("ignores procedures that change nothing security-relevant", () => {
     expect(procedureSecurityEvent(["threads", "send"], { text: "hello" }, actor)).toBeUndefined();
   });
+
+  it("records a removal only when the output says something was removed", () => {
+    const vaultInput = { scope: "account", name: "portal" };
+    const botInput = { botId: "bot-1", name: "portal" };
+    expect(
+      procedureSecurityEvent(["vault", "remove"], vaultInput, actor, {
+        ok: true,
+        removed: false,
+      }),
+    ).toBeUndefined();
+    expect(
+      procedureSecurityEvent(["botSecrets", "remove"], botInput, actor, {
+        ok: true,
+        removed: false,
+      }),
+    ).toBeUndefined();
+    expect(
+      procedureSecurityEvent(["vault", "remove"], vaultInput, actor, { ok: true, removed: true }),
+    ).toEqual({
+      type: "credential.deleted",
+      userId: "user-1",
+      spaceId: "space-1",
+      metadata: {
+        procedure: "vault.remove",
+        kind: "vault_credential",
+        scope: "account",
+        name: "portal",
+      },
+    });
+    expect(
+      procedureSecurityEvent(["botSecrets", "remove"], botInput, actor, {
+        ok: true,
+        removed: true,
+      }),
+    ).toEqual({
+      type: "credential.deleted",
+      userId: "user-1",
+      spaceId: "space-1",
+      metadata: {
+        procedure: "botSecrets.remove",
+        kind: "bot_secret",
+        botId: "bot-1",
+        name: "portal",
+      },
+    });
+    // No `removed` key: the event is the one recorded before this rule existed.
+    expect(
+      procedureSecurityEvent(["models", "disconnect"], { provider: "openai" }, actor, {
+        ok: true,
+      }),
+    ).toEqual({
+      type: "credential.deleted",
+      userId: "user-1",
+      spaceId: "space-1",
+      metadata: { procedure: "models.disconnect", kind: "model", provider: "openai" },
+    });
+    expect(
+      procedureSecurityEvent(
+        ["vault", "put"],
+        { scope: "space", destination: { name: "portal" } },
+        actor,
+        { name: "portal" },
+      ),
+    ).toEqual({
+      type: "credential.changed",
+      userId: "user-1",
+      spaceId: "space-1",
+      metadata: {
+        procedure: "vault.put",
+        kind: "vault_credential",
+        scope: "space",
+        name: "portal",
+      },
+    });
+  });
 });
 
 describe("createAuthResponseAudit", () => {

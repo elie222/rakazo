@@ -629,7 +629,7 @@ export function createRouterContext(deps: RouterDeps) {
 
   const authed = os.use(signedIn).use(async ({ context, next, path }, input) => {
     const result = await next();
-    const event = procedureSecurityEvent(path, input, context.actor);
+    const event = procedureSecurityEvent(path, input, context.actor, result.output);
     if (event) await recordSecurityEvent(event);
     const rosterChange = rosterChangeFor(path, context.actor, input, result.output);
     if (rosterChange) void deps.events?.publishRosterChange?.(rosterChange);

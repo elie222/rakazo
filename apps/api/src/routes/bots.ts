@@ -841,8 +841,12 @@ export function botsRoutes(ctx: RouterContext) {
         return uses;
       }),
       remove: authed.vault.remove.handler(async ({ context, input }) => {
-        await forgetBotSecret(deps.prisma, vaultScope(context.actor, input.scope), input.name);
-        return { ok: true as const };
+        const { removed } = await forgetBotSecret(
+          deps.prisma,
+          vaultScope(context.actor, input.scope),
+          input.name,
+        );
+        return { ok: true as const, removed };
       }),
     },
     botSecrets: {
@@ -857,8 +861,12 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       remove: authed.botSecrets.remove.handler(async ({ context, input }) => {
         await repos.getBot(context.actor, input.botId);
-        await forgetBotSecret(deps.prisma, vaultScope(context.actor), input.name);
-        return { ok: true as const };
+        const { removed } = await forgetBotSecret(
+          deps.prisma,
+          vaultScope(context.actor),
+          input.name,
+        );
+        return { ok: true as const, removed };
       }),
     },
   };

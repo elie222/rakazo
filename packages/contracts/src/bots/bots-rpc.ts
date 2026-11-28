@@ -213,7 +213,7 @@ export const botsRpc = {
       .output(z.array(VaultUse).max(VAULT_ACTIVITY_LIMIT)),
     remove: oc
       .input(settingsScopeInput.extend({ name: StoredBotSecretName }))
-      .output(z.object({ ok: z.literal(true) })),
+      .output(z.object({ ok: z.literal(true), removed: z.boolean() })),
   },
   /** The vault this Space uses, for apps that predate it. The bot only checks access. */
   botSecrets: {
@@ -221,6 +221,6 @@ export const botsRpc = {
     put: oc.input(BotSecretPutInput).output(BotSecretMetadata),
     remove: oc
       .input(z.object({ botId: Id, name: StoredBotSecretName }))
-      .output(z.object({ ok: z.literal(true) })),
+      .output(z.object({ ok: z.literal(true), removed: z.boolean() })),
   },
 };
