@@ -22,7 +22,7 @@ async function adminComputers(route: Route) {
   await route.fulfill({ response, json: body });
 }
 
-test("an admin selects a computer provider and sees its fields", async ({ page }, testInfo) => {
+test("an admin retries computer settings and selects a provider", async ({ page }, testInfo) => {
   await signup(
     page,
     `computer-settings-${randomUUID()}@rakazo.test`,
@@ -32,8 +32,22 @@ test("an admin selects a computer provider and sees its fields", async ({ page }
   await completeOnboarding(page);
   await page.route("**/rpc/me", adminComputers);
   await page.route("**/rpc/bootstrap", adminComputers);
-  await page.route(/\/rpc\/computerProvider\/get(\?|$)/, (route) =>
-    route.fulfill({
+  let settingsUnavailable = true;
+  await page.route(/\/rpc\/computerProvider\/get(\?|$)/, (route) => {
+    if (settingsUnavailable) {
+      return route.fulfill({
+        status: 500,
+        json: {
+          json: {
+            defined: false,
+            code: "INTERNAL_SERVER_ERROR",
+            status: 500,
+            message: "INTERNAL_SERVER_ERROR",
+          },
+        },
+      });
+    }
+    return route.fulfill({
       json: {
         json: {
           provider: "default",
@@ -43,11 +57,22 @@ test("an admin selects a computer provider and sees its fields", async ({ page }
           savedSecrets: {},
         },
       },
-    }),
-  );
+    });
+  });
   await page.reload();
   const settings = await openUserSettings(page, "computer");
-  const form = settings.getByTestId("computer-provider-settings");
+  const setup = settings.getByTestId("computers-setup-settings");
+  const loadError = setup.getByRole("alert").filter({
+    hasText: "Could not load computer settings",
+  });
+  await expect(loadError).toHaveText("Could not load computer settings");
+  const retry = setup.getByRole("button", { name: "Retry", exact: true });
+  await expect(retry).toBeEnabled();
+  await captureScreenshot(page, testInfo, "computer-provider-settings-retry");
+  settingsUnavailable = false;
+  await retry.click();
+  await expect(loadError).toHaveCount(0);
+  const form = setup.getByTestId("computer-provider-settings");
   await chooseOption(form.getByLabel("New computers run on"), "Test desktop");
   await form.getByLabel("Desktop ID").fill("ecd-example");
   await form.getByLabel("End user ID").fill("example-user");

@@ -96,6 +96,44 @@ afterEach(async () => {
   host.remove();
 });
 
+it.each(["deployment", "account"] as const)(
+  "lets the %s settings retry a failed load until the form opens",
+  async (scope) => {
+    const get = scope === "deployment" ? deployment.get : account.get;
+    const failedRead = { code: "INTERNAL_SERVER_ERROR" };
+    const retry = deferred<typeof saved>();
+    get.mockRejectedValue(failedRead);
+    const retryButton = () =>
+      [...host.querySelectorAll("button")].find((button) => button.textContent === "Retry");
+    const alert = () => host.querySelector('[role="alert"]');
+
+    await act(async () => root.render(settings({ scope })));
+    expect(alert()?.textContent).toBe("Could not load computer settings");
+    expect(get).toHaveBeenCalledOnce();
+    expect(retryButton()?.disabled).toBe(false);
+
+    get.mockReturnValue(retry.promise);
+    await act(async () => retryButton()?.click());
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(retryButton()?.disabled).toBe(true);
+    await act(async () => retryButton()?.click());
+    expect(get).toHaveBeenCalledTimes(2);
+
+    await act(async () => retry.reject(failedRead));
+    expect(alert()?.textContent).toBe("Could not load computer settings");
+    expect(retryButton()?.disabled).toBe(false);
+    get.mockResolvedValue(saved);
+    await act(async () => retryButton()?.click());
+
+    expect(get).toHaveBeenCalledTimes(3);
+    expect(alert()).toBeNull();
+    expect(retryButton()).toBeUndefined();
+    expect(host.querySelector<HTMLInputElement>("input:not([aria-hidden])")?.value).toBe(
+      "example-desktop",
+    );
+  },
+);
+
 it("saves an account's own desktop to the account, never the deployment", async () => {
   account.get.mockResolvedValue(saved);
   account.update.mockResolvedValue(saved);
