@@ -6,6 +6,7 @@ export const CODEX_PROTOCOL_VERSION = "0.162.1";
 /**
  * Private app-server boundary. A future transport must bound JSON frames, correlate RPC
  * replies, reject RPC errors, and interrupt pending reads/requests on signal abortion.
+ * Notifications interleaved with RPC replies must remain available to messages() in wire order.
  * close() must terminate the whole process tree, even when iteration stops early.
  * This interface does not confer isolation and is deliberately not registered as a runtime.
  */
@@ -109,17 +110,32 @@ export async function* runCodexTextProtocol(
         throw new Error("App-server requested an unsupported operation.");
       }
       const p = object(message.params);
+      // ThreadStartedNotification carries its identity only in the nested Thread.
+      if (method === "thread/started") {
+        if (
+          object(p.thread).id !== threadId ||
+          (p.threadId !== undefined && p.threadId !== threadId) ||
+          (p.turnId !== undefined && p.turnId !== turnId)
+        ) {
+          throw new Error("App-server run identity mismatch.");
+        }
+        continue;
+      }
       if (p.threadId !== threadId || (p.turnId !== undefined && p.turnId !== turnId)) {
         throw new Error("App-server run identity mismatch.");
       }
-      if (method === "item/agentMessage/delta") {
-        if (p.turnId !== turnId || typeof p.delta !== "string")
-          throw new Error("Invalid text delta.");
+      // Turn lifecycle notifications nest the turn; item and usage updates put its ID up top.
+      if (method === "turn/started") {
+        if (object(p.turn).id !== turnId) throw new Error("App-server run identity mismatch.");
+      } else if (method === "item/agentMessage/delta") {
+        if (p.turnId !== turnId) throw new Error("App-server run identity mismatch.");
+        if (typeof p.delta !== "string") throw new Error("Invalid text delta.");
         text += p.delta;
         if (text.length > 1_000_000) throw new Error("App-server text limit exceeded.");
         streamed = true;
         yield { type: "text", text: p.delta };
       } else if (method === "item/started" || method === "item/completed") {
+        if (p.turnId !== turnId) throw new Error("App-server run identity mismatch.");
         const item = object(p.item);
         if (!["userMessage", "agentMessage", "reasoning"].includes(String(item.type))) {
           throw new Error("App-server surfaced an unsupported item.");
@@ -130,6 +146,7 @@ export async function* runCodexTextProtocol(
           if (finalText.length > 1_000_000) throw new Error("App-server text limit exceeded.");
         }
       } else if (method === "thread/tokenUsage/updated") {
+        if (p.turnId !== turnId) throw new Error("App-server run identity mismatch.");
         const total = object(object(p.tokenUsage).total);
         const inputTokens = count(total.inputTokens);
         const cacheReadTokens = count(total.cachedInputTokens);
@@ -170,7 +187,7 @@ export async function* runCodexTextProtocol(
         };
         yield { type: "done", text };
         return;
-      } else if (method !== "turn/started" && method !== "thread/started") {
+      } else {
         // Unknown protocol features fail closed rather than being silently ignored.
         throw new Error("Unsupported app-server notification.");
       }

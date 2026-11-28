@@ -7,7 +7,15 @@ const frame = (method: string, params: Record<string, unknown> = {}) => ({
   method,
   params: { threadId: "thread", turnId: "turn", ...params },
 });
-const done = frame("turn/completed", { turn: { id: "turn", status: "completed" } });
+const threadStarted = { method: "thread/started", params: { thread: { id: "thread" } } };
+const turnStarted = {
+  method: "turn/started",
+  params: { threadId: "thread", turn: { id: "turn", status: "inProgress" } },
+};
+const done = {
+  method: "turn/completed",
+  params: { threadId: "thread", turn: { id: "turn", status: "completed" } },
+};
 function fixture(frames: unknown[] = [done]) {
   const channel: CodexProtocolChannel = {
     request: vi.fn(async (method) => {
@@ -43,7 +51,14 @@ describe("unregistered text-only app-server protocol", () => {
         },
       },
     });
-    const f = fixture([frame("item/agentMessage/delta", { delta: "Hello" }), usage, usage, done]);
+    const f = fixture([
+      threadStarted,
+      turnStarted,
+      frame("item/agentMessage/delta", { delta: "Hello" }),
+      usage,
+      usage,
+      done,
+    ]);
     expect(await f.events()).toEqual([
       { type: "text", text: "Hello" },
       expect.objectContaining({
@@ -98,6 +113,20 @@ describe("unregistered text-only app-server protocol", () => {
   it("refuses cross-run output", async () => {
     const f = fixture([frame("item/agentMessage/delta", { threadId: "other", delta: "private" })]);
     await expect(f.events()).rejects.toThrow("identity mismatch");
+  });
+  it.each([
+    { method: "thread/started", params: { threadId: "thread", thread: { id: "other" } } },
+    { method: "thread/started", params: { threadId: "other", thread: { id: "thread" } } },
+    { method: "turn/started", params: { threadId: "thread", turn: { id: "other" } } },
+    {
+      method: "item/completed",
+      params: { threadId: "thread", item: { type: "agentMessage", text: "private" } },
+    },
+    { method: "thread/tokenUsage/updated", params: { threadId: "thread" } },
+  ])("refuses a missing or conflicting run identity on $method", async (invalid) => {
+    const f = fixture([invalid, done]);
+    await expect(f.events()).rejects.toThrow("identity mismatch");
+    expect(f.channel.close).toHaveBeenCalledOnce();
   });
   it("requires a successful explicit terminal, not EOF", async () => {
     await expect(fixture([]).events()).rejects.toThrow("explicit terminal");
