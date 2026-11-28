@@ -66,7 +66,7 @@ fi
 # Chromium's file chooser talks to xdg-desktop-portal over the session bus.
 # Without a running portal backend, the select-file dialog opens but the
 # chosen file never reaches the page — uploads silently do nothing. The
-# daemons install as flat files in /usr/libexec on Debian bookworm.
+# daemons install as flat files in /usr/libexec on Debian trixie.
 if [ -x /usr/libexec/xdg-desktop-portal ] && [ -x /usr/libexec/xdg-desktop-portal-gtk ]; then
   /usr/libexec/xdg-desktop-portal >/tmp/rakazo/portal.log 2>&1 &
   /usr/libexec/xdg-desktop-portal-gtk >/tmp/rakazo/portal-gtk.log 2>&1 &

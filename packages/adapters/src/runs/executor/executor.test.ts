@@ -1959,14 +1959,14 @@ describe("dockerComputerToolInstruction", () => {
       undefined,
       new Set(["browser_navigate", "browser_snapshot"]),
     );
-    expect(noShellAtSelection).not.toContain("Debian bookworm");
+    expect(noShellAtSelection).not.toContain("Debian trixie");
     expect(noShellAtSelection).not.toContain("`python3`");
     const shellOffered = dockerComputerToolInstruction(
       "docker",
       undefined,
       new Set(["shell", "browser_navigate", "browser_snapshot"]),
     );
-    expect(shellOffered).toContain("Debian bookworm");
+    expect(shellOffered).toContain("Debian trixie");
   });
 
   it("keeps runs without shell byte-identical to the pre-map instruction", () => {
