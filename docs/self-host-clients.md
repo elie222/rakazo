@@ -38,22 +38,34 @@ reverse proxy is the safer option.
 ## Connecting a phone over Tailscale
 
 Tailscale can put the published-images or Compose stack behind HTTPS with a certificate phones
-trust, without opening any port. Turn on MagicDNS and HTTPS certificates for your tailnet in the
-Tailscale admin console, then on the server run:
+trust, without opening any port. Only devices on your tailnet can reach it. Turn on MagicDNS and
+HTTPS certificates for your tailnet in the Tailscale admin console, create an auth key, and add
+to `.env` (or the Docker panel's environment variables):
 
 ```bash
-tailscale serve --bg 5173
+COMPOSE_PROFILES=tailscale
+TAILSCALE_AUTH_KEY=tskey-auth-...
+TAILSCALE_HOSTNAME=rakazo
+WEB_ORIGIN=https://rakazo.<tailnet>.ts.net
+BETTER_AUTH_URL=https://rakazo.<tailnet>.ts.net
+API_URL=https://rakazo.<tailnet>.ts.net
+RAKAZO_HOST=rakazo.<tailnet>.ts.net
 ```
 
-This serves `https://<machine>.<tailnet>.ts.net` to tailnet devices and proxies it to the web port
-on loopback, so leave `RAKAZO_WEB_BIND` at `127.0.0.1`. Use your `RAKAZO_WEB_PORT` instead of
-`5173` if you changed it. In `.env`, set `WEB_ORIGIN`, `BETTER_AUTH_URL` and `API_URL` to
-`https://<machine>.<tailnet>.ts.net`, and set `RAKAZO_HOST` to `<machine>.<tailnet>.ts.net` (or add
-it to `RAKAZO_ALLOWED_HOSTS` if `RAKAZO_HOST` is already another name). Recreate the services with
-`docker compose up -d`, using the same Compose file and env-file options as your install.
+`<tailnet>` is your tailnet's DNS name (for example `tail1234`), and the first label is
+`TAILSCALE_HOSTNAME`. If you already use a profile, list both:
+`COMPOSE_PROFILES=updater,tailscale`. If `RAKAZO_HOST` is already another name, add the tailnet name
+to `RAKAZO_ALLOWED_HOSTS` instead. Recreate the services with `docker compose up -d`, using the same
+Compose file and env-file options as your install. The `tailscale` service joins your tailnet as
+its own device and serves the web app there; leave `RAKAZO_WEB_BIND` at `127.0.0.1`. The first
+HTTPS request can take a few seconds while the certificate is issued.
 
-On the phone, turn on Tailscale, tap **Use a custom server** and enter
-`https://<machine>.<tailnet>.ts.net`, with no port or path.
+On the phone, turn on Tailscale, tap **Use a custom server** and enter your `WEB_ORIGIN`, with no
+port or path.
+
+If Tailscale already runs on the host, `tailscale serve --bg 5173` does the same without the
+profile; use the host's name (`<machine>.<tailnet>.ts.net`) in the settings above, and your
+`RAKAZO_WEB_PORT` instead of `5173` if you changed it.
 
 To terminate TLS in your own reverse proxy instead, `tailscale cert <machine>.<tailnet>.ts.net`
 writes a certificate and key for that name. If browsers or the desktop app also use another

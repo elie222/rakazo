@@ -717,6 +717,32 @@ services:
       api:
         condition: service_healthy
 
+  # Opt-in (COMPOSE_PROFILES=tailscale): a tailnet node that serves the web app over HTTPS to
+  # tailnet devices only, at https://<TAILSCALE_HOSTNAME>.<tailnet>.ts.net (docs/self-host-clients.md).
+  tailscale:
+    image: ${TAILSCALE_IMAGE:-tailscale/tailscale:v1.94.2@sha256:95e528798bebe75f39b10e74e7051cf51188ee615934f232ba7ad06a3390ffa1}
+    profiles: [tailscale]
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      TS_AUTHKEY: ${TAILSCALE_AUTH_KEY:-}
+      TS_HOSTNAME: ${TAILSCALE_HOSTNAME:-rakazo}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "true"
+      TS_SERVE_CONFIG: /tmp/serve.json
+      RAKAZO_SERVE_CONFIG: '{"TCP": {"443": {"HTTPS": true}}, "Web": {"$${TS_CERT_DOMAIN}:443": {"Handlers": {"/": {"Proxy": "http://web:5173"}}}}}'
+    entrypoint:
+      - /bin/sh
+      - -c
+      - printf "%s" "$$RAKAZO_SERVE_CONFIG" > /tmp/serve.json && exec /usr/local/bin/containerboot
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+    networks:
+      - app
+    depends_on:
+      - web
+
   # Opt-in only: this process has root-equivalent Docker access, never a published port.
   updater:
     profiles: [updater]
@@ -763,6 +789,7 @@ services:
 volumes:
   ingress:
   tailscale-ingress-state:
+  tailscale-state:
   pgdata:
   appdata:
   webassets:
