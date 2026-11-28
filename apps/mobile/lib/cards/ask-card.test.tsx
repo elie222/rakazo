@@ -560,28 +560,23 @@ it("stretches the secret field and enables Save only with input", async () => {
   expect(button("Save").disabled).toBe(false);
 });
 
-it("fills the message column only for secret asks, including answered and login asks", async () => {
-  const isWideAskBlock = (blocks: unknown[]) =>
-    messageRowLayout(blocks as MobileMessage["blocks"], { inGroup: false, columnWidth: 400 })
-      .menuFullWidth;
+it("gives every ask, answered or not, the same card width as the other cards", async () => {
+  const row = (blocks: unknown[]) =>
+    messageRowLayout(blocks as MobileMessage["blocks"], { inGroup: false, columnWidth: 400 });
   for (const status of ["pending", "answered"]) {
-    for (const ask of [{ input: "secret" }, loginAsk]) {
-      expect(isWideAskBlock([{ kind: "ask", ...ask, status }])).toBe(true);
+    for (const ask of [{ input: "secret" }, loginAsk, {}, { approvalEffectId: "approval" }]) {
+      const layout = row([{ kind: "ask", ...ask, status }]);
+      expect(layout.menuFullWidth).toBe(true);
+      expect(layout.width).toBe("90%");
       await render({ ...ask, status });
       expect((container.firstElementChild as HTMLElement).style.width).toBe("100%");
     }
   }
-  expect(isWideAskBlock([{ kind: "ask" }])).toBe(false);
-  expect(isWideAskBlock([{ kind: "ask", input: "secret", approvalEffectId: "approval" }])).toBe(
-    false,
-  );
-  await render({});
-  expect((container.firstElementChild as HTMLElement).style.width).toBe("90%");
 });
 
-it("uses the full column for wide asks and reserves only the visible avatar gutter", () => {
+it("sizes every card alike and reserves only the visible avatar gutter", () => {
   const blocks = {
-    wide: [{ kind: "ask", text: "Secret", input: "secret", status: "pending" }],
+    secret: [{ kind: "ask", text: "Secret", input: "secret", status: "pending" }],
     regular: [{ kind: "text", text: "Hello" }],
     appConnect: [
       {
@@ -603,6 +598,19 @@ it("uses the full column for wide asks and reserves only the visible avatar gutt
         actions: [{ id: "choice-1", label: "A longer option than the question" }],
       },
     ],
+    approval: [
+      {
+        kind: "ask",
+        text: "Allow?",
+        status: "pending",
+        approvalEffectId: "approval-1",
+        actions: [
+          { id: "allow", label: "Allow" },
+          { id: "deny", label: "Deny" },
+        ],
+      },
+    ],
+    answered: [{ kind: "ask", text: "Can I open it?", status: "answered", answer: "Allow" }],
   };
   const measure = (kind: keyof typeof blocks, avatar: boolean, inGroup: boolean) =>
     messageRowLayout(blocks[kind] as MobileMessage["blocks"], {
@@ -615,36 +623,29 @@ it("uses the full column for wide asks and reserves only the visible avatar gutt
     [true, false, 36],
     [true, true, 28],
   ] as const) {
-    const wide = measure("wide", avatar, inGroup);
-    expect(wide.width).toBe("100%");
-    expect(wide.maxWidth).toBe("100%");
-    expect(wide.menuMaxWidth).toBe(400 - 40 - gutter);
     const regular = measure("regular", avatar, inGroup);
     expect(regular.width).toBeUndefined();
     expect(regular.maxWidth).toBe(avatar ? undefined : "90%");
     expect(regular.menuMaxWidth).toBe(avatar ? 360 - gutter : 324);
+    expect(regular.menuFullWidth).toBe(false);
+    const secret = measure("secret", avatar, inGroup);
+    expect(secret.width).toBe(avatar ? undefined : "90%");
+    expect(secret.menuMaxWidth).toBe(avatar ? 360 - gutter : 324);
   }
-  for (const kind of ["appConnect", "mcpApproval", "options", "page"] as const) {
+  for (const kind of [
+    "secret",
+    "appConnect",
+    "mcpApproval",
+    "options",
+    "page",
+    "approval",
+    "answered",
+  ] as const) {
     const card = measure(kind, false, false);
     expect(card.width).toBe("90%");
     expect(card.maxWidth).toBe("90%");
     expect(card.menuMaxWidth).toBe(324);
     expect(card.menuFullWidth).toBe(true);
-  }
-  const allow = [
-    { id: "allow", label: "Allow" },
-    { id: "deny", label: "Deny" },
-  ];
-  for (const ask of [
-    { approvalEffectId: "approval-1" },
-    { instructionUpdate: { botId: "bot-1", before: "", after: "Be brief", reason: "" } },
-  ]) {
-    const layout = messageRowLayout(
-      [{ kind: "ask", text: "Allow?", status: "pending", actions: allow, ...ask }],
-      { inGroup: false, columnWidth: 400 },
-    );
-    expect(layout.menuFullWidth).toBe(false);
-    expect(layout.width).toBeUndefined();
   }
 });
 
@@ -707,7 +708,7 @@ it("stacks option rows in a non-wrapping full-width column and keeps approvals i
 });
 
 it.each([undefined, "pending", "answered"] as const)(
-  "only widens option questions while their buttons are displayed (status: %s)",
+  "keeps an option question at card width once answered, so it never re-wraps (status: %s)",
   (status) => {
     const layout = messageRowLayout(
       [
@@ -720,8 +721,8 @@ it.each([undefined, "pending", "answered"] as const)(
       ],
       { inGroup: false, columnWidth: 400 },
     );
-    expect(layout.width).toBe(status === "answered" ? undefined : "90%");
-    expect(layout.menuFullWidth).toBe(status !== "answered");
+    expect(layout.width).toBe("90%");
+    expect(layout.menuFullWidth).toBe(true);
   },
 );
 

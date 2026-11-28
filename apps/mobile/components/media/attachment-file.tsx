@@ -3,10 +3,12 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { artifactPreviewKind } from "@rakazo/contracts";
 import { formatFileSize } from "@rakazo/core";
 import type { ComponentProps } from "react";
-import { Alert, Pressable, Text } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { errorText } from "../../lib/api/user-error";
+import { withAlpha } from "../../lib/appearance/ripple";
 import type { MobileArtifactTarget } from "../../lib/artifacts/artifact-open";
 import { openMobileArtifact } from "../../lib/artifacts/artifact-open";
+import { NativeSymbol } from "../native/native-symbol";
 
 type FileBlock = Extract<MessageBlock, { kind: "file" }>;
 
@@ -39,11 +41,30 @@ export function AttachmentFile({
     );
   };
   return (
-    <Pressable {...pressableProps} onPress={open}>
-      <Text style={{ color, fontSize: 15 }}>📎 {name}</Text>
-      {size ? (
-        <Text style={{ color: secondaryColor, marginTop: 4, fontSize: 13 }}>{size}</Text>
-      ) : null}
+    <Pressable {...pressableProps} onPress={open} style={styles.row}>
+      <View style={{ ...styles.tile, backgroundColor: withAlpha(secondaryColor, 0.14) }}>
+        <NativeSymbol ios="doc.text" android="document-text-outline" size={18} color={color} />
+      </View>
+      <View style={styles.body}>
+        {/* The whole name wraps, so files with long, similar names stay tellable apart. */}
+        <Text style={{ ...styles.name, color }}>{name}</Text>
+        {size ? <Text style={{ ...styles.size, color: secondaryColor }}>{size}</Text> : null}
+      </View>
     </Pressable>
   );
 }
+
+const styles = StyleSheet.create({
+  row: { flexDirection: "row", alignItems: "center", gap: 10 },
+  tile: {
+    width: 36,
+    height: 36,
+    borderRadius: 9,
+    borderCurve: "continuous",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  body: { flexShrink: 1, gap: 2 },
+  name: { fontSize: 15 },
+  size: { fontSize: 13 },
+});
