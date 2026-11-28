@@ -7,6 +7,7 @@ import {
   BLOCKED_ITEM_ANSWER,
   UNCHOSEN_ITEM_ANSWER,
 } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -84,6 +85,7 @@ async function render(
     remember?: false,
   ) => Promise<void> = async () => undefined,
   answerIsSeparate?: boolean,
+  onTypeAnswer?: (text: string, clientNonce: string) => Promise<void>,
 ) {
   await act(async () =>
     root.render(
@@ -93,6 +95,7 @@ async function render(
         canAnswer
         canDismiss
         onAnswer={onAnswer}
+        onTypeAnswer={onTypeAnswer}
         onDismiss={onDismiss}
       />,
     ),
@@ -442,6 +445,20 @@ it("opens the agent import from a first bot's opening question instead of answer
   expect(button("AParis")).toBeDefined();
 });
 
+it("shows a legacy import card's stored action id as that action's label", async () => {
+  await render({
+    kind: "ask",
+    text: "Where should we start?",
+    status: "answered",
+    answer: AGENT_IMPORT_ASK_ACTION_ID,
+    actions: [{ id: AGENT_IMPORT_ASK_ACTION_ID, label: "Move from another assistant" }],
+  });
+  expect(container.querySelector('[data-testid="ask-answer"]')?.textContent).toBe(
+    "Move from another assistant",
+  );
+  expect(container.textContent).not.toContain(AGENT_IMPORT_ASK_ACTION_ID);
+});
+
 it("announces an answered question's state and marks only the chosen option", async () => {
   await render({
     kind: "ask",
@@ -486,6 +503,148 @@ it("leaves an unanswered question's options as plain actions", async () => {
   });
   expect(container.querySelector("[aria-pressed]")).toBeNull();
   expect(container.querySelector(".sr-only")).toBeNull();
+});
+
+it("sends a typed answer from an option card through onTypeAnswer and keeps option taps on onAnswer", async () => {
+  const block: AskBlock = {
+    kind: "ask",
+    text: "Which city?",
+    status: "pending",
+    actions: [
+      { id: "paris", label: "Paris" },
+      { id: "london", label: "London" },
+    ],
+  };
+  const onAnswer = vi.fn(async () => undefined);
+  const onTypeAnswer = vi.fn(async () => undefined);
+  await render(block, undefined, onAnswer, undefined, onTypeAnswer);
+
+  await act(async () => button("Type your answer")!.click());
+  expect(button("Send answer")!.disabled).toBe(true);
+  await type("Answer", "   ");
+  expect(button("Send answer")!.disabled).toBe(true);
+  await type("Answer", "  Reykjavik instead  ");
+  expect(button("Send answer")!.disabled).toBe(false);
+  await act(async () => button("Send answer")!.click());
+
+  expect(onTypeAnswer).toHaveBeenCalledExactlyOnceWith("Reykjavik instead", expect.any(String));
+  expect(onAnswer).not.toHaveBeenCalled();
+  // The card keeps its options, dimmed and unselected, like a typed chat reply does.
+  expect(button("AParis")!.disabled).toBe(true);
+  expect(button("AParis")!.getAttribute("aria-pressed")).toBe("false");
+  expect(button("BLondon")!.disabled).toBe(true);
+  expect(button("Type your answer")).toBeUndefined();
+  expect(container.querySelector('input[aria-label="Answer"]')).toBeNull();
+});
+
+it("deduplicates batched typed submits and reuses the clientNonce on retry while keeping the draft on refusal", async () => {
+  const block: AskBlock = {
+    kind: "ask",
+    text: "Which city?",
+    status: "pending",
+    actions: [
+      { id: "paris", label: "Paris" },
+      { id: "london", label: "London" },
+    ],
+  };
+  const firstRequest = deferred<void>();
+  const onTypeAnswer = vi
+    .fn<(text: string, clientNonce: string) => Promise<void>>()
+    .mockImplementationOnce(() => firstRequest.promise)
+    .mockResolvedValueOnce(undefined);
+  await render(block, undefined, async () => undefined, undefined, onTypeAnswer);
+
+  await act(async () => button("Type your answer")!.click());
+  await type("Answer", "Reykjavik instead");
+  const form = container.querySelector("form")!;
+  // Two synchronous submits in the same tick must dispatch only once.
+  await act(async () => {
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    button("Send answer")!.click();
+  });
+  expect(onTypeAnswer).toHaveBeenCalledTimes(1);
+  const firstNonce = onTypeAnswer.mock.calls[0]![1];
+
+  await act(async () => {
+    firstRequest.reject({
+      code: "QUESTION_ALREADY_ANSWERED",
+      message: "This question was already answered",
+    });
+  });
+  expect(container.textContent).toContain("This question was already answered");
+  expect(container.querySelector<HTMLInputElement>('input[aria-label="Answer"]')!.value).toBe(
+    "Reykjavik instead",
+  );
+
+  // Retrying the unchanged draft reuses the exact same clientNonce.
+  await act(async () => button("Send answer")!.click());
+  expect(onTypeAnswer).toHaveBeenCalledTimes(2);
+  expect(onTypeAnswer.mock.calls[1]).toEqual(["Reykjavik instead", firstNonce]);
+});
+
+it("clears and hides the typed answer form when cancelled", async () => {
+  const block: AskBlock = {
+    kind: "ask",
+    text: "Which city?",
+    status: "pending",
+    actions: [
+      { id: "paris", label: "Paris" },
+      { id: "london", label: "London" },
+    ],
+  };
+  const onAnswer = vi.fn(async () => undefined);
+  await render(block, undefined, onAnswer);
+
+  await act(async () => button("Type your answer")!.click());
+  await type("Answer", "Draft text");
+  await act(async () => button("Cancel")!.click());
+
+  expect(onAnswer).not.toHaveBeenCalled();
+  expect(container.querySelector('input[aria-label="Answer"]')).toBeNull();
+  expect(button("Type your answer")).toBeDefined();
+  await act(async () => button("Type your answer")!.click());
+  expect(container.querySelector<HTMLInputElement>('input[aria-label="Answer"]')!.value).toBe("");
+});
+
+it("keeps typing out of approval cards, instruction cards, and closed option cards", async () => {
+  await render({
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Send it?",
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Allow once" },
+      { id: "deny", label: "Deny" },
+    ],
+  });
+  expect(button("Type your answer")).toBeUndefined();
+
+  await render({
+    kind: "ask",
+    text: "Which city?",
+    status: "answered",
+    answer: "paris",
+    actions: [{ id: "paris", label: "Paris" }],
+  });
+  expect(button("Type your answer")).toBeUndefined();
+
+  await act(async () =>
+    root.render(
+      <AskCard
+        block={{
+          kind: "ask",
+          text: "Which city?",
+          status: "pending",
+          actions: [{ id: "paris", label: "Paris" }],
+        }}
+        canAnswer={false}
+        canDismiss={false}
+        onAnswer={async () => undefined}
+        onDismiss={async () => undefined}
+      />,
+    ),
+  );
+  expect(button("Type your answer")).toBeUndefined();
 });
 
 it("dims a closed question's options without a status line", async () => {

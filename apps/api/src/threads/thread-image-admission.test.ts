@@ -85,6 +85,7 @@ function fixture(group = false) {
   const send = (
     imageAdmission?: Parameters<typeof sendThreadMessage>[0]["imageAdmission"],
     imageHandling: "confirm" | "file" | null = "confirm",
+    extra?: Partial<Parameters<typeof sendThreadMessage>[3]>,
   ) =>
     sendThreadMessage(
       {
@@ -109,6 +110,7 @@ function fixture(group = false) {
         clientNonce: "image-send-1",
         imageHandling: imageHandling ?? undefined,
         mentions: group ? ["bot-1", "bot-2"] : undefined,
+        ...extra,
       } as Parameters<typeof sendThreadMessage>[3],
       releaseTakeover,
     );
@@ -401,6 +403,7 @@ describe("current image send admission", () => {
     const { tx, send } = fixture();
     tx.message.findUnique.mockResolvedValue({
       id: "accepted",
+      authorUserId: "user-1",
       seq: 7,
       sourceRuns: [{ id: "accepted-run", taskId: "accepted-task", status: "done" }],
     } as never);
@@ -588,6 +591,129 @@ describe("current image send admission", () => {
     expect(notify).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
     expect(releaseTakeover).not.toHaveBeenCalled();
+  });
+
+  it("ignores a skipped waiting run during image admission when replying to an answered card", async () => {
+    const answeredCard = {
+      id: "ask-answered",
+      role: "bot",
+      botId: "bot-1",
+      authorUserId: null,
+      runId: "run-done",
+      blocks: [{ kind: "ask", text: "Old?", status: "answered", answer: "Yes" }],
+    };
+    const waitingAsk = {
+      id: "ask-waiting",
+      role: "bot",
+      botId: "bot-1",
+      runId: "run-waiting",
+      blocks: [{ kind: "ask", text: "Other?", status: "pending" }],
+    };
+
+    // Vision bot with text-only skipped waiting run: image is accepted for the new turn.
+    const vision = fixture();
+    vision.tx.bot.findFirst.mockResolvedValue({
+      id: "bot-1",
+      modelProvider: "openrouter",
+      modelId: "openai/gpt-4o",
+    });
+    vision.tx.message.findFirst = vi.fn(async ({ where }: { where: { id?: string } }) =>
+      where.id === "ask-answered" ? answeredCard : waitingAsk,
+    ) as never;
+    vision.tx.message.findMany = vi.fn().mockResolvedValue([waitingAsk]) as never;
+    vision.tx.run.findMany
+      .mockResolvedValueOnce([
+        {
+          id: "run-waiting",
+          taskId: "task-waiting",
+          status: "waiting_input",
+          userId: "user-1",
+          trigger: "user",
+          modelProvider: "openrouter",
+          modelId: "deepseek/deepseek-v4-pro",
+          modelPinned: true,
+        },
+      ] as never)
+      .mockResolvedValue([]);
+    await expect(
+      vision.send(undefined, "confirm", { replyToMessageId: "ask-answered" }),
+    ).resolves.toMatchObject({ runId: "run-1" });
+
+    // Text-only bot with vision skipped waiting run: image is rejected for the new turn.
+    const textOnly = fixture();
+    textOnly.tx.message.findFirst = vi.fn(async ({ where }: { where: { id?: string } }) =>
+      where.id === "ask-answered" ? answeredCard : waitingAsk,
+    ) as never;
+    textOnly.tx.message.findMany = vi.fn().mockResolvedValue([waitingAsk]) as never;
+    textOnly.tx.run.findMany
+      .mockResolvedValueOnce([
+        {
+          id: "run-waiting",
+          taskId: "task-waiting",
+          status: "waiting_input",
+          userId: "user-1",
+          trigger: "user",
+          modelProvider: "openrouter",
+          modelId: "openai/gpt-4o",
+          modelPinned: true,
+        },
+      ] as never)
+      .mockResolvedValue([]);
+    await expect(
+      textOnly.send(undefined, "confirm", { replyToMessageId: "ask-answered" }),
+    ).rejects.toMatchObject({ code: "CONFLICT", status: 409 });
+  });
+
+  it("checks the replied pending run model during image admission after an intervening message", async () => {
+    const pendingAsk = {
+      id: "ask-pending",
+      seq: 1,
+      role: "bot",
+      botId: "bot-1",
+      authorUserId: null,
+      runId: "run-waiting",
+      blocks: [{ kind: "ask", text: "Which photo?", status: "pending" }],
+    };
+    const intervening = {
+      id: "msg-intervening",
+      seq: 2,
+      role: "user",
+      botId: null,
+      authorUserId: "user-1",
+      runId: null,
+      blocks: [{ kind: "text", text: "One moment" }],
+      replyToMessageId: null,
+    };
+
+    const { tx, send } = fixture();
+    tx.bot.findFirst.mockResolvedValue({
+      id: "bot-1",
+      modelProvider: "openrouter",
+      modelId: "openai/gpt-4o",
+    });
+    tx.message.findFirst = vi.fn(async ({ where }: { where: { id?: string } }) =>
+      where.id === "ask-pending" ? pendingAsk : intervening,
+    ) as never;
+    tx.message.findMany = vi.fn().mockResolvedValue([pendingAsk]) as never;
+    tx.run.findMany
+      .mockResolvedValueOnce([
+        {
+          id: "run-waiting",
+          taskId: "task-waiting",
+          status: "waiting_input",
+          userId: "user-1",
+          trigger: "user",
+          modelProvider: "openrouter",
+          modelId: "deepseek/deepseek-v4-pro",
+          modelPinned: true,
+        },
+      ] as never)
+      .mockResolvedValue([]);
+
+    await expect(
+      send(undefined, "confirm", { text: "Here it is", replyToMessageId: "ask-pending" }),
+    ).rejects.toMatchObject({ code: "CONFLICT", status: 409 });
+    expect(tx.message.create).not.toHaveBeenCalled();
   });
 });
 

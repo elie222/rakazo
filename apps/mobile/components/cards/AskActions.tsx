@@ -1,10 +1,11 @@
 import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
-import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
-import { resolveAskChoice } from "@rakazo/core";
+import { BOT_INSTRUCTIONS_MAX_LENGTH, THREAD_MESSAGE_TEXT_MAX_LENGTH } from "@rakazo/contracts";
+import type { DraftNonce } from "@rakazo/core";
+import { draftNonce, resolveAskChoice } from "@rakazo/core";
 import { routineApprovalActionLabel } from "@rakazo/i18n/routine-approval";
 import { typeScale } from "@rakazo/ui-tokens";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ViewProps } from "react-native";
 import {
   ActivityIndicator,
@@ -20,6 +21,7 @@ import { mobileTokens } from "../../lib/appearance/appearance";
 import type { AskAction } from "../../lib/cards/ask-action-label";
 import { askActionLabel } from "../../lib/cards/ask-action-label";
 import { native, useResolvedAppearance } from "../../lib/native/native";
+import { useInlineInputFocus } from "../../lib/thread/inline-input-focus";
 import { NativeActionButton } from "../native/native-action-button";
 import { NativeSymbol } from "../native/native-symbol";
 
@@ -40,6 +42,19 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
   },
   optionLabel: { ...typeScale.body, flex: 1 },
+  input: {
+    borderRadius: 12,
+    borderWidth: 1,
+    minHeight: 44,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    ...typeScale.body,
+  },
+  actions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
 });
 
 export function AskActions({
@@ -51,6 +66,7 @@ export function AskActions({
   disabled,
   selectedAnswer,
   onAnswer,
+  onTypeAnswer,
   accessibilityActions,
   onAccessibilityAction,
 }: {
@@ -62,15 +78,33 @@ export function AskActions({
   disabled?: boolean;
   selectedAnswer?: string;
   onAnswer: (answer: string) => Promise<void>;
+  /** Sends a free-text answer from an option card as the user's message replying to the card. */
+  onTypeAnswer?: (answer: string, clientNonce: string) => Promise<void>;
   accessibilityActions?: ViewProps["accessibilityActions"];
   onAccessibilityAction?: ViewProps["onAccessibilityAction"];
 }) {
   const { t } = useLingui();
   const tokens = mobileTokens();
-  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const notifyInlineInputFocus = useInlineInputFocus();
+  const [pendingAction, setPendingAction] = useState<{ id?: string; typed?: true } | null>(null);
+  const [acceptedAnswer, setAcceptedAnswer] = useState<string>();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(instructions ?? "");
+  const [typed, setTyped] = useState("");
+  const [typedFocused, setTypedFocused] = useState(false);
+  const submittingRef = useRef(false);
+  const draftNonceRef = useRef<DraftNonce | null>(null);
   const submitting = pendingAction !== null;
+  const settled = Boolean(disabled) || selectedAnswer !== undefined || acceptedAnswer !== undefined;
+  const displayedAnswer = selectedAnswer ?? acceptedAnswer;
+  const canTypeAnswer =
+    !approval && instructions === undefined && !settled && onTypeAnswer !== undefined;
+  const inlineAnswerOpen = canTypeAnswer && editing;
+  useEffect(() => {
+    if (!inlineAnswerOpen || !typedFocused) return;
+    notifyInlineInputFocus?.(true);
+    return () => notifyInlineInputFocus?.(false);
+  }, [inlineAnswerOpen, typedFocused, notifyInlineInputFocus]);
   const always = routineUpdate && actions.some((action) => action.id === "always");
   const displayActions =
     instructions !== undefined
@@ -85,21 +119,36 @@ export function AskActions({
     ? displayActions.filter((action) => action.id !== "always")
     : displayActions;
 
-  async function submit(answer: string) {
-    if (disabled || submitting) return;
-    setPendingAction(answer);
+  async function submit(answer: string, target: { id?: string; typed?: true }) {
+    if (settled || submittingRef.current || submitting) return;
+    if (target.typed && !onTypeAnswer) return;
+    submittingRef.current = true;
+    setPendingAction(target);
     try {
-      await onAnswer(answer);
+      if (target.typed) {
+        draftNonceRef.current = draftNonce(draftNonceRef.current, answer);
+        await onTypeAnswer!(answer, draftNonceRef.current.nonce);
+      } else {
+        await onAnswer(answer);
+      }
+      setAcceptedAnswer(answer);
+      if (target.typed) {
+        draftNonceRef.current = null;
+        setTyped("");
+        setTypedFocused(false);
+        setEditing(false);
+      }
     } catch (error) {
       Alert.alert(t`Could not submit answer`, errorText(error, t`Please try again.`));
     } finally {
+      submittingRef.current = false;
       setPendingAction(null);
     }
   }
 
   return (
     <View style={{ marginTop: 12, gap: 6 }}>
-      {editing ? (
+      {instructions !== undefined && editing ? (
         <TextInput
           accessibilityLabel={t`Instructions`}
           multiline
@@ -135,8 +184,8 @@ export function AskActions({
                 }
                 prominence={emphasized ? "primary" : "secondary"}
                 fill={false}
-                disabled={disabled || submitting}
-                busy={pendingAction === action.id || (action.id === "allow" && submitting)}
+                disabled={settled || submitting}
+                busy={pendingAction?.id === action.id || (action.id === "allow" && submitting)}
                 onPress={() =>
                   action.id === "edit"
                     ? setEditing((value) => !value)
@@ -144,6 +193,7 @@ export function AskActions({
                         editing && action.id === "allow"
                           ? JSON.stringify({ instructions: draft })
                           : action.id,
+                        { id: action.id },
                       )
                 }
               />
@@ -160,16 +210,16 @@ export function AskActions({
                 label={label}
                 prominence={emphasized ? "primary" : "secondary"}
                 fill={false}
-                disabled={disabled || submitting}
-                busy={pendingAction === action.id}
-                onPress={() => void submit(action.id)}
+                disabled={settled || submitting}
+                busy={pendingAction?.id === action.id}
+                onPress={() => void submit(action.id, { id: action.id })}
               />
             );
           // A question's options read as a list of answers, not a stack of call-to-action pills.
           const chosen =
-            selectedAnswer !== undefined &&
-            resolveAskChoice(selectedAnswer, actions)?.id === action.id;
-          const inactive = disabled || submitting;
+            displayedAnswer !== undefined &&
+            resolveAskChoice(displayedAnswer, actions)?.id === action.id;
+          const inactive = settled || submitting;
           return (
             <Pressable
               key={action.id}
@@ -178,29 +228,29 @@ export function AskActions({
               accessibilityState={{
                 disabled: inactive,
                 // Options carry a selection state only once the question has an answer.
-                ...(selectedAnswer === undefined ? {} : { selected: chosen }),
+                ...(displayedAnswer === undefined ? {} : { selected: chosen }),
               }}
               accessibilityActions={accessibilityActions}
               onAccessibilityAction={onAccessibilityAction}
               disabled={inactive}
-              onPress={() => void submit(action.id)}
+              onPress={() => void submit(action.id, { id: action.id })}
               style={({ pressed }) => [
                 styles.option,
                 {
                   backgroundColor: pressed || chosen ? native.fillPressed : native.page,
-                  opacity: inactive && !chosen && pendingAction !== action.id ? 0.6 : 1,
+                  opacity: inactive && !chosen && pendingAction?.id !== action.id ? 0.6 : 1,
                 },
               ]}
             >
               <Text
                 style={[
                   styles.optionLabel,
-                  { color: disabled && !chosen ? tokens.mutedForeground : tokens.foreground },
+                  { color: settled && !chosen ? tokens.mutedForeground : tokens.foreground },
                 ]}
               >
                 {label}
               </Text>
-              {pendingAction === action.id ? (
+              {pendingAction?.id === action.id ? (
                 <ActivityIndicator size="small" color={tokens.mutedForeground} />
               ) : chosen ? (
                 <NativeSymbol
@@ -215,12 +265,81 @@ export function AskActions({
         })}
         {always ? (
           <RoutineApprovalMenu
-            disabled={disabled || submitting}
-            busy={pendingAction === "always"}
-            onApprove={() => void submit("always")}
+            disabled={settled || submitting}
+            busy={pendingAction?.id === "always"}
+            onApprove={() => void submit("always", { id: "always" })}
           />
         ) : null}
       </View>
+      {canTypeAnswer ? (
+        editing ? (
+          <>
+            <TextInput
+              accessibilityLabel={t`Type your answer`}
+              placeholder={t`Type your answer`}
+              placeholderTextColor={tokens.faintForeground}
+              maxLength={THREAD_MESSAGE_TEXT_MAX_LENGTH}
+              value={typed}
+              onChangeText={setTyped}
+              onFocus={() => setTypedFocused(true)}
+              onBlur={() => setTypedFocused(false)}
+              autoCapitalize="sentences"
+              editable={!submitting}
+              returnKeyType="send"
+              onSubmitEditing={() => {
+                const trimmed = typed.trim();
+                if (trimmed) void submit(trimmed, { typed: true });
+              }}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: native.page,
+                  borderColor: tokens.border,
+                  color: tokens.foreground,
+                },
+              ]}
+            />
+            <View style={styles.actions}>
+              <NativeActionButton
+                accessibilityActions={accessibilityActions}
+                onAccessibilityAction={onAccessibilityAction}
+                label={t`Send answer`}
+                fill={false}
+                disabled={!typed.trim() || submitting}
+                busy={Boolean(pendingAction?.typed)}
+                onPress={() => {
+                  const trimmed = typed.trim();
+                  if (trimmed) void submit(trimmed, { typed: true });
+                }}
+              />
+              <NativeActionButton
+                accessibilityActions={accessibilityActions}
+                onAccessibilityAction={onAccessibilityAction}
+                label={t`Cancel`}
+                fill={false}
+                disabled={submitting}
+                prominence="secondary"
+                onPress={() => {
+                  draftNonceRef.current = null;
+                  setTyped("");
+                  setTypedFocused(false);
+                  setEditing(false);
+                }}
+              />
+            </View>
+          </>
+        ) : (
+          <NativeActionButton
+            accessibilityActions={accessibilityActions}
+            onAccessibilityAction={onAccessibilityAction}
+            label={t`Type your answer`}
+            disabled={submitting}
+            prominence="quiet"
+            fill={false}
+            onPress={() => setEditing(true)}
+          />
+        )
+      ) : null}
     </View>
   );
 }

@@ -3,7 +3,7 @@ import { isQuestionAskBlock } from "./ask-kind.js";
 
 export { askOptionLetter, isQuestionAskBlock } from "./ask-kind.js";
 
-import { resolveAskChoice } from "./answerable-ask.js";
+import { askAnswerRepliedWith, resolveAskChoice } from "./answerable-ask.js";
 
 type Message = {
   id: string;
@@ -35,7 +35,7 @@ export function separateAskAnswers(
         .flatMap((part) => (part.kind === "text" ? [part.text] : []))
         .join("\n")
         .trim();
-      if (text && block.answer.trim() === text) {
+      if (askAnswerRepliedWith(block.answer, block.actions, text)) {
         const repeated = answers.get(message.id) ?? new Set<MessageBlock>();
         repeated.add(block);
         answers.set(message.id, repeated);

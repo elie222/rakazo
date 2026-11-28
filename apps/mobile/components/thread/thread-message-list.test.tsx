@@ -4,6 +4,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { useInlineInputFocus } from "../../lib/thread/inline-input-focus";
 import { threadColumnPadding } from "../../lib/thread/scroll/thread-edges";
 import type { ThreadListScroll } from "../../lib/thread/scroll/thread-list-scroll";
 import { ThreadMessageList } from "./thread-message-list";
@@ -18,9 +19,9 @@ vi.mock("react-native", async () => {
   const { createElement } = await import("react");
   return {
     ActivityIndicator: () => null,
-    FlatList: (props: Record<string, unknown>) => {
+    FlatList: (props: Record<string, unknown> & { ListHeaderComponent?: ReactNode }) => {
       native.flat = props;
-      return createElement("div", { "data-list": "flat" });
+      return createElement("div", { "data-list": "flat" }, props.ListHeaderComponent);
     },
     Platform: {
       get OS() {
@@ -124,6 +125,7 @@ it("pads message content and leaves the live list frame on the screen edge", asy
   const content = flatten(native.flat?.contentContainerStyle);
   expect(frame).toEqual({ flex: 1 });
   expect(content).toMatchObject({ paddingStart: 60, paddingEnd: 28, paddingBottom: 80 });
+  expect(native.flat?.keyboardShouldPersistTaps).toBeUndefined();
   await act(async () => root.unmount());
 });
 
@@ -136,7 +138,40 @@ it("pads a pinned page the same way and keeps the jump button on the column edge
   const content = flatten(native.scroll?.contentContainerStyle);
   expect(frame).toEqual({ flex: 1 });
   expect(content).toMatchObject({ paddingStart: 60, paddingEnd: 28, paddingTop: 80 });
+  expect(native.scroll?.keyboardShouldPersistTaps).toBeUndefined();
   expect(container.querySelector("[data-inset-end]")?.getAttribute("data-inset-end")).toBe("28");
+  await act(async () => root.unmount());
+});
+
+it("persists taps only while an inline card input owns focus", async () => {
+  let setFocus: ((focused: boolean) => void) | undefined;
+  function Probe() {
+    setFocus = useInlineInputFocus();
+    return null;
+  }
+  const root = createRoot(container);
+  await act(async () =>
+    root.render(
+      createElement(ThreadMessageList, listProps({ workingFooter: createElement(Probe) })),
+    ),
+  );
+  expect(native.flat?.keyboardShouldPersistTaps).toBeUndefined();
+
+  await act(async () => setFocus?.(true));
+  expect(native.flat?.keyboardShouldPersistTaps).toBe("handled");
+
+  await act(async () =>
+    root.render(
+      createElement(
+        ThreadMessageList,
+        listProps({ showPinnedPage: true, workingFooter: createElement(Probe) }),
+      ),
+    ),
+  );
+  expect(native.scroll?.keyboardShouldPersistTaps).toBe("handled");
+
+  await act(async () => setFocus?.(false));
+  expect(native.scroll?.keyboardShouldPersistTaps).toBeUndefined();
   await act(async () => root.unmount());
 });
 

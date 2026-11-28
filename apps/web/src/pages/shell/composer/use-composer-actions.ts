@@ -312,6 +312,39 @@ export function useComposerActions({
     },
     [],
   );
+  /** Sends a card's typed answer to that card only; an older server refuses it instead of reading it as a message. */
+  const typeAnswerMessage = useCallback(
+    async (message: ThreadMessage, text: string, clientNonce?: string) => {
+      const botId = activeBotId.current;
+      const groupId = activeGroupId.current;
+      if (!botId && !groupId) return;
+      clearReadBoundary();
+      const sent = await rpc.threads.answerQuestion({
+        ...(groupId ? { groupId } : { botId: botId! }),
+        text,
+        replyToMessageId: message.id,
+        clientNonce: clientNonce ?? newClientId(),
+      });
+      // A late answer must not scroll or refresh the chat the user has moved to since.
+      if (groupId ? activeGroupId.current !== groupId : activeBotId.current !== botId) return;
+      setSentCount((count) => count + 1);
+      if (botId) {
+        updateSnapshot((current) =>
+          applyThreadSendReceipt(
+            current,
+            { botId, runId: sent.runId, taskId: sent.taskId },
+            terminalRunReceipts.current,
+          ),
+        );
+      }
+      // The answer is saved; live events can reconcile a failed refresh.
+      try {
+        if (groupId) await refreshGroupThreadRef.current(groupId);
+        else if (botId) await refreshThreadRef.current(botId);
+      } catch {}
+    },
+    [],
+  );
   const reactToMessage = useCallback(
     async (message: ThreadMessage, reaction: MessageReaction) => {
       const botId = activeBotId.current;
@@ -736,9 +769,10 @@ export function useComposerActions({
     sending,
     pendingSends,
     sentCount,
-    /** Laid over the transcript's own props: scroll on send, and the sends not stored yet. */
+    /** Laid over the transcript's own props: scroll on send, typed card answers, and the sends not stored yet. */
     transcriptProps: {
       followRequest: sentCount,
+      onTypeAnswer: typeAnswerMessage,
       ...(pendingTranscript ? { transcript: pendingTranscript } : {}),
     },
     sendMessage,

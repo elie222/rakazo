@@ -99,6 +99,7 @@ export const Transcript = memo(function Transcript({
   onLoadOlder,
   onOpenBot,
   onAnswer,
+  onTypeAnswer,
   onReply,
   onMarkUnread,
   markedUnreadMessageId,
@@ -153,6 +154,7 @@ export const Transcript = memo(function Transcript({
     dismiss?: boolean,
     remember?: false,
   ) => Promise<void>;
+  onTypeAnswer?: (message: ThreadMessage, text: string, clientNonce?: string) => Promise<void>;
   onReply: (message: ThreadMessage) => void;
   onMarkUnread: (message: ThreadMessage) => void;
   markedUnreadMessageId?: string;
@@ -787,6 +789,7 @@ export const Transcript = memo(function Transcript({
                         peerExchange={exchanges.lines.get(message.id)}
                         hideSenderLabel={continuedSenderIds.has(message.id)}
                         onAnswer={onAnswer}
+                        onTypeAnswer={onTypeAnswer}
                         speakerName={
                           peerReceipt
                             ? undefined

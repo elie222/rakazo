@@ -2,9 +2,15 @@ import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { AskReceipt, LoginFieldInput, ThreadMessage } from "@rakazo/contracts";
-import { AGENT_IMPORT_ASK_ACTION_ID, BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
+import {
+  AGENT_IMPORT_ASK_ACTION_ID,
+  BOT_INSTRUCTIONS_MAX_LENGTH,
+  THREAD_MESSAGE_TEXT_MAX_LENGTH,
+} from "@rakazo/contracts";
+import type { DraftNonce } from "@rakazo/core";
 import {
   askOptionLetter,
+  draftNonce,
   isApprovalAskBlock,
   isQuestionAskBlock,
   isSecretAskBlock,
@@ -20,10 +26,11 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  Input,
   Textarea,
 } from "@rakazo/ui-web";
 import { Check, MoreHorizontal } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { RpcClient } from "../../lib/query/rpc";
 import { rpc as selectedSpaceRpc } from "../../lib/query/rpc";
 import { errorText } from "../../lib/query/user-error";
@@ -137,6 +144,8 @@ export type AskCardProps = {
   canDismiss: boolean;
   /** A login card answers with its fields and an empty `text`; `remember` false uses it once. */
   onAnswer: (text: string, fields?: LoginFieldInput[], remember?: false) => Promise<void>;
+  /** Sends a free-text answer from an option card as the user's message replying to the card. */
+  onTypeAnswer?: (text: string, clientNonce: string) => Promise<void>;
   /** Turns down a secret request without a value. */
   onDismiss: () => Promise<void>;
   /** The chat's space; Undo goes there even if another tab selects a different space. */
@@ -159,16 +168,20 @@ function PromptAskCard({
   canAnswer,
   answerIsSeparate,
   onAnswer,
+  onTypeAnswer,
   rpc = selectedSpaceRpc,
   onOpenAgentImport,
 }: AskCardProps) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
   const [answer, setAnswer] = useState(block.instructionUpdate?.after ?? "");
+  const [typedDraft, setTypedDraft] = useState("");
   const [acceptedAnswer, setAcceptedAnswer] = useState<string>();
   const [undone, setUndone] = useState(false);
-  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ id?: string; typed?: true } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const submittingRef = useRef(false);
+  const draftNonceRef = useRef<DraftNonce | null>(null);
   const submitting = pendingAction !== null;
   const answered = block.status === "answered" || acceptedAnswer !== undefined;
   const answeredQuestion = answered && isQuestionAskBlock(block);
@@ -190,25 +203,39 @@ function PromptAskCard({
   const chosenOption =
     answered && displayedAnswer ? resolveAskChoice(displayedAnswer, askActions) : undefined;
   // Typed replies already have their own message; the question must not repeat them.
+  // A legacy import card stored the import action's id, so it shows that action's label.
   const typedAnswer =
     answered &&
+    displayedAnswer &&
     !optionQuestion &&
     !approvalActions &&
     !block.instructionUpdate &&
     displayedAnswer !== "approved"
-      ? displayedAnswer
+      ? selectedAskActionLabel(displayedAnswer, block.actions)
       : undefined;
-  async function submitAnswer(value: string) {
-    if (submitting || !value.trim()) return;
+  async function submitAnswer(value: string, typed = false) {
     const submitValue = value.trim();
-    setPendingAction(submitValue);
+    if (submittingRef.current || submitting || !submitValue) return;
+    submittingRef.current = true;
+    setPendingAction(typed ? { typed: true } : { id: submitValue });
     setError(null);
     try {
-      await onAnswer(submitValue);
+      if (typed && onTypeAnswer) {
+        draftNonceRef.current = draftNonce(draftNonceRef.current, submitValue);
+        await onTypeAnswer(submitValue, draftNonceRef.current.nonce);
+      } else {
+        await onAnswer(submitValue);
+      }
       setAcceptedAnswer(submitValue);
+      if (typed) {
+        draftNonceRef.current = null;
+        setTypedDraft("");
+        setEditing(false);
+      }
     } catch (err) {
       setError(errorText(err, t`Could not submit this answer`));
     } finally {
+      submittingRef.current = false;
       setPendingAction(null);
     }
   }
@@ -249,7 +276,7 @@ function PromptAskCard({
             variant="link"
             disabled={undone || submitting}
             onClick={async () => {
-              setPendingAction("undo");
+              setPendingAction({ id: "undo" });
               setError(null);
               try {
                 await undo.run();
@@ -336,33 +363,84 @@ function PromptAskCard({
         </form>
       ) : optionQuestion ? (
         // Options stay in place once answered: the chosen one is marked, the rest dim.
-        <div className="mt-2.5 space-y-0.5">
-          {askActions?.map((action, index) => (
-            <OptionRow
-              key={action.id}
-              letter={askOptionLetter(index)}
-              // Only an answered card says which option was chosen; before that they are plain actions.
-              selected={answered ? chosenOption?.id === action.id : undefined}
-              disabled={answered || !canAnswer || submitting}
-              onClick={() =>
-                action.id === AGENT_IMPORT_ASK_ACTION_ID
-                  ? onOpenAgentImport?.()
-                  : void submitAnswer(action.id)
-              }
-            >
-              {pendingAction === action.id ? (
-                <Trans>Sending…</Trans>
-              ) : action.id === AGENT_IMPORT_ASK_ACTION_ID ? (
-                <Trans>Move from another assistant</Trans>
-              ) : (
-                action.label
-              )}
-            </OptionRow>
-          ))}
-          {answered ? (
-            <span className="sr-only">{block.expired ? t`Expired` : t`Answered`}</span>
+        <>
+          <div className="mt-2.5 space-y-0.5">
+            {askActions?.map((action, index) => (
+              <OptionRow
+                key={action.id}
+                letter={askOptionLetter(index)}
+                // Only an answered card says which option was chosen; before that they are plain actions.
+                selected={answered ? chosenOption?.id === action.id : undefined}
+                disabled={answered || !canAnswer || submitting}
+                onClick={() =>
+                  action.id === AGENT_IMPORT_ASK_ACTION_ID
+                    ? onOpenAgentImport?.()
+                    : void submitAnswer(action.id)
+                }
+              >
+                {pendingAction?.id === action.id ? (
+                  <Trans>Sending…</Trans>
+                ) : action.id === AGENT_IMPORT_ASK_ACTION_ID ? (
+                  <Trans>Move from another assistant</Trans>
+                ) : (
+                  action.label
+                )}
+              </OptionRow>
+            ))}
+            {answered ? (
+              <span className="sr-only">{block.expired ? t`Expired` : t`Answered`}</span>
+            ) : null}
+          </div>
+          {canAnswer && !answered ? (
+            editing ? (
+              <form
+                className="mt-3.5 flex flex-col gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void submitAnswer(typedDraft, true);
+                }}
+              >
+                <Input
+                  aria-label={t`Answer`}
+                  maxLength={THREAD_MESSAGE_TEXT_MAX_LENGTH}
+                  value={typedDraft}
+                  onChange={(event) => setTypedDraft(event.target.value)}
+                  placeholder={t`Type your answer`}
+                  disabled={submitting}
+                />
+                <div className="flex gap-2">
+                  <Button type="submit" disabled={!typedDraft.trim() || submitting}>
+                    {pendingAction?.typed ? <Trans>Sending…</Trans> : <Trans>Send answer</Trans>}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={submitting}
+                    onClick={() => {
+                      draftNonceRef.current = null;
+                      setTypedDraft("");
+                      setError(null);
+                      setEditing(false);
+                    }}
+                  >
+                    <Trans>Cancel</Trans>
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <Button
+                type="button"
+                variant="text"
+                size="sm"
+                className="mt-1.5 self-start"
+                disabled={submitting}
+                onClick={() => setEditing(true)}
+              >
+                <Trans>Type your answer</Trans>
+              </Button>
+            )
           ) : null}
-        </div>
+        </>
       ) : typedAnswer ? (
         answerIsSeparate ? null : (
           <blockquote
@@ -389,7 +467,7 @@ function PromptAskCard({
                   displayedAnswer,
                   Boolean(approvalActions),
                   approvalActions?.find((action) => action.id === displayedAnswer)?.outcome,
-                  askActions,
+                  block.actions,
                 )}
         </div>
       ) : !canAnswer ? (
@@ -416,7 +494,7 @@ function PromptAskCard({
                   : void submitAnswer(action.id)
               }
             >
-              {pendingAction === action.id ? (
+              {pendingAction?.id === action.id ? (
                 <Trans>Sending…</Trans>
               ) : action.id === "edit" ? (
                 action.label
@@ -435,7 +513,7 @@ function PromptAskCard({
           {always ? (
             <DropdownMenu>
               <DropdownMenuTrigger
-                aria-label={pendingAction === "always" ? t`Sending…` : t`More approval options`}
+                aria-label={pendingAction?.id === "always" ? t`Sending…` : t`More approval options`}
                 render={
                   <Button
                     variant="outline"

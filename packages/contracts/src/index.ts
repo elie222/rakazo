@@ -99,4 +99,4 @@ export * from "./threads/reactions.js";
 export * from "./threads/search.js";
 export * from "./threads/thread.js";
 export * from "./threads/thread-message.js";
-export { threadSendInput } from "./threads/thread-send.js";
+export { QUESTION_ALREADY_ANSWERED_ERROR, threadSendInput } from "./threads/thread-send.js";

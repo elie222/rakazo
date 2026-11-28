@@ -2,8 +2,8 @@ import type { LoginFieldInput } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { hapticSuccess } from "../native/haptics";
-import type { ThreadAnswerContext } from "./thread-answer";
-import { answerThreadMessage } from "./thread-answer";
+import type { ThreadAnswerContext, ThreadTypeAnswerContext } from "./thread-answer";
+import { answerThreadMessage, typeAnswerThreadMessage } from "./thread-answer";
 
 vi.mock("../native/haptics", () => ({ hapticSuccess: vi.fn() }));
 beforeEach(() => vi.clearAllMocks());
@@ -151,5 +151,50 @@ describe("mobile ask answers", () => {
     expect(h.rpc).not.toHaveBeenCalled();
     expect(h.markRead).not.toHaveBeenCalled();
     expect(hapticSuccess).not.toHaveBeenCalled();
+  });
+
+  it("sends a card-typed answer through threads/answerQuestion targeting the ask message", async () => {
+    const rpc = vi.fn(async () => undefined as unknown);
+    const refresh = vi.fn(async () => undefined);
+    const markRead = vi.fn();
+    const context: ThreadTypeAnswerContext = {
+      botId: "bot-1",
+      groupId: undefined,
+      readOnly: false,
+      rpc,
+      isCurrentTarget: () => true,
+      isFocused: () => true,
+      refresh,
+      markRead,
+      clientNonce: () => "nonce-1",
+    };
+    await typeAnswerThreadMessage(context, { id: "ask-1" }, "Reykjavik instead", "stable-nonce");
+    expect(markRead).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith("threads/answerQuestion", {
+      botId: "bot-1",
+      text: "Reykjavik instead",
+      replyToMessageId: "ask-1",
+      clientNonce: "stable-nonce",
+    });
+    expect(hapticSuccess).toHaveBeenCalledTimes(1);
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    rpc.mockClear();
+    await typeAnswerThreadMessage(
+      { ...context, botId: undefined, groupId: "group-1" },
+      { id: "ask-older" },
+      "Kyoto",
+    );
+    expect(rpc).toHaveBeenCalledWith("threads/answerQuestion", {
+      groupId: "group-1",
+      text: "Kyoto",
+      replyToMessageId: "ask-older",
+      clientNonce: "nonce-1",
+    });
+
+    rpc.mockClear();
+    await typeAnswerThreadMessage({ ...context, readOnly: true }, { id: "ask-1" }, "ignored");
+    await typeAnswerThreadMessage({ ...context, botId: undefined }, { id: "ask-1" }, "ignored");
+    expect(rpc).not.toHaveBeenCalled();
   });
 });

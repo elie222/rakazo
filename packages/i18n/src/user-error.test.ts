@@ -1,4 +1,8 @@
-import { CONNECTOR_AUTH_UNAVAILABLE, MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
+import {
+  CONNECTOR_AUTH_UNAVAILABLE,
+  MCP_OAUTH_CLIENT_REQUIRED,
+  QUESTION_ALREADY_ANSWERED_ERROR,
+} from "@rakazo/contracts";
 import { MODEL_IMAGE_INPUT_ERROR } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import { authErrorText, errorText } from "./user-error.js";
@@ -59,4 +63,11 @@ it("asks for an OAuth client ID when the server cannot register one", () => {
     code: MCP_OAUTH_CLIENT_REQUIRED,
   });
   expect(errorText(error, "Could not sign in")).toBe("Needs an OAuth client ID");
+});
+
+it("explains when a question was already answered", () => {
+  const error = Object.assign(new Error("Stale answer"), {
+    code: QUESTION_ALREADY_ANSWERED_ERROR,
+  });
+  expect(errorText(error, "Could not send")).toBe("This question was already answered");
 });

@@ -72,6 +72,7 @@ export const MessageView = memo(function MessageView({
   pages,
   isPageSuperseded,
   onAnswer,
+  onTypeAnswer,
   onOpenBot,
   onOpenPeerMessages,
   peerExchange,
@@ -119,6 +120,7 @@ export const MessageView = memo(function MessageView({
     dismiss?: boolean,
     remember?: false,
   ) => Promise<void>;
+  onTypeAnswer?: (message: ThreadMessage, text: string, clientNonce?: string) => Promise<void>;
   onOpenBot: (botId: string) => void;
   onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string }) => void;
   /** The adjacent receipts represented by this peer line. */
@@ -703,6 +705,11 @@ export const MessageView = memo(function MessageView({
                     canDismiss={canDismiss}
                     onAnswer={(text, fields, remember) =>
                       onAnswer(message, text, fields, undefined, remember)
+                    }
+                    onTypeAnswer={
+                      onTypeAnswer
+                        ? (text, clientNonce) => onTypeAnswer(message, text, clientNonce)
+                        : undefined
                     }
                     onDismiss={() => onAnswer(message, "", undefined, true)}
                     rpc={rpc}

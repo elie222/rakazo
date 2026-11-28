@@ -1,3 +1,4 @@
+import { AGENT_IMPORT_ASK_ACTION_ID } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   answerableAskMessageIds,
@@ -92,6 +93,14 @@ describe("selectedAskActionLabel", () => {
     ).toBe("Seoul");
   });
 
+  it("labels a legacy answer that stored the import action id", () => {
+    expect(
+      selectedAskActionLabel(AGENT_IMPORT_ASK_ACTION_ID, [
+        { id: AGENT_IMPORT_ASK_ACTION_ID, label: "Move from another assistant" },
+      ]),
+    ).toBe("Move from another assistant");
+  });
+
   it("falls back to the answer when an action is unavailable", () => {
     expect(selectedAskActionLabel("custom", undefined)).toBe("custom");
   });
@@ -110,6 +119,16 @@ describe("resolveAskChoice", () => {
 
   it("leaves unmatched free-text as a custom answer", () => {
     expect(resolveAskChoice("Toronto", actions)).toBeUndefined();
+  });
+
+  it("excludes the client-only agent-import UI action from choice matching", () => {
+    const opening = [
+      ...actions,
+      { id: AGENT_IMPORT_ASK_ACTION_ID, label: "Move from another assistant" },
+    ];
+    expect(resolveAskChoice("Move from another assistant", opening)).toBeUndefined();
+    expect(resolveAskChoice(AGENT_IMPORT_ASK_ACTION_ID, opening)).toBeUndefined();
+    expect(resolveAskChoice("Berlin", opening)).toEqual({ id: "choice-1", label: "Berlin" });
   });
 });
 

@@ -5,19 +5,14 @@ import type {
   ProductAnalytics,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { notifyMemberMessage, wakeRun } from "@rakazo/adapters";
+import { notifyMemberMessage } from "@rakazo/adapters";
 import type { Actor, GroupMember, MessageBlock, ReplyPreview } from "@rakazo/contracts";
-import {
-  GROUP_MEMBER_MIN,
-  MessageBlock as MessageBlockSchema,
-  resolveBotAvatarSet,
-} from "@rakazo/contracts";
+import { GROUP_MEMBER_MIN, resolveBotAvatarSet } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   BACKGROUND_HELPER_TRIGGER,
   callIdFromClientNonce,
   isConversationalRun,
-  isQuestionAskBlock,
   MODEL_REQUIRED_SEND_ERROR,
   memberMessageAlerts,
   mentionedGroupBotIds,
@@ -58,6 +53,19 @@ import {
 import type { ImageAdmissionRun } from "./thread-image-admission.js";
 import { assertThreadImageInput } from "./thread-image-admission.js";
 import { cancelThreadRuns, finishThreadStop, isStopMessage } from "./thread-stop.js";
+import {
+  enqueueRunsNeedingContinue,
+  loadStrictQuestionRun,
+  parseMessageBlocks,
+  QuestionAlreadyAnsweredError,
+  RUNS_NEEDING_CONTINUE,
+  replayExistingSend,
+  repliedQuestionTarget,
+  sendResult,
+  validateStrictAnswerInput,
+} from "./thread-strict-answer.js";
+
+export { enqueueRunsNeedingContinue, RUNS_NEEDING_CONTINUE };
 
 export type ThreadTarget =
   | {
@@ -75,8 +83,6 @@ export type ThreadTarget =
       members: Omit<GroupMember, "status">[];
       memberBotIds: string[];
     };
-
-export const RUNS_NEEDING_CONTINUE = new Set(["queued", "waiting_takeover"]);
 
 const STEERABLE_RUN_STATUSES = new Set<string>(QUEUE_HOLDING_RUN_STATUSES);
 /**
@@ -160,94 +166,6 @@ export function sendRunClientNonce(
   return botId ? `send:${messageId}:${botId}` : `send:${messageId}`;
 }
 
-export async function enqueueRunsNeedingContinue(
-  jobs: JobPublisher,
-  runs: Array<{ id: string; status: string }>,
-) {
-  await Promise.all(
-    runs.filter((run) => RUNS_NEEDING_CONTINUE.has(run.status)).map((run) => wakeRun(jobs, run.id)),
-  );
-}
-
-async function findSendReceipt(prisma: PrismaClient, threadId: string, clientNonce: string) {
-  return prisma.message.findUnique({
-    where: { threadId_clientNonce: { threadId, clientNonce } },
-    include: { sourceRuns: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] } },
-  });
-}
-
-async function replayExistingSend(
-  deps: { prisma: PrismaClient; events: ThreadEvents; jobs: JobPublisher },
-  threadId: string,
-  clientNonce: string | undefined,
-  releaseTakeover?: (runId: string) => Promise<void>,
-) {
-  if (!clientNonce) return null;
-  const message = await findSendReceipt(deps.prisma, threadId, clientNonce);
-  if (!message) return null;
-  const receiptEvent = await deps.prisma.event.findFirst({
-    where: {
-      threadId,
-      type: "thread.message.created",
-      payload: { path: ["messageId"], equals: message.id },
-    },
-    orderBy: { seq: "desc" },
-    select: { payload: true },
-  });
-  const receiptRunIds = sendEventRunIds(receiptEvent?.payload);
-  const receiptRuns = receiptRunIds.length
-    ? await deps.prisma.run.findMany({ where: { id: { in: receiptRunIds } } })
-    : [];
-  const receiptRunById = new Map(receiptRuns.map((run) => [run.id, run]));
-  const orderedReceiptRuns = receiptRunIds.flatMap((id) => {
-    const run = receiptRunById.get(id);
-    return run ? [run] : [];
-  });
-  const linkedRun =
-    message.sourceRuns[0] ??
-    (message.runId ? await deps.prisma.run.findUnique({ where: { id: message.runId } }) : null);
-  if (!linkedRun && orderedReceiptRuns.length === 0) return null;
-  const runs = orderedReceiptRuns.length
-    ? orderedReceiptRuns
-    : message.sourceRuns.length
-      ? message.sourceRuns
-      : [linkedRun!];
-  const pendingSteering = releaseTakeover
-    ? await deps.prisma.steeringMessage.findFirst({
-        where: { messageId: message.id, claimedAt: null },
-        select: { runId: true },
-      })
-    : null;
-  if (releaseTakeover && pendingSteering?.runId) await releaseTakeover(pendingSteering.runId);
-  await enqueueRunsNeedingContinue(deps.jobs, runs);
-  const latestEvent = await deps.prisma.event.findFirst({
-    where: { threadId },
-    orderBy: { seq: "desc" },
-    select: { seq: true },
-  });
-  if (latestEvent) {
-    await deps.events.notify(threadId, latestEvent.seq);
-  }
-  return sendResult(message, runs);
-}
-
-function sendEventRunIds(payload: Prisma.JsonValue | undefined): string[] {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return [];
-  const runIds = (payload as { runIds?: unknown }).runIds;
-  return Array.isArray(runIds) ? runIds.filter((id): id is string => typeof id === "string") : [];
-}
-
-function sendResult(message: { seq: number }, runs: Array<{ id: string; taskId: string }>) {
-  const first = runs[0];
-  if (!first) throw new IsolationError("Send did not create a run");
-  return {
-    taskId: first.taskId,
-    runId: first.id,
-    seq: message.seq,
-    runIds: runs.map((run) => run.id),
-  };
-}
-
 export async function cancelSupersededQueuedRuns(
   tx: Prisma.TransactionClient,
   input: { threadId: string; botIds: string[]; keepRunIds: string[] },
@@ -315,9 +233,14 @@ export async function lockAndLoadGroupMembers(
  */
 function groupSendTargets(
   members: Array<{ botId: string; name: string }>,
-  input: { text?: string; mentions?: MentionTargetInput[] },
+  input: { text?: string; mentions?: MentionTargetInput[]; answersQuestion?: true },
   replied: string | undefined,
 ) {
+  if (input.answersQuestion) {
+    return replied && members.some((member) => member.botId === replied)
+      ? { botIds: [replied], namesNobody: false }
+      : { botIds: [], namesNobody: false };
+  }
   const targeting = {
     text: input.text ?? "",
     members: members.map((member) => ({ id: member.botId, name: member.name })),
@@ -362,7 +285,7 @@ export function sendTargetBotIds(
   target:
     | { kind: "bot"; botId: string }
     | { kind: "group"; members: Array<{ botId: string; name: string }> },
-  input: { text?: string; mentions?: MentionTargetInput[] },
+  input: { text?: string; mentions?: MentionTargetInput[]; answersQuestion?: true },
   replied?: string,
 ): string[] {
   if (target.kind === "bot") return [target.botId];
@@ -431,13 +354,18 @@ async function assertImageRecipients(
     botId: string;
     runs: Array<ImageAdmissionRun & { id: string; userId: string }>;
     imageAdmission: Parameters<typeof assertThreadImageInput>[5];
+    replyToMessageId?: string;
+    repliedQuestionRunId?: string | null;
   },
 ) {
   if (!attachmentBlocks.some((block) => block.kind === "image")) return;
-  const { botId, runs } = recipient;
+  const { botId, runs, replyToMessageId, repliedQuestionRunId } = recipient;
   const answered = [];
   for (const run of runs.filter(
-    (run) => run.status === "waiting_input" && run.userId === actor.userId,
+    (run) =>
+      run.status === "waiting_input" &&
+      run.userId === actor.userId &&
+      (repliedQuestionRunId === undefined || run.id === repliedQuestionRunId),
   )) {
     const eligible = await eligibleWaitingTextAnswer(tx, {
       spaceId: actor.spaceId,
@@ -445,6 +373,8 @@ async function assertImageRecipients(
       runId: run.id,
       answeredByUserId: actor.userId,
       answer: text ?? "",
+      ...(replyToMessageId ? { replyToMessageId } : {}),
+      ...(repliedQuestionRunId !== undefined ? { messageId: replyToMessageId } : {}),
     });
     if (eligible) answered.push(run);
   }
@@ -504,6 +434,7 @@ export async function sendThreadMessage(
     replyToMessageId?: string;
     replyQuote?: string;
     fromPage?: true;
+    answersQuestion?: true;
     clientNonce?: string;
     nativeCalendarSessionId?: string;
     nativeCalendarDeviceDigest?: string;
@@ -517,8 +448,10 @@ export async function sendThreadMessage(
   const existing = await replayExistingSend(
     deps,
     target.threadId,
+    actor.userId,
     input.clientNonce,
     releaseTakeover,
+    input.answersQuestion ? input : undefined,
   );
   if (existing) return existing;
   // Live events carry the call id so a spoken turn joins the call card on first
@@ -528,6 +461,7 @@ export async function sendThreadMessage(
   if (requestedReplyQuote && !input.replyToMessageId) {
     throw new ORPCError("BAD_REQUEST", { message: "replyQuote requires replyToMessageId." });
   }
+  validateStrictAnswerInput(input);
 
   const commit = () =>
     deps.prisma.$transaction(async (tx) => {
@@ -539,7 +473,8 @@ export async function sendThreadMessage(
       let replyQuote: string | undefined;
       let replyPreview: ReplyPreview | null | undefined;
       let repliedBotId: string | undefined;
-      let repliedQuestionRunId: string | undefined;
+      // The run of the question card this message replies to; null when that card has no run.
+      let repliedQuestionRunId: string | null | undefined;
       if (input.replyToMessageId) {
         const reply = await tx.message.findFirst({
           where: { id: input.replyToMessageId, threadId: target.threadId },
@@ -560,20 +495,12 @@ export async function sendThreadMessage(
         } else {
           replyToMessageId = input.replyToMessageId;
           if (reply.role === "bot" && reply.botId) repliedBotId = reply.botId;
-          const parsed = MessageBlockSchema.array().safeParse(reply.blocks);
+          const { blocks: replyBlocks, intact: replyIntact } = parseMessageBlocks(reply);
           replyPreview = null;
-          if (parsed.success) {
-            if (
-              reply.role === "bot" &&
-              parsed.data.some(
-                (block) =>
-                  block.kind === "ask" && isQuestionAskBlock(block) && block.status !== "answered",
-              )
-            ) {
-              repliedQuestionRunId = reply.runId ?? undefined;
-            }
+          repliedQuestionRunId = repliedQuestionTarget(reply, replyBlocks, replyIntact);
+          if (replyBlocks.length > 0) {
             replyPreview = messageReplyPreview(
-              parsed.data,
+              replyBlocks,
               reply.role as ReplyPreview["role"],
               reply.botId ?? undefined,
               await loadMessageAuthor(tx, reply.authorUserId),
@@ -590,10 +517,10 @@ export async function sendThreadMessage(
           // Persist only text derived from the authoritative parent. A
           // mismatch or a derivation failure still sends a plain reply so
           // quote verification cannot lose a message.
-          if (requestedReplyQuote && parsed.success) {
+          if (requestedReplyQuote && replyBlocks.length > 0) {
             try {
               replyQuote = deriveMessageQuote(
-                parsed.data,
+                replyBlocks,
                 requestedReplyQuote,
                 reply.role === "user" ? "plain-text" : "markdown",
               );
@@ -612,6 +539,7 @@ export async function sendThreadMessage(
         answer: input.text ?? "",
         beforeMessageSeq: message.seq,
         ...(replyToMessageId ? { replyToMessageId } : {}),
+        ...(repliedQuestionRunId !== undefined ? { messageId: replyToMessageId } : {}),
         answerMessageId: message.id,
       });
       const targetedQuestionRun = (
@@ -623,6 +551,14 @@ export async function sendThreadMessage(
             run.status === "waiting_input" &&
             run.userId === actor.userId,
         )?.id;
+      const loadStrictQuestion = (allowedBotIds: readonly string[]) =>
+        loadStrictQuestionRun(tx, {
+          actor,
+          threadId: target.threadId,
+          replyToMessageId,
+          text: input.text,
+          allowedBotIds,
+        });
 
       if (target.kind === "bot") {
         const mentionTargets = splitMentionTargets(input.mentions);
@@ -664,8 +600,13 @@ export async function sendThreadMessage(
             botId: target.botId,
             runs: activeRuns,
             imageAdmission: deps.imageAdmission,
+            replyToMessageId,
+            repliedQuestionRunId,
           });
         }
+        const strictRun = input.answersQuestion
+          ? await loadStrictQuestion([target.botId])
+          : undefined;
         const blocks = buildUserMessageBlocks(
           input.text,
           sendAttachmentBlocks(attachmentBlocks, artifacts, input.imageHandling),
@@ -682,30 +623,51 @@ export async function sendThreadMessage(
           nativeCalendarDeviceDigest: input.nativeCalendarDeviceDigest,
         });
         // A bare "stop" from the owner while work is active is the Stop button, not a reply.
-        const stopping = activeRuns.length > 0 && !routineRuns.length && isStopMessage(input);
+        const stopping =
+          !strictRun && activeRuns.length > 0 && !routineRuns.length && isStopMessage(input);
         if (input.noModel && !stopping) {
           throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
         }
-        const answered: typeof activeRuns = [];
-        const targetedRunId = targetedQuestionRun(activeRuns);
-        // Someone else's question stays on its card; this message starts the sender's own run.
-        for (const run of activeRuns.filter(
-          (run) => !stopping && run.status === "waiting_input" && run.userId === actor.userId,
-        )) {
-          if (targetedRunId && run.id !== targetedRunId) continue;
+        const answered: Array<{
+          id: string;
+          taskId: string;
+          status: string;
+          userId: string;
+          trigger?: string | null;
+        }> = [];
+        if (strictRun) {
           if (
-            await answerWaitingRunWithTextInTransaction(tx, {
+            !(await answerWaitingRunWithTextInTransaction(tx, {
               ...composerAnswerInput(message),
-              runId: run.id,
-            })
-          )
-            answered.push({ ...run, status: "queued" });
-          else
-            await retireWaitingQuestionInTransaction(tx, {
-              ...composerAnswerInput(message),
-              botId: target.botId,
-              runId: run.id,
-            });
+              messageId: replyToMessageId,
+              runId: strictRun.id,
+            }))
+          ) {
+            throw new QuestionAlreadyAnsweredError();
+          }
+          answered.push({ ...strictRun, status: "queued" });
+        } else {
+          const targetedRunId = targetedQuestionRun(activeRuns);
+          // Someone else's question stays on its card; this message starts the sender's own run.
+          // A reply to a question card answers only that card's run, or none when it cannot.
+          for (const run of activeRuns.filter(
+            (run) => !stopping && run.status === "waiting_input" && run.userId === actor.userId,
+          )) {
+            if (repliedQuestionRunId !== undefined && run.id !== targetedRunId) continue;
+            if (
+              await answerWaitingRunWithTextInTransaction(tx, {
+                ...composerAnswerInput(message),
+                runId: run.id,
+              })
+            )
+              answered.push({ ...run, status: "queued" });
+            else if (repliedQuestionRunId === undefined)
+              await retireWaitingQuestionInTransaction(tx, {
+                ...composerAnswerInput(message),
+                botId: target.botId,
+                runId: run.id,
+              });
+          }
         }
         if (answered.length) {
           const primary = answered[0];
@@ -888,7 +850,10 @@ export async function sendThreadMessage(
         },
       });
       // A plain message while members wait on the user answers the latest question only.
-      const asking = namesNobody ? latestWaitingRun(activeRuns) : undefined;
+      const asking =
+        namesNobody && repliedQuestionRunId === undefined
+          ? latestWaitingRun(activeRuns)
+          : undefined;
       if (asking) {
         targetBotIds = [asking.botId];
         namesNobody = false;
@@ -900,9 +865,12 @@ export async function sendThreadMessage(
             botId,
             runs: activeRuns.filter((run) => run.botId === botId),
             imageAdmission: deps.imageAdmission,
+            replyToMessageId,
+            repliedQuestionRunId,
           });
         }
       }
+      const strictRun = input.answersQuestion ? await loadStrictQuestion(targetBotIds) : undefined;
       const blocks = buildUserMessageBlocks(
         input.text,
         sendAttachmentBlocks(attachmentBlocks, artifacts, input.imageHandling),
@@ -919,7 +887,7 @@ export async function sendThreadMessage(
       // A bare "stop" while any member, or a helper it started, works is the Stop button,
       // as in a bot's own chat.
       const working =
-        !routineRuns.length && isStopMessage(input)
+        !strictRun && !routineRuns.length && isStopMessage(input)
           ? await tx.run.findFirst({
               where: {
                 OR: [
@@ -969,37 +937,61 @@ export async function sendThreadMessage(
       const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
       const rank = (candidate: (typeof activeRuns)[number]) =>
         steersMessageFrom(candidate, actor) ? 2 : steersUserMessage(candidate) ? 1 : 0;
-      const answeredByBotId = new Map<string, Array<(typeof activeRuns)[number]>>();
-      const targetedRunId = targetedQuestionRun(activeRuns);
-      for (const run of activeRuns) {
-        if (run.status === "waiting_input") {
-          // Someone else's question stays on its card; this message starts the sender's own run.
-          if (run.userId !== actor.userId || (targetedRunId && run.id !== targetedRunId)) continue;
-          const answered = await answerWaitingRunWithTextInTransaction(tx, {
-            ...composerAnswerInput(message),
-            runId: run.id,
-          });
-          if (answered) {
-            const queuedForBot = answeredByBotId.get(run.botId) ?? [];
-            queuedForBot.push({ ...run, status: "queued" });
-            answeredByBotId.set(run.botId, queuedForBot);
-          } else {
-            await retireWaitingQuestionInTransaction(tx, {
+      const answeredByBotId = new Map<
+        string,
+        Array<{
+          id: string;
+          taskId: string;
+          botId: string;
+          status: string;
+          userId: string;
+          trigger?: string | null;
+        }>
+      >();
+      if (strictRun) {
+        const answered = await answerWaitingRunWithTextInTransaction(tx, {
+          ...composerAnswerInput(message),
+          messageId: replyToMessageId,
+          runId: strictRun.id,
+        });
+        if (!answered) throw new QuestionAlreadyAnsweredError();
+        answeredByBotId.set(strictRun.botId, [{ ...strictRun, status: "queued" }]);
+      } else {
+        const targetedRunId = targetedQuestionRun(activeRuns);
+        for (const run of activeRuns) {
+          if (run.status === "waiting_input") {
+            // Someone else's question stays on its card; this message starts the sender's own run.
+            if (
+              run.userId !== actor.userId ||
+              (repliedQuestionRunId !== undefined && run.id !== targetedRunId)
+            )
+              continue;
+            const answered = await answerWaitingRunWithTextInTransaction(tx, {
               ...composerAnswerInput(message),
-              botId: run.botId,
               runId: run.id,
             });
+            if (answered) {
+              const queuedForBot = answeredByBotId.get(run.botId) ?? [];
+              queuedForBot.push({ ...run, status: "queued" });
+              answeredByBotId.set(run.botId, queuedForBot);
+            } else if (repliedQuestionRunId === undefined) {
+              await retireWaitingQuestionInTransaction(tx, {
+                ...composerAnswerInput(message),
+                botId: run.botId,
+                runId: run.id,
+              });
+            }
+            continue;
           }
-          continue;
+          if (
+            !STEERABLE_RUN_STATUSES.has(run.status) ||
+            messageBypassesTakeoverWait(run) ||
+            !runHoldsChat(run)
+          )
+            continue;
+          const current = activeByBotId.get(run.botId);
+          if (!current || rank(run) > rank(current)) activeByBotId.set(run.botId, run);
         }
-        if (
-          !STEERABLE_RUN_STATUSES.has(run.status) ||
-          messageBypassesTakeoverWait(run) ||
-          !runHoldsChat(run)
-        )
-          continue;
-        const current = activeByBotId.get(run.botId);
-        if (!current || rank(run) > rank(current)) activeByBotId.set(run.botId, run);
       }
       const runs: Array<{
         id: string;
@@ -1119,8 +1111,10 @@ export async function sendThreadMessage(
     const winner = await replayExistingSend(
       deps,
       target.threadId,
+      actor.userId,
       input.clientNonce,
       releaseTakeover,
+      input.answersQuestion ? input : undefined,
     );
     if (winner) return { replay: winner } as const;
     throw error;

@@ -8,6 +8,7 @@ import { assertTeachingSendAllowed } from "../bots/taught-skills.js";
 import type { RouterDeps } from "../router.js";
 import { botsRunOwnModels, modelSetup } from "../routes/shared.js";
 import { isStopMessage } from "./thread-stop.js";
+import { replayExistingSend } from "./thread-strict-answer.js";
 import { takeoverReleaser } from "./thread-takeover.js";
 import {
   replyParentBotId,
@@ -33,15 +34,33 @@ export async function sendAsUser(
   startRoutines?: Parameters<typeof sendThreadMessage>[5],
   nativeSessionId?: string,
 ) {
-  const setup = await modelSetup(deps, actor);
   const target = await resolveThreadTarget(deps.prisma, actor, input);
+  const releaseTakeover = takeoverReleaser(deps, actor, target);
+  // Strict card answers replay any saved receipt before checking model setup so a retry
+  // after a lost HTTP response still returns its receipt if model lookup is unavailable.
+  // Check teaching before receipt replay so a teaching session blocks strict answer replays.
+  if (input.answersQuestion) {
+    if (target.kind === "bot") {
+      await assertTeachingSendAllowed(deps.prisma, actor.spaceId, target.botId);
+    }
+    const replayed = await replayExistingSend(
+      deps,
+      target.threadId,
+      actor.userId,
+      input.clientNonce,
+      releaseTakeover,
+      input,
+    );
+    if (replayed) return replayed;
+  }
+  const setup = await modelSetup(deps, actor);
   // A bot with its own runnable model needs no main model, and stopping work needs none.
   const replied =
     target.kind === "group" ? await replyParentBotId(deps.prisma, target, input) : undefined;
   const noModel =
     setup.needsModel &&
     !(await botsRunOwnModels(deps, actor, sendTargetBotIds(target, input, replied)));
-  if (noModel && !isStopMessage(input)) {
+  if (noModel && (input.answersQuestion || !isStopMessage(input))) {
     throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
   }
   if (target.kind === "bot") {
@@ -74,7 +93,7 @@ export async function sendAsUser(
       nativeCalendarSessionId: deviceKey ? nativeSessionId : undefined,
       nativeCalendarDeviceDigest: deviceKey ? nativeCalendarDeviceDigest(deviceKey) : undefined,
     },
-    takeoverReleaser(deps, actor, target),
+    releaseTakeover,
     startRoutines,
   ).catch((error: unknown) => {
     if (error instanceof AttachmentValidationError) {

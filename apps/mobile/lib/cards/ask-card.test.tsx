@@ -695,8 +695,9 @@ it("stacks option rows in a non-wrapping full-width column and keeps approvals i
         <AskActions actions={actions} approval={approval} onAnswer={async () => undefined} />,
       ),
     );
-    const buttons = [...container.querySelectorAll("button")];
-    const row = buttons[0]!.parentElement!;
+    // An option card also offers typing its own answer below the option rows.
+    const row = [...container.querySelectorAll("button")][0]!.parentElement!;
+    const buttons = [...row.querySelectorAll("button")];
     // Question options are full-width rows; approvals stay native buttons sized to their label.
     expect(buttons.map((b) => b.getAttribute(approval ? "data-fill" : "data-row"))).toEqual(
       approval ? ["false", "false"] : ["true", "true"],
@@ -765,7 +766,7 @@ it("only marks question options selected after an answer exists", async () => {
       ),
     );
     expect(
-      [...container.querySelectorAll("button")].map((button) =>
+      [...container.querySelectorAll('button[data-row="true"]')].map((button) =>
         button.getAttribute("data-selected"),
       ),
     ).toEqual(selectedAnswer ? ["true", "false"] : [null, null]);

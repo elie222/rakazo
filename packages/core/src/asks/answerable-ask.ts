@@ -1,3 +1,4 @@
+import { AGENT_IMPORT_ASK_ACTION_ID } from "@rakazo/contracts";
 import { isSecretAskBlock } from "../runs/action-approval.js";
 
 type AskSnapshot = {
@@ -68,7 +69,29 @@ export function selectedAskActionLabel(
   answer: string,
   actions?: readonly { id: string; label: string }[],
 ): string {
-  return resolveAskChoice(answer, actions)?.label ?? answer;
+  return (
+    (resolveAskChoice(answer, actions) ?? legacyImportAction(answer, actions))?.label ?? answer
+  );
+}
+
+/**
+ * Whether a user reply's text is a card's stored answer. A card answered before the import
+ * action stopped counting as a choice stored that action's id while its reply holds the label.
+ */
+export function askAnswerRepliedWith(
+  answer: string,
+  actions: readonly { id: string; label: string }[] | undefined,
+  replyText: string,
+): boolean {
+  const text = replyText.trim();
+  if (!text) return false;
+  if (answer.trim() === text) return true;
+  return legacyImportAction(answer, actions)?.label.trim().toLowerCase() === text.toLowerCase();
+}
+
+function legacyImportAction(answer: string, actions?: readonly { id: string; label: string }[]) {
+  if (answer.trim() !== AGENT_IMPORT_ASK_ACTION_ID) return undefined;
+  return actions?.find((action) => action.id === AGENT_IMPORT_ASK_ACTION_ID);
 }
 
 export function resolveAskChoice(
@@ -78,8 +101,10 @@ export function resolveAskChoice(
   if (!actions?.length) return undefined;
   const trimmed = answer.trim();
   if (!trimmed) return undefined;
-  const byId = actions.find((action) => action.id === trimmed);
+  // Client-only UI actions (such as opening the agent importer) are never bot answer choices.
+  const choices = actions.filter((action) => action.id !== AGENT_IMPORT_ASK_ACTION_ID);
+  const byId = choices.find((action) => action.id === trimmed);
   if (byId) return byId;
   const lower = trimmed.toLowerCase();
-  return actions.find((action) => action.label.trim().toLowerCase() === lower);
+  return choices.find((action) => action.label.trim().toLowerCase() === lower);
 }

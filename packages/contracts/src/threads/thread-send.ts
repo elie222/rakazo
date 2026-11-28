@@ -4,6 +4,9 @@ import { NativeCalendarDeviceKey } from "../personal-calendar/personal-calendar.
 import { ATTACHMENT_COUNT_CEILING } from "./attachments.js";
 import { REPLY_QUOTE_MAX_LENGTH, THREAD_MESSAGE_TEXT_MAX_LENGTH } from "./thread.js";
 
+/** Stable error code when a strict card-answer send targets a closed or foreign question. */
+export const QUESTION_ALREADY_ANSWERED_ERROR = "QUESTION_ALREADY_ANSWERED";
+
 export const threadTarget = z
   .object({
     botId: Id.optional(),
@@ -63,6 +66,19 @@ export const threadSendInput = threadSendFields.superRefine((input, ctx) => {
     });
   }
 });
+
+/** A typed answer to one pending question card: it answers only that card and never stops work. */
+export const threadAnswerQuestionInput = threadTarget
+  .safeExtend({
+    text: z.string().max(THREAD_MESSAGE_TEXT_MAX_LENGTH),
+    replyToMessageId: Id,
+    clientNonce: z.string().min(1).max(200),
+  })
+  .superRefine((input, ctx) => {
+    if (!input.text.trim()) {
+      ctx.addIssue({ code: "custom", message: "Provide a nonblank answer", path: ["text"] });
+    }
+  });
 
 export const threadSendOutput = z.object({
   taskId: Id,

@@ -481,6 +481,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     react: composer.react,
     markUnread: markUnreadFrom,
     answer: composer.answer,
+    typeAnswer: composer.typeAnswer,
     openBot,
     openComputer,
     // A chat attachment opens the version it was sent with, not the newest.

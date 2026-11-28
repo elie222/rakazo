@@ -179,6 +179,9 @@ export function threadsRoutes(ctx: RouterContext) {
       send: authed.threads.send.handler(({ context, input }) =>
         send(context.actor, input, undefined, context.nativeSessionId),
       ),
+      answerQuestion: authed.threads.answerQuestion.handler(({ context, input }) =>
+        send(context.actor, { ...input, answersQuestion: true }),
+      ),
       nativeCalendarPending: authed.threads.nativeCalendarPending.handler(({ context, input }) => {
         const device = calendarDevice(context, input.deviceKey);
         return device ? pendingNativeCalendar(deps.prisma, device, input.botId) : [];

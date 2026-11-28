@@ -1,5 +1,5 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
-import { isQuestionAskBlock, resolveAskChoice } from "@rakazo/core";
+import { askAnswerRepliedWith, isQuestionAskBlock, resolveAskChoice } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { storedMessageBlocks } from "@rakazo/db";
 import { neutralizeSpeakerLabels } from "../../runtime/context/history-speakers.js";
@@ -61,7 +61,7 @@ export async function checkpointAnswerHistory(
       .trim();
     const removeAnswer =
       answer !== undefined &&
-      (text === answer.text.trim() ||
+      (askAnswerRepliedWith(answer.text, answer.actions, text) ||
         (answer.choiceId !== undefined &&
           resolveAskChoice(text, answer.actions)?.id === answer.choiceId));
     const target = source.replyTo;

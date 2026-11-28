@@ -1,5 +1,6 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
+import { AGENT_IMPORT_ASK_ACTION_ID } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { checkpointAnswerHistory } from "./checkpoint-answer-history.js";
 import { messageToAgentHistoryText } from "./reply-context.js";
@@ -73,6 +74,22 @@ describe("checkpoint answer history", () => {
     );
     expect(result.history).toEqual([]);
     expect(result.representedMessageIds).toContain("answer");
+  });
+
+  it("removes the import label reply of a card that stored the import action id", async () => {
+    const importCard = {
+      ...card,
+      blocks: card.blocks.map((block) => ({
+        ...block,
+        answer: AGENT_IMPORT_ASK_ACTION_ID,
+        actions: [...block.actions, { id: AGENT_IMPORT_ASK_ACTION_ID, label: "Move my assistant" }],
+      })),
+    };
+    const result = await project(
+      [{ ...reply, blocks: [{ kind: "text", text: "Move my assistant" }] }],
+      [importCard],
+    );
+    expect(result.history).toEqual([]);
   });
 
   it("finds the link when the card has aged out of the loaded history", async () => {
