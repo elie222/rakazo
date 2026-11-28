@@ -1,4 +1,4 @@
-import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { AgentLoopTurnUpdate, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Agent } from "@earendil-works/pi-agent-core";
 import type {
   Api,
@@ -75,6 +75,7 @@ import {
   sanitizeError,
   sanitizeProviderError,
 } from "./pi-runtime-errors.js";
+import { escalationTarget, fallBackToLeftModel, toolResultText } from "./pi-runtime-escalation.js";
 import type { FallbackStreamState } from "./pi-runtime-fallback.js";
 import {
   continuationRepeat,
@@ -469,6 +470,8 @@ export class PiAgentRuntime implements AgentRuntime {
         const hasBackups = Boolean(request.fallbackModels?.length);
         let agent: Agent;
         let activeStreamTarget = host.activeModel;
+        // An escalation hook's move is a switch of its own, not a fallback.
+        let escalating = false;
         // A tool result that ended the turn carries the reply the user must still see.
         let terminatedReply: string | undefined;
         // Whether ending now would leave the user nothing: no text shown, no tools run, and the run
@@ -556,6 +559,8 @@ export class PiAgentRuntime implements AgentRuntime {
           }),
           onSwitch: async (target) => {
             await request.onModelChange?.(target.config.provider, target.config.id);
+            if (!escalating)
+              request.modelEscalation?.onFallback?.(target.config.provider, target.config.id);
             activeStreamTarget = target;
             contextPolicy = contextPolicyFor(target);
             host.activeModel = target;
@@ -664,6 +669,50 @@ export class PiAgentRuntime implements AgentRuntime {
               mode === "computer",
             );
         }
+        // Between turns the escalation hook may move the main model up, switching as to a backup so
+        // the transcript carries over, or add a note to the next request. A move that cannot be
+        // made leaves the run on its model.
+        const escalate = async (messageCount: number): Promise<AgentLoopTurnUpdate | undefined> => {
+          const escalation = request.modelEscalation;
+          const step = escalation?.next();
+          if (!escalation || !step) return undefined;
+          if ("note" in step)
+            return { messages: [{ role: "user", content: step.note, timestamp: Date.now() }] };
+          try {
+            const target = await escalationTarget(escalation, step.model);
+            // The next request throws on images a model cannot take, ending the run instead of
+            // falling back, so such a move is refused here.
+            if (!target || (hasCurrentImages && !target.model.input.includes("image"))) {
+              escalation.failed?.(step.model.id);
+              return undefined;
+            }
+            const left = activeStreamTarget;
+            // As for a backup, the old model's reasoning is not replayed to the new one.
+            mainFallbackState.messagesBeforeSwitch = messageCount;
+            escalating = true;
+            try {
+              await fallbackState.onSwitch(target);
+            } finally {
+              escalating = false;
+            }
+            mainTarget = target;
+            fallBackToLeftModel(mainFallbackState, left);
+            return {
+              model: target.model,
+              thinkingLevel: thinkingLevelFor(target.model, target.config.thinkingLevel),
+            };
+          } catch (error) {
+            escalation.failed?.(step.model.id);
+            // Never log the message: credential diagnostics can quote the key.
+            getLogger().warn("model.escalation.failed", {
+              runId: request.runId,
+              provider: step.model.provider,
+              model: step.model.id,
+              "error.type": error instanceof Error ? error.name : typeof error,
+            });
+            return undefined;
+          }
+        };
         const toolCallIds = runToolCallIds(history as Message[], host.providerToolCallIds);
         agent = new Agent({
           sessionId: conversationSessionId(request.threadId, request.botId),
@@ -678,7 +727,7 @@ export class PiAgentRuntime implements AgentRuntime {
               toolCallIds,
             ),
           getApiKey:
-            hasBackups || computer
+            hasBackups || computer || request.modelEscalation
               ? async () => activeStreamTarget.credentials?.accessToken ?? activeStreamTarget.apiKey
               : async () => apiKey,
           finishTurn: async (turn, turnSignal) => {
@@ -735,7 +784,18 @@ export class PiAgentRuntime implements AgentRuntime {
               agent.steer({ role: "user", content: finishedShells, timestamp: Date.now() });
           },
           prepareNextTurnWithContext: async (turn, turnSignal) => {
-            const update = computer
+            // A turn that ends the run has no next request, so no move is made for it.
+            const escalated =
+              mode === "main" &&
+              !turnSignal?.aborted &&
+              !isTurnEndingAfterToolBatch({
+                pausePending: host.pausePending,
+                terminatedReply,
+                toolCallBudgetExceeded: host.toolCallBudget.exceeded,
+              })
+                ? await escalate(turn.context.messages.length)
+                : undefined;
+            const modeUpdate = computer
               ? {
                   context: {
                     ...turn.context,
@@ -752,6 +812,9 @@ export class PiAgentRuntime implements AgentRuntime {
                   ),
                 }
               : undefined;
+            const update: AgentLoopTurnUpdate | undefined = escalated
+              ? { ...modeUpdate, ...escalated }
+              : modeUpdate;
             if (!request.claimSteering) return update;
             if (
               turnSignal?.aborted ||
@@ -794,7 +857,7 @@ export class PiAgentRuntime implements AgentRuntime {
             // Returned rather than steered: Pi polls its steering queue once per turn before
             // this hook runs, and skips the poll after it when that one found a message, such
             // as a finished shell's output. Returned messages always go into the next request.
-            return { ...update, messages };
+            return { ...update, messages: [...(update?.messages ?? []), ...messages] };
           },
           initialState: {
             systemPrompt,
@@ -878,6 +941,12 @@ export class PiAgentRuntime implements AgentRuntime {
           if (event.type === "tool_execution_end" && isTerminatingReplyResult(event.result)) {
             terminatedReply = terminatingReplyText(event.result) ?? terminatedReply;
           }
+          if (event.type === "tool_execution_end")
+            request.modelEscalation?.observeToolResult(event.toolName, {
+              isError: event.isError,
+              text: toolResultText(event.result),
+              raw: event.result,
+            });
           if (
             event.type === "tool_execution_end" &&
             shouldRecordFinishedToolCall(event, turnSignal)
@@ -920,6 +989,7 @@ export class PiAgentRuntime implements AgentRuntime {
             );
             runningToolSteps.delete(event.toolCallId);
             runningToolSteps.set(event.toolCallId, step);
+            request.modelEscalation?.observeToolCall(event.toolName, event.args);
             // Live activity feedback: without this the thread shows a bare
             // "working…" for the whole tool call with nothing actionable.
             toolActivityShowing = true;
