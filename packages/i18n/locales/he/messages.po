@@ -12391,6 +12391,11 @@ msgstr "המודל הזה לא יכול לקרוא תמונות. בחרו מוד
 msgid "This model's context window is too small. Choose another model."
 msgstr "חלון ההקשר של המודל הזה קטן מדי. יש לבחור מודל אחר."
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/run-error.ts
+msgid "This model's image limit is {limit}. Send fewer images or choose another model."
+msgstr ""
+
 #: apps/web/src/pages/space/Artifacts.tsx
 msgid "This month"
 msgstr "החודש"

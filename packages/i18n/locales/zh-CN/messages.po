@@ -12391,6 +12391,11 @@ msgstr "此模型无法读取图片。请选择支持图片的模型。"
 msgid "This model's context window is too small. Choose another model."
 msgstr "此模型的上下文窗口太小。请选择其他模型。"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/run-error.ts
+msgid "This model's image limit is {limit}. Send fewer images or choose another model."
+msgstr ""
+
 #: apps/web/src/pages/space/Artifacts.tsx
 msgid "This month"
 msgstr "本月"

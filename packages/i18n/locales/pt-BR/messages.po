@@ -12391,6 +12391,11 @@ msgstr "Este modelo não consegue ler imagens. Escolha um modelo que aceite imag
 msgid "This model's context window is too small. Choose another model."
 msgstr "A janela de contexto deste modelo é pequena demais. Escolha outro modelo."
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/run-error.ts
+msgid "This model's image limit is {limit}. Send fewer images or choose another model."
+msgstr ""
+
 #: apps/web/src/pages/space/Artifacts.tsx
 msgid "This month"
 msgstr "Este mês"
