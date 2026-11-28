@@ -175,11 +175,19 @@ describePostgres("user devices (PostgreSQL)", () => {
     const computerToken = createUserDeviceToken();
     const computerTokenHash = hashUserDeviceToken(computerToken);
     const pairedAt = new Date(1000);
+    const session = await prisma.session.create({
+      data: {
+        id: `legacy-session-${suffix}`,
+        token: `legacy-session-token-${suffix}`,
+        userId,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
     try {
       // The previous API inserts these columns without naming the new kind.
       await prisma.$executeRaw`INSERT INTO "user_devices"
-        ("id", "userId", "name", "platform", "tokenHash", "createdAt")
-        VALUES (${computerId}, ${userId}, 'Legacy computer', 'win32', ${computerTokenHash}, ${pairedAt})`;
+        ("id", "userId", "name", "platform", "tokenHash", "createdAt", "sessionId")
+        VALUES (${computerId}, ${userId}, 'Legacy computer', 'win32', ${computerTokenHash}, ${pairedAt}, ${session.id})`;
       const authenticated = await hub.authenticate(`Bearer ${computerToken}`);
       expect(authenticated).toMatchObject({ id: computerId, userId, platform: "win32" });
       await hub.attach(authenticated!, new Socket());
