@@ -272,10 +272,34 @@ async function saveToInbox(
   options: { capped: boolean; verified: boolean; keepFiles: boolean; standalone: boolean },
 ): Promise<{ id: string; files: InboxFile[] } | null> {
   const where = { botId_key: { botId: bot.id, key: email.key } };
-  const select = { id: true, attachments: true } as const;
+  const select = {
+    id: true,
+    attachments: true,
+    fromAddress: true,
+    fromName: true,
+    subject: true,
+    text: true,
+  } as const;
+  type Saved = { id: string; attachments: unknown } & Record<
+    "fromAddress" | "fromName" | "subject" | "text",
+    string
+  >;
   const found = await deps.prisma.botEmailMessage.findUnique({ where, select });
   // A copy that did not name the bot is saved without its files; one that has earned them adds them.
-  const saved = async (row: { id: string; attachments: unknown }, stored?: InboxFile[]) => {
+  const saved = async (row: Saved, stored?: InboxFile[]) => {
+    // A copy that has earned the whole body replaces the cut one an earlier copy saved. The
+    // searched fields are sealed and indexed together, so they are written together.
+    if (options.keepFiles && row.text === email.text && email.wholeText !== email.text) {
+      await deps.prisma.botEmailMessage.update({
+        where: { id: row.id },
+        data: {
+          fromAddress: row.fromAddress,
+          fromName: row.fromName,
+          subject: row.subject,
+          text: email.wholeText,
+        },
+      });
+    }
     const files = storedEmailAttachments(row);
     // Inline-only mail can have a saved empty list. An unreadable list cannot be replaced.
     const emptyList = Array.isArray(row.attachments) && row.attachments.length === 0;
@@ -322,7 +346,8 @@ async function saveToInbox(
         to: email.to.slice(0, LIST_STORED_MAX),
         cc: email.cc.slice(0, LIST_STORED_MAX),
         subject: email.subject.slice(0, HEADER_MAX_CHARS),
-        text: email.text,
+        // Storage the owner pays for, as files are: kept whole for the same senders.
+        text: options.keepFiles ? email.wholeText : email.text,
         attachments: files,
       },
       select,

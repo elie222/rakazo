@@ -6,30 +6,34 @@ const MAX_BODY_SCAN_CHARS = INBOUND_EMAIL_TEXT_MAX_CHARS * 10;
 const SIGNATURE_SELECTOR =
   ".gmail_signature, .gmail_signature_prefix, [data-smartmail='gmail_signature'], [id='Signature'], [id='signature']";
 
-function limitBody(text: string): string {
-  return text.length > INBOUND_EMAIL_TEXT_MAX_CHARS
-    ? `${sliceWellFormed(text, INBOUND_EMAIL_TEXT_MAX_CHARS)}\n[…]`
-    : text;
+function limitBody(text: string, max = INBOUND_EMAIL_TEXT_MAX_CHARS): string {
+  return text.length > max ? `${sliceWellFormed(text, max)}\n[…]` : text;
 }
 
 export async function inboundEmailBodyText(
   plainText: string | undefined,
   rawHtml: string | undefined,
-): Promise<{ text: string; modelText: string }> {
+): Promise<{ text: string; wholeText: string; modelText: string }> {
   const plain = plainText?.trim();
   // The stored body and mail deduplication keep the original bounded text.
   if (plain) {
     return {
       text: limitBody(plain),
+      wholeText: limitBody(plain, MAX_BODY_SCAN_CHARS),
       modelText: limitBody(cleanPlainText(plain.slice(0, MAX_BODY_SCAN_CHARS))),
     };
   }
-  if (!rawHtml) return { text: "", modelText: "" };
+  if (!rawHtml) return { text: "", wholeText: "", modelText: "" };
   const { text, filteredText } = await htmlTextWithOmissions(
     rawHtml.slice(0, MAX_BODY_SCAN_CHARS),
     SIGNATURE_SELECTOR,
   );
-  return { text: limitBody(text), modelText: limitBody(filteredText) };
+  return {
+    text: limitBody(text),
+    // Markup cut before it was read leaves text that ends early, however short it is.
+    wholeText: rawHtml.length > MAX_BODY_SCAN_CHARS ? `${text}\n[…]` : text,
+    modelText: limitBody(filteredText),
+  };
 }
 
 function cleanPlainText(text: string): string {
