@@ -1,10 +1,15 @@
 import type { AssistantMessage, Model, TranscriptContext } from "@earendil-works/pi-ai";
-import { getCurrentTools } from "@earendil-works/pi-ai";
+import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { beforeEach, expect, it, vi } from "vitest";
 import { approvalPausedToolResult } from "../../../approvals/approval-effect.js";
+import {
+  historyThisChatUpdate,
+  userTurnInstructions,
+} from "../../../runs/assembly/run-instructions.prompt.js";
 import { builtinAgentTools } from "../../../tools/builtin.tool-definition.js";
+import { thisChatHistoryDeclaration } from "../../../tools/builtin-memory.tool-definition.js";
 
 const fake = vi.hoisted(() => ({ models: new Map<string, unknown>(), stream: vi.fn() }));
 vi.mock("@earendil-works/pi-ai/providers/all", () => ({
@@ -349,6 +354,74 @@ it.each([false, true])(
     expect(input.executeTool).not.toHaveBeenCalled();
   },
 );
+it.each([0, 1])("refreshes history scope on resumed computer request %i", async (arrival) => {
+  const input = request();
+  input.instructions = userTurnInstructions({
+    botInstructions: "",
+    groupContext: undefined,
+    messagingContext: undefined,
+    redactedMemoryContext: undefined,
+    redactedScratchpadContext: undefined,
+    hasHistoricalContext: true,
+    historyRetrievalEnabled: true,
+    historyMyChats: true,
+    computerInstruction: "",
+    pageBrowserAllowed: true,
+    workspaceInstruction: "",
+    agentEnvironmentInstruction: undefined,
+    botDirectory: undefined,
+    pluginLine: undefined,
+    agentSkillsLine: undefined,
+    taughtSkillsLine: undefined,
+    replyGuidance: "",
+  })
+    .filter(Boolean)
+    .join("\n\n");
+  const scopeNote = historyThisChatUpdate(input.instructions)!;
+  input.tools.push(builtinAgentTools.find((tool) => tool.name === "search_history")!);
+  let checkpoint = "";
+  input.onCheckpoint = async (capture) => {
+    checkpoint = capture();
+  };
+  script([
+    ["enter_computer_mode", { goal: "Open the app" }],
+    ["request_takeover", { reason: "Continue" }],
+  ]);
+  await run(input);
+  expect(JSON.parse(checkpoint).computerMode.mode).toBe("computer");
+
+  let claims = 0;
+  let restricted = false;
+  fake.stream.mockReset();
+  script([["leave_computer_mode", { summary: "Done" }], [undefined]]);
+  await run({
+    ...input,
+    computerModel: undefined,
+    turnCheckpoint: checkpoint,
+    resolveModel: async (provider, id) => ({ provider, id, apiKey: "fake-key" }),
+    getBuiltinToolDeclarations: () => (restricted ? thisChatHistoryDeclaration : undefined),
+    getInstructionsUpdate: (instructions) =>
+      restricted ? historyThisChatUpdate(instructions) : undefined,
+    claimSteering: async () => {
+      if (claims++ !== arrival) return [];
+      restricted = true;
+      return [{ id: "steering", messageId: "incoming", origin: "webhook", text: "Update" }];
+    },
+  });
+  expect(fake.stream).toHaveBeenCalledTimes(2);
+  for (const [index, [, context]] of fake.stream.mock.calls.entries()) {
+    const search = getCurrentTools(context.messages).find((tool) => tool.name === "search_history");
+    expect(getCurrentSystemPrompt(context.messages)).toBe(
+      index < arrival ? input.instructions : `${input.instructions}\n\n${scopeNote}`,
+    );
+    if (index < arrival)
+      expect(search?.parameters).toMatchObject({
+        properties: { scope: { enum: ["this_chat", "my_chats"] } },
+      });
+    else expect(search?.parameters).not.toHaveProperty("properties.scope");
+  }
+});
+
 it.each(["missing", "wrong-account", "changed-auth"])(
   "fails closed on cross-provider resume when the target is %s",
   async (variant) => {

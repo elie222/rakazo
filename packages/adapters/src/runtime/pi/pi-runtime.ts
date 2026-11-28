@@ -8,7 +8,7 @@ import type {
   Message,
   Model,
 } from "@earendil-works/pi-ai";
-import { validateToolArguments } from "@earendil-works/pi-ai";
+import { getCurrentSystemPrompt, validateToolArguments } from "@earendil-works/pi-ai";
 import type {
   AdapterContext,
   AgentRunRequest,
@@ -16,6 +16,7 @@ import type {
   AgentRuntimeEvent,
   AgentSteeringMessage,
   AgentUsage,
+  ConnectorTool,
   ModelCallObserver,
 } from "@rakazo/adapter-kit";
 import { ModelAccountError, ModelOutputError, TransientModelError } from "@rakazo/adapter-kit";
@@ -113,6 +114,10 @@ import {
   computerTransitionTool,
   restoreComputerModels,
 } from "./tools/pi-runtime-computer-mode.js";
+import {
+  matchToolDeclarations,
+  modelToolDeclarations,
+} from "./tools/pi-runtime-tool-declarations.js";
 import type { ToolCallBudget, ToolHost } from "./tools/pi-runtime-tools.js";
 import {
   agentToolDefinitions,
@@ -336,6 +341,20 @@ export class PiAgentRuntime implements AgentRuntime {
           [...toolsByAgentName.keys()].filter((name) => !offeredToolNames.has(name)),
         );
         let tools = allTools;
+        let declarations: ReadonlyMap<string, ConnectorTool> | undefined;
+        let switchedMode = false;
+        let modelTools = tools;
+        const refreshModelTools = (offered = request.getBuiltinToolDeclarations?.()) => {
+          declarations = offered;
+          modelTools = modelToolDeclarations(tools, toolsByAgentName, offered);
+        };
+        // Emitting the note as a later system message preserves the leading cached prefix on
+        // models that support mid-conversation system messages; other models fold it into the
+        // leading instructions during provider serialization.
+        const instructionsUpdate = (messages: readonly { role: string }[]): Message[] => {
+          const text = request.getInstructionsUpdate?.(getCurrentSystemPrompt(messages));
+          return text ? [{ role: "system", content: text, timestamp: Date.now() }] : [];
+        };
         const seenSteeringIds: string[] = [];
         const initialSteering = request.claimSteering ? await request.claimSteering([]) : [];
         let hasCurrentImages = Boolean(
@@ -636,7 +655,9 @@ export class PiAgentRuntime implements AgentRuntime {
               if (mode === "computer")
                 fallbackState.messagesBeforeSwitch = agent.state.messages.length;
               tools = modeTools();
-              agent.state.tools = tools;
+              switchedMode = true;
+              refreshModelTools();
+              agent.state.tools = modelTools;
             },
             signal,
           );
@@ -654,6 +675,7 @@ export class PiAgentRuntime implements AgentRuntime {
           ];
         };
         tools = modeTools();
+        refreshModelTools();
         if (computer) {
           fallbackState = mode === "computer" ? computerFallbackState! : mainFallbackState;
           setTarget(activeStreamTarget);
@@ -677,6 +699,14 @@ export class PiAgentRuntime implements AgentRuntime {
               ),
               toolCallIds,
             ),
+          // Pi has appended the model's tool declarations by this point. Validate calls
+          // against the original schemas so the executor still decides access.
+          prepareRequest: ({ context }) => {
+            const executable = matchToolDeclarations(context.tools, modelTools, tools);
+            return executable === context.tools
+              ? undefined
+              : { context: { ...context, tools: executable } };
+          },
           getApiKey:
             hasBackups || computer
               ? async () => activeStreamTarget.credentials?.accessToken ?? activeStreamTarget.apiKey
@@ -735,35 +765,46 @@ export class PiAgentRuntime implements AgentRuntime {
               agent.steer({ role: "user", content: finishedShells, timestamp: Date.now() });
           },
           prepareNextTurnWithContext: async (turn, turnSignal) => {
-            const update = computer
-              ? {
-                  context: {
-                    ...turn.context,
-                    tools,
-                    messages:
-                      mode === "main" && computerSpan
-                        ? withoutThinkingFrom(turn.context.messages, ...computerSpan)
-                        : turn.context.messages,
-                  },
-                  model: activeStreamTarget.model,
-                  thinkingLevel: thinkingLevelFor(
-                    activeStreamTarget.model,
-                    activeStreamTarget.config.thinkingLevel,
-                  ),
-                }
-              : undefined;
-            if (!request.claimSteering) return update;
-            if (
-              turnSignal?.aborted ||
-              isTurnEndingAfterToolBatch({
+            const steering =
+              request.claimSteering &&
+              !turnSignal?.aborted &&
+              !isTurnEndingAfterToolBatch({
                 pausePending: host.pausePending,
                 terminatedReply,
                 toolCallBudgetExceeded: host.toolCallBudget.exceeded,
               })
-            )
-              return update;
-            const steering = await request.claimSteering([...seenSteeringIds]);
-            if (steering.length === 0) return update;
+                ? await request.claimSteering([...seenSteeringIds])
+                : [];
+            const offered = request.getBuiltinToolDeclarations?.();
+            const offerChanged = declarations !== offered;
+            if (offerChanged) refreshModelTools(offered);
+            const instructions = offerChanged ? instructionsUpdate(turn.context.messages) : [];
+            const update =
+              computer || modelTools !== tools
+                ? {
+                    context: {
+                      ...turn.context,
+                      tools:
+                        switchedMode && turn.context.tools?.length
+                          ? modelTools
+                          : matchToolDeclarations(turn.context.tools, tools, modelTools),
+                      messages:
+                        mode === "main" && computerSpan
+                          ? withoutThinkingFrom(turn.context.messages, ...computerSpan)
+                          : turn.context.messages,
+                    },
+                    ...(computer && {
+                      model: activeStreamTarget.model,
+                      thinkingLevel: thinkingLevelFor(
+                        activeStreamTarget.model,
+                        activeStreamTarget.config.thinkingLevel,
+                      ),
+                    }),
+                  }
+                : undefined;
+            switchedMode = false;
+            if (steering.length === 0)
+              return instructions.length ? { ...update, messages: instructions } : update;
             seenSteeringIds.push(...steering.map((item) => item.id));
             for (const item of steering) {
               representedHistoryIds.add(item.messageId);
@@ -794,7 +835,7 @@ export class PiAgentRuntime implements AgentRuntime {
             // Returned rather than steered: Pi polls its steering queue once per turn before
             // this hook runs, and skips the poll after it when that one found a message, such
             // as a finished shell's output. Returned messages always go into the next request.
-            return { ...update, messages };
+            return { ...update, messages: [...messages, ...instructions] };
           },
           initialState: {
             systemPrompt,
@@ -802,7 +843,7 @@ export class PiAgentRuntime implements AgentRuntime {
             thinkingLevel: computer
               ? thinkingLevelFor(activeStreamTarget.model, activeStreamTarget.config.thinkingLevel)
               : thinkingLevel,
-            tools,
+            tools: modelTools,
             messages: history,
           },
         });
@@ -1207,9 +1248,12 @@ export class PiAgentRuntime implements AgentRuntime {
                 last = agent.state.messages.at(-1);
               }
               toolWorkPendingFinal = true;
+              for (const message of instructionsUpdate(agent.state.messages)) agent.steer(message);
               await agent.continue();
             }
           } else {
+            // Instructions written before Pi claimed the opening steering.
+            for (const message of instructionsUpdate(agent.state.messages)) agent.steer(message);
             // Only the person's messages go under their label; anyone else's is framed by origin.
             await agent.prompt(
               promptWithSteering(

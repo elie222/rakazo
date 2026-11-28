@@ -11,7 +11,7 @@ import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import type { ActionApprovalRule } from "@rakazo/core";
 import { inboundRoutineBlock } from "@rakazo/core";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
-import type { PrismaClient } from "@rakazo/db";
+import type { ClaimedSteeringMessage, PrismaClient } from "@rakazo/db";
 import { createPendingSteeringRun, sendUserMessage } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DENIED_ACTION_ERROR, isApprovalPausedResult } from "../../approvals/approval-effect.js";
@@ -92,6 +92,7 @@ function fixture({
   nativeReview = false,
   checkerConnected = true,
   skipApprovals = false,
+  scripted = false,
   trigger = "user",
   secrets = [] as string[],
   prompt = "Read the item",
@@ -132,6 +133,7 @@ function fixture({
   deploymentLabs?: string[];
   /** The Space's semantic memory provider; none by default. */
   memoryProvider?: Record<string, unknown>;
+  scripted?: boolean;
   /** A page browser on a graphical computer, so browser_act and computer_act are offered. */
   browser?: BrowserProvider;
   /** The user's spending limit for payments. */
@@ -440,7 +442,9 @@ function fixture({
         async (_query?: { where?: { OR?: unknown } }): Promise<{ id: string } | null> => null,
       ),
       findUnique: vi.fn(async () =>
-        sourceRole ? { role: sourceRole, blocks: [{ kind: "text", text: prompt }] } : null,
+        sourceRole
+          ? { role: sourceRole, threadId: run.threadId, blocks: [{ kind: "text", text: prompt }] }
+          : null,
       ),
       findMany: vi.fn(async () => []),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
@@ -589,6 +593,7 @@ function fixture({
     return { continuationRunId: null as string | null };
   });
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
+  const claimSteering = vi.fn(async (): Promise<ClaimedSteeringMessage[]> => []);
   const execute = vi.fn(async function* (call: ConnectorCall) {
     yield { type: "result" as const, data: { item: call.args.id } };
   });
@@ -645,7 +650,7 @@ function fixture({
   const executor = createRunExecutor({
     deploymentModelKey: "fixture-model-key",
     prisma: transactionalPrisma,
-    runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
+    runtime: { describe: () => ({ capabilities: { scripted } }), run: runtimeRun },
     connector: {
       discoverTools: async () =>
         builtin
@@ -713,6 +718,7 @@ function fixture({
     events: {
       append: vi.fn(async () => undefined),
       notify: vi.fn(async () => undefined),
+      claimSteering,
       pauseRunForInput,
       finalizeRun,
     },
@@ -730,6 +736,7 @@ function fixture({
     prisma: transactionalPrisma,
     storedRun: run,
     runtimeRun,
+    claimSteering,
     effects,
     spending: spending.state,
     web,
@@ -858,6 +865,84 @@ function askDetail(f: ReturnType<typeof fixture>): string {
   const calls = f.pauseRunForInput.mock.calls as unknown as [{ blocks: { detail?: string }[] }][];
   return calls[0]?.[0].blocks[0]?.detail ?? "";
 }
+
+describe("search_history scope guidance", () => {
+  const searchTool = (request: AgentRunRequest) =>
+    request.getBuiltinToolDeclarations?.()?.get("search_history") ??
+    request.tools.find((tool) => tool.name === "search_history")!;
+
+  it("skips the history scope lookup for scripted runs", async () => {
+    const f = fixture({
+      name: "search_history",
+      builtin: true,
+      sourceRole: "user",
+      scripted: true,
+      prompt: "Silent routine fixture",
+    });
+    f.setCalls([]);
+    await f.run();
+    expect(f.runtimeRun).toHaveBeenCalledTimes(1);
+    expect(f.prisma.steeringMessage.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("declares only this_chat after earlier outside steering before handing the run to the runtime", async () => {
+    const f = fixture({ name: "search_history", builtin: true, sourceRole: "user" });
+    f.claimedOutsideSteering(true);
+    f.setCalls([]);
+    await f.run();
+
+    const request = f.runtimeRun.mock.calls[0]![0];
+    expect(JSON.stringify(searchTool(request))).not.toContain("my_chats");
+    expect(request.instructions).not.toContain("my_chats");
+    expect(request.getInstructionsUpdate?.(request.instructions)).toBeUndefined();
+  });
+
+  it("narrows the live declaration after claiming outside steering", async () => {
+    const f = fixture({ name: "search_history", builtin: true, sourceRole: "user" });
+    f.claimSteering.mockResolvedValueOnce([]).mockImplementationOnce(async () => {
+      f.claimedOutsideSteering(true);
+      return [
+        { id: "steering", messageId: "incoming", origin: "webhook", text: "Update", blocks: [] },
+      ];
+    });
+    const offers: ConnectorTool[] = [];
+    const notes: (string | undefined)[] = [];
+    let instructions = "";
+    f.runtimeRun.mockImplementation(async function* (request) {
+      const offer = () => {
+        offers.push({ ...searchTool(request) });
+        notes.push(request.getInstructionsUpdate?.(request.instructions));
+      };
+      offer();
+      await request.claimSteering!([]);
+      offer();
+      const steering = await request.claimSteering!([]);
+      offer();
+      await request.claimSteering!(steering.map((item) => item.id));
+      instructions = request.instructions;
+      // Asked again with the note in place, it adds no second one.
+      notes.push(request.getInstructionsUpdate?.(`${request.instructions}\n\n${notes[2]}`));
+      yield { type: "done", text: "Done" };
+    });
+    await f.run();
+
+    for (const offer of offers.slice(0, 2)) {
+      expect(offer.inputSchema).toMatchObject({
+        properties: { scope: { enum: ["this_chat", "my_chats"] } },
+      });
+      expect(offer.description).toContain("scope my_chats");
+    }
+    expect(JSON.stringify(offers[2])).not.toContain("my_chats");
+    expect(instructions).toContain("scope my_chats");
+    expect(notes).toEqual([
+      undefined,
+      undefined,
+      expect.stringContaining("only this chat"),
+      undefined,
+    ]);
+    expect(f.prisma.steeringMessage.findFirst).toHaveBeenCalledTimes(2);
+  });
+});
 
 it("enqueues pending work when an approval pauses its current run", async () => {
   const f = fixture({ name: "shell", trigger: "webhook" });

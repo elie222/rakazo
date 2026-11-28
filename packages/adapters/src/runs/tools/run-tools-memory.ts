@@ -31,6 +31,11 @@ export function historyMyChatsAllowed(
   );
 }
 
+export async function historyMyChatsAvailable(ctx: RunContext): Promise<boolean> {
+  // Channel or webhook text claimed mid-turn revokes the grant for the rest of the run.
+  return ctx.source.myChatsAllowed && !(await ctx.trust.receivedOutsideMessage());
+}
+
 /**
  * Models often fill optional fields they do not use with "" or null (botId: "", linkedRunId: "").
  * No history field means anything when blank, so a blank field counts as not given.
@@ -51,9 +56,7 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
       ? args.scope === "my_chats"
       : typeof args.threadId === "string" &&
         args.threadId !== (ctx.source.conversationThreadId ?? run.threadId);
-  // Channel or webhook text claimed mid-turn revokes the grant for the rest of the run.
-  const allowMyChats =
-    crossChat && ctx.source.myChatsAllowed && !(await ctx.trust.receivedOutsideMessage());
+  const allowMyChats = crossChat && (await historyMyChatsAvailable(ctx));
   const scope = {
     spaceId: run.spaceId,
     threadId: ctx.source.conversationThreadId ?? run.threadId,

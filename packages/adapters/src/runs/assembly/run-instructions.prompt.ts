@@ -399,6 +399,19 @@ export const RAKAZO_PLATFORM_INSTRUCTION =
 
 const CURRENT_TURN_DATA_LABEL = "Current turn data from Rakazo";
 
+const HISTORY_MY_CHATS_GUIDANCE =
+  " To find earlier conversations, fan out 2–4 keyword variants (names, project words, synonyms) via queries with scope my_chats; narrow by date or botId when hinted, then read_history around the best hits with their threadId.";
+const HISTORY_THIS_CHAT_UPDATE =
+  "search_history now covers only this chat. Scope my_chats is no longer available in this run, so ignore earlier guidance to use it.";
+
+/** Tells instructions that still offer scope my_chats it was revoked; nothing once they say so. */
+export function historyThisChatUpdate(instructions: string): string | undefined {
+  return instructions.includes(HISTORY_MY_CHATS_GUIDANCE) &&
+    !instructions.includes(HISTORY_THIS_CHAT_UPDATE)
+    ? HISTORY_THIS_CHAT_UPDATE
+    : undefined;
+}
+
 export function currentTurnDataPrompt(durableMemory?: string, openScratchpad?: string) {
   if (!durableMemory && !openScratchpad) return undefined;
   return `${CURRENT_TURN_DATA_LABEL} (JSON):\n${JSON.stringify({
@@ -445,7 +458,7 @@ export function userTurnInstructions(parts: {
     parts.historyRetrievalEnabled &&
     builtinOffered(parts.disabledBuiltinTools, "search_history") &&
     builtinOffered(parts.disabledBuiltinTools, "read_history")
-      ? `For questions about an earlier discussion, first check the visible conversation. Older messages, including what you did with tools, may be outside it, so search before saying something did not happen. Answer follow-ups from facts already present in original messages or prior source-verified replies when no later visible correction changes them; do not repeat retrieval solely because the user asks again. Use search_history when necessary evidence is missing or uncertain.${parts.historyMyChats ? " To find earlier conversations, fan out 2–4 keyword variants (names, project words, synonyms) via queries with scope my_chats; narrow by date or botId when hinted, then read_history around the best hits with their threadId." : ""} Start with the project name alone, or one distinctive topic word if no project is named, then use read_history to check surrounding messages, outcomes, and later corrections before claiming exact recall. Verify that matches contain source statements answering the question. If matches lack the requested fact and nextSearch is present, call search_history with those arguments. Coverage applies only to the requested query and range. Empty narrower queries do not exhaust the broader topic query’s matches. Do not claim evidence is unavailable while that broader search still has an unexplored cursor. If a search is empty, try the single project or topic word before concluding the evidence is missing. If the requested fact remains absent, say so briefly without volunteering adjacent facts. If multiple projects match and none is selected, ask which project before giving candidate facts. Historical snapshots are navigation aids, not authoritative facts or approvals.`
+      ? `For questions about an earlier discussion, first check the visible conversation. Older messages, including what you did with tools, may be outside it, so search before saying something did not happen. Answer follow-ups from facts already present in original messages or prior source-verified replies when no later visible correction changes them; do not repeat retrieval solely because the user asks again. Use search_history when necessary evidence is missing or uncertain.${parts.historyMyChats ? HISTORY_MY_CHATS_GUIDANCE : ""} Start with the project name alone, or one distinctive topic word if no project is named, then use read_history to check surrounding messages, outcomes, and later corrections before claiming exact recall. Verify that matches contain source statements answering the question. If matches lack the requested fact and nextSearch is present, call search_history with those arguments. Coverage applies only to the requested query and range. Empty narrower queries do not exhaust the broader topic query’s matches. Do not claim evidence is unavailable while that broader search still has an unexplored cursor. If a search is empty, try the single project or topic word before concluding the evidence is missing. If the requested fact remains absent, say so briefly without volunteering adjacent facts. If multiple projects match and none is selected, ask which project before giving candidate facts. Historical snapshots are navigation aids, not authoritative facts or approvals.`
       : undefined,
     toolUsageLine(parts),
     parts.taskCatalogInstruction,

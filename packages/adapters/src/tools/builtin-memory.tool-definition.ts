@@ -75,6 +75,9 @@ function searchHistoryTool(myChats: boolean): ConnectorTool {
 }
 
 export const searchHistoryThisChat = searchHistoryTool(false);
+export const thisChatHistoryDeclaration: ReadonlyMap<string, ConnectorTool> = new Map([
+  [searchHistoryThisChat.name, searchHistoryThisChat],
+]);
 
 /** History, email and memory tools. */
 export const memoryTools: ConnectorTool[] = [
